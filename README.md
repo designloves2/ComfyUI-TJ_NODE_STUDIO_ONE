@@ -1,9 +1,10 @@
-# TJ NODE ONE (통합 패키지)
+# TJ NODE STUDIO ONE (통합 패키지)
 
 > **ComfyUI 올인원 이미지 생성 UI 패키지** — Z-Image ONE STUDIO와 Flux.2 Klein ONE STUDIO 두 가지 노드를 단일 패키지로 제공합니다.  
 > 워크플로우 배선 없이 노드 하나에서 T2I · I2I · Inpaint · ControlNet · Faceswap · Upscale(SeedVR2) 등 다양한 모드를 전환합니다.
 
----
+---<img width="1463" height="639" alt="Screen Shot 2026-06-26 at 01 17 08 831 AM" src="https://github.com/user-attachments/assets/c48aad26-00a0-4fc2-8f39-e916cc9e831e" />
+
 
 ## 목차
 
