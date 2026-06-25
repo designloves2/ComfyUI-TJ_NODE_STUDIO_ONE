@@ -1,0 +1,552 @@
+{
+  "id": "7650ef2c-3ba1-4e86-9cb2-050c770dc4f8",
+  "revision": 0,
+  "last_node_id": 50,
+  "last_link_id": 13,
+  "nodes": [
+    {
+      "id": 28,
+      "type": "TJ_ShowAny",
+      "pos": [
+        -1324.709296751868,
+        89.14614837951005
+      ],
+      "size": [
+        828.096285765316,
+        282.573919725618
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "",
+          "name": "any",
+          "shape": 7,
+          "type": "*",
+          "link": 11
+        }
+      ],
+      "outputs": [
+        {
+          "label": "",
+          "name": "output",
+          "type": "*",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TJ_ShowAny",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.8"
+        },
+        "tj_show_any_last_text": "이미지는 야간의 풍경을 배경으로 한 실사 사진 스타일로, 중앙에 앉아 있는 마법사를 주제로 하고 있습니다. 화면은 깊이감 있는 초점으로 구성되어 있으며, 피사체는 선명하게 보이고 배경은 부드럽게 흐릿해져 있어 시선을 중심 인물에게 집중시키고 있습니다. 조명은 자연스러운 야간 빛을 활용하여, 외곽의 달빛과 불꽃이 주요光源으로 작용하며, 피부와 옷의 질감을 생생하게 드러냅니다. 색상은 어두운 톤 기반에 붉은색, 금색 악세서리가 포인트로 사용되어 마법사의 신비로움과 열정적인 분위기를 강조합니다. 전체적으로 따뜻하고 몽환적인 분위기가 감도는 한편, 실사 사진처럼 세밀한 빛 반사와 그림자 표현이 특징이며, 8k급 해상도로 텍스처의 미세함을 자세히 보여줍니다. 주요 상세 사항으로는 큰 마법사 모자의 금색 장식, 가슴에 걸친 붉은색 보석 목걸이, 반짝이는 파란색 귀걸이, 검정색 롱 스타킹의 레이스 디테일, 그리고 불꽃이 태는 마법 지팡이가 눈에 띕니다."
+      },
+      "widgets_values": [
+        "이미지는 야간의 풍경을 배경으로 한 실사 사진 스타일로, 중앙에 앉아 있는 마법사를 주제로 하고 있습니다. 화면은 깊이감 있는 초점으로 구성되어 있으며, 피사체는 선명하게 보이고 배경은 부드럽게 흐릿해져 있어 시선을 중심 인물에게 집중시키고 있습니다. 조명은 자연스러운 야간 빛을 활용하여, 외곽의 달빛과 불꽃이 주요光源으로 작용하며, 피부와 옷의 질감을 생생하게 드러냅니다. 색상은 어두운 톤 기반에 붉은색, 금색 악세서리가 포인트로 사용되어 마법사의 신비로움과 열정적인 분위기를 강조합니다. 전체적으로 따뜻하고 몽환적인 분위기가 감도는 한편, 실사 사진처럼 세밀한 빛 반사와 그림자 표현이 특징이며, 8k급 해상도로 텍스처의 미세함을 자세히 보여줍니다. 주요 상세 사항으로는 큰 마법사 모자의 금색 장식, 가슴에 걸친 붉은색 보석 목걸이, 반짝이는 파란색 귀걸이, 검정색 롱 스타킹의 레이스 디테일, 그리고 불꽃이 태는 마법 지팡이가 눈에 띕니다.",
+        "(none)",
+        "",
+        ""
+      ],
+      "color": "#7612DA",
+      "bgcolor": "#000000"
+    },
+    {
+      "id": 36,
+      "type": "PixaromaLabel",
+      "pos": [
+        -1092.66115386921,
+        -27.55949278184665
+      ],
+      "size": [
+        364,
+        50
+      ],
+      "flags": {
+        "pinned": true,
+        "no_title": true
+      },
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "ComfyUI-Pixaroma",
+        "ver": "d9f3b76caccb44fdbbd09b27fe1b4030a6c5d355",
+        "Node name for S&R": "PixaromaLabel",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.8"
+        }
+      },
+      "widgets_values": [
+        "{\"text\":\"Prompt STUDIO\",\"fontSize\":50,\"fontFamily\":\"Arial\",\"fontColor\":\"#f472b6\",\"textAlign\":\"left\",\"backgroundColor\":\"transparent\",\"padding\":0,\"borderRadius\":6,\"opacity\":1,\"fontWeight\":\"normal\",\"lineHeight\":1}"
+      ],
+      "color": "rgba(0,0,0,0)",
+      "bgcolor": "rgba(0,0,0,0)"
+    },
+    {
+      "id": 35,
+      "type": "PixaromaLabel",
+      "pos": [
+        -2116.350442403082,
+        -27.55949278184665
+      ],
+      "size": [
+        512,
+        50
+      ],
+      "flags": {
+        "pinned": true,
+        "no_title": true
+      },
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "ComfyUI-Pixaroma",
+        "ver": "d9f3b76caccb44fdbbd09b27fe1b4030a6c5d355",
+        "Node name for S&R": "PixaromaLabel",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.8"
+        }
+      },
+      "widgets_values": [
+        "{\"text\":\"Z-Image ONE STUDIO\",\"fontSize\":50,\"fontFamily\":\"Arial\",\"fontColor\":\"#c075f6\",\"textAlign\":\"left\",\"backgroundColor\":\"transparent\",\"padding\":0,\"borderRadius\":6,\"opacity\":1,\"fontWeight\":\"normal\",\"lineHeight\":1}"
+      ],
+      "color": "rgba(0,0,0,0)",
+      "bgcolor": "rgba(0,0,0,0)"
+    },
+    {
+      "id": 37,
+      "type": "PixaromaLabel",
+      "pos": [
+        -251.6489759786822,
+        -27.55949278184665
+      ],
+      "size": [
+        587,
+        50
+      ],
+      "flags": {
+        "pinned": true,
+        "no_title": true
+      },
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "ComfyUI-Pixaroma",
+        "ver": "d9f3b76caccb44fdbbd09b27fe1b4030a6c5d355",
+        "Node name for S&R": "PixaromaLabel",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.8"
+        }
+      },
+      "widgets_values": [
+        "{\"text\":\"Flux.2 Klein ONE STUDIO\",\"fontSize\":50,\"fontFamily\":\"Arial\",\"fontColor\":\"#818cf8\",\"textAlign\":\"left\",\"backgroundColor\":\"transparent\",\"padding\":0,\"borderRadius\":6,\"opacity\":1,\"fontWeight\":\"normal\",\"lineHeight\":1}"
+      ],
+      "color": "rgba(0,0,0,0)",
+      "bgcolor": "rgba(0,0,0,0)"
+    },
+    {
+      "id": 39,
+      "type": "PixaromaLabel",
+      "pos": [
+        -978.7092967518679,
+        -115.97415344255745
+      ],
+      "size": [
+        108,
+        35
+      ],
+      "flags": {
+        "pinned": true,
+        "no_title": true
+      },
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "ComfyUI-Pixaroma",
+        "ver": "d9f3b76caccb44fdbbd09b27fe1b4030a6c5d355",
+        "Node name for S&R": "PixaromaLabel",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.8"
+        }
+      },
+      "widgets_values": [
+        "{\"text\":\"V.1.0.0\",\"fontSize\":35,\"fontFamily\":\"Arial\",\"fontColor\":\"#ffd166\",\"textAlign\":\"left\",\"backgroundColor\":\"transparent\",\"padding\":0,\"borderRadius\":6,\"opacity\":1,\"fontWeight\":\"normal\",\"lineHeight\":1}"
+      ],
+      "color": "rgba(0,0,0,0)",
+      "bgcolor": "rgba(0,0,0,0)"
+    },
+    {
+      "id": 27,
+      "type": "TJ_MultiImageLoader",
+      "pos": [
+        -1324.709296751868,
+        439.14614837951
+      ],
+      "size": [
+        400,
+        534
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "label": "BATCH ▶",
+          "name": "BATCH",
+          "type": "IMAGE",
+          "links": [
+            10
+          ]
+        },
+        {
+          "label": "WIDTH ▶",
+          "name": "WIDTH",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "label": "HEIGHT ▶",
+          "name": "HEIGHT",
+          "type": "INT",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TJ_MultiImageLoader",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.8"
+        },
+        "auto_sets": {
+          "0": "BATCH",
+          "1": "WIDTH",
+          "2": "HEIGHT"
+        }
+      },
+      "widgets_values": [
+        "[\"input/download/131528106.jpeg\"]",
+        true,
+        "Keep Input Ratio",
+        "none",
+        1024,
+        1024,
+        1536,
+        1,
+        "lanczos",
+        "Center Crop",
+        "",
+        ""
+      ],
+      "color": "#7612DA",
+      "bgcolor": "#000000"
+    },
+    {
+      "id": 26,
+      "type": "TJ_PromptStudio",
+      "pos": [
+        -896.6130109865518,
+        439.14614837951
+      ],
+      "size": [
+        400,
+        578
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "",
+          "name": "raw_prompt_input",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        },
+        {
+          "label": "",
+          "name": "image",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 10
+        },
+        {
+          "name": "clip",
+          "shape": 7,
+          "type": "CLIP",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "Prompt_Studio ▶",
+          "name": "prompt",
+          "type": "STRING",
+          "links": [
+            11
+          ]
+        },
+        {
+          "name": "thought_process",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TJ_PromptStudio",
+        "tj_prompt_studio_advanced": true,
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.8"
+        },
+        "tj_prompt_studio_enhancer_height": 578,
+        "tj_prompt_studio_user_sized": true
+      },
+      "widgets_values": [
+        "(none)",
+        "(none)",
+        "Prompt_Studio",
+        "Auto",
+        "",
+        "GGUF / llama.cpp",
+        "LLM\\Qwen3VL\\Qwen3-VL-8B-NSFW-Caption-V4.5.Q8_0.gguf",
+        "LLM\\Qwen3VL\\Qwen3-VL-8B-NSFW-Caption-V4.5.mmproj-Q8_0.gguf",
+        "Auto-detect",
+        "gemma4_e4b_it_fp8_scaled.safetensors",
+        "Auto",
+        "Image",
+        "Caption (plain description)",
+        "Universal Natural Language",
+        "Photorealistic",
+        "",
+        "",
+        "이미지를 실사 사진으로 생각하고 설명하시요.",
+        true,
+        -1,
+        4096,
+        1000,
+        0.7,
+        0.9,
+        1.15,
+        860479228551792,
+        "randomize",
+        false,
+        ""
+      ],
+      "color": "#7612DA",
+      "bgcolor": "#000000"
+    },
+    {
+      "id": 38,
+      "type": "PixaromaLabel",
+      "pos": [
+        -1622.709296751868,
+        -213.78812973899596
+      ],
+      "size": [
+        1396,
+        80
+      ],
+      "flags": {
+        "pinned": true,
+        "no_title": true
+      },
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "ComfyUI-Pixaroma",
+        "ver": "d9f3b76caccb44fdbbd09b27fe1b4030a6c5d355",
+        "Node name for S&R": "PixaromaLabel",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.8"
+        }
+      },
+      "widgets_values": [
+        "{\"text\":\"TJ NODE ONE STUDIO COLLECTION\",\"fontSize\":80,\"fontFamily\":\"Arial\",\"fontColor\":\"#ffd166\",\"textAlign\":\"left\",\"backgroundColor\":\"transparent\",\"padding\":0,\"borderRadius\":6,\"opacity\":1,\"fontWeight\":\"normal\",\"lineHeight\":1}"
+      ],
+      "color": "rgba(0,0,0,0)",
+      "bgcolor": "rgba(0,0,0,0)"
+    },
+    {
+      "id": 25,
+      "type": "Flux2KleinOneTJNode",
+      "pos": [
+        -448.1489759786822,
+        89.14614837951005
+      ],
+      "size": [
+        980,
+        928
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "prompt_override",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "",
+          "name": "image",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.8"
+        }
+      },
+      "widgets_values": [
+        ""
+      ],
+      "color": "#7612DA",
+      "bgcolor": "#0b0b0b"
+    },
+    {
+      "id": 34,
+      "type": "ZImageTurboOneNode",
+      "pos": [
+        -2350.350442403082,
+        89.14614837951005
+      ],
+      "size": [
+        980,
+        928
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "prompt_override",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.8"
+        }
+      },
+      "widgets_values": [
+        ""
+      ],
+      "color": "#7612DA",
+      "bgcolor": "#0b0b0b"
+    },
+    {
+      "id": 50,
+      "type": "MarkdownNote",
+      "pos": [
+        -3113.786437232481,
+        89.14614837951
+      ],
+      "size": [
+        716.9477646487398,
+        928
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "TJ NODE STUDIO ONE — 설치 및 설정 가이드",
+      "properties": {},
+      "widgets_values": [
+        "# TJ NODE STUDIO ONE — 설치 및 설정 가이드\n\n> **Z-Image ONE STUDIO (TJ)** · **Flux.2 Klein ONE STUDIO (TJ)**  \n> ComfyUI 올인원 이미지 생성 UI — 워크플로우 배선 없이 노드 하나에서 T2I · I2I · Inpaint · Upscale 등 모든 모드를 전환합니다.\n\n---\n\n## 목차\n\n1. [TJ NODE 패키지](#1-tj-node-패키지)\n2. [필수 커스텀 노드](#2-필수-커스텀-노드)\n3. [모델 다운로드](#3-모델-다운로드)\n4. [초기 설정](#4-초기-설정)\n5. [모드별 간략 설명](#5-모드별-간략-설명)\n\n---\n\n## 1. TJ NODE 패키지\n\n### 이 패키지 (통합 설치)\n\n| 패키지 | 설명 | GitHub |\n|---|---|---|\n| **TJ_NODE_STUDIO_ONE** | Z-Image ONE STUDIO + Flux.2 Klein ONE STUDIO 통합 | [ComfyUI-TJ_NODE_STUDIO_ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE) |\n\n### 관련 TJ 패키지\n\n| 패키지 | 설명 | GitHub |\n|---|---|---|\n| **TJ_NODE — LLM PROMPT STUDIO** | LLM 기반 프롬프트 생성 · 번역 · 보조 노드 | [ComfyUI-TJ_NODE](https://github.com/designloves2/ComfyUI-TJ_NODE) |\n\n> **설치**: ComfyUI Manager → Install Custom Nodes → `ComfyUI-TJ_NODE_STUDIO_ONE` 검색  \n> 또는 수동: `cd ComfyUI/custom_nodes && git clone https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE.git`\n\n---\n\n## 2. 필수 커스텀 노드\n\n아래 노드들은 ComfyUI Manager에서 검색하여 설치하거나 GitHub에서 직접 clone합니다.\n\n| 커스텀 노드 | 용도 | 필요 노드 | GitHub |\n|---|---|---|---|\n| **ComfyUI-KJNodes** | FluxKVCache · 보조 유틸 노드 | Flux.2 Klein | [kijai/ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes) |\n| **ComfyUI-GGUF** | GGUF 양자화 모델 로딩 | 선택 (GGUF 사용 시) | [city96/ComfyUI-GGUF](https://github.com/city96/ComfyUI-GGUF) |\n| **ComfyUI_FaceAnalysis** | Faceswap 얼굴 임베딩 분석 | Klein · Faceswap 모드 | [cubiq/ComfyUI_FaceAnalysis](https://github.com/cubiq/ComfyUI_FaceAnalysis) |\n| **ComfyUI-RMBG** | 배경 제거 (RE-BG 모드) | Z-Image · RE-BG 모드 | [1038lab/ComfyUI-RMBG](https://github.com/1038lab/ComfyUI-RMBG) |\n| **comfyui_controlnet_aux** | ControlNet 전처리기 (Depth · Canny · Pose 등) | Z-Image · ControlNet 모드 | [Fannovel16/comfyui_controlnet_aux](https://github.com/Fannovel16/comfyui_controlnet_aux) |\n| **ComfyUI-SeedVR2** | SeedVR2 AI 업스케일 (UPSCALE 모드) | 양쪽 노드 · Upscale 모드 | [kijai/ComfyUI-SeedVR2](https://github.com/kijai/ComfyUI-SeedVR2) |\n\n---\n\n## 3. 모델 다운로드\n\n### 3-1. Z-Image ONE STUDIO 모델\n\n#### Diffusion Model → `models/diffusion_models/`\n\n| 파일명 | 설명 | 다운로드 |\n|---|---|---|\n| `z_image_turbo_bf16.safetensors` | Z-Image Turbo BF16 **권장** | [다운로드](https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors) |\n\n> 전체 모델 목록: https://huggingface.co/Comfy-Org/z_image_turbo\n\n#### Text Encoder → `models/text_encoders/`\n\n| 파일명 | 설명 | 다운로드 |\n|---|---|---|\n| `qwen_3_4b.safetensors` | Qwen3-4B 텍스트 인코더 | [다운로드](https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors) |\n\n#### VAE → `models/vae/`\n\n| 파일명 | 설명 | 다운로드 |\n|---|---|---|\n| `ae.safetensors` | Z-Image VAE | [다운로드](https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors) |\n\n#### ControlNet → `models/controlnet/`  *(ControlNet 모드 사용 시)*\n\n| 파일명 | 설명 | 다운로드 |\n|---|---|---|\n| `Z-Image-Turbo-Fun-Controlnet-Union.safetensors` | Union ControlNet (Depth · Canny · Pose 등 통합) | [다운로드](https://huggingface.co/alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union/resolve/main/Z-Image-Turbo-Fun-Controlnet-Union.safetensors) |\n\n#### Face Detector → `models/ultralytics/bbox/`  *(Face Redraw 모드 사용 시)*\n\n| 파일명 | 설명 | 다운로드 |\n|---|---|---|\n| `face_yolov8m.pt` | YOLOv8 얼굴 감지 **권장** | [다운로드](https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov8m.pt) |\n| `face_yolov9c.pt` | YOLOv9 얼굴 감지 | [다운로드](https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov9c.pt) |\n\n#### BG Removal → `models/background_removal/`  *(RE-BG 모드 사용 시)*\n\n| 파일명 | 설명 | 다운로드 |\n|---|---|---|\n| `BiRefNet-general.pth` | BiRefNet 범용 배경 제거 **권장** | [다운로드](https://huggingface.co/ZhengPeng7/BiRefNet/resolve/main/BiRefNet-general.pth) |\n| `BiRefNet-portrait.pth` | BiRefNet 인물 특화 | [다운로드](https://huggingface.co/ZhengPeng7/BiRefNet-portrait/resolve/main/BiRefNet-portrait.pth) |\n\n---\n\n### 3-2. Flux.2 Klein ONE STUDIO 모델\n\n#### Diffusion Model → `models/diffusion_models/`\n\n| 파일명 | 설명 | 다운로드 |\n|---|---|---|\n| `flux2-klein-9b.safetensors` | FLUX.2 Klein 9B (메인 모델) | [Black Forest Labs HF Collection](https://huggingface.co/collections/black-forest-labs/flux2) |\n| `flux2-klein-4b.safetensors` | FLUX.2 Klein 4B (경량) | [Black Forest Labs HF Collection](https://huggingface.co/collections/black-forest-labs/flux2) |\n\n> ⚠ **9B 모델**은 HuggingFace 로그인 후 Non-Commercial License 동의 필요\n\n#### Text Encoder → `models/text_encoders/`\n\n**9B 모델용:**\n\n| 설명 | 다운로드 |\n|---|---|\n| Qwen3 8B 텍스트 인코더 (9B용) | [HuggingFace — split_files/text_encoders](https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b/tree/main/split_files/text_encoders) |\n\n**4B 모델용:**\n\n| 설명 | 다운로드 |\n|---|---|\n| 텍스트 인코더 (4B용) | [HuggingFace — split_files/text_encoders](https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-4b/tree/main/split_files/text_encoders) |\n\n#### VAE → `models/vae/`\n\n| 설명 | 다운로드 |\n|---|---|\n| Flux.2 Klein VAE | [HuggingFace — split_files/vae](https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b/tree/main/split_files/vae) |\n\n#### Faceswap LoRA → `models/loras/`  *(Faceswap 모드 사용 시)*\n\n| 파일명 | 설명 | 다운로드 |\n|---|---|---|\n| `bfs_head_v1_flux-klein_9b_step3500_rank128.safetensors` | BFS Head Swap v1 (9B용) | [다운로드](https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/blob/main/bfs_head_v1_flux-klein_9b_step3500_rank128.safetensors) |\n| `bfs_head_v1_flux-klein_4b.safetensors` | BFS Head Swap v1 (4B용) | [다운로드](https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/blob/main/bfs_head_v1_flux-klein_4b.safetensors) |\n\n#### BG Removal → `models/background_removal/`  *(Edit 모드 마스크 사용 시)*\n\n| 설명 | 다운로드 |\n|---|---|\n| BiRefNet background_removal 모음 | [HuggingFace — Comfy-Org/BiRefNet](https://huggingface.co/Comfy-Org/BiRefNet/tree/main/background_removal) |\n\n---\n\n### 3-3. SeedVR2 Upscale 모델 (공용)\n\n두 노드 모두 **UPSCALE 모드**에서 동일한 모델 폴더를 사용합니다.\n\n#### → `models/SEEDVR2/`\n\n| 파일명 | 설명 | 다운로드 |\n|---|---|---|\n| `seedvr2_ema_3b_fp16.safetensors` | SeedVR2 DiT 3B FP16 | [kijai/SeedVR2-models](https://huggingface.co/kijai/SeedVR2-models/tree/main) |\n| `seedvr2_ema_3b_fp8_e4m3fn.safetensors` | SeedVR2 DiT 3B FP8 (저VRAM) | [kijai/SeedVR2-models](https://huggingface.co/kijai/SeedVR2-models/tree/main) |\n| `seedvr2_ema_7b_fp8_e4m3fn.safetensors` | SeedVR2 DiT 7B FP8 (고품질) | [kijai/SeedVR2-models](https://huggingface.co/kijai/SeedVR2-models/tree/main) |\n| `ema_vae_fp16.safetensors` | SeedVR2 VAE FP16 | [kijai/SeedVR2-models](https://huggingface.co/kijai/SeedVR2-models/tree/main) |\n\n> DiT 모델과 VAE 모델 **둘 다** 필요합니다.  \n> Upscale 모드 → **↻ Refresh** 버튼으로 모델 목록을 새로 고칩니다.\n\n---\n\n## 4. 초기 설정\n\n### 공통 (첫 실행 시 필수)\n\nComfyUI 캔버스에서 노드를 더블클릭하거나 우상단 **⚙** 버튼을 눌러 Settings를 엽니다.\n\n| 항목 | 설명 |\n|---|---|\n| **Diffusion Model** | 다운로드한 UNet/DiT 파일 선택 |\n| **Text Encoder** | 텍스트 인코더 파일 선택 |\n| **VAE** | VAE 파일 선택 |\n| **Negative Prompt** | 전 모드 공통 부정 프롬프트 |\n| **Prompt Suffix** | 모든 프롬프트 끝에 자동 추가 키워드 |\n| **Save Subfolder** | `ComfyUI/output/` 하위 저장 폴더명 |\n| **↻ Refresh Models** | ComfyUI 재시작 없이 새 모델 파일 인식 |\n\n설정은 **브라우저 로컬스토리지에 자동 저장**되어 재시작 후에도 유지됩니다.\n\n### 모델 오버라이드 슬롯 (고급)\n\nSettings → **Model Override Slot** 체크박스를 켜면 노드에 입력 슬롯이 노출됩니다.  \n`Primitive (String)` 노드를 연결해 파일명을 입력하면 드롭다운보다 우선 적용됩니다.  \n`.gguf` 파일명 입력 시 자동으로 GGUF 로더(`UnetLoaderGGUF` / `CLIPLoaderGGUF`)를 사용합니다.\n\n---\n\n## 5. 모드별 간략 설명\n\n### Z-Image ONE STUDIO (TJ)\n\n| 모드 | 설명 | 주요 설정 |\n|---|---|---|\n| **T2I** | 텍스트 → 이미지 | 해상도 프리셋, Steps, CFG, Shift, Sampler, LoRA (최대 3개) |\n| **I2I** | 이미지 → 이미지 변형 | 소스 이미지 업로드, Denoise (0.5~1.0) |\n| **INPAINT** | 특정 영역 재생성 | 소스 이미지 업로드 → 캔버스에서 마스크 직접 드로잉 |\n| **OUTPAINT** | 캔버스 확장 | 이미지 업로드 → Up/Down/Left/Right 픽셀 설정 → 빈 영역 자동 생성 |\n| **RE-BG** | 배경 완전 재생성 | BiRefNet으로 피사체 분리 → 새 배경 생성 후 합성 |\n| **CONTROLNET** | 레퍼런스 기반 생성 | 레퍼런스 이미지 업로드 → Preprocessor 선택 (Depth/Canny/Pose 등) → Strength 조절 |\n| **FACE REDRAW** | 얼굴 자동 감지 후 재생성 | YOLOv8/v9 감지 → 크롭 → LoRA 적용 재생성 → 원본에 자연 블렌드 |\n| **UPSCALE** | SeedVR2 AI 업스케일 | DiT 모델 + VAE 선택 → Resolution / Batch Size / Attention Mode 설정 |\n\n### Flux.2 Klein ONE STUDIO (TJ)\n\n| 모드 | 설명 | 주요 설정 |\n|---|---|---|\n| **T2I** | 텍스트 → 이미지 | 해상도, Steps(권장 4), CFG(권장 1), Sampler(euler_sde), LoRA (최대 3개) |\n| **I2I** | 이미지 → 이미지 변형 | 소스 이미지, Denoise 0.5~0.75(형태 유지) / 0.8~1.0(대폭 변형) |\n| **EDIT** | 멀티 레퍼런스 편집 | 참조 이미지 1~5장, Size Source (이미지1 기준 출력 크기) |\n| **PAINT** | 특정 영역 재생성 | 소스 이미지 업로드 → 캔버스 마스크 드로잉, Outpaint 지원 |\n| **FACESWAP** | 얼굴 교체 재생성 | Source(얼굴 공여자) + Target(원본) 업로드, BFS LoRA 강도 조절 |\n| **UPSCALE** | SeedVR2 AI 업스케일 | DiT 모델 + VAE 선택 → Resolution / Batch Size / Attention Mode 설정 |\n\n---\n\n## 공통 기능\n\n| 기능 | 설명 |\n|---|---|\n| **⇌ Compare** | 드래그 슬라이더로 원본 / 결과 나란히 비교. 모드 전환 후에도 상태 유지 |\n| **🖼 Gallery** | 저장된 이미지 타일 보기. 즐겨찾기(★) · 삭제 · Send to(다른 모드로 전달) |\n| **📋 Templates** | 자주 쓰는 프롬프트 저장 · 불러오기 |\n| **🔍 Prompt Edit** | 프롬프트 헤더 🔍 클릭 → 확장 편집 팝업 |\n| **Scroll Zoom** | 결과 이미지 위 마우스 스크롤 확대/축소. 🔓/🔒 버튼으로 ON/OFF |\n| **Double Click** | 결과 이미지 더블클릭 → 전체화면 뷰어 |\n| **Send to** | 결과를 다른 모드의 소스로 즉시 전달 (→ I2I / → Inpaint / → Upscale 등) |\n| **prompt_override** | 노드 입력 슬롯에 Primitive(String) 연결 → 프롬프트 앞에 일회성 추가 |\n| **ESC** | 열린 팝업 / 갤러리 / 전체화면 닫기 |\n\n---\n\n## 폴더 구조\n\n```\nComfyUI/\n├── custom_nodes/\n│   └── ComfyUI-TJ_NODE_STUDIO_ONE/     ← 이 패키지\n│\n└── models/\n    ├── diffusion_models/               ← UNet / DiT 메인 모델\n    ├── text_encoders/                  ← CLIP / Qwen / Gemma\n    ├── vae/                            ← VAE\n    ├── loras/                          ← LoRA (Faceswap BFS 포함)\n    ├── controlnet/                     ← ControlNet (Z-Image)\n    ├── ultralytics/\n    │   └── bbox/                       ← face_yolov8m.pt 등\n    ├── background_removal/             ← BiRefNet 모델\n    └── SEEDVR2/                        ← SeedVR2 DiT + VAE\n```\n\n---\n\n## 문제 해결\n\n| 증상 | 해결 방법 |\n|---|---|\n| 모델이 드롭다운에 안 보임 | Settings → ↻ **Refresh Models** 클릭 |\n| SEEDVR2 모델 목록 안 나옴 | Upscale 모드 → **↻ Refresh** 클릭 · `models/SEEDVR2/` 폴더 확인 |\n| KV Cache 오류 (Klein) | 파일명에 `kv` 미포함 시 자동 비활성화 — KV 모델 파일명 확인 |\n| GGUF 모델 안 로딩 | ComfyUI-GGUF 커스텀 노드 설치 여부 확인 |\n| Faceswap 얼굴 미감지 | ComfyUI_FaceAnalysis 설치 + `insightface` pip 설치 확인 |\n| RE-BG 오류 | ComfyUI-RMBG 설치 + `models/background_removal/` 모델 확인 |\n\n---\n\n*MIT License · [TJ NODE STUDIO ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE)*\n"
+      ],
+      "color": "#7612DA",
+      "bgcolor": "#000000"
+    }
+  ],
+  "links": [
+    [
+      10,
+      27,
+      0,
+      26,
+      1,
+      "IMAGE"
+    ],
+    [
+      11,
+      26,
+      0,
+      28,
+      0,
+      "STRING"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.6588450000000028,
+      "offset": [
+        3279.6869965094356,
+        630.2436502512795
+      ]
+    },
+    "workflowRendererVersion": "LG",
+    "ue_links": [],
+    "links_added_by_ue": [],
+    "frontendVersion": "1.45.19",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}
