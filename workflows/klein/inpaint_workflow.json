@@ -1,0 +1,180 @@
+{
+  "FKI:194": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "flux-2-klein-9b-kv.safetensors",
+      "weight_dtype": "default"
+    },
+    "_meta": { "title": "UNETLoader" }
+  },
+  "FKI:216": {
+    "class_type": "FluxKVCache",
+    "inputs": {
+      "model": ["FKI:194", 0]
+    },
+    "_meta": { "title": "Flux KV Cache" }
+  },
+  "FKI:195": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "_meta": { "title": "CLIPLoader" }
+  },
+  "FKI:196": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "_meta": { "title": "VAELoader" }
+  },
+  "FKI:6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["FKI:195", 0],
+      "text": ""
+    },
+    "_meta": { "title": "CLIP Text Encode (Positive)" }
+  },
+  "FKI:190": {
+    "class_type": "ConditioningZeroOut",
+    "inputs": {
+      "conditioning": ["FKI:6", 0]
+    },
+    "_meta": { "title": "ConditioningZeroOut (Negative)" }
+  },
+  "FKI:198": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "example.png",
+      "upload": "image"
+    },
+    "_meta": { "title": "Load Source Image" }
+  },
+  "FKI:199": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "example_mask.png",
+      "upload": "image"
+    },
+    "_meta": { "title": "Load Mask Image" }
+  },
+  "FKI:200": {
+    "class_type": "ImageToMask",
+    "inputs": {
+      "image": ["FKI:199", 0],
+      "channel": "red"
+    },
+    "_meta": { "title": "Image To Mask" }
+  },
+  "FKI:209": {
+    "class_type": "InpaintCropImproved",
+    "inputs": {
+      "image": ["FKI:198", 0],
+      "mask": ["FKI:200", 0],
+      "downscale_algorithm": "bilinear",
+      "upscale_algorithm": "bicubic",
+      "preresize": false,
+      "preresize_mode": "ensure minimum resolution",
+      "preresize_min_width": 1024,
+      "preresize_min_height": 1024,
+      "preresize_max_width": 16384,
+      "preresize_max_height": 16384,
+      "mask_fill_holes": true,
+      "mask_expand_pixels": 0,
+      "mask_invert": false,
+      "mask_blend_pixels": 32,
+      "mask_hipass_filter": 0.1,
+      "extend_for_outpainting": false,
+      "extend_up_factor": 1,
+      "extend_down_factor": 1,
+      "extend_left_factor": 1,
+      "extend_right_factor": 1,
+      "context_from_mask_extend_factor": 1.5,
+      "output_resize_to_target_size": true,
+      "output_target_width": 1024,
+      "output_target_height": 1024,
+      "output_padding": "32",
+      "device_mode": "gpu (much faster)"
+    },
+    "_meta": { "title": "InpaintCropImproved" }
+  },
+  "FKI:206": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": ["FKI:209", 1],
+      "vae": ["FKI:196", 0]
+    },
+    "_meta": { "title": "VAEEncode (ref latent)" }
+  },
+  "FKI:204": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+      "conditioning": ["FKI:6", 0],
+      "latent": ["FKI:206", 0]
+    },
+    "_meta": { "title": "ReferenceLatent Positive" }
+  },
+  "FKI:205": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+      "conditioning": ["FKI:190", 0],
+      "latent": ["FKI:206", 0]
+    },
+    "_meta": { "title": "ReferenceLatent Negative" }
+  },
+  "FKI:210": {
+    "class_type": "InpaintModelConditioning",
+    "inputs": {
+      "positive": ["FKI:204", 0],
+      "negative": ["FKI:205", 0],
+      "vae": ["FKI:196", 0],
+      "pixels": ["FKI:209", 1],
+      "mask": ["FKI:209", 2],
+      "noise_mask": true
+    },
+    "_meta": { "title": "InpaintModelConditioning" }
+  },
+  "FKI:163": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["FKI:216", 0],
+      "positive": ["FKI:210", 0],
+      "negative": ["FKI:210", 1],
+      "latent_image": ["FKI:210", 2],
+      "seed": 0,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "er_sde",
+      "scheduler": "simple",
+      "denoise": 1
+    },
+    "_meta": { "title": "KSampler" }
+  },
+  "FKI:164": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["FKI:163", 0],
+      "vae": ["FKI:196", 0]
+    },
+    "_meta": { "title": "VAEDecode" }
+  },
+  "FKI:212": {
+    "class_type": "InpaintStitchImproved",
+    "inputs": {
+      "stitcher": ["FKI:209", 0],
+      "inpainted_image": ["FKI:164", 0]
+    },
+    "_meta": { "title": "InpaintStitchImproved" }
+  },
+  "FKI:203": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["FKI:212", 0],
+      "filename_prefix": "one-node-flux-2-klein/f2k"
+    },
+    "_meta": { "title": "SaveImage" }
+  }
+}

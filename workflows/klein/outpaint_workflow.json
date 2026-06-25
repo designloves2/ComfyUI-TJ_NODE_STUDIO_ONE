@@ -1,0 +1,85 @@
+{
+  "FKO:194": {
+    "class_type": "UNETLoader",
+    "inputs": { "unet_name": "flux-2-klein-9b-kv.safetensors", "weight_dtype": "default" },
+    "_meta": { "title": "UNETLoader" }
+  },
+  "FKO:216": {
+    "class_type": "FluxKVCache",
+    "inputs": { "model": ["FKO:194", 0] },
+    "_meta": { "title": "Flux KV Cache" }
+  },
+  "FKO:195": {
+    "class_type": "CLIPLoader",
+    "inputs": { "clip_name": "qwen_3_8b_fp8mixed.safetensors", "type": "flux2", "device": "default" },
+    "_meta": { "title": "CLIPLoader" }
+  },
+  "FKO:196": {
+    "class_type": "VAELoader",
+    "inputs": { "vae_name": "flux2-vae.safetensors" },
+    "_meta": { "title": "VAELoader" }
+  },
+  "FKO:6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": { "clip": ["FKO:195", 0], "text": "" },
+    "_meta": { "title": "CLIP Text Encode (Positive)" }
+  },
+  "FKO:190": {
+    "class_type": "ConditioningZeroOut",
+    "inputs": { "conditioning": ["FKO:6", 0] },
+    "_meta": { "title": "ConditioningZeroOut (Negative)" }
+  },
+  "FKO:198": {
+    "class_type": "LoadImage",
+    "inputs": { "image": "example.png", "upload": "image" },
+    "_meta": { "title": "Load Source Image (padded)" }
+  },
+  "FKO:maskload": {
+    "class_type": "LoadImage",
+    "inputs": { "image": "example_mask.png", "upload": "image" },
+    "_meta": { "title": "Load Mask" }
+  },
+  "FKO:tomask": {
+    "class_type": "ImageToMask",
+    "inputs": { "image": ["FKO:maskload", 0], "channel": "red" },
+    "_meta": { "title": "ImageToMask" }
+  },
+  "FKO:210": {
+    "class_type": "InpaintModelConditioning",
+    "inputs": {
+      "positive": ["FKO:6", 0],
+      "negative": ["FKO:190", 0],
+      "vae": ["FKO:196", 0],
+      "pixels": ["FKO:198", 0],
+      "mask": ["FKO:tomask", 0],
+      "noise_mask": true
+    },
+    "_meta": { "title": "InpaintModelConditioning" }
+  },
+  "FKO:163": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["FKO:216", 0],
+      "positive": ["FKO:210", 0],
+      "negative": ["FKO:210", 1],
+      "latent_image": ["FKO:210", 2],
+      "seed": 0,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "er_sde",
+      "scheduler": "simple",
+      "denoise": 1
+    },
+    "_meta": { "title": "KSampler" }
+  },
+  "FKO:164": {
+    "class_type": "VAEDecode",
+    "inputs": { "samples": ["FKO:163", 0], "vae": ["FKO:196", 0] },
+    "_meta": { "title": "VAEDecode" }
+  },
+  "FKO:203": {
+    "class_type": "SaveImage",
+    "inputs": { "images": ["FKO:164", 0], "filename_prefix": "one-node-flux-2-klein/f2k" },
+    "_meta": { "title": "SaveImage" }
+  }
+}

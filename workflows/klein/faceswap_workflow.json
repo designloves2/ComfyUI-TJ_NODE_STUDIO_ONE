@@ -1,0 +1,125 @@
+{
+  "FKF:223": {
+    "class_type": "CLIPLoader",
+    "inputs": { "clip_name": "qwen_3_8b_fp8mixed.safetensors", "type": "flux2", "device": "default" },
+    "_meta": { "title": "Load CLIP" }
+  },
+  "FKF:225": {
+    "class_type": "UNETLoader",
+    "inputs": { "unet_name": "flux-2-klein-9b.safetensors", "weight_dtype": "default" },
+    "_meta": { "title": "Load Diffusion Model" }
+  },
+  "FKF:226": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "lora_name": "none",
+      "strength_model": 1,
+      "model": ["FKF:225", 0]
+    },
+    "_meta": { "title": "Load Face LoRA" }
+  },
+  "FKF:235": {
+    "class_type": "VAELoader",
+    "inputs": { "vae_name": "flux2-vae.safetensors" },
+    "_meta": { "title": "Load VAE" }
+  },
+  "FKF:234": {
+    "class_type": "LoadImage",
+    "inputs": { "image": "placeholder.png" },
+    "_meta": { "title": "Target — zmeniť tvár" }
+  },
+  "FKF:236": {
+    "class_type": "LoadImage",
+    "inputs": { "image": "placeholder.png" },
+    "_meta": { "title": "Source — požadovaná tvár" }
+  },
+  "FKF:227": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "head_swap: start with Picture 1 as the base image, keeping its lighting, environment, and background. remove the head from Picture 1 completely and replace it with the head from Picture 2, strictly preserving the hair, eye color, nose structure of Picture 2. copy the direction of the eye, head rotation, micro expressions from Picture 1, high quality, sharp details, 4k. Describe the expression in Picture 1 and copy it to the new image., look straight in to the camera",
+      "clip": ["FKF:223", 0]
+    },
+    "_meta": { "title": "Positive Prompt" }
+  },
+  "FKF:229": {
+    "class_type": "CLIPTextEncode",
+    "inputs": { "text": "", "clip": ["FKF:223", 0] },
+    "_meta": { "title": "Negative Prompt" }
+  },
+  "FKF:239": {
+    "class_type": "ModelSamplingAuraFlow",
+    "inputs": { "shift": 3, "model": ["FKF:226", 0] },
+    "_meta": { "title": "ModelSamplingAuraFlow" }
+  },
+  "FKF:231": {
+    "class_type": "GetImageSize",
+    "inputs": { "image": ["FKF:234", 0] },
+    "_meta": { "title": "Get Image Size (target)" }
+  },
+  "FKF:230": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": { "width": ["FKF:231", 0], "height": ["FKF:231", 1], "batch_size": 1 },
+    "_meta": { "title": "Empty Flux 2 Latent" }
+  },
+  "FKF:171t": {
+    "class_type": "VAEEncode",
+    "inputs": { "pixels": ["FKF:234", 0], "vae": ["FKF:235", 0] },
+    "_meta": { "title": "VAE Encode target" }
+  },
+  "FKF:172t": {
+    "class_type": "ReferenceLatent",
+    "inputs": { "conditioning": ["FKF:227", 0], "latent": ["FKF:171t", 0] },
+    "_meta": { "title": "ReferenceLatent pos target" }
+  },
+  "FKF:170t": {
+    "class_type": "ReferenceLatent",
+    "inputs": { "conditioning": ["FKF:229", 0], "latent": ["FKF:171t", 0] },
+    "_meta": { "title": "ReferenceLatent neg target" }
+  },
+  "FKF:scaleSrc": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": { "image": ["FKF:236", 0], "upscale_method": "nearest-exact", "megapixels": 1.0, "resolution_steps": 1 },
+    "_meta": { "title": "Scale Source to 1MP" }
+  },
+  "FKF:174s": {
+    "class_type": "VAEEncode",
+    "inputs": { "pixels": ["FKF:scaleSrc", 0], "vae": ["FKF:235", 0] },
+    "_meta": { "title": "VAE Encode source" }
+  },
+  "FKF:175s": {
+    "class_type": "ReferenceLatent",
+    "inputs": { "conditioning": ["FKF:172t", 0], "latent": ["FKF:174s", 0] },
+    "_meta": { "title": "ReferenceLatent pos source" }
+  },
+  "FKF:173s": {
+    "class_type": "ReferenceLatent",
+    "inputs": { "conditioning": ["FKF:170t", 0], "latent": ["FKF:174s", 0] },
+    "_meta": { "title": "ReferenceLatent neg source" }
+  },
+  "FKF:228": {
+    "class_type": "KSampler",
+    "inputs": {
+      "seed": 0,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "er_sde",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": ["FKF:239", 0],
+      "positive": ["FKF:175s", 0],
+      "negative": ["FKF:173s", 0],
+      "latent_image": ["FKF:230", 0]
+    },
+    "_meta": { "title": "KSampler" }
+  },
+  "FKF:224": {
+    "class_type": "VAEDecode",
+    "inputs": { "samples": ["FKF:228", 0], "vae": ["FKF:235", 0] },
+    "_meta": { "title": "VAE Decode" }
+  },
+  "FKF:232": {
+    "class_type": "SaveImage",
+    "inputs": { "images": ["FKF:224", 0], "filename_prefix": "one-node-flux-2-klein/f2k" },
+    "_meta": { "title": "Save Image" }
+  }
+}

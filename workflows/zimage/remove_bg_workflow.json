@@ -1,0 +1,41 @@
+{
+  "rmbg:load": {
+    "class_type": "LoadBackgroundRemovalModel",
+    "inputs": { "bg_removal_name": "birefnet.safetensors" },
+    "_meta": { "title": "Load BG Removal Model" }
+  },
+  "rmbg:img": {
+    "class_type": "LoadImage",
+    "inputs": { "image": "example.png", "upload": "image" },
+    "_meta": { "title": "Load Image" }
+  },
+  "rmbg:remove": {
+    "class_type": "RemoveBackground",
+    "inputs": {
+      "image": ["rmbg:img", 0],
+      "bg_removal_model": ["rmbg:load", 0]
+    },
+    "_meta": { "title": "Remove Background" }
+  },
+  "rmbg:invert": {
+    "class_type": "InvertMask",
+    "inputs": { "mask": ["rmbg:remove", 0] },
+    "_meta": { "title": "Invert Mask" }
+  },
+  "rmbg:join": {
+    "class_type": "JoinImageWithAlpha",
+    "inputs": {
+      "image": ["rmbg:img", 0],
+      "alpha": ["rmbg:invert", 0]
+    },
+    "_meta": { "title": "Join Image With Alpha" }
+  },
+  "rmbg:save": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["rmbg:join", 0],
+      "filename_prefix": "one-node-flux-2-klein/assets/rmbg"
+    },
+    "_meta": { "title": "Save Image" }
+  }
+}

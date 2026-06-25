@@ -1,0 +1,68 @@
+{
+  "FK:155": {
+    "inputs": { "clip_name": "qwen_3_8b_fp8mixed.safetensors", "type": "flux2", "device": "default" },
+    "class_type": "CLIPLoader",
+    "_meta": { "title": "Load CLIP" }
+  },
+  "FK:153": {
+    "inputs": { "vae_name": "flux2-vae.safetensors" },
+    "class_type": "VAELoader",
+    "_meta": { "title": "Load VAE" }
+  },
+  "FK:165": {
+    "inputs": { "unet_name": "flux-2-klein-9b.safetensors", "weight_dtype": "default" },
+    "class_type": "UNETLoader",
+    "_meta": { "title": "Load Diffusion Model" }
+  },
+  "FK:166": {
+    "inputs": { "text": "", "clip": ["FK:155", 0] },
+    "class_type": "CLIPTextEncode",
+    "_meta": { "title": "CLIP Text Encode (Positive Prompt)" }
+  },
+  "FK:156": {
+    "inputs": { "text": "", "clip": ["FK:155", 0] },
+    "class_type": "CLIPTextEncode",
+    "_meta": { "title": "CLIP Text Encode (Negative Prompt)" }
+  },
+  "FK:169": {
+    "inputs": { "shift": 3, "model": ["FK:165", 0] },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": { "title": "ModelSamplingAuraFlow" }
+  },
+  "FKI2I:img": {
+    "inputs": { "image": "example.png", "upload": "image" },
+    "class_type": "LoadImage",
+    "_meta": { "title": "Load Input Image" }
+  },
+  "FKI2I:vae": {
+    "inputs": { "pixels": ["FKI2I:img", 0], "vae": ["FK:153", 0] },
+    "class_type": "VAEEncode",
+    "_meta": { "title": "VAE Encode" }
+  },
+  "FK:171": {
+    "inputs": {
+      "seed": 0,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "er_sde",
+      "scheduler": "simple",
+      "denoise": 0.75,
+      "model": ["FK:169", 0],
+      "positive": ["FK:166", 0],
+      "negative": ["FK:156", 0],
+      "latent_image": ["FKI2I:vae", 0]
+    },
+    "class_type": "KSampler",
+    "_meta": { "title": "KSampler" }
+  },
+  "FK:152": {
+    "inputs": { "samples": ["FK:171", 0], "vae": ["FK:153", 0] },
+    "class_type": "VAEDecode",
+    "_meta": { "title": "VAE Decode" }
+  },
+  "FK:86": {
+    "inputs": { "filename_prefix": "one-node-flux-2-klein/f2k", "images": ["FK:152", 0] },
+    "class_type": "SaveImage",
+    "_meta": { "title": "Save Image" }
+  }
+}

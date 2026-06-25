@@ -1,0 +1,223 @@
+{
+  "ZIT:unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "z_image_turbo_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "_meta": {
+      "title": "Load Z-Image Turbo Diffusion Model"
+    }
+  },
+  "ZIT:clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "lumina2",
+      "device": "default"
+    },
+    "_meta": {
+      "title": "Load Text Encoder (Qwen3)"
+    }
+  },
+  "ZIT:vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "ZIT:positive": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "ZIT:clip",
+        0
+      ],
+      "text": "a photo of a cat sitting on a windowsill, soft morning light"
+    },
+    "_meta": {
+      "title": "Prompt"
+    }
+  },
+  "ZIT:negative": {
+    "class_type": "ConditioningZeroOut",
+    "inputs": {
+      "conditioning": [
+        "ZIT:positive",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Negative (zeroed — Turbo uses cfg=1)"
+    }
+  },
+  "ZIT:loadImage": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "example_control.png"
+    },
+    "_meta": {
+      "title": "Control Reference Image"
+    }
+  },
+  "ZIT:preprocess": {
+    "class_type": "AIO_Preprocessor",
+    "inputs": {
+      "image": [
+        "ZIT:loadImage",
+        0
+      ],
+      "preprocessor": "DepthAnythingPreprocessor",
+      "resolution": 1024
+    },
+    "_meta": {
+      "title": "Preprocess (depth)"
+    }
+  },
+  "ZIT:getSize": {
+    "class_type": "GetImageSize",
+    "inputs": {
+      "image": [
+        "ZIT:preprocess",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Match Output Size To Control Image"
+    }
+  },
+  "ZIT:modelPatch": {
+    "class_type": "ModelPatchLoader",
+    "inputs": {
+      "name": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"
+    },
+    "_meta": {
+      "title": "Load ControlNet Union Patch"
+    }
+  },
+  "ZIT:controlnetApply": {
+    "class_type": "ZImageFunControlnet",
+    "inputs": {
+      "model": [
+        "ZIT:unet",
+        0
+      ],
+      "model_patch": [
+        "ZIT:modelPatch",
+        0
+      ],
+      "vae": [
+        "ZIT:vae",
+        0
+      ],
+      "positive": [
+        "ZIT:positive",
+        0
+      ],
+      "negative": [
+        "ZIT:negative",
+        0
+      ],
+      "strength": 1,
+      "image": [
+        "ZIT:preprocess",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Z-Image Fun ControlNet Union"
+    }
+  },
+  "ZIT:modelSampling": {
+    "class_type": "ModelSamplingAuraFlow",
+    "inputs": {
+      "model": [
+        "ZIT:controlnetApply",
+        0
+      ],
+      "shift": 3
+    },
+    "_meta": {
+      "title": "Model Sampling (AuraFlow)"
+    }
+  },
+  "ZIT:latent": {
+    "class_type": "EmptySD3LatentImage",
+    "inputs": {
+      "width": [
+        "ZIT:getSize",
+        0
+      ],
+      "height": [
+        "ZIT:getSize",
+        1
+      ],
+      "batch_size": 1
+    },
+    "_meta": {
+      "title": "Empty Latent (matched to control image)"
+    }
+  },
+  "ZIT:sampler": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "ZIT:modelSampling",
+        0
+      ],
+      "positive": [
+        "ZIT:controlnetApply",
+        1
+      ],
+      "negative": [
+        "ZIT:controlnetApply",
+        2
+      ],
+      "latent_image": [
+        "ZIT:latent",
+        0
+      ],
+      "seed": 0,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "res_multistep",
+      "scheduler": "simple",
+      "denoise": 1
+    },
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "ZIT:vaeDecode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "ZIT:sampler",
+        0
+      ],
+      "vae": [
+        "ZIT:vae",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "ZIT:save": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "ZIT:vaeDecode",
+        0
+      ],
+      "filename_prefix": "one-node-z-image-turbo/ZIT"
+    },
+    "_meta": {
+      "title": "Save Image"
+    }
+  }
+}

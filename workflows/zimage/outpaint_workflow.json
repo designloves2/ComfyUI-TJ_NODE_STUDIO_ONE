@@ -1,0 +1,237 @@
+{
+  "ZIT:unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "z_image_turbo_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "_meta": {
+      "title": "Load Z-Image Turbo Diffusion Model"
+    }
+  },
+  "ZIT:clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "lumina2",
+      "device": "default"
+    },
+    "_meta": {
+      "title": "Load Text Encoder (Qwen3)"
+    }
+  },
+  "ZIT:vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "ZIT:modelSampling": {
+    "class_type": "ModelSamplingAuraFlow",
+    "inputs": {
+      "model": [
+        "ZIT:unet",
+        0
+      ],
+      "shift": 3
+    },
+    "_meta": {
+      "title": "Model Sampling (AuraFlow)"
+    }
+  },
+  "ZIT:positive": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "ZIT:clip",
+        0
+      ],
+      "text": "a photo of a cat sitting on a windowsill, soft morning light"
+    },
+    "_meta": {
+      "title": "Prompt"
+    }
+  },
+  "ZIT:negative": {
+    "class_type": "ConditioningZeroOut",
+    "inputs": {
+      "conditioning": [
+        "ZIT:positive",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Negative (zeroed — Turbo uses cfg=1)"
+    }
+  },
+  "ZIT:loadImage": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "example_input.png"
+    },
+    "_meta": {
+      "title": "Source Image"
+    }
+  },
+  "ZIT:emptyMask": {
+    "class_type": "SolidMask",
+    "inputs": {
+      "value": 0,
+      "width": 8,
+      "height": 8
+    },
+    "_meta": {
+      "title": "Empty Mask (auto-filled by crop node)"
+    }
+  },
+  "ZIT:crop": {
+    "class_type": "InpaintCropImproved",
+    "inputs": {
+      "image": [
+        "ZIT:loadImage",
+        0
+      ],
+      "mask": [
+        "ZIT:emptyMask",
+        0
+      ],
+      "downscale_algorithm": "bilinear",
+      "upscale_algorithm": "bicubic",
+      "preresize": false,
+      "preresize_mode": "ensure minimum resolution",
+      "preresize_min_width": 1024,
+      "preresize_min_height": 1024,
+      "preresize_max_width": 16384,
+      "preresize_max_height": 16384,
+      "mask_fill_holes": true,
+      "mask_expand_pixels": 0,
+      "mask_invert": false,
+      "mask_blend_pixels": 32,
+      "mask_hipass_filter": 0.1,
+      "extend_for_outpainting": true,
+      "extend_up_factor": 0,
+      "extend_down_factor": 0.5,
+      "extend_left_factor": 0,
+      "extend_right_factor": 0,
+      "context_from_mask_extend_factor": 1.5,
+      "output_resize_to_target_size": true,
+      "output_target_width": 1024,
+      "output_target_height": 1024,
+      "output_padding": "32",
+      "device_mode": "gpu (much faster)"
+    },
+    "_meta": {
+      "title": "Outpaint Crop"
+    }
+  },
+  "ZIT:vaeEncode": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "ZIT:crop",
+        1
+      ],
+      "vae": [
+        "ZIT:vae",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "ZIT:noiseMask": {
+    "class_type": "SetLatentNoiseMask",
+    "inputs": {
+      "samples": [
+        "ZIT:vaeEncode",
+        0
+      ],
+      "mask": [
+        "ZIT:crop",
+        2
+      ]
+    },
+    "_meta": {
+      "title": "Set Noise Mask"
+    }
+  },
+  "ZIT:sampler": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "ZIT:modelSampling",
+        0
+      ],
+      "positive": [
+        "ZIT:positive",
+        0
+      ],
+      "negative": [
+        "ZIT:negative",
+        0
+      ],
+      "latent_image": [
+        "ZIT:noiseMask",
+        0
+      ],
+      "seed": 0,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "res_multistep",
+      "scheduler": "simple",
+      "denoise": 1
+    },
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "ZIT:vaeDecode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "ZIT:sampler",
+        0
+      ],
+      "vae": [
+        "ZIT:vae",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "ZIT:stitch": {
+    "class_type": "InpaintStitchImproved",
+    "inputs": {
+      "stitcher": [
+        "ZIT:crop",
+        0
+      ],
+      "inpainted_image": [
+        "ZIT:vaeDecode",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Inpaint Stitch"
+    }
+  },
+  "ZIT:save": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "ZIT:stitch",
+        0
+      ],
+      "filename_prefix": "one-node-z-image-turbo/ZIT"
+    },
+    "_meta": {
+      "title": "Save Image"
+    }
+  }
+}

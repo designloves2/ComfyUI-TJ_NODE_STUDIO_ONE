@@ -1,0 +1,121 @@
+{
+  "autofill_prompts": {
+    "sketch": "Transform this sketch into a hyper-realistic photographic scene. Interpret the lines as real-world objects with high-quality textures, cinematic lighting, and natural shadows. Maintain the original composition while adding depth, realistic materials, and 8k resolution details. Scene description: [briefly describe what your sketch shows]",
+    "inpaint": "Edit the masked area: [DESCRIBE THE CHANGE — add, remove, replace, or modify the content]. Seamlessly blend with the surrounding scene, preserving the original lighting, shadows, depth of field, and photo grain.",
+    "outpaint": "Extend the composition of this image. Replace all black or empty spaces with a logical continuation of the background and foreground. Ensure the transition is invisible and the new elements perfectly match the perspective and color palette of the original image. Scene description: [briefly describe what should appear in the expanded areas]"
+  },
+  "lora_triggers_custom": {},
+  "t2i_templates": [
+    {
+      "name": "Foggy street deer",
+      "prompt": "A silhouetted deer stands on a wet suburban street in thick cool-blue fog. Ahead, a parked car's red taillights reflect on the damp asphalt. Warm orange streetlamps and glowing house windows pierce the cinematic, moody night atmosphere."
+    },
+    {
+      "name": "Girl in the lavender coat",
+      "prompt": "A highly stylized fashion illustration showcasing a character with angular geometric design and exaggeratedly elongated proportions. The figure stands against a pure white background, sporting a large black afro and wearing an oversized lavender coat paired with a pink top and beige trousers. She is carrying a brown tote bag, with the entire composition defined by bold color blocking and a rich digital gouache texture."
+    },
+    {
+      "name": "Cyber girl with black lipstick",
+      "prompt": "A high-fashion beauty portrait of a woman with bold graphic makeup against a light gray background. She wears sharp black winged eyeliner, terracotta eyeshadow, and matte black lipstick. Captured from a low angle with a confident downward gaze, her slicked-back hair reveals minimalist silver earrings. Flawless skin texture and diffused studio lighting emphasize the tight-cropped, avant-garde aesthetic."
+    },
+    {
+      "name": "70s sci-fi armchair",
+      "prompt": "An armchair faces a luminous window in a deep, void-like environment rendered in a 1970s sci-fi airbrush style. The scene is dominated by rich ultramarine and pitch-black tones, pierced by intense neon orange, vivid crimson, and pale-yellow light from the window. This dramatic lighting creates a sharp contrast, accentuating a granular, stippled texture on the edges of the chair and frame against smooth shadow gradients. Soft plumes of glowing red and yellow mist billow around the base, while brilliant four-point starburst glints radiate from the sharpest highlights."
+    },
+    {
+      "name": "Red futuristic car",
+      "prompt": "A low-angle studio shot captures a futuristic sports coupe bathed in monochromatic crimson light against a seamless red backdrop. The vehicle features a metallic burgundy finish, a glossy monolithic front fascia, and sharp vertical LED headlamps emitting cyan illumination. The prominent foreground wheel showcases deep-dish turbine-style alloy rims. Electric blue ambient light glows through the windshield. A wide-angle lens exaggerates the aggressive lowered stance and sweeping aerodynamic curves, emphasizing the high-contrast aesthetic and vivid reflections."
+    },
+    {
+      "name": "Girl with the giant hat",
+      "prompt": "An avant-garde fashion portrait captures a woman looking back over her shoulder against a muted cool grey gradient background. An enormous black circular hat frames her face in silhouette, complementing her geometric black bangs and dark red lips. She wears a black dress with thin straps, accented by a single oversized flat silver disc earring. The scene features a moody, ethereal atmosphere enhanced by cinematic lighting, a heavy soft focus blur, and a shallow depth of field."
+    },
+    {
+      "name": "Smeary silhouettes on the ridge",
+      "prompt": "Three stark, high-contrast black silhouettes of figures walk along a ridgeline subjected to severe optical distortion and fluid, lateral smearing. The underlying terrain of hills, scattered trees, and foreground flowers is warped into heavy, elongated streaks and abstract curves. Overhead, a heavily distorted, intensely bright sun bleeds into a blown-out white sky filled with dragged cloud shadows and jagged, stretched shapes of birds. The entire monochromatic composition is unified by harsh lighting, heavy film grain, and an experimental darkroom aesthetic that aggressively liquefies every organic shape."
+    },
+    {
+      "name": "Fox in the wheat",
+      "prompt": "A young fox is gently peeking through tall, vibrant green wheat stalks. The fox stands out with its large, fuzzy ears as she holds a direct gaze into the camera. The scene is beautifully illuminated by soft natural light, while a blurred foreground elegantly frames the majestic animal."
+    },
+    {
+      "name": "Church in the mist",
+      "prompt": "A black and white landscape photograph of a steepled church atop a rolling hill, rising from a dense, glowing sea of low-lying fog. Dark trees flank the structure. Behind it, layers of forested ridges recede into misty mountain peaks under an overcast sky. The scene features profound atmospheric depth, contrasting the bright, sweeping mist against the sharply silhouetted terrain."
+    },
+    {
+      "name": "Queen in the green dress",
+      "prompt": "A high-fashion portrait of a statuesque model with a close buzz cut against a stark white studio background. She wears an emerald green halter dress entirely covered in layered, rectangular fabric fringes. One arm crosses her torso, fingers resting on the opposite bare shoulder. She is adorned with cascading hammered gold earrings and a wide matching gold cuff bracelet, both embedded with tiny jewels. Dramatic lighting casts rich shadows across her collarbones and facial structure, highlighting glossy dark lips and the shimmering texture of the gold jewelry. The low-angle perspective emphasizes a regal, commanding presence."
+    },
+    {
+      "name": "Mountains with fog and cabins",
+      "prompt": "Rolling golden-brown hills bathed in warm, diffused light emerge through thick, low-lying morning mist. A solitary slender tree stands in the hazy foreground valley, while two small rustic wooden cabins rest on a gentle ridge to the right. A dense horizontal band of white clouds separates the lower pastures from towering, jagged mountain peaks dominating the background. The massive rocky summits, lightly dusted with snow, fade into a pale, hazy sky. The wide-angle landscape photography emphasizes profound atmospheric depth, ethereal cinematic lighting, and a soft natural color palette contrasting the golden-ochre foreground with the cool, muted grey and blue distant peaks."
+    },
+    {
+      "name": "Katana Uniform Girl",
+      "prompt": "In the center of this cinematic, night-time urban tableau stands a woman in a strikingly modernized sailor fuku uniform. Her white blouse, accented with navy blue trim along the collar and cuffs, contrasts sharply with her short, black, slightly tousled hair that frames a face turned to reveal intense eyes looking directly at the viewer. She is captured mid-movement as she draws a gleaming Japanese katana from its saya (scabbard), which hangs loosely around her waist; another blade rests on her back. Her outfit completes with a high-waisted, pleated black vinyl skirt that skims above her thighs and sheer black lace garters holding up opaque thigh-high stockings.\n\nShe is positioned atop what appears to be a rooftop ledge or platform, offering an expansive view of the illuminated cityscape below. The background features a vibrant bokeh effect created by countless out-of-focus lights from buildings, streets, and vehicles stretching into the distance under a deep indigo night sky. A prominent skyscraper rises behind her left shoulder, its upper floors glowing with vertical streaks of white light against the darkened facade. To the right, other structures contribute to the dense urban environment, their windows twinkling like scattered stars.\n\nThe lighting is dramatic and atmospheric, employing strong key lights that illuminate the front of the subject while casting soft shadows that add depth to her form. Rim lighting traces the edges of her hair and shoulders, separating her from the darker backdrop and enhancing her silhouette against the bright city lights. There’s an evident filmic quality to the image: a slight grain texture pervades, lending a gritty realism to the scene; colors have been desaturated subtly, with warm yellows and oranges muted beneath cool blues and greens; and there's an overall sense of motion blur or lens flare that adds dynamism without losing clarity.\n\nThe shallow depth of field keeps the focus tightly centered on the woman, blurring both the foreground elements (if any exist) and distant details, ensuring all attention is drawn to her poised stance and expressive gaze. The composition utilizes a rule-of-thirds alignment for visual balance—her body occupies roughly two-thirds of the frame horizontally—and incorporates leading lines from the city's architecture to guide the eye toward her as the focal point.\n\nEvery element contributes to an evocative blend of youthful innocence, fierce determination, and urban grit—a striking fusion embodied by the juxtaposition of traditional Japanese weaponry against a contemporary fashion style within a bustling metropolitan setting. This image captures not just a moment but a mood: intense, mysterious, and visually arresting in its narrative potential."
+    }
+  ],
+  "discover_prompts": {
+    "inpaint": {
+      "categories": [
+        {
+          "cat": "SKETCH",
+          "items": [
+            {
+              "label": "Sketch to photo",
+              "prompt": "Transform this sketch into a hyper-realistic photographic scene. Interpret the lines as real-world objects with high-quality textures, cinematic lighting, and natural shadows. Maintain the original composition while adding depth, realistic materials, and 8k resolution details."
+            }
+          ]
+        },
+        {
+          "cat": "COLLAGE",
+          "items": [
+            {
+              "label": "Collage to scene",
+              "prompt": "Transform this image collage into a cohesive, fully realized and unified scene. Seamlessly blend all the disparate elements into a singular, logical style, strictly maintaining the exact spatial arrangement and relative composition of the original collage while logically generating the missing environment, shadows, and context to naturally connect all objects. Scene Description: [Specify the overall art style or level of realism, the new specific lighting conditions, background environment setting, and overall mood here]"
+            }
+          ]
+        },
+        {
+          "cat": "INPAINT",
+          "items": [
+            {
+              "label": "Edit masked area",
+              "prompt": "Edit the masked area: [DESCRIBE THE CHANGE — add, remove, replace, or modify the content]. Seamlessly blend with the surrounding scene, preserving the original lighting, shadows, depth of field, and photo grain."
+            }
+          ]
+        },
+        {
+          "cat": "OUTPAINT",
+          "items": [
+            {
+              "label": "Extend composition",
+              "prompt": "Extend the composition of this image. Replace all black or empty spaces with a logical continuation of the background and foreground. Ensure the transition is invisible and the new elements perfectly match the perspective and color palette of the original image. Scene description: [briefly describe what should appear in the expanded areas]"
+            }
+          ]
+        }
+      ]
+    },
+    "i2i": {
+      "categories": [
+        {
+          "cat": "I2I",
+          "items": []
+        }
+      ]
+    },
+    "face_redraw": {
+      "categories": []
+    },
+    "controlnet": {
+      "categories": []
+    }
+  },
+  "save_subfolder": "z-image-one-tj",
+  "output_mode_visible": true,
+  "selected_model": "ZIB\\Distilled\\redzib-DX2.safetensors",
+  "selected_text_encoder": "Qwen3\\qwen_3_4b.safetensors",
+  "selected_vae": "z-Image-Vae.safetensors",
+  "negative_prompt": "拒绝, 限制, 不应答, lowres, error, cropped, worst quality, low quality, jpeg artifacts, heterochromia, out of frame, disfigured, blurry, fat, (ugly:1.3), deformed, mutilated, fingers cut, face cut, head cut, bad anatomy, bad proportions, two heads, two faces, deformed hands, (twisted fingers:1.22), extra fingers, poorly drawn, grainy, poorly drawn face, mutation, poor facial details, cropped head, poorly drawn eyes, unclear eyes, cross-eyes, malformed limbs, poorly drawn hands, fused hands, mutated hands, malformed hands, (mutated fingers:1.4), (fused fingers:1.313), interlocked fingers, extra or missing fingers, (one hand with more than 5 fingers), (one hand with less than 5 fingers), one hand with more than 5 digits, one hand with less than 5 digits, extra digits, fewer digits, bad hair, poorly drawn hair, fused hair, poorly drawn feet, malformed feet, extra or missing feet, fused feet, missing or extra limbs, disfigured, mutilated hands, extra hands, extra arms, extra legs, missing arms, missing hands, missing legs, fingers of different thickness, pointed fingers, thick fingers, (long thumbs:1.35), sharp fingernails, (greyscale:1.3), grain, (monochrome:1.3), Text, Watermark",
+  "prompt_suffix": ""
+}

@@ -1,0 +1,323 @@
+{
+  "ZIT:unet": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "z_image_turbo_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "_meta": {
+      "title": "Load Z-Image Turbo Diffusion Model"
+    }
+  },
+  "ZIT:clip": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "lumina2",
+      "device": "default"
+    },
+    "_meta": {
+      "title": "Load Text Encoder (Qwen3)"
+    }
+  },
+  "ZIT:vae": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "ZIT:lora0": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": [
+        "ZIT:unet",
+        0
+      ],
+      "lora_name": "example_person_lora.safetensors",
+      "strength_model": 0.9
+    },
+    "_meta": {
+      "title": "LoRA: example_person_lora.safetensors"
+    }
+  },
+  "ZIT:positive": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "ZIT:clip",
+        0
+      ],
+      "text": "a photo of TOK person, detailed face"
+    },
+    "_meta": {
+      "title": "Prompt"
+    }
+  },
+  "ZIT:negative": {
+    "class_type": "ConditioningZeroOut",
+    "inputs": {
+      "conditioning": [
+        "ZIT:positive",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Negative (zeroed)"
+    }
+  },
+  "ZIT:loadImage": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "example_portrait.png"
+    },
+    "_meta": {
+      "title": "Source Image"
+    }
+  },
+  "ZIT:bboxProvider": {
+    "class_type": "UltralyticsDetectorProvider",
+    "inputs": {
+      "model_name": "face_yolov8m.pt"
+    },
+    "_meta": {
+      "title": "Face Detector"
+    }
+  },
+  "ZIT:faceMask": {
+    "class_type": "BboxDetectorCombined_v2",
+    "inputs": {
+      "bbox_detector": [
+        "ZIT:bboxProvider",
+        0
+      ],
+      "image": [
+        "ZIT:loadImage",
+        0
+      ],
+      "threshold": 0.5,
+      "dilation": 4
+    },
+    "_meta": {
+      "title": "Face → Mask"
+    }
+  },
+  "ZIT:crop": {
+    "class_type": "InpaintCropImproved",
+    "inputs": {
+      "image": [
+        "ZIT:loadImage",
+        0
+      ],
+      "mask": [
+        "ZIT:faceMask",
+        0
+      ],
+      "downscale_algorithm": "bilinear",
+      "upscale_algorithm": "bicubic",
+      "preresize": false,
+      "preresize_mode": "ensure minimum resolution",
+      "preresize_min_width": 1024,
+      "preresize_min_height": 1024,
+      "preresize_max_width": 16384,
+      "preresize_max_height": 16384,
+      "mask_fill_holes": true,
+      "mask_expand_pixels": 0,
+      "mask_invert": false,
+      "mask_blend_pixels": 32,
+      "mask_hipass_filter": 0.1,
+      "extend_for_outpainting": false,
+      "extend_up_factor": 1,
+      "extend_down_factor": 1,
+      "extend_left_factor": 1,
+      "extend_right_factor": 1,
+      "context_from_mask_extend_factor": 1.8,
+      "output_resize_to_target_size": true,
+      "output_target_width": 1024,
+      "output_target_height": 1024,
+      "output_padding": "32",
+      "device_mode": "gpu (much faster)"
+    },
+    "_meta": {
+      "title": "Crop To Face"
+    }
+  },
+  "ZIT:depthPre": {
+    "class_type": "AIO_Preprocessor",
+    "inputs": {
+      "image": [
+        "ZIT:crop",
+        1
+      ],
+      "preprocessor": "DepthAnythingPreprocessor",
+      "resolution": 1024
+    },
+    "_meta": {
+      "title": "Depth Guide (face shape)"
+    }
+  },
+  "ZIT:modelPatch": {
+    "class_type": "ModelPatchLoader",
+    "inputs": {
+      "name": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"
+    },
+    "_meta": {
+      "title": "Load ControlNet Union Patch"
+    }
+  },
+  "ZIT:controlnetApply": {
+    "class_type": "ZImageFunControlnet",
+    "inputs": {
+      "model": [
+        "ZIT:lora0",
+        0
+      ],
+      "model_patch": [
+        "ZIT:modelPatch",
+        0
+      ],
+      "vae": [
+        "ZIT:vae",
+        0
+      ],
+      "positive": [
+        "ZIT:positive",
+        0
+      ],
+      "negative": [
+        "ZIT:negative",
+        0
+      ],
+      "strength": 1,
+      "image": [
+        "ZIT:depthPre",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Depth Control (preserve face shape)"
+    }
+  },
+  "ZIT:modelSampling": {
+    "class_type": "ModelSamplingAuraFlow",
+    "inputs": {
+      "model": [
+        "ZIT:controlnetApply",
+        0
+      ],
+      "shift": 3
+    },
+    "_meta": {
+      "title": "Model Sampling (AuraFlow)"
+    }
+  },
+  "ZIT:vaeEncode": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "ZIT:crop",
+        1
+      ],
+      "vae": [
+        "ZIT:vae",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "ZIT:noiseMask": {
+    "class_type": "SetLatentNoiseMask",
+    "inputs": {
+      "samples": [
+        "ZIT:vaeEncode",
+        0
+      ],
+      "mask": [
+        "ZIT:crop",
+        2
+      ]
+    },
+    "_meta": {
+      "title": "Set Noise Mask"
+    }
+  },
+  "ZIT:sampler": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "ZIT:modelSampling",
+        0
+      ],
+      "positive": [
+        "ZIT:controlnetApply",
+        1
+      ],
+      "negative": [
+        "ZIT:controlnetApply",
+        2
+      ],
+      "latent_image": [
+        "ZIT:noiseMask",
+        0
+      ],
+      "seed": 0,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "res_multistep",
+      "scheduler": "simple",
+      "denoise": 0.55
+    },
+    "_meta": {
+      "title": "KSampler (face only)"
+    }
+  },
+  "ZIT:vaeDecode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "ZIT:sampler",
+        0
+      ],
+      "vae": [
+        "ZIT:vae",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "ZIT:stitch": {
+    "class_type": "InpaintStitchImproved",
+    "inputs": {
+      "stitcher": [
+        "ZIT:crop",
+        0
+      ],
+      "inpainted_image": [
+        "ZIT:vaeDecode",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Blend Back Into Original"
+    }
+  },
+  "ZIT:save": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "ZIT:stitch",
+        0
+      ],
+      "filename_prefix": "one-node-z-image-turbo/ZIT"
+    },
+    "_meta": {
+      "title": "Save Image"
+    }
+  }
+}
