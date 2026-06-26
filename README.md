@@ -46,6 +46,31 @@ ComfyUI를 재시작하면 Add Node 메뉴에서 두 노드를 모두 찾을 수
 
 ## 필수 커스텀 노드
 
+> **아래 노드들을 수동으로 설치하기 번거롭다면 자동 설치 스크립트를 사용하세요.**
+
+### ⚡ 자동 설치 (권장)
+
+이 패키지 폴더 안에 포함된 스크립트를 실행하면 필수 노드를 한 번에 설치합니다.
+
+**Windows:**
+
+```
+install_requirements.bat  ← 더블클릭으로 실행
+```
+
+**Mac / Linux:**
+
+```bash
+chmod +x install_requirements.sh
+./install_requirements.sh
+```
+
+- 이미 설치된 노드는 자동으로 건너뜁니다
+- `requirements.txt`가 있는 노드는 pip install까지 자동 처리
+- 완료 후 ComfyUI를 재시작하면 모든 노드가 로드됩니다
+
+### 수동 설치 목록
+
 | 노드                                                         | 용도                                             | 필수 대상               |
 | ------------------------------------------------------------ | ------------------------------------------------ | ----------------------- |
 | [ComfyUI-Impact-Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack) | FaceDetailer — 얼굴 감지·재생성·블렌드 핵심 엔진 | Z-Image Face Redraw     |
@@ -56,7 +81,6 @@ ComfyUI를 재시작하면 Add Node 메뉴에서 두 노드를 모두 찾을 수
 | [ComfyUI-RMBG](https://github.com/1038lab/ComfyUI-RMBG)      | 배경 제거                                        | Z-Image RE-BG           |
 | [comfyui_controlnet_aux](https://github.com/Fannovel16/comfyui_controlnet_aux) | ControlNet 전처리기                              | Z-Image ControlNet      |
 | [ComfyUI-SeedVR2](https://github.com/kijai/ComfyUI-SeedVR2)  | SeedVR2 AI 업스케일 노드                         | Klein & Z-Image Upscale |
-
 ---
 
 ## Z-Image ONE STUDIO — 기능 상세
