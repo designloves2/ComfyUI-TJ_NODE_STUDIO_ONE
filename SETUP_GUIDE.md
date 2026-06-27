@@ -1,4 +1,4 @@
-# TJ NODE ONE — 설치 및 설정 가이드
+# TJ NODE STUDIO ONE — 설치 및 설정 가이드
 
 > **Z-Image ONE STUDIO · Flux.2 Klein ONE STUDIO · Qwen Image Edit 2511 ONE STUDIO · Krea 2 ONE STUDIO**  
 > ComfyUI 올인원 이미지 생성 UI — 워크플로우 배선 없이 노드 하나에서 T2I · I2I · Inpaint · Outpaint · Edit · Faceswap · Upscale 등 모든 모드를 전환합니다.
@@ -24,7 +24,7 @@
 |---|---|---|
 | **TJ_NODE_STUDIO_ONE** | Z-Image · Klein · QE2511 · Krea2 ONE STUDIO 통합 | [ComfyUI-TJ_NODE_STUDIO_ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE) |
 
-> **설치**: ComfyUI Manager → Install Custom Nodes → `ComfyUI-TJ_NODE_STUDIO_ONE` 검색
+> **설치**: ComfyUI Manager → Install Custom Nodes → `ComfyUI-TJ_NODE_STUDIO_ONE` 검색  
 > 또는 수동: `cd ComfyUI/custom_nodes && git clone https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE.git`
 
 ### 함께 쓰면 더 강력한 — TJ_NODE
@@ -39,7 +39,7 @@
 
 ### ⚡ 자동 설치 스크립트 (권장)
 
-이 패키지 폴더(`ComfyUI-TJ_NODE_STUDIO_ONE/`) 안에 설치 스크립트가 포함되어 있습니다.
+이 패키지 폴더(`ComfyUI-TJ_NODE_STUDIO_ONE/`) 안에 설치 스크립트가 포함되어 있습니다.  
 필수 노드 **8개를 한 번에** 설치하고 pip requirements까지 처리합니다.
 
 **Windows** — 파일 탐색기에서 더블클릭:
@@ -185,6 +185,12 @@ chmod +x install_requirements.sh
 | 파일명 | 다운로드 |
 |---|---|
 | `Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors` | [HF 목록](https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit/tree/main/split_files/loras) |
+
+#### Multi Angle LoRA → `models/loras/`  *(Angle 모드 필수)*
+
+| 파일명                                                  | 다운로드                                                     |
+| ------------------------------------------------------- | ------------------------------------------------------------ |
+| `qwen-image-edit-2511-multiple-angles-lora.safetensors` | [HF 목록](https://huggingface.co/fal/Qwen-Image-Edit-2511-Multiple-Angles-LoRA) |
 
 #### BFS LoRA → `models/loras/`  *(Faceswap 모드 필수)*
 

@@ -18,7 +18,7 @@ You end up with 8 browser tabs, 6 workflow files, and you're manually copy-pasti
 
 ## What Is This
 
-**TJ NODE ONE** is a ComfyUI UI extension built around one idea: **you shouldn't need to be a node graph engineer just to generate and iterate on images.**
+**TJ NODE STUDIO ONE** is a ComfyUI UI extension built around one idea: **you shouldn't need to be a node graph engineer just to generate and iterate on images.**
 
 One node on the canvas. Every mode lives inside its panel. No wiring, no routing, no "wait which output goes into which input again."
 
@@ -201,7 +201,7 @@ This installs all 8 required nodes in one shot, skips anything already installed
 
 > **[ComfyUI-TJ_NODE](https://github.com/designloves2/ComfyUI-TJ_NODE)** — the node package this studio was built to work with.
 
-If TJ NODE ONE is the cockpit, **TJ_NODE is the engine room.**
+If TJ NODE STUDIO ONE is the cockpit, **TJ_NODE is the engine room.**
 
 | Node | What it does |
 |---|---|
@@ -240,6 +240,18 @@ A: That's literally the whole point.
 **TJ NODE STUDIO ONE (this):** https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE
 
 **TJ NODE — Wireless Workflow Architecture Toolkit:** https://github.com/designloves2/ComfyUI-TJ_NODE
+
+---
+
+## Acknowledgements
+
+The core idea and architecture of this node family originated from **[yanokusnir-ai](https://github.com/yanokusnir-ai)**'s open-source work:
+
+> **[one-node-flux-2-klein](https://github.com/yanokusnir-ai/one-node-flux-2-klein)**  
+> — The original single-node, all-in-one concept for Flux.2 Klein
+
+TJ NODE STUDIO ONE (Z-Image · Klein · QE2511 · Krea2) grew out of that idea — expanding it to multiple models and modes.  
+Deep thanks to the original author for the inspiration and for keeping it open source. 🙏
 
 ---
 

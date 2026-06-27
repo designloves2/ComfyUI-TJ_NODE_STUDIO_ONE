@@ -1,4 +1,4 @@
-# TJ NODE ONE (통합 패키지)
+# TJ NODE STUDIO ONE (통합 패키지)
 
 > **ComfyUI 올인원 이미지 생성 UI 패키지** — Z-Image ONE STUDIO, Flux.2 Klein ONE STUDIO, Qwen Image Edit 2511 ONE STUDIO, Krea 2 ONE STUDIO 네 가지 노드를 단일 패키지로 제공합니다.  
 > 워크플로우 배선 없이 노드 하나에서 T2I · I2I · Inpaint · Outpaint · ControlNet · Edit · Faceswap · ANGLE · Upscale(SeedVR2) 등 다양한 모드를 전환합니다.
@@ -6,7 +6,10 @@
 > ⚠️ **생성 방식**: 모든 노드의 생성은 ComfyUI 상단 **RUN**이 아닌 노드 내부의 **▶ Generate** 버튼으로 실행합니다. RUN 실행 시 마지막으로 생성된 이미지가 OUTPUT image 슬롯으로 출력됩니다.
 
 ---
-<img width="1201" height="916" alt="Screen Shot 2026-06-27 at 05 58 39 907 AM" src="https://github.com/user-attachments/assets/aaf0686e-e09b-43b4-8aff-c6d369e5f06c" />
+
+<img width="1201" height="816" alt="Screen Shot 2026-06-27 at 05 58 39 907 AM" src="https://github.com/user-attachments/assets/aaf0686e-e09b-43b4-8aff-c6d369e5f06c" />
+
+
 
 ## 목차
 
@@ -25,12 +28,12 @@
 
 ## 포함 노드
 
-| 노드 이름                                | 대상 모델                       | 지원 모드                                                    |
-| ---------------------------------------- | ------------------------------- | ------------------------------------------------------------ |
-| **Z-Image ONE STUDIO (TJ)**              | Z-Image Turbo (flow-matching)   | T2I · I2I · Inpaint · Outpaint · RE-BG · ControlNet · Face Redraw · **Upscale** |
-| **Flux.2 Klein ONE STUDIO (TJ)**         | Flux.2-Klein (9B / 4B)          | T2I · I2I · Edit · **Inpaint · Outpaint** · Faceswap · **Upscale** |
+| 노드 이름 | 대상 모델 | 지원 모드 |
+|---|---|---|
+| **Z-Image ONE STUDIO (TJ)** | Z-Image Turbo (flow-matching) | T2I · I2I · Inpaint · Outpaint · RE-BG · ControlNet · Face Redraw · **Upscale** |
+| **Flux.2 Klein ONE STUDIO (TJ)** | Flux.2-Klein (9B / 4B) | T2I · I2I · Edit · **Inpaint · Outpaint** · Faceswap · **Upscale** |
 | **Qwen Image Edit 2511 ONE STUDIO (TJ)** | Qwen2.5-VL 기반 Image Edit 모델 | T2I · I2I · Edit(최대 3장) · Inpaint · **Outpaint** · Faceswap · **Angle** · **Upscale** |
-| **Krea 2 ONE STUDIO (TJ)**               | Krea.ai 이미지 생성 모델        | T2I · I2I · **Upscale**                                      |
+| **Krea 2 ONE STUDIO (TJ)** | Krea.ai 이미지 생성 모델 | T2I · I2I · **Upscale** |
 
 > **언어 지원**: 모든 노드의 Settings에서 한국어 / English 전환 가능
 
@@ -62,13 +65,11 @@ ComfyUI를 재시작하면 Add Node 메뉴에서 모든 노드를 찾을 수 있
 이 패키지 폴더 안에 포함된 스크립트를 실행하면 필수 노드를 한 번에 설치합니다.
 
 **Windows:**
-
 ```
 install_requirements.bat  ← 더블클릭으로 실행
 ```
 
 **Mac / Linux:**
-
 ```bash
 chmod +x install_requirements.sh
 ./install_requirements.sh
@@ -80,16 +81,16 @@ chmod +x install_requirements.sh
 
 ### 수동 설치 목록
 
-| 노드                                                         | 용도                                             | 필수 대상               |
-| ------------------------------------------------------------ | ------------------------------------------------ | ----------------------- |
-| [ComfyUI-Impact-Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack) | FaceDetailer — 얼굴 감지·재생성·블렌드 핵심 엔진 | Z-Image Face Redraw     |
-| [ComfyUI-Impact-Subpack](https://github.com/ltdrdata/ComfyUI-Impact-Subpack) | Impact Pack 필수 서브팩 (함께 설치 필요)         | Z-Image Face Redraw     |
-| [ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes)  | FluxKVCache · ImagePadKJ · FluxKontext 관련 노드 | Klein · QE2511          |
-| [ComfyUI-GGUF](https://github.com/city96/ComfyUI-GGUF)       | GGUF 형식 모델 로딩                              | 선택 (GGUF 사용 시)     |
-| [ComfyUI_FaceAnalysis](https://github.com/cubiq/ComfyUI_FaceAnalysis) | Faceswap 모드 얼굴 감지                          | Klein · QE2511 Faceswap |
-| [ComfyUI-RMBG](https://github.com/1038lab/ComfyUI-RMBG)      | 배경 제거                                        | Z-Image RE-BG           |
-| [comfyui_controlnet_aux](https://github.com/Fannovel16/comfyui_controlnet_aux) | ControlNet 전처리기                              | Z-Image ControlNet      |
-| [ComfyUI-SeedVR2](https://github.com/kijai/ComfyUI-SeedVR2)  | SeedVR2 AI 업스케일 노드                         | 전체 노드 Upscale 모드  |
+| 노드 | 용도 | 필수 대상 |
+|---|---|---|
+| [ComfyUI-Impact-Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack) | FaceDetailer — 얼굴 감지·재생성·블렌드 핵심 엔진 | Z-Image Face Redraw |
+| [ComfyUI-Impact-Subpack](https://github.com/ltdrdata/ComfyUI-Impact-Subpack) | Impact Pack 필수 서브팩 (함께 설치 필요) | Z-Image Face Redraw |
+| [ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes) | FluxKVCache · ImagePadKJ · FluxKontext 관련 노드 | Klein · QE2511 |
+| [ComfyUI-GGUF](https://github.com/city96/ComfyUI-GGUF) | GGUF 형식 모델 로딩 | 선택 (GGUF 사용 시) |
+| [ComfyUI_FaceAnalysis](https://github.com/cubiq/ComfyUI_FaceAnalysis) | Faceswap 모드 얼굴 감지 | Klein · QE2511 Faceswap |
+| [ComfyUI-RMBG](https://github.com/1038lab/ComfyUI-RMBG) | 배경 제거 | Z-Image RE-BG |
+| [comfyui_controlnet_aux](https://github.com/Fannovel16/comfyui_controlnet_aux) | ControlNet 전처리기 | Z-Image ControlNet |
+| [ComfyUI-SeedVR2](https://github.com/kijai/ComfyUI-SeedVR2) | SeedVR2 AI 업스케일 노드 | 전체 노드 Upscale 모드 |
 
 ---
 
@@ -97,25 +98,25 @@ chmod +x install_requirements.sh
 
 ### 지원 모드
 
-| 모드            | 설명                                                         |
-| --------------- | ------------------------------------------------------------ |
-| **T2I**         | 텍스트 → 이미지 기본 생성                                    |
-| **I2I**         | 소스 이미지 기반 변형 생성                                   |
-| **INPAINT**     | 내장 마스크 에디터로 특정 영역만 재생성 (DifferentialDiffusion) |
-| **OUTPAINT**    | 이미지 캔버스 확장 후 빈 영역 인페인트                       |
-| **RE-BG**       | RMBG로 서브젝트 분리 → 배경 완전 재생성 (경계선 없음)        |
-| **CONTROLNET**  | Depth / Canny / Pose / HED / MLSD 레퍼런스 가이드 생성       |
-| **FACE REDRAW** | 얼굴 자동 감지 → 크롭 → LoRA 재생성 → 원본에 블렌드          |
-| **UPSCALE**     | SeedVR2 AI 업스케일 — DiT 모델 기반 초고해상도 변환          |
+| 모드 | 설명 |
+|---|---|
+| **T2I** | 텍스트 → 이미지 기본 생성 |
+| **I2I** | 소스 이미지 기반 변형 생성 |
+| **INPAINT** | 내장 마스크 에디터로 특정 영역만 재생성 (DifferentialDiffusion) |
+| **OUTPAINT** | 이미지 캔버스 확장 후 빈 영역 인페인트 |
+| **RE-BG** | RMBG로 서브젝트 분리 → 배경 완전 재생성 (경계선 없음) |
+| **CONTROLNET** | Depth / Canny / Pose / HED / MLSD 레퍼런스 가이드 생성 |
+| **FACE REDRAW** | 얼굴 자동 감지 → 크롭 → LoRA 재생성 → 원본에 블렌드 |
+| **UPSCALE** | SeedVR2 AI 업스케일 — DiT 모델 기반 초고해상도 변환 |
 
 ### 필수 모델
 
-| 종류              | 경로                       | 다운로드                                                     |
-| ----------------- | -------------------------- | ------------------------------------------------------------ |
-| Diffusion Model   | `models/diffusion_models/` | [z_image_turbo_bf16](https://huggingface.co/Comfy-Org/z_image_turbo) |
-| Text Encoder      | `models/text_encoders/`    | [qwen_3_4b](https://huggingface.co/Comfy-Org/z_image_turbo)  |
-| VAE               | `models/vae/`              | [ae.safetensors](https://huggingface.co/Comfy-Org/z_image_turbo) |
-| ControlNet (선택) | `models/controlnet/`       | [Z-Image-Turbo-Fun-Controlnet-Union](https://huggingface.co/alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union) |
+| 종류 | 경로 | 다운로드 |
+|---|---|---|
+| Diffusion Model | `models/diffusion_models/` | [z_image_turbo_bf16](https://huggingface.co/Comfy-Org/z_image_turbo) |
+| Text Encoder | `models/text_encoders/` | [qwen_3_4b](https://huggingface.co/Comfy-Org/z_image_turbo) |
+| VAE | `models/vae/` | [ae.safetensors](https://huggingface.co/Comfy-Org/z_image_turbo) |
+| ControlNet (선택) | `models/controlnet/` | [Z-Image-Turbo-Fun-Controlnet-Union](https://huggingface.co/alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union) |
 
 ---
 
@@ -123,24 +124,24 @@ chmod +x install_requirements.sh
 
 ### 지원 모드
 
-| 모드         | 설명                                                  |
-| ------------ | ----------------------------------------------------- |
-| **T2I**      | 텍스트 → 이미지 기본 생성                             |
-| **I2I**      | 소스 이미지 기반 변형 생성                            |
-| **EDIT**     | 레퍼런스 이미지 1~5장 기반 멀티 레퍼런스 편집         |
-| **PAINT**    | 내장 마스크 에디터로 특정 영역 재생성 + Outpaint 지원 |
-| **FACESWAP** | BFS 얼굴 LoRA를 사용한 얼굴 교체·재생성               |
-| **UPSCALE**  | SeedVR2 AI 업스케일 — DiT 모델 기반 초고해상도 변환   |
+| 모드 | 설명 |
+|---|---|
+| **T2I** | 텍스트 → 이미지 기본 생성 |
+| **I2I** | 소스 이미지 기반 변형 생성 |
+| **EDIT** | 레퍼런스 이미지 1~5장 기반 멀티 레퍼런스 편집 |
+| **PAINT** | 내장 마스크 에디터로 특정 영역 재생성 + Outpaint 지원 |
+| **FACESWAP** | BFS 얼굴 LoRA를 사용한 얼굴 교체·재생성 |
+| **UPSCALE** | SeedVR2 AI 업스케일 — DiT 모델 기반 초고해상도 변환 |
 
 ### 필수 모델
 
-| 종류                | 경로                       | 다운로드                                                     |
-| ------------------- | -------------------------- | ------------------------------------------------------------ |
-| Diffusion Model     | `models/diffusion_models/` | [BFL FLUX.2 Collection](https://huggingface.co/collections/black-forest-labs/flux2) |
-| Text Encoder (9B)   | `models/text_encoders/`    | [Comfy-Org 9B pack](https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b) |
-| Text Encoder (4B)   | `models/text_encoders/`    | [Comfy-Org 4B pack](https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-4b) |
-| VAE                 | `models/vae/`              | [Comfy-Org 9B pack](https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b) |
-| BFS LoRA (Faceswap) | `models/loras/`            | [BFS-Best-Face-Swap](https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap) |
+| 종류 | 경로 | 다운로드 |
+|---|---|---|
+| Diffusion Model | `models/diffusion_models/` | [BFL FLUX.2 Collection](https://huggingface.co/collections/black-forest-labs/flux2) |
+| Text Encoder (9B) | `models/text_encoders/` | [Comfy-Org 9B pack](https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b) |
+| Text Encoder (4B) | `models/text_encoders/` | [Comfy-Org 4B pack](https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-4b) |
+| VAE | `models/vae/` | [Comfy-Org 9B pack](https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b) |
+| BFS LoRA (Faceswap) | `models/loras/` | [BFS-Best-Face-Swap](https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap) |
 
 > **KV Cache**: 파일명에 `kv`가 포함된 모델은 자동으로 FluxKVCache 노드를 활성화합니다.
 
@@ -150,26 +151,26 @@ chmod +x install_requirements.sh
 
 ### 지원 모드
 
-| 모드         | 설명                                                         |
-| ------------ | ------------------------------------------------------------ |
-| **T2I**      | 텍스트로 이미지 생성                                         |
-| **I2I**      | 소스 이미지 기반 변형 생성                                   |
-| **EDIT**     | 텍스트 프롬프트로 이미지 편집. 원본 + 참조 이미지 최대 3장 지원 |
-| **PAINT**    | 마스크 영역 인페인트. Outpaint(캔버스 확장) 포함             |
-| **FACESWAP** | BFS LoRA를 활용한 얼굴 교체. 자동 기본 프롬프트 제공         |
-| **ANGLE**    | 3D 씬에서 카메라 앵글(H/V/Z) 드래그 조절. Camera Angle LoRA는 ⚙ Settings에서 설정 |
-| **UPSCALE**  | SeedVR2 AI 업스케일                                          |
+| 모드 | 설명 |
+|---|---|
+| **T2I** | 텍스트로 이미지 생성 |
+| **I2I** | 소스 이미지 기반 변형 생성 |
+| **EDIT** | 텍스트 프롬프트로 이미지 편집. 원본 + 참조 이미지 최대 3장 지원 |
+| **PAINT** | 마스크 영역 인페인트. Outpaint(캔버스 확장) 포함 |
+| **FACESWAP** | BFS LoRA를 활용한 얼굴 교체. 자동 기본 프롬프트 제공 |
+| **ANGLE** | 3D 씬에서 카메라 앵글(H/V/Z) 드래그 조절. Camera Angle LoRA는 ⚙ Settings에서 설정 |
+| **UPSCALE** | SeedVR2 AI 업스케일 |
 
 ### 필수 모델
 
-| 종류                     | 경로                       | 다운로드                                                     |
-| ------------------------ | -------------------------- | ------------------------------------------------------------ |
-| Diffusion Model          | `models/diffusion_models/` | [Comfy-Org QE2511](https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit) |
-| Text Encoder             | `models/text_encoders/`    | [Comfy-Org QE2511](https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit) |
-| VAE                      | `models/vae/`              | [Comfy-Org QE2511](https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit) |
-| Lightning LoRA (선택)    | `models/loras/`            | [Qwen-Image-Edit-2511-Lightning](https://huggingface.co/lightx2v/Qwen-Image-Edit-2511-Lightning/tree/main) |
-| Camera Angle LoRA (선택) | `models/loras/`            | [Multi Angle LoRa](https://huggingface.co/fal/Qwen-Image-Edit-2511-Multiple-Angles-LoRA) |
-| BFS LoRA (Faceswap 필수) | `models/loras/`            | [BFS-Best-Face-Swap](https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap) |
+| 종류 | 경로 | 다운로드 |
+|---|---|---|
+| Diffusion Model | `models/diffusion_models/` | [Comfy-Org QE2511](https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit) |
+| Text Encoder | `models/text_encoders/` | [Comfy-Org QE2511](https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit) |
+| VAE | `models/vae/` | [Comfy-Org QE2511](https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit) |
+| Lightning LoRA (선택) | `models/loras/` | [Qwen-Image-Edit-2511-Lightning](https://huggingface.co/lightx2v/Qwen-Image-Edit-2511-Lightning/tree/main) |
+| Camera Angle LoRA (선택) | `models/loras/` | [Multi Angle LoRa](https://huggingface.co/fal/Qwen-Image-Edit-2511-Multiple-Angles-LoRA) |
+| BFS LoRA (Faceswap 필수) | `models/loras/` | [BFS-Best-Face-Swap](https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap) |
 
 > **내부 의존 노드**: `FluxKontextImageScale` · `TextEncodeQwenImageEditPlus` · `FluxKontextMultiReferenceLatentMethod` — ComfyUI-KJNodes에 포함
 
@@ -179,20 +180,20 @@ chmod +x install_requirements.sh
 
 ### 지원 모드
 
-| 모드        | 설명                       |
-| ----------- | -------------------------- |
-| **T2I**     | 텍스트로 이미지 생성       |
-| **I2I**     | 소스 이미지 기반 변형 생성 |
-| **UPSCALE** | SeedVR2 AI 업스케일        |
+| 모드 | 설명 |
+|---|---|
+| **T2I** | 텍스트로 이미지 생성 |
+| **I2I** | 소스 이미지 기반 변형 생성 |
+| **UPSCALE** | SeedVR2 AI 업스케일 |
 
 ### 필수 모델
 
-| 종류                  | 경로                       | 다운로드                                                  |
-| --------------------- | -------------------------- | --------------------------------------------------------- |
-| Diffusion Model       | `models/diffusion_models/` | [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea2) |
-| Text Encoder          | `models/text_encoders/`    | [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea2) |
-| VAE                   | `models/vae/`              | [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea2) |
-| Lightning LoRA (선택) | `models/loras/`            | [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea2) |
+| 종류 | 경로 | 다운로드 |
+|---|---|---|
+| Diffusion Model | `models/diffusion_models/` | [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea2) |
+| Text Encoder | `models/text_encoders/` | [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea2) |
+| VAE | `models/vae/` | [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea2) |
+| Lightning LoRA (선택) | `models/loras/` | [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea2) |
 
 ---
 
@@ -210,8 +211,8 @@ chmod +x install_requirements.sh
 
 ### SeedVR2 Upscale 모델 (전체 노드 공용)
 
-| 경로              | 파일           | 다운로드                                                     |
-| ----------------- | -------------- | ------------------------------------------------------------ |
+| 경로 | 파일 | 다운로드 |
+|---|---|---|
 | `models/SEEDVR2/` | DiT + VAE 모델 | [kijai/SeedVR2-models](https://huggingface.co/kijai/SeedVR2-models) |
 
 ### LoRA
@@ -233,8 +234,8 @@ chmod +x install_requirements.sh
 
 ### 단축키
 
-| 키    | 동작                               |
-| ----- | ---------------------------------- |
+| 키 | 동작 |
+|---|---|
 | `ESC` | 열린 팝업 / 갤러리 / 오버레이 닫기 |
 
 ---
@@ -264,15 +265,16 @@ chmod +x install_requirements.sh
 
 > **[ComfyUI-TJ_NODE](https://github.com/designloves2/ComfyUI-TJ_NODE)** — Wireless Workflow Architecture Toolkit
 
-| TJ_NODE 주요 노드         | 기능                                                  |
-| ------------------------- | ----------------------------------------------------- |
-| **Prompt Studio (TJ)**    | LLM 기반 프롬프트 생성 · 강화 · 이미지→프롬프트 변환  |
-| **Scene Maker (TJ)**      | Visual Beat 프롬프트 구조 노드. KO/EN/JP/CN 자동 번역 |
+| TJ_NODE 주요 노드 | 기능 |
+|---|---|
+| **Prompt Studio (TJ)** | LLM 기반 프롬프트 생성 · 강화 · 이미지→프롬프트 변환 |
+| **Scene Maker (TJ)** | Visual Beat 프롬프트 구조 노드. KO/EN/JP/CN 자동 번역 |
 | **Wireless Architecture** | Fake-Wire 무선 라우팅 · Multi Router · Batch Workflow |
 
 **→ [github.com/designloves2/ComfyUI-TJ_NODE](https://github.com/designloves2/ComfyUI-TJ_NODE)**
 
 ---
+
 # TJ NODE STUDIO ONE — 설치 및 설정 가이드
 
 > **Z-Image ONE STUDIO · Flux.2 Klein ONE STUDIO · Qwen Image Edit 2511 ONE STUDIO · Krea 2 ONE STUDIO**  
@@ -295,11 +297,11 @@ chmod +x install_requirements.sh
 
 ### 이 패키지 (통합 설치)
 
-| 패키지          | 설명                                             | GitHub                                                       |
-| --------------- | ------------------------------------------------ | ------------------------------------------------------------ |
+| 패키지                 | 설명                                             | GitHub                                                       |
+| ---------------------- | ------------------------------------------------ | ------------------------------------------------------------ |
 | **TJ_NODE_STUDIO_ONE** | Z-Image · Klein · QE2511 · Krea2 ONE STUDIO 통합 | [ComfyUI-TJ_NODE_STUDIO_ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE) |
 
-> **설치**: ComfyUI Manager → Install Custom Nodes → `ComfyUI-TJ_NODE_STUDIO_ONE` 검색
+> **설치**: ComfyUI Manager → Install Custom Nodes → `ComfyUI-TJ_NODE_STUDIO_ONE` 검색  
 > 또는 수동: `cd ComfyUI/custom_nodes && git clone https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE.git`
 
 ### 함께 쓰면 더 강력한 — TJ_NODE
@@ -314,7 +316,7 @@ chmod +x install_requirements.sh
 
 ### ⚡ 자동 설치 스크립트 (권장)
 
-이 패키지 폴더(`ComfyUI-TJ_NODE_STUDIO_ONE/`) 안에 설치 스크립트가 포함되어 있습니다.
+이 패키지 폴더(`ComfyUI-TJ_NODE_STUDIO_ONE/`) 안에 설치 스크립트가 포함되어 있습니다.  
 필수 노드 **8개를 한 번에** 설치하고 pip requirements까지 처리합니다.
 
 **Windows** — 파일 탐색기에서 더블클릭:
@@ -652,14 +654,21 @@ ComfyUI/
 ```
 
 ---
-## Acknowledgements
 
-The core idea and architecture of this node family originated from **[yanokusnir-ai](https://github.com/yanokusnir-ai)**'s open-source work:
+
+
+## 감사의 말 (Acknowledgements)
+
+이 패키지의 핵심 아이디어와 기본 구조는 **[yanokusnir-ai](https://github.com/yanokusnir-ai)** 님의 오픈소스 프로젝트에서 영감을 받아 탄생했습니다.
 
 > **[one-node-flux-2-klein](https://github.com/yanokusnir-ai/one-node-flux-2-klein)**  
-> — The original single-node, all-in-one concept for Flux.2 Klein
+> — 단일 노드에서 Flux.2 Klein을 올인원으로 다루는 핵심 아이디어의 원작
 
-TJ NODE STUDIO ONE (Z-Image · Klein · QE2511 · Krea2) grew out of that idea — expanding it to multiple models and modes.  
-Deep thanks to the original author for the inspiration and for keeping it open source. 🙏
+TJ NODE STUDIO ONE 패밀리(Z-Image · Klein · QE2511 · Krea2)는 이 아이디어를 기반으로 다중 모델·다중 모드로 확장한 파생 작업입니다.  
+원작자의 기여와 오픈소스 정신에 진심으로 감사드립니다. 🙏
+
+---
+
+## 라이선스
 
 *MIT License · [TJ NODE STUDIO ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE)*
