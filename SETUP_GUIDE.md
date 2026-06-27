@@ -370,4 +370,4 @@ ComfyUI/
 
 ---
 
-*MIT License · [TJ NODE ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_ONE)*
+*MIT License · [TJ NODE ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE)*
