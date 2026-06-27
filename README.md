@@ -652,5 +652,14 @@ ComfyUI/
 ```
 
 ---
+## Acknowledgements
+
+The core idea and architecture of this node family originated from **[yanokusnir-ai](https://github.com/yanokusnir-ai)**'s open-source work:
+
+> **[one-node-flux-2-klein](https://github.com/yanokusnir-ai/one-node-flux-2-klein)**  
+> — The original single-node, all-in-one concept for Flux.2 Klein
+
+TJ NODE STUDIO ONE (Z-Image · Klein · QE2511 · Krea2) grew out of that idea — expanding it to multiple models and modes.  
+Deep thanks to the original author for the inspiration and for keeping it open source. 🙏
 
 *MIT License · [TJ NODE STUDIO ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE)*
