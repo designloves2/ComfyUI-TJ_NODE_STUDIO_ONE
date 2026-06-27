@@ -41,7 +41,7 @@ REPOS=(
     "https://github.com/ltdrdata/ComfyUI-Impact-Pack"
     "https://github.com/ltdrdata/ComfyUI-Impact-Subpack"
     "https://github.com/kijai/ComfyUI-KJNodes"
-    "https://github.com/kijai/ComfyUI-SeedVR2"
+    "https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler"
     "https://github.com/cubiq/ComfyUI_FaceAnalysis"
     "https://github.com/1038lab/ComfyUI-RMBG"
     "https://github.com/Fannovel16/comfyui_controlnet_aux"
