@@ -90,7 +90,7 @@ chmod +x install_requirements.sh
 | [ComfyUI_FaceAnalysis](https://github.com/cubiq/ComfyUI_FaceAnalysis) | Faceswap 모드 얼굴 감지 | Klein · QE2511 Faceswap |
 | [ComfyUI-RMBG](https://github.com/1038lab/ComfyUI-RMBG) | 배경 제거 | Z-Image RE-BG |
 | [comfyui_controlnet_aux](https://github.com/Fannovel16/comfyui_controlnet_aux) | ControlNet 전처리기 | Z-Image ControlNet |
-| [ComfyUI-SeedVR2](https://github.com/kijai/ComfyUI-SeedVR2) | SeedVR2 AI 업스케일 노드 | 전체 노드 Upscale 모드 |
+| [ComfyUI-SeedVR2](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler) | SeedVR2 AI 업스케일 노드 | 전체 노드 Upscale 모드 |
 
 ---
 
@@ -165,9 +165,9 @@ chmod +x install_requirements.sh
 
 | 종류 | 경로 | 다운로드 |
 |---|---|---|
-| Diffusion Model | `models/diffusion_models/` | [Comfy-Org QE2511](https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit) |
-| Text Encoder | `models/text_encoders/` | [Comfy-Org QE2511](https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit) |
-| VAE | `models/vae/` | [Comfy-Org QE2511](https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit) |
+| Diffusion Model | `models/diffusion_models/` | [Comfy-Org QE2511](https://huggingface.co/Comfy-Org/Qwen-Image-Edit_ComfyUI/tree/main/split_files/diffusion_models) |
+| Text Encoder | `models/text_encoders/` | [Comfy-Org QE2511](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/tree/main/split_files/text_encoders) |
+| VAE | `models/vae/` | [Comfy-Org QE2511](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/tree/main/split_files/vae) |
 | Lightning LoRA (선택) | `models/loras/` | [Qwen-Image-Edit-2511-Lightning](https://huggingface.co/lightx2v/Qwen-Image-Edit-2511-Lightning/tree/main) |
 | Camera Angle LoRA (선택) | `models/loras/` | [Multi Angle LoRa](https://huggingface.co/fal/Qwen-Image-Edit-2511-Multiple-Angles-LoRA) |
 | BFS LoRA (Faceswap 필수) | `models/loras/` | [BFS-Best-Face-Swap](https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap) |
@@ -190,10 +190,9 @@ chmod +x install_requirements.sh
 
 | 종류 | 경로 | 다운로드 |
 |---|---|---|
-| Diffusion Model | `models/diffusion_models/` | [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea2) |
-| Text Encoder | `models/text_encoders/` | [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea2) |
-| VAE | `models/vae/` | [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea2) |
-| Lightning LoRA (선택) | `models/loras/` | [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea2) |
+| Diffusion Model | `models/diffusion_models/` | [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea-2/tree/main/diffusion_models) |
+| Text Encoder | `models/text_encoders/` | [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea-2/tree/main/text_encoders) |
+| VAE | `models/vae/` | [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea-2/tree/main/vae) |
 
 ---
 
@@ -213,7 +212,7 @@ chmod +x install_requirements.sh
 
 | 경로 | 파일 | 다운로드 |
 |---|---|---|
-| `models/SEEDVR2/` | DiT + VAE 모델 | [kijai/SeedVR2-models](https://huggingface.co/kijai/SeedVR2-models) |
+| `models/SEEDVR2/` | DiT + VAE 모델 | [SeedVR2-models](https://huggingface.co/numz/SeedVR2_comfyUI/tree/main) |
 
 ### LoRA
 
@@ -347,7 +346,7 @@ chmod +x install_requirements.sh
 | **ComfyUI_FaceAnalysis**   | Faceswap 얼굴 임베딩 분석                        | Klein · QE2511 Faceswap | [cubiq/ComfyUI_FaceAnalysis](https://github.com/cubiq/ComfyUI_FaceAnalysis) |
 | **ComfyUI-RMBG**           | 배경 제거 (RE-BG 모드)                           | Z-Image · RE-BG         | [1038lab/ComfyUI-RMBG](https://github.com/1038lab/ComfyUI-RMBG) |
 | **comfyui_controlnet_aux** | ControlNet 전처리기 (Depth · Canny · Pose 등)    | Z-Image · ControlNet    | [Fannovel16/comfyui_controlnet_aux](https://github.com/Fannovel16/comfyui_controlnet_aux) |
-| **ComfyUI-SeedVR2**        | SeedVR2 AI 업스케일 (UPSCALE 모드)               | 전체 노드               | [kijai/ComfyUI-SeedVR2](https://github.com/kijai/ComfyUI-SeedVR2) |
+| **ComfyUI-SeedVR2**        | SeedVR2 AI 업스케일 (UPSCALE 모드)               | 전체 노드               | [numz](https://github.com/numz) [ComfyUI-SeedVR2_VideoUpscaler](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler) |
 
 ---
 
@@ -390,10 +389,9 @@ chmod +x install_requirements.sh
 
 #### BG Removal → `models/background_removal/`  *(RE-BG 모드 사용 시)*
 
-| 파일명                          | 다운로드                                                     |
-| ------------------------------- | ------------------------------------------------------------ |
-| `BiRefNet-general.pth` **권장** | [다운로드](https://huggingface.co/ZhengPeng7/BiRefNet/resolve/main/BiRefNet-general.pth) |
-| `BiRefNet-portrait.pth`         | [다운로드](https://huggingface.co/ZhengPeng7/BiRefNet-portrait/resolve/main/BiRefNet-portrait.pth) |
+| 다운로드                                                     |      |
+| ------------------------------------------------------------ | ---- |
+| [Comfy-Org/BiRefNet — background_removal](https://huggingface.co/Comfy-Org/BiRefNet/tree/main/background_removal) |      |
 
 ---
 
@@ -444,26 +442,26 @@ chmod +x install_requirements.sh
 
 | 파일명                                      | 설명                    | 다운로드                                                     |
 | ------------------------------------------- | ----------------------- | ------------------------------------------------------------ |
-| `Qwen2.5-VL-7B-Image-Edit-bf16.safetensors` | 메인 모델 BF16 **권장** | [HF 목록](https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit/tree/main/split_files/diffusion_models) |
-| GGUF 경량 버전                              | 저VRAM 환경             | [HF 목록](https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit/tree/main/split_files/diffusion_models) |
+| `Qwen2.5-VL-7B-Image-Edit-bf16.safetensors` | 메인 모델 BF16 **권장** | [HF 목록](https://huggingface.co/Comfy-Org/Qwen-Image-Edit_ComfyUI/tree/main/split_files/diffusion_models) |
+| GGUF 경량 버전                              | 저VRAM 환경             | [HF 목록](https://huggingface.co/unsloth/Qwen-Image-Edit-2511-GGUF/tree/main) |
 
 #### Text Encoder (CLIPLoader qwen_image) → `models/text_encoders/`
 
 | 파일명                                 | 다운로드                                                     |
 | -------------------------------------- | ------------------------------------------------------------ |
-| `qwen2.5vl-7b-vis-encoder.safetensors` | [HF 목록](https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit/tree/main/split_files/text_encoders) |
+| `qwen2.5vl-7b-vis-encoder.safetensors` | [HF 목록](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/tree/main/split_files/text_encoders) |
 
 #### VAE → `models/vae/`
 
 | 파일명           | 다운로드                                                     |
 | ---------------- | ------------------------------------------------------------ |
-| `ae.safetensors` | [HF 목록](https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit/tree/main/split_files/vae) |
+| `ae.safetensors` | [HF 목록](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/tree/main/split_files/vae) |
 
 #### Lightning LoRA → `models/loras/`  *(4스텝 고속 생성, 선택사항)*
 
 | 파일명                                                       | 다운로드                                                     |
 | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| `Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors` | [HF 목록](https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit/tree/main/split_files/loras) |
+| `Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors` | [HF 목록](https://huggingface.co/lightx2v/Qwen-Image-Edit-2511-Lightning/tree/main) |
 
 #### Multi Angle LoRA → `models/loras/`  *(Angle 모드 필수)*
 
@@ -485,27 +483,21 @@ chmod +x install_requirements.sh
 
 #### Diffusion Model → `models/diffusion_models/`
 
-| 설명                   | 다운로드                                                     |
-| ---------------------- | ------------------------------------------------------------ |
-| Krea2 UNet (GGUF 포함) | [HF 목록](https://huggingface.co/Comfy-Org/Krea2/tree/main/split_files/diffusion_models) |
+| 설명  | 다운로드                                                     |
+| ----- | ------------------------------------------------------------ |
+| Krea2 | [HF 목록](https://huggingface.co/Comfy-Org/Krea-2/tree/main/diffusion_models) |
 
 #### Text Encoder (CLIP krea2) → `models/text_encoders/`
 
 | 다운로드                                                     |
 | ------------------------------------------------------------ |
-| [HF 목록](https://huggingface.co/Comfy-Org/Krea2/tree/main/split_files/text_encoders) |
+| [HF 목록](https://huggingface.co/Comfy-Org/Krea-2/tree/main/text_encoders) |
 
 #### VAE → `models/vae/`
 
 | 다운로드                                                     |
 | ------------------------------------------------------------ |
-| [HF 목록](https://huggingface.co/Comfy-Org/Krea2/tree/main/split_files/vae) |
-
-#### Lightning LoRA → `models/loras/`  *(4스텝 고속 생성, 선택사항)*
-
-| 다운로드                                                     |
-| ------------------------------------------------------------ |
-| [HF 목록](https://huggingface.co/Comfy-Org/Krea2/tree/main/split_files/loras) |
+| [HF 목록](https://huggingface.co/Comfy-Org/Krea-2/tree/main/vae) |
 
 ---
 
@@ -517,10 +509,10 @@ chmod +x install_requirements.sh
 
 | 파일명                                  | 설명                | 다운로드                                                     |
 | --------------------------------------- | ------------------- | ------------------------------------------------------------ |
-| `seedvr2_ema_3b_fp16.safetensors`       | DiT 3B FP16         | [kijai/SeedVR2-models](https://huggingface.co/kijai/SeedVR2-models/tree/main) |
-| `seedvr2_ema_3b_fp8_e4m3fn.safetensors` | DiT 3B FP8 (저VRAM) | [kijai/SeedVR2-models](https://huggingface.co/kijai/SeedVR2-models/tree/main) |
-| `seedvr2_ema_7b_fp8_e4m3fn.safetensors` | DiT 7B FP8 (고품질) | [kijai/SeedVR2-models](https://huggingface.co/kijai/SeedVR2-models/tree/main) |
-| `ema_vae_fp16.safetensors`              | VAE FP16            | [kijai/SeedVR2-models](https://huggingface.co/kijai/SeedVR2-models/tree/main) |
+| `seedvr2_ema_3b_fp16.safetensors`       | DiT 3B FP16         | [SeedVR2-models](https://huggingface.co/numz/SeedVR2_comfyUI/tree/main) |
+| `seedvr2_ema_3b_fp8_e4m3fn.safetensors` | DiT 3B FP8 (저VRAM) | [SeedVR2-models](https://huggingface.co/numz/SeedVR2_comfyUI/tree/main) |
+| `seedvr2_ema_7b_fp8_e4m3fn.safetensors` | DiT 7B FP8 (고품질) | [SeedVR2-models](https://huggingface.co/numz/SeedVR2_comfyUI/tree/main) |
+| `ema_vae_fp16.safetensors`              | VAE FP16            | [SeedVR2-models](https://huggingface.co/numz/SeedVR2_comfyUI/tree/main) |
 
 > DiT 모델과 VAE 모델 **둘 다** 필요합니다.  
 > Upscale 모드 → **↻ Refresh** 버튼으로 모델 목록을 새로 고칩니다.

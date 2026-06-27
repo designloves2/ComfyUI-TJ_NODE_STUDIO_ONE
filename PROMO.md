@@ -1,4 +1,4 @@
-# I Made a Single ComfyUI Node That Does Everything — T2I, I2I, Inpaint, Outpaint, Faceswap, Camera Angle, BG Removal, AND AI Upscale. No Wiring. Ever.
+# Single ComfyUI Node That Does Everything — T2I, I2I, Inpaint, Outpaint, Faceswap, Camera Angle, BG Removal, AND AI Upscale. No Wiring. Ever.
 
 > **Free · Open Source · GitHub**  
 > Four all-in-one nodes: **Z-Image Turbo** · **Flux.2 Klein 9B** · **Qwen Image Edit 2511** · **Krea 2**  
@@ -168,7 +168,7 @@ This installs all 8 required nodes in one shot, skips anything already installed
 | [ComfyUI-Impact-Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack) | Face Redraw mode (Z-Image) |
 | [ComfyUI-Impact-Subpack](https://github.com/ltdrdata/ComfyUI-Impact-Subpack) | Required alongside Impact Pack |
 | [ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes) | Klein KV Cache · ImagePadKJ · QE2511 FluxKontext nodes |
-| [ComfyUI-SeedVR2](https://github.com/kijai/ComfyUI-SeedVR2) | UPSCALE mode (all nodes) |
+| [ComfyUI-SeedVR2](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler) | UPSCALE mode (all nodes) |
 | [ComfyUI_FaceAnalysis](https://github.com/cubiq/ComfyUI_FaceAnalysis) | Faceswap mode (Klein · QE2511) |
 | [ComfyUI-RMBG](https://github.com/1038lab/ComfyUI-RMBG) | RE-BG mode (Z-Image) |
 | [comfyui_controlnet_aux](https://github.com/Fannovel16/comfyui_controlnet_aux) | ControlNet preprocessors (Z-Image) |
@@ -182,17 +182,19 @@ This installs all 8 required nodes in one shot, skips anything already installed
 - VAE: [ae.safetensors](https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors) → `models/vae/`
 
 **Flux.2 Klein 9B:**
+
 - Diffusion: [Black Forest Labs HF Collection](https://huggingface.co/collections/black-forest-labs/flux2) → `models/diffusion_models/`
 - Text Encoder + VAE: [Comfy-Org 9B pack](https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b/tree/main/split_files) → `models/text_encoders/` + `models/vae/`
 
 **Qwen Image Edit 2511:**
-- All model files: [Comfy-Org QE2511](https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit) → `models/diffusion_models/` + `models/text_encoders/` + `models/vae/`
+- All model files: [Comfy-Org QE2511](https://huggingface.co/Comfy-Org/Qwen-Image-Edit_ComfyUI/tree/main/split_files) → `models/diffusion_models/` + `models/text_encoders/` + `models/vae/`
 
 **Krea 2:**
+
 - All model files: [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea2) → `models/diffusion_models/` + `models/text_encoders/` + `models/vae/`
 
 **SeedVR2 (UPSCALE mode — all nodes):**
-- [kijai/SeedVR2-models](https://huggingface.co/kijai/SeedVR2-models/tree/main) → `models/SEEDVR2/`
+- [SeedVR2-models](https://huggingface.co/numz/SeedVR2_comfyUI/tree/main) → `models/SEEDVR2/`
 - You need: DiT file (`seedvr2_ema_3b_fp16` or `_fp8` or `7b_fp8`) + `ema_vae_fp16.safetensors`
 
 ---
@@ -210,28 +212,6 @@ If TJ NODE STUDIO ONE is the cockpit, **TJ_NODE is the engine room.**
 | **Wireless Architecture** | Multi Router, Embedded Get/Set, Batch Workflow, Save Pipeline |
 
 **→ [github.com/designloves2/ComfyUI-TJ_NODE](https://github.com/designloves2/ComfyUI-TJ_NODE)**
-
----
-
-## FAQ
-
-**Q: Which models does each node support?**  
-A: Z-Image ONE → Z-Image Turbo. Klein ONE → Flux.2 Klein 9B/4B. QE2511 ONE → Qwen2.5-VL 7B Image Edit. Krea2 ONE → Krea AI model. Each node is architecture-specific.
-
-**Q: Do I need all the custom nodes?**  
-A: Only the ones for modes you use. SeedVR2 for upscale, FaceAnalysis for faceswap, RMBG for RE-BG, KJNodes for Klein/QE2511 outpaint. Core T2I/I2I works without most of them.
-
-**Q: VRAM requirements?**  
-A: Flux.2 Klein 9B ~18–24GB; use CPU offload for lower VRAM. Z-Image Turbo is lighter. QE2511 7B ~16–20GB. Krea2 varies by model. SeedVR2 3B FP8 ~12GB.
-
-**Q: My results don't look great. Is something broken?**  
-A: Probably not. Output quality is determined by the model, prompts, and LoRA choices — not the node. The node is just a UI shell.
-
-**Q: Can I wire this into a normal ComfyUI workflow?**  
-A: The node internally generates its own graph. You can connect `prompt_override` or model override input slots, but the node is self-contained by design.
-
-**Q: Why is there no separate workflow file for each mode?**  
-A: That's literally the whole point.
 
 ---
 

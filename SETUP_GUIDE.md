@@ -68,7 +68,7 @@ chmod +x install_requirements.sh
 | **ComfyUI_FaceAnalysis** | Faceswap 얼굴 임베딩 분석 | Klein · QE2511 Faceswap | [cubiq/ComfyUI_FaceAnalysis](https://github.com/cubiq/ComfyUI_FaceAnalysis) |
 | **ComfyUI-RMBG** | 배경 제거 (RE-BG 모드) | Z-Image · RE-BG | [1038lab/ComfyUI-RMBG](https://github.com/1038lab/ComfyUI-RMBG) |
 | **comfyui_controlnet_aux** | ControlNet 전처리기 (Depth · Canny · Pose 등) | Z-Image · ControlNet | [Fannovel16/comfyui_controlnet_aux](https://github.com/Fannovel16/comfyui_controlnet_aux) |
-| **ComfyUI-SeedVR2** | SeedVR2 AI 업스케일 (UPSCALE 모드) | 전체 노드 | [kijai/ComfyUI-SeedVR2](https://github.com/kijai/ComfyUI-SeedVR2) |
+| **ComfyUI-SeedVR2** | SeedVR2 AI 업스케일 (UPSCALE 모드) | 전체 노드 | [numz](https://github.com/numz) [ComfyUI-SeedVR2_VideoUpscaler](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler) |
 
 ---
 
@@ -111,10 +111,9 @@ chmod +x install_requirements.sh
 
 #### BG Removal → `models/background_removal/`  *(RE-BG 모드 사용 시)*
 
-| 파일명 | 다운로드 |
+| 다운로드                                                     |      |
 |---|---|
-| `BiRefNet-general.pth` **권장** | [다운로드](https://huggingface.co/ZhengPeng7/BiRefNet/resolve/main/BiRefNet-general.pth) |
-| `BiRefNet-portrait.pth` | [다운로드](https://huggingface.co/ZhengPeng7/BiRefNet-portrait/resolve/main/BiRefNet-portrait.pth) |
+| [Comfy-Org/BiRefNet — background_removal](https://huggingface.co/Comfy-Org/BiRefNet/tree/main/background_removal) |      |
 
 ---
 
@@ -159,32 +158,32 @@ chmod +x install_requirements.sh
 
 ### 3-3. Qwen Image Edit 2511 ONE STUDIO 모델
 
-> 전체 모델 목록: https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit
+> 전체 모델 목록: https://huggingface.co/Comfy-Org/Qwen-Image-Edit_ComfyUI/tree/main/split_files
 
 #### Diffusion Model → `models/diffusion_models/`
 
 | 파일명 | 설명 | 다운로드 |
 |---|---|---|
-| `Qwen2.5-VL-7B-Image-Edit-bf16.safetensors` | 메인 모델 BF16 **권장** | [HF 목록](https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit/tree/main/split_files/diffusion_models) |
-| GGUF 경량 버전 | 저VRAM 환경 | [HF 목록](https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit/tree/main/split_files/diffusion_models) |
+| `Qwen2.5-VL-7B-Image-Edit-bf16.safetensors` | 메인 모델 BF16 **권장** | [HF 목록](https://huggingface.co/Comfy-Org/Qwen-Image-Edit_ComfyUI/tree/main/split_files/diffusion_models) |
+| GGUF 경량 버전 | 저VRAM 환경 | [HF 목록](https://huggingface.co/unsloth/Qwen-Image-Edit-2511-GGUF/tree/main) |
 
 #### Text Encoder (CLIPLoader qwen_image) → `models/text_encoders/`
 
 | 파일명 | 다운로드 |
 |---|---|
-| `qwen2.5vl-7b-vis-encoder.safetensors` | [HF 목록](https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit/tree/main/split_files/text_encoders) |
+| `qwen2.5vl-7b-vis-encoder.safetensors` | [HF 목록](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/tree/main/split_files/text_encoders) |
 
 #### VAE → `models/vae/`
 
 | 파일명 | 다운로드 |
 |---|---|
-| `ae.safetensors` | [HF 목록](https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit/tree/main/split_files/vae) |
+| `ae.safetensors` | [HF 목록](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/tree/main/split_files/vae) |
 
 #### Lightning LoRA → `models/loras/`  *(4스텝 고속 생성, 선택사항)*
 
 | 파일명 | 다운로드 |
 |---|---|
-| `Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors` | [HF 목록](https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit/tree/main/split_files/loras) |
+| `Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors` | [HF 목록](https://huggingface.co/lightx2v/Qwen-Image-Edit-2511-Lightning/tree/main) |
 
 #### Multi Angle LoRA → `models/loras/`  *(Angle 모드 필수)*
 
@@ -208,25 +207,19 @@ chmod +x install_requirements.sh
 
 | 설명 | 다운로드 |
 |---|---|
-| Krea2 UNet (GGUF 포함) | [HF 목록](https://huggingface.co/Comfy-Org/Krea2/tree/main/split_files/diffusion_models) |
+| Krea2 | [HF 목록](https://huggingface.co/Comfy-Org/Krea-2/tree/main/diffusion_models) |
 
 #### Text Encoder (CLIP krea2) → `models/text_encoders/`
 
 | 다운로드 |
 |---|
-| [HF 목록](https://huggingface.co/Comfy-Org/Krea2/tree/main/split_files/text_encoders) |
+| [HF 목록](https://huggingface.co/Comfy-Org/Krea-2/tree/main/text_encoders) |
 
 #### VAE → `models/vae/`
 
 | 다운로드 |
 |---|
-| [HF 목록](https://huggingface.co/Comfy-Org/Krea2/tree/main/split_files/vae) |
-
-#### Lightning LoRA → `models/loras/`  *(4스텝 고속 생성, 선택사항)*
-
-| 다운로드 |
-|---|
-| [HF 목록](https://huggingface.co/Comfy-Org/Krea2/tree/main/split_files/loras) |
+| [HF 목록](https://huggingface.co/Comfy-Org/Krea-2/tree/main/vae) |
 
 ---
 
@@ -238,10 +231,10 @@ chmod +x install_requirements.sh
 
 | 파일명 | 설명 | 다운로드 |
 |---|---|---|
-| `seedvr2_ema_3b_fp16.safetensors` | DiT 3B FP16 | [kijai/SeedVR2-models](https://huggingface.co/kijai/SeedVR2-models/tree/main) |
-| `seedvr2_ema_3b_fp8_e4m3fn.safetensors` | DiT 3B FP8 (저VRAM) | [kijai/SeedVR2-models](https://huggingface.co/kijai/SeedVR2-models/tree/main) |
-| `seedvr2_ema_7b_fp8_e4m3fn.safetensors` | DiT 7B FP8 (고품질) | [kijai/SeedVR2-models](https://huggingface.co/kijai/SeedVR2-models/tree/main) |
-| `ema_vae_fp16.safetensors` | VAE FP16 | [kijai/SeedVR2-models](https://huggingface.co/kijai/SeedVR2-models/tree/main) |
+| `seedvr2_ema_3b_fp16.safetensors` | DiT 3B FP16 | [SeedVR2-models](https://huggingface.co/numz/SeedVR2_comfyUI/tree/main) |
+| `seedvr2_ema_3b_fp8_e4m3fn.safetensors` | DiT 3B FP8 (저VRAM) | [SeedVR2-models](https://huggingface.co/numz/SeedVR2_comfyUI/tree/main) |
+| `seedvr2_ema_7b_fp8_e4m3fn.safetensors` | DiT 7B FP8 (고품질) | [SeedVR2-models](https://huggingface.co/numz/SeedVR2_comfyUI/tree/main) |
+| `ema_vae_fp16.safetensors` | VAE FP16 | [SeedVR2-models](https://huggingface.co/numz/SeedVR2_comfyUI/tree/main) |
 
 > DiT 모델과 VAE 모델 **둘 다** 필요합니다.  
 > Upscale 모드 → **↻ Refresh** 버튼으로 모델 목록을 새로 고칩니다.
@@ -374,6 +367,21 @@ ComfyUI/
     └── SEEDVR2/                  ← SeedVR2 DiT + VAE (전체 노드 Upscale)
 ```
 
+
+
+## 감사의 말 (Acknowledgements)
+
+이 패키지의 핵심 아이디어와 기본 구조는 **[yanokusnir-ai](https://github.com/yanokusnir-ai)** 님의 오픈소스 프로젝트에서 영감을 받아 탄생했습니다.
+
+> **[one-node-flux-2-klein](https://github.com/yanokusnir-ai/one-node-flux-2-klein)**  
+> — 단일 노드에서 Flux.2 Klein을 올인원으로 다루는 핵심 아이디어의 원작
+
+TJ NODE STUDIO ONE 패밀리(Z-Image · Klein · QE2511 · Krea2)는 이 아이디어를 기반으로 다중 모델·다중 모드로 확장한 파생 작업입니다.  
+원작자의 기여와 오픈소스 정신에 진심으로 감사드립니다. 🙏
+
 ---
 
+## 라이선스
+
 *MIT License · [TJ NODE STUDIO ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE)*
+
