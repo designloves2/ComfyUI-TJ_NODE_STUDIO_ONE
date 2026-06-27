@@ -22,7 +22,7 @@
 
 | 패키지 | 설명 | GitHub |
 |---|---|---|
-| **TJ_NODE_ONE** | Z-Image · Klein · QE2511 · Krea2 ONE STUDIO 통합 | [ComfyUI-TJ_NODE_ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_ONE) |
+| **TJ_NODE_ONE** | Z-Image · Klein · QE2511 · Krea2 ONE STUDIO 통합 | [ComfyUI-TJ_NODE_ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE) |
 
 > **설치**: ComfyUI Manager → Install Custom Nodes → `ComfyUI-TJ_NODE_ONE` 검색  
 > 또는 수동: `cd ComfyUI/custom_nodes && git clone https://github.com/designloves2/ComfyUI-TJ_NODE_ONE.git`
