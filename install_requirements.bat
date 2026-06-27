@@ -36,7 +36,7 @@ echo.
 set REPOS[0]=https://github.com/ltdrdata/ComfyUI-Impact-Pack
 set REPOS[1]=https://github.com/ltdrdata/ComfyUI-Impact-Subpack
 set REPOS[2]=https://github.com/kijai/ComfyUI-KJNodes
-set REPOS[3]=https://github.com/kijai/ComfyUI-SeedVR2
+set REPOS[3]=https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler
 set REPOS[4]=https://github.com/cubiq/ComfyUI_FaceAnalysis
 set REPOS[5]=https://github.com/1038lab/ComfyUI-RMBG
 set REPOS[6]=https://github.com/Fannovel16/comfyui_controlnet_aux
