@@ -273,7 +273,7 @@ chmod +x install_requirements.sh
 **→ [github.com/designloves2/ComfyUI-TJ_NODE](https://github.com/designloves2/ComfyUI-TJ_NODE)**
 
 ---
-# TJ NODE ONE — 설치 및 설정 가이드
+# TJ NODE STUDIO ONE — 설치 및 설정 가이드
 
 > **Z-Image ONE STUDIO · Flux.2 Klein ONE STUDIO · Qwen Image Edit 2511 ONE STUDIO · Krea 2 ONE STUDIO**  
 > ComfyUI 올인원 이미지 생성 UI — 워크플로우 배선 없이 노드 하나에서 T2I · I2I · Inpaint · Outpaint · Edit · Faceswap · Upscale 등 모든 모드를 전환합니다.
@@ -297,10 +297,10 @@ chmod +x install_requirements.sh
 
 | 패키지          | 설명                                             | GitHub                                                       |
 | --------------- | ------------------------------------------------ | ------------------------------------------------------------ |
-| **TJ_NODE_ONE** | Z-Image · Klein · QE2511 · Krea2 ONE STUDIO 통합 | [ComfyUI-TJ_NODE_ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_ONE) |
+| **TJ_NODE_ONE** | Z-Image · Klein · QE2511 · Krea2 ONE STUDIO 통합 | [ComfyUI-TJ_NODE_STUDIO_ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE) |
 
-> **설치**: ComfyUI Manager → Install Custom Nodes → `ComfyUI-TJ_NODE_ONE` 검색  
-> 또는 수동: `cd ComfyUI/custom_nodes && git clone https://github.com/designloves2/ComfyUI-TJ_NODE_ONE.git`
+> **설치**: ComfyUI Manager → Install Custom Nodes → `ComfyUI-TJ_NODE_STUDIO_ONE` 검색  
+> 또는 수동: `cd ComfyUI/custom_nodes && git clone https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE.git`
 
 ### 함께 쓰면 더 강력한 — TJ_NODE
 
@@ -653,4 +653,4 @@ ComfyUI/
 
 ---
 
-*MIT License · [TJ NODE ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_ONE)*
+*MIT License · [TJ NODE ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE)*
