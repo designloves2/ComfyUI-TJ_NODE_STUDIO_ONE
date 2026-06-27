@@ -22,10 +22,10 @@
 
 | 패키지 | 설명 | GitHub |
 |---|---|---|
-| **TJ_NODE_ONE** | Z-Image · Klein · QE2511 · Krea2 ONE STUDIO 통합 | [ComfyUI-TJ_NODE_ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE) |
+| **TJ_NODE_STUDIO_ONE** | Z-Image · Klein · QE2511 · Krea2 ONE STUDIO 통합 | [ComfyUI-TJ_NODE_ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE) |
 
-> **설치**: ComfyUI Manager → Install Custom Nodes → `ComfyUI-TJ_NODE_ONE` 검색  
-> 또는 수동: `cd ComfyUI/custom_nodes && git clone https://github.com/designloves2/ComfyUI-TJ_NODE_ONE.git`
+> **설치**: ComfyUI Manager → Install Custom Nodes → `ComfyUI-TJ_NODE_STUDIO_ONE` 검색  
+> 또는 수동: `cd ComfyUI/custom_nodes && git clone https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE.git`
 
 ### 함께 쓰면 더 강력한 — TJ_NODE
 
@@ -39,7 +39,7 @@
 
 ### ⚡ 자동 설치 스크립트 (권장)
 
-이 패키지 폴더(`ComfyUI-TJ_NODE_ONE/`) 안에 설치 스크립트가 포함되어 있습니다.  
+이 패키지 폴더(`ComfyUI-TJ_NODE_STUDIO_ONE/`) 안에 설치 스크립트가 포함되어 있습니다.  
 필수 노드 **8개를 한 번에** 설치하고 pip requirements까지 처리합니다.
 
 **Windows** — 파일 탐색기에서 더블클릭:
