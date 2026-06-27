@@ -139,10 +139,10 @@ All four nodes include a full **SeedVR2 AI upscale** mode sharing the same model
 
 ```bash
 cd ComfyUI/custom_nodes
-git clone https://github.com/designloves2/ComfyUI-TJ_NODE_ONE.git
+git clone https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE.git
 ```
 
-Or search `ComfyUI-TJ_NODE_ONE` in **ComfyUI Manager**.
+Or search `ComfyUI-TJ_NODE_STUDIO_ONE` in **ComfyUI Manager**.
 
 ### 2. Install required custom nodes
 
@@ -237,7 +237,7 @@ A: That's literally the whole point.
 
 ## GitHub
 
-**TJ NODE ONE (this):** https://github.com/designloves2/ComfyUI-TJ_NODE_ONE
+**TJ NODE STUDIO ONE (this):** https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE
 
 **TJ NODE — Wireless Workflow Architecture Toolkit:** https://github.com/designloves2/ComfyUI-TJ_NODE
 
