@@ -277,6 +277,230 @@ KV         — KV Cache 토글. 모델명에 'kv' 포함 시 Auto ON.
 🔍 Expand   — 프롬프트를 전체 화면 에디터로 확장 편집.
 Send to     — 생성 결과를 다른 모드의 소스 이미지로 전달.
 Output      — 👁 Preview(임시) / 💾 Save(영구) 전환.`,
+
+  // ── QE2511 Help sections ───────────────────────────────────────────────────
+  qehelp_title: "❓ Help — Qwen Image Edit 2511 ONE STUDIO (TJ)",
+
+  qehelp_s0_title: "📦 모델 다운로드 가이드",
+  qehelp_s0_body:
+`◆ Diffusion Model → models/diffusion_models/
+ • Qwen2.5-VL-7B-Image-Edit-bf16.safetensors (권장)
+   https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit/tree/main/split_files/diffusion_models
+ • GGUF 경량 버전도 지원합니다 (models/diffusion_models/)
+   https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit/tree/main/split_files/diffusion_models
+
+◆ Text Encoder (CLIPLoader qwen_image) → models/text_encoders/
+ • qwen2.5vl-7b-vis-encoder.safetensors
+   https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit/tree/main/split_files/text_encoders
+
+◆ VAE → models/vae/
+ • ae.safetensors
+   https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit/tree/main/split_files/vae
+
+◆ Lightning LoRA (4스텝 고속 생성, 선택사항) → models/loras/
+ • Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors
+   https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit/tree/main/split_files/loras
+
+◆ BFS LoRA (Faceswap 필수) → models/loras/
+ • BFS Face Swap LoRA for Qwen Image Edit 2511
+   https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap
+
+◆ Camera Angle LoRA (ANGLE 모드, 선택사항) → models/loras/
+ • 카메라 앵글 제어용 LoRA (⚙ Settings에서 설정)
+
+◆ SeedVR2 (UPSCALE 모드) → models/diffusion_models/
+ • SeedVR2 모델 필요 — ComfyUI Manager를 통해 설치 권장`,
+
+  qehelp_s1_title: "개요",
+  qehelp_s1_body:
+`Qwen Image Edit 2511 ONE STUDIO (TJ)는 Qwen2.5-VL 기반 이미지 편집 모델 전용
+올인원 생성 노드입니다.
+상단 모드 버튼으로 T2I / I2I / EDIT / PAINT / FACESWAP / ANGLE / UPSCALE을 전환하며,
+오른쪽 프리뷰에서 결과를 확인하고 하단 Send to 버튼으로 다음 작업으로 바로 넘길 수 있습니다.
+⚠ 생성은 ComfyUI 상단 RUN이 아닌 노드 내 ▶ Generate 버튼으로 실행해야 합니다.`,
+
+  qehelp_s2_title: "⚙ 초기 설정 (Settings)",
+  qehelp_s2_body:
+`우상단 ⚙ 버튼 → Settings 오버레이에서 아래를 반드시 설정하세요.
+• Diffusion Model  — Qwen2.5-VL UNet 모델 선택 (models/diffusion_models/)
+• Text Encoder     — CLIPLoader qwen_image 방식 인코더 (models/text_encoders/)
+• VAE              — VAE 모델 선택 (models/vae/)
+• Lightning LoRA   — 4스텝 고속 생성 LoRA (선택사항, Steps=4, CFG=1 자동 설정)
+• Camera Angle LoRA — ANGLE 모드 전용 LoRA (선택사항)
+• Negative Prompt  — 전 모드에 공통 적용할 부정 프롬프트
+• Prompt Suffix    — 전 모드 프롬프트 끝에 자동 추가할 키워드
+• Save Subfolder   — 저장 폴더 이름
+💾 Save All로 서버에 저장되며 재시작 후에도 유지됩니다.`,
+
+  qehelp_s3_title: "T2I — 텍스트→이미지",
+  qehelp_s3_body:
+`텍스트 프롬프트로 이미지를 새로 생성합니다.
+• Resolution — 해상도 프리셋 또는 Custom으로 직접 입력
+• Steps / CFG / Sampler / Scheduler — 샘플링 파라미터
+  Lightning LoRA 활성화 시 Steps=4, CFG=1 자동 적용
+• LoRA — 최대 3개 추가, Strength와 Trigger Word 설정 가능
+• Seed — Fixed(고정), Random(매번 랜덤), +1/-1(증감)
+생성 후 Send to 버튼으로 → Edit / I2I / Paint / Upscale로 전달 가능.`,
+
+  qehelp_s4_title: "I2I — 이미지→이미지",
+  qehelp_s4_body:
+`소스 이미지를 참고해 변형 생성합니다.
+• Source Image 업로드 또는 다른 모드에서 Send to → I2I로 전달
+• Denoise — 낮을수록 원본 유지(0.3~0.6), 높을수록 자유 변형(0.8~1.0)
+• Compare 버튼(⇌) — ON 시 결과와 원본을 슬라이더로 비교 가능`,
+
+  qehelp_s5_title: "EDIT — 멀티 레퍼런스 편집",
+  qehelp_s5_body:
+`텍스트 프롬프트로 이미지를 편집합니다. 최대 3장의 참조 이미지를 사용할 수 있습니다.
+• Image 1 (필수) — 주 참조 이미지 업로드
+• Add Ref Image 버튼 — 추가 참조 이미지 2~3번 업로드 (최대 총 3장)
+내부 구조: TextEncodeQwenImageEditPlus + FluxKontextImageScale +
+FluxKontextMultiReferenceLatentMethod 공식 워크플로우 사용.
+• 아웃페인트(확장) 기능도 이 모드에서 지원됩니다:
+  패딩 방향/크기 설정 후 ▶ Generate로 캔버스를 확장합니다.`,
+
+  qehelp_s6_title: "PAINT — 인페인트",
+  qehelp_s6_body:
+`이미지의 특정 영역만 프롬프트로 재생성합니다.
+• Source Image 업로드
+• ✏ 마스크 수정하기 — ComfyUI 기본 마스크 에디터 오픈
+  흰색(White) = 재생성할 영역 / 검은색(Black) = 유지할 영역
+• Denoise — 0.7~0.9 권장. 낮을수록 원본 맥락 강하게 유지.
+• 직접 업로드 — 외부 툴로 만든 마스크 PNG를 업로드하는 대안 방법
+생성 후 Send to 버튼으로 다른 모드로 전달 가능.`,
+
+  qehelp_s7_title: "FACESWAP — 얼굴 교체",
+  qehelp_s7_body:
+`Target 이미지의 얼굴을 Source 얼굴로 교체합니다.
+• Target Image — 배경/장면 이미지 업로드
+• Source Face  — 얼굴 원본 이미지 업로드
+• BFS LoRA 필수 — ⚙ Settings에서 BFS Face Swap LoRA를 먼저 선택하세요
+• 기본 프롬프트가 자동으로 설정되지만 수정도 가능합니다
+• Denoise 1.0 권장 (완전 재생성)`,
+
+  qehelp_s8_title: "ANGLE — 카메라 앵글 조절",
+  qehelp_s8_body:
+`원본 이미지의 카메라 앵글을 3D 씬에서 직관적으로 조절합니다.
+• Source Image 업로드
+• H (수평/방위각) — 좌우 카메라 회전
+• V (수직/고도각) — 상하 카메라 각도
+• Z (줌)          — 카메라 거리/확대
+컨트롤 조작: 선 위에서 클릭 후 홀드하여 드래그합니다.
+• Camera Angle LoRA — ⚙ Settings에서 선택 (ANGLE 모드에서만 자동 적용)
+생성 후 Send to → Edit / I2I / Paint / Upscale로 전달 가능.`,
+
+  qehelp_s9_title: "UPSCALE — 고해상도 업스케일",
+  qehelp_s9_body:
+`SeedVR2로 이미지를 고해상도로 업스케일합니다.
+• Source Image 업로드 또는 다른 모드에서 Send to → Upscale로 전달
+• DiT 모델 선택 (SeedVR2 관련 모델)
+• VAE 모델 선택
+• 최대 4096px까지 지원
+• Tile 크기와 Overlap 설정 가능
+ComfyUI Manager를 통해 SeedVR2 관련 커스텀 노드를 먼저 설치하세요.`,
+
+  qehelp_s10_title: "공통 기능 및 주의사항",
+  qehelp_s10_body:
+`⇌ Compare  — ON 시 보라색 강조. 생성 결과와 소스를 슬라이더로 비교.
+             T2I 제외 전 모드에서 활성화 가능.
+🗑 Unload   — 현재 로드된 모델을 VRAM/RAM에서 해제.
+⚙ Settings — 모델 선택, Lightning/Angle LoRA, 네거티브/접미사 프롬프트, 저장 설정.
+🖼 Gallery  — 저장된 이미지 갤러리. 즐겨찾기, 메타데이터 재사용, 삭제,
+             폴더 열기, 다른 모드로 Send to 기능 포함.
+📋 Template — 저장된 프롬프트 템플릿 불러오기.
+🔍 Expand   — 프롬프트를 전체 화면 에디터로 확장 편집.
+Send to     — 생성 결과를 다른 모드의 소스 이미지로 바로 전달.
+Output      — 👁 Preview(임시 저장) / 💾 Save(영구 저장) 전환.
+Model Override — ⚙ Settings에서 활성화 시 외부 모델/CLIP/VAE 노드 연결 가능.
+⚠ 생성은 ComfyUI 상단 RUN이 아닌 노드 내 ▶ Generate 버튼으로 실행해야 합니다.
+  RUN 실행 시 마지막 생성 이미지가 OUTPUT image 슬롯으로 출력됩니다.`,
+
+  // ── Krea2 Help sections ────────────────────────────────────────────────────
+  k2help_title: "❓ Help — Krea 2 ONE STUDIO (TJ)",
+
+  k2help_s0_title: "📦 모델 다운로드 가이드",
+  k2help_s0_body:
+`◆ Diffusion Model → models/diffusion_models/
+ • Krea 2 UNet 모델 (GGUF 포함)
+   https://huggingface.co/Comfy-Org/Krea2/tree/main/split_files/diffusion_models
+   전체 목록: https://huggingface.co/Comfy-Org/Krea2
+
+◆ Text Encoder (CLIP krea2) → models/text_encoders/
+ • krea2_clip_encoder.safetensors
+   https://huggingface.co/Comfy-Org/Krea2/tree/main/split_files/text_encoders
+
+◆ VAE → models/vae/
+ • ae.safetensors
+   https://huggingface.co/Comfy-Org/Krea2/tree/main/split_files/vae
+
+◆ Lightning LoRA (4스텝 고속 생성, 선택사항) → models/loras/
+ • Krea2 Lightning LoRA
+   https://huggingface.co/Comfy-Org/Krea2/tree/main/split_files/loras
+
+◆ SeedVR2 (UPSCALE 모드) → models/diffusion_models/
+ • SeedVR2 모델 필요 — ComfyUI Manager를 통해 설치 권장`,
+
+  k2help_s1_title: "개요",
+  k2help_s1_body:
+`Krea 2 ONE STUDIO (TJ)는 Krea AI의 이미지 생성 모델 전용 올인원 노드입니다.
+상단 모드 버튼으로 T2I / I2I / UPSCALE을 전환하며,
+오른쪽 프리뷰에서 결과를 확인하고 하단 Send to 버튼으로 다음 작업으로 전달합니다.
+⚠ 생성은 ComfyUI 상단 RUN이 아닌 노드 내 ▶ Generate 버튼으로 실행해야 합니다.`,
+
+  k2help_s2_title: "⚙ 초기 설정 (Settings)",
+  k2help_s2_body:
+`우상단 ⚙ 버튼 → Settings 오버레이에서 아래를 반드시 설정하세요.
+• Diffusion Model  — Krea2 UNet 모델 선택 (models/diffusion_models/)
+• Text Encoder     — CLIP krea2 인코더 선택 (models/text_encoders/)
+• VAE              — VAE 모델 선택 (models/vae/)
+• Lightning LoRA   — 4스텝 고속 생성 LoRA (선택사항, Steps=4, CFG=1 자동 설정)
+• Negative Prompt  — 전 모드에 공통 적용할 부정 프롬프트
+• Prompt Suffix    — 전 모드 프롬프트 끝에 자동 추가할 키워드
+• Save Subfolder   — 저장 폴더 이름
+💾 Save All로 서버에 저장되며 재시작 후에도 유지됩니다.`,
+
+  k2help_s3_title: "T2I — 텍스트→이미지",
+  k2help_s3_body:
+`텍스트 프롬프트로 이미지를 새로 생성합니다.
+• Resolution — 해상도 프리셋 또는 Custom으로 직접 입력
+• Steps / CFG / Sampler / Scheduler — 샘플링 파라미터
+  Lightning LoRA 활성화 시 Steps=4, CFG=1 자동 적용
+• LoRA — 최대 3개 추가, Strength와 Trigger Word 설정 가능
+• Seed — Fixed(고정), Random(매번 랜덤), +1/-1(증감)
+생성 후 Send to → I2I / Upscale로 전달 가능.`,
+
+  k2help_s4_title: "I2I — 이미지→이미지",
+  k2help_s4_body:
+`소스 이미지를 기반으로 변형 생성합니다.
+• Source Image 업로드 또는 다른 모드에서 Send to → I2I로 전달
+• Denoise — 낮을수록 원본 유지(0.3~0.6), 높을수록 자유 변형(0.8~1.0)
+• Compare 버튼(⇌) — ON 시 결과와 원본을 슬라이더로 비교 가능
+생성 후 Send to → Upscale로 전달 가능.`,
+
+  k2help_s5_title: "UPSCALE — 고해상도 업스케일",
+  k2help_s5_body:
+`SeedVR2로 이미지를 고해상도로 업스케일합니다.
+• Source Image 업로드 또는 다른 모드에서 Send to → Upscale로 전달
+• DiT 모델 선택 (SeedVR2 관련 모델)
+• VAE 모델 선택
+• 최대 4096px까지 지원
+ComfyUI Manager를 통해 SeedVR2 관련 커스텀 노드를 먼저 설치하세요.`,
+
+  k2help_s6_title: "공통 기능 및 주의사항",
+  k2help_s6_body:
+`⇌ Compare  — ON 시 보라색 강조. 생성 결과와 소스를 슬라이더로 비교.
+             T2I 제외 전 모드에서 활성화 가능.
+🗑 Unload   — 현재 로드된 모델을 VRAM/RAM에서 해제.
+⚙ Settings — 모델 선택, Lightning LoRA, 네거티브/접미사 프롬프트, 저장 설정.
+🖼 Gallery  — 저장된 이미지 갤러리. 즐겨찾기, 메타데이터 재사용, 삭제,
+             폴더 열기, 다른 모드로 Send to 기능 포함.
+📋 Template — 저장된 프롬프트 템플릿 불러오기.
+🔍 Expand   — 프롬프트를 전체 화면 에디터로 확장 편집.
+Send to     — 생성 결과를 다른 모드의 소스 이미지로 바로 전달.
+Output      — 👁 Preview(임시 저장) / 💾 Save(영구 저장) 전환.
+Model Override — ⚙ Settings에서 활성화 시 외부 모델/CLIP/VAE 노드 연결 가능.
+⚠ 생성은 ComfyUI 상단 RUN이 아닌 노드 내 ▶ Generate 버튼으로 실행해야 합니다.
+  RUN 실행 시 마지막 생성 이미지가 OUTPUT image 슬롯으로 출력됩니다.`,
 };
 
 const EN = {
@@ -532,6 +756,230 @@ KV         — KV Cache toggle. Auto-ON when model name contains 'kv'.
 🔍 Expand   — Open full-screen prompt editor.
 Send to     — Pass generation result to another mode as source.
 Output      — 👁 Preview (temp) / 💾 Save (permanent) toggle.`,
+
+  // ── QE2511 Help sections ───────────────────────────────────────────────────
+  qehelp_title: "❓ Help — Qwen Image Edit 2511 ONE STUDIO (TJ)",
+
+  qehelp_s0_title: "📦 Model Download Guide",
+  qehelp_s0_body:
+`◆ Diffusion Model → models/diffusion_models/
+ • Qwen2.5-VL-7B-Image-Edit-bf16.safetensors (recommended)
+   https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit/tree/main/split_files/diffusion_models
+ • GGUF quantized versions also supported (models/diffusion_models/)
+   https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit/tree/main/split_files/diffusion_models
+
+◆ Text Encoder (CLIPLoader qwen_image) → models/text_encoders/
+ • qwen2.5vl-7b-vis-encoder.safetensors
+   https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit/tree/main/split_files/text_encoders
+
+◆ VAE → models/vae/
+ • ae.safetensors
+   https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit/tree/main/split_files/vae
+
+◆ Lightning LoRA (4-step fast generation, optional) → models/loras/
+ • Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors
+   https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Image-Edit/tree/main/split_files/loras
+
+◆ BFS LoRA (required for Faceswap) → models/loras/
+ • BFS Face Swap LoRA for Qwen Image Edit 2511
+   https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap
+
+◆ Camera Angle LoRA (ANGLE mode, optional) → models/loras/
+ • Select in ⚙ Settings under Camera Angle LoRA
+
+◆ SeedVR2 (UPSCALE mode) → models/diffusion_models/
+ • Install via ComfyUI Manager (SeedVR2 custom nodes required)`,
+
+  qehelp_s1_title: "Overview",
+  qehelp_s1_body:
+`Qwen Image Edit 2511 ONE STUDIO (TJ) is an all-in-one generation node
+for the Qwen2.5-VL image editing model.
+Switch between T2I / I2I / EDIT / PAINT / FACESWAP / ANGLE / UPSCALE using the top mode buttons.
+View results in the right preview and pass them to the next step via Send to buttons.
+⚠ Always use the ▶ Generate button inside the node — NOT the ComfyUI RUN button at the top.`,
+
+  qehelp_s2_title: "⚙ Initial Setup (Settings)",
+  qehelp_s2_body:
+`Click ⚙ (top-right) → Settings overlay and configure the following:
+• Diffusion Model  — Qwen2.5-VL UNet model (models/diffusion_models/)
+• Text Encoder     — CLIPLoader qwen_image encoder (models/text_encoders/)
+• VAE              — VAE model (models/vae/)
+• Lightning LoRA   — 4-step fast LoRA (optional, auto-sets Steps=4, CFG=1)
+• Camera Angle LoRA — For ANGLE mode only (optional)
+• Negative Prompt  — Applied globally to all modes
+• Prompt Suffix    — Keywords auto-appended to every prompt
+• Save Subfolder   — Output folder name
+Click 💾 Save All to persist settings across ComfyUI restarts.`,
+
+  qehelp_s3_title: "T2I — Text to Image",
+  qehelp_s3_body:
+`Generate a new image from a text prompt.
+• Resolution — preset options or Custom for manual dimensions
+• Steps / CFG / Sampler / Scheduler — sampling parameters
+  Lightning LoRA active: Steps=4, CFG=1 auto-applied
+• LoRA — up to 3, configure Strength and Trigger Word per LoRA
+• Seed — Fixed, Random, +1/-1 increment
+After generation, use Send to → Edit / I2I / Paint / Upscale.`,
+
+  qehelp_s4_title: "I2I — Image to Image",
+  qehelp_s4_body:
+`Generate a variation from a reference image.
+• Upload Source Image or receive via Send to → I2I
+• Denoise — lower values preserve original (0.3~0.6), higher values allow free variation (0.8~1.0)
+• Compare button (⇌) — when ON, compare result and source with a slider`,
+
+  qehelp_s5_title: "EDIT — Multi-Reference Editing",
+  qehelp_s5_body:
+`Edit images using text prompts with up to 3 reference images.
+• Image 1 (required) — upload primary reference image
+• Add Ref Image button — add extra reference images 2–3 (up to 3 total)
+Uses: TextEncodeQwenImageEditPlus + FluxKontextImageScale +
+FluxKontextMultiReferenceLatentMethod official workflow internally.
+• Outpaint (canvas expansion) is also supported in this mode:
+  Set padding direction/size and click ▶ Generate to expand the canvas.`,
+
+  qehelp_s6_title: "PAINT — Inpaint",
+  qehelp_s6_body:
+`Regenerate only the masked region of an image using a prompt.
+• Upload Source Image
+• ✏ Edit Mask — opens ComfyUI's built-in mask editor
+  White = area to regenerate / Black = area to preserve
+• Denoise — 0.7~0.9 recommended. Lower values keep original context stronger.
+• Direct Upload — alternative: upload a mask PNG from an external tool
+After generation, use Send to buttons to pass to another mode.`,
+
+  qehelp_s7_title: "FACESWAP — Face Replacement",
+  qehelp_s7_body:
+`Replace the face in a Target image with a Source face.
+• Target Image — upload the background/scene image
+• Source Face  — upload the face reference image
+• BFS LoRA required — select a BFS Face Swap LoRA in ⚙ Settings first
+• Default prompt is auto-filled but can be edited
+• Denoise 1.0 recommended (full regeneration)`,
+
+  qehelp_s8_title: "ANGLE — Camera Angle Control",
+  qehelp_s8_body:
+`Intuitively control the camera angle of a scene in 3D space.
+• Upload Source Image
+• H (Horizontal / Azimuth) — rotate camera left/right
+• V (Vertical / Elevation) — tilt camera up/down
+• Z (Zoom)                 — camera distance / zoom level
+Control operation: click and hold on the control line, then drag.
+• Camera Angle LoRA — select in ⚙ Settings (auto-applied only in ANGLE mode)
+After generation, use Send to → Edit / I2I / Paint / Upscale.`,
+
+  qehelp_s9_title: "UPSCALE — High-Resolution Upscaling",
+  qehelp_s9_body:
+`Upscale images to high resolution using SeedVR2.
+• Upload Source Image or receive via Send to → Upscale
+• Select DiT model (SeedVR2 related)
+• Select VAE model
+• Supports up to 4096px
+• Tile size and Overlap settings available
+Install SeedVR2-related custom nodes via ComfyUI Manager first.`,
+
+  qehelp_s10_title: "Common Features & Notes",
+  qehelp_s10_body:
+`⇌ Compare  — When ON (purple highlight), compare result and source with a slider.
+             Available in all modes except T2I.
+🗑 Unload   — Release currently loaded models from VRAM/RAM.
+⚙ Settings — Model selection, Lightning/Angle LoRA, negative/suffix prompts, save settings.
+🖼 Gallery  — Image gallery with favorites, metadata reuse, delete,
+             open folder, and Send to other modes.
+📋 Template — Load saved prompt templates.
+🔍 Expand   — Open full-screen prompt editor.
+Send to     — Pass generation result directly to another mode as source.
+Output      — 👁 Preview (temp) / 💾 Save (permanent) toggle.
+Model Override — Enable in ⚙ Settings to connect external model/CLIP/VAE nodes.
+⚠ Always use ▶ Generate inside the node — NOT the ComfyUI RUN button.
+  Running via RUN outputs the last generated image to the OUTPUT image slot.`,
+
+  // ── Krea2 Help sections ────────────────────────────────────────────────────
+  k2help_title: "❓ Help — Krea 2 ONE STUDIO (TJ)",
+
+  k2help_s0_title: "📦 Model Download Guide",
+  k2help_s0_body:
+`◆ Diffusion Model → models/diffusion_models/
+ • Krea 2 UNet model (GGUF also supported)
+   https://huggingface.co/Comfy-Org/Krea2/tree/main/split_files/diffusion_models
+   Full model list: https://huggingface.co/Comfy-Org/Krea2
+
+◆ Text Encoder (CLIP krea2) → models/text_encoders/
+ • krea2_clip_encoder.safetensors
+   https://huggingface.co/Comfy-Org/Krea2/tree/main/split_files/text_encoders
+
+◆ VAE → models/vae/
+ • ae.safetensors
+   https://huggingface.co/Comfy-Org/Krea2/tree/main/split_files/vae
+
+◆ Lightning LoRA (4-step fast generation, optional) → models/loras/
+ • Krea2 Lightning LoRA
+   https://huggingface.co/Comfy-Org/Krea2/tree/main/split_files/loras
+
+◆ SeedVR2 (UPSCALE mode) → models/diffusion_models/
+ • Install via ComfyUI Manager (SeedVR2 custom nodes required)`,
+
+  k2help_s1_title: "Overview",
+  k2help_s1_body:
+`Krea 2 ONE STUDIO (TJ) is an all-in-one generation node for Krea AI's image generation model.
+Switch between T2I / I2I / UPSCALE using the top mode buttons.
+View results in the right preview and pass them to the next step via Send to buttons.
+⚠ Always use the ▶ Generate button inside the node — NOT the ComfyUI RUN button at the top.`,
+
+  k2help_s2_title: "⚙ Initial Setup (Settings)",
+  k2help_s2_body:
+`Click ⚙ (top-right) → Settings overlay and configure the following:
+• Diffusion Model  — Krea2 UNet model (models/diffusion_models/)
+• Text Encoder     — CLIP krea2 encoder (models/text_encoders/)
+• VAE              — VAE model (models/vae/)
+• Lightning LoRA   — 4-step fast LoRA (optional, auto-sets Steps=4, CFG=1)
+• Negative Prompt  — Applied globally to all modes
+• Prompt Suffix    — Keywords auto-appended to every prompt
+• Save Subfolder   — Output folder name
+Click 💾 Save All to persist settings across ComfyUI restarts.`,
+
+  k2help_s3_title: "T2I — Text to Image",
+  k2help_s3_body:
+`Generate a new image from a text prompt.
+• Resolution — preset options or Custom for manual dimensions
+• Steps / CFG / Sampler / Scheduler — sampling parameters
+  Lightning LoRA active: Steps=4, CFG=1 auto-applied
+• LoRA — up to 3, configure Strength and Trigger Word per LoRA
+• Seed — Fixed, Random, +1/-1 increment
+After generation, use Send to → I2I / Upscale.`,
+
+  k2help_s4_title: "I2I — Image to Image",
+  k2help_s4_body:
+`Generate a variation from a reference image.
+• Upload Source Image or receive via Send to → I2I
+• Denoise — lower values preserve original (0.3~0.6), higher values allow free variation (0.8~1.0)
+• Compare button (⇌) — when ON, compare result and source with a slider
+After generation, use Send to → Upscale.`,
+
+  k2help_s5_title: "UPSCALE — High-Resolution Upscaling",
+  k2help_s5_body:
+`Upscale images to high resolution using SeedVR2.
+• Upload Source Image or receive via Send to → Upscale
+• Select DiT model (SeedVR2 related)
+• Select VAE model
+• Supports up to 4096px
+Install SeedVR2-related custom nodes via ComfyUI Manager first.`,
+
+  k2help_s6_title: "Common Features & Notes",
+  k2help_s6_body:
+`⇌ Compare  — When ON (purple highlight), compare result and source with a slider.
+             Available in all modes except T2I.
+🗑 Unload   — Release currently loaded models from VRAM/RAM.
+⚙ Settings — Model selection, Lightning LoRA, negative/suffix prompts, save settings.
+🖼 Gallery  — Image gallery with favorites, metadata reuse, delete,
+             open folder, and Send to other modes.
+📋 Template — Load saved prompt templates.
+🔍 Expand   — Open full-screen prompt editor.
+Send to     — Pass generation result directly to another mode as source.
+Output      — 👁 Preview (temp) / 💾 Save (permanent) toggle.
+Model Override — Enable in ⚙ Settings to connect external model/CLIP/VAE nodes.
+⚠ Always use ▶ Generate inside the node — NOT the ComfyUI RUN button.
+  Running via RUN outputs the last generated image to the OUTPUT image slot.`,
 };
 
 const STRINGS = { ko: KO, en: EN };

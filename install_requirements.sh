@@ -2,7 +2,8 @@
 set -euo pipefail
 
 echo "========================================================"
-echo " TJ NODE STUDIO ONE - Required Custom Nodes Installer"
+echo " TJ NODE ONE - Required Custom Nodes Installer"
+echo " (Z-Image / Klein / QE2511 / Krea2 ONE STUDIO)"
 echo "========================================================"
 echo
 

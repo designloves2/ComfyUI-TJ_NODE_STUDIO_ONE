@@ -466,8 +466,12 @@ export function mountInpaintLeft(leftEl, state, ctx) {
     row([padField("Left", "outpaintLeft", 0), padField("Right", "outpaintRight", 0)]),
   ]));
   outpaintSection.appendChild(panel([
-    label("Feathering px"),
-    slider(0, 128, 4, state.outpaintFeather ?? 32, v => { state.outpaintFeather = v; ctx.persist(); }, v => String(v)),
+    label("Pad Color (R G B)"),
+    row([
+      col([label("R"), numberField(state.outpaintPadR ?? 0, v => { state.outpaintPadR = Math.max(0, Math.min(255, Math.round(v))); ctx.persist(); }, 1)]),
+      col([label("G"), numberField(state.outpaintPadG ?? 0, v => { state.outpaintPadG = Math.max(0, Math.min(255, Math.round(v))); ctx.persist(); }, 1)]),
+      col([label("B"), numberField(state.outpaintPadB ?? 0, v => { state.outpaintPadB = Math.max(0, Math.min(255, Math.round(v))); ctx.persist(); }, 1)]),
+    ]),
   ]));
 
   wrap.appendChild(inpaintSection);
@@ -492,6 +496,24 @@ export function mountInpaintLeft(leftEl, state, ctx) {
   // 초기 표시 상태
   switchSubMode(state.paintSubMode || "inpaint");
 
+  // 아웃페인트 비교용: 패딩 이미지를 canvas로 생성하여 data URL 반환
+  async function buildPaddedDataURL() {
+    if (!state.outpaintImage) return null;
+    const img = new Image();
+    img.src = `/view?filename=${encodeURIComponent(state.outpaintImage)}&type=input&t=${Date.now()}`;
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+    const L = state.outpaintLeft || 0, R = state.outpaintRight || 0;
+    const U = state.outpaintUp   || 0, D = state.outpaintDown  || 0;
+    const canvas = document.createElement("canvas");
+    canvas.width  = img.naturalWidth  + L + R;
+    canvas.height = img.naturalHeight + U + D;
+    const ctx2d = canvas.getContext("2d");
+    ctx2d.fillStyle = `rgb(${state.outpaintPadR??0},${state.outpaintPadG??0},${state.outpaintPadB??0})`;
+    ctx2d.fillRect(0, 0, canvas.width, canvas.height);
+    ctx2d.drawImage(img, L, U);
+    return canvas.toDataURL("image/png");
+  }
+
   return {
     beforeGenerate: async () => {
       if (!state.inpaintImage) throw new Error("소스 이미지를 업로드하세요.");
@@ -503,6 +525,7 @@ export function mountInpaintLeft(leftEl, state, ctx) {
       } else {
         const total = (state.outpaintUp||0)+(state.outpaintDown||0)+(state.outpaintLeft||0)+(state.outpaintRight||0);
         if (total <= 0) throw new Error("최소 한 방향의 Expansion 값을 입력하세요.");
+        state._outpaintPaddedDataURL = await buildPaddedDataURL().catch(() => null);
       }
     },
     async getGraph() {
@@ -510,6 +533,9 @@ export function mountInpaintLeft(leftEl, state, ctx) {
         ? buildOutpaintGraph(state)
         : buildInpaintGraph(state);
     },
-    getSourceURL() { return state.inpaintImage ? `/view?filename=${encodeURIComponent(state.inpaintImage)}&type=input` : null; },
+    getSourceURL() {
+      if (state.paintSubMode === "outpaint") return state._outpaintPaddedDataURL || null;
+      return state.inpaintImage ? `/view?filename=${encodeURIComponent(state.inpaintImage)}&type=input` : null;
+    },
   };
 }

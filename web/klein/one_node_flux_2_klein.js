@@ -48,15 +48,20 @@ const SEND_TO = {
               { mode:"upscale",  label:"→ Upscale",  field:"upscaleImage" }],
   edit:     [{ mode:"i2i",      label:"→ I2I",      field:"i2iImage" },
               { mode:"inpaint",  label:"→ Paint",    field:"inpaintImage" },
+              { mode:"faceswap", label:"→ Faceswap", field:"faceswapTarget" },
               { mode:"upscale",  label:"→ Upscale",  field:"upscaleImage" }],
   inpaint:  [{ mode:"i2i",      label:"→ I2I",      field:"i2iImage" },
               { mode:"edit",     label:"→ Edit",     field:"editImage1" },
+              { mode:"faceswap", label:"→ Faceswap", field:"faceswapTarget" },
               { mode:"upscale",  label:"→ Upscale",  field:"upscaleImage" }],
   faceswap: [{ mode:"i2i",      label:"→ I2I",      field:"i2iImage" },
               { mode:"edit",     label:"→ Edit",     field:"editImage1" },
+              { mode:"inpaint",  label:"→ Paint",    field:"inpaintImage" },
               { mode:"upscale",  label:"→ Upscale",  field:"upscaleImage" }],
   upscale:  [{ mode:"i2i",      label:"→ I2I",      field:"i2iImage" },
-              { mode:"inpaint",  label:"→ Paint",    field:"inpaintImage" }],
+              { mode:"edit",     label:"→ Edit",     field:"editImage1" },
+              { mode:"inpaint",  label:"→ Paint",    field:"inpaintImage" },
+              { mode:"faceswap", label:"→ Faceswap", field:"faceswapTarget" }],
 };
 
 const HELP_SECTIONS = [

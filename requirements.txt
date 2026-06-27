@@ -1,0 +1,36 @@
+# TJ NODE ONE — Python requirements (수동 설치용)
+# ─────────────────────────────────────────────────────────────────────────────
+# 이 파일은 의존 커스텀 노드들이 필요로 하는 Python 패키지 목록입니다.
+# 자동 설치 스크립트(install_requirements.bat / .sh)를 사용하면
+# 각 노드의 requirements.txt가 자동으로 처리되므로 이 파일은 수동 설치 참조용입니다.
+#
+# 설치 방법:
+#   pip install -r requirements.txt
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── ComfyUI-Impact-Pack / ComfyUI-Impact-Subpack (Z-Image Face Redraw) ───────
+ultralytics>=8.0.0
+timm
+
+# ── ComfyUI_FaceAnalysis (Klein · QE2511 Faceswap) ───────────────────────────
+insightface>=0.7.3
+onnxruntime>=1.16.0
+
+# ── comfyui_controlnet_aux (Z-Image ControlNet) ──────────────────────────────
+einops
+kornia
+scikit-image
+opencv-python
+
+# ── ComfyUI-GGUF (GGUF 모델 로딩, 선택사항) ──────────────────────────────────
+gguf>=0.9.0
+
+# ── ComfyUI-KJNodes (Klein KV Cache · ImagePadKJ · QE2511 FluxKontext) ───────
+# (KJNodes는 별도 requirements.txt 없음 — 위 패키지들로 커버됨)
+
+# ── ComfyUI-SeedVR2 (전체 노드 Upscale) ──────────────────────────────────────
+# flash-attn (선택사항 — sageattn/flash_attn 모드 사용 시)
+# pip install flash-attn --no-build-isolation
+
+# ── ComfyUI-RMBG (Z-Image RE-BG) ─────────────────────────────────────────────
+# (RMBG는 자체 의존성 포함 — 별도 설치 불필요)

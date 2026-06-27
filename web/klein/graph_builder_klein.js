@@ -338,57 +338,42 @@ export async function buildOutpaintGraph(state) {
   const total = (state.outpaintUp||0)+(state.outpaintDown||0)+(state.outpaintLeft||0)+(state.outpaintRight||0);
   if (total <= 0) throw new Error("Set at least one expansion value > 0 px.");
 
-  // outpaint 전용 워크플로우 사용 (workflow_outpaint)
-  const prompt = await loadWorkflow("outpaint");
-  const { modelName, clipName, vaeName } = resolveModels(state);
-  const useKV  = getUseKV(state);
-  const isBase = (state.model || "").toLowerCase().includes("base");
+  // Edit 워크플로우 기반: ImagePadKJ로 컬러 패딩 생성 후 FluxKontext 참조 체인에 전달
+  // 생성 latent는 EmptyLatent(패딩 이미지 크기) — 마스크 불필요, 모델이 전체를 새로 생성
+  const prompt = await loadWorkflow("edit");
+  patchT2IBase(prompt, state, WF.sampler);
+  set(prompt, WF.promptPos,  "text",  buildPromptText(state, "inpaint"));
+  set(prompt, WF.promptNeg,  "text",  state.negativePrompt || "");
+  set(prompt, WF.loadImage1, "image", state.outpaintImage);
 
-  const W = {
-    model:"FKO:194", kv:"FKO:216", textEnc:"FKO:195", vae:"FKO:196",
-    promptPos:"FKO:6",
-    loadImg:"FKO:198", maskload:"FKO:maskload", tomask:"FKO:tomask",
-    inpaintCond:"FKO:210",
-    sampler:"FKO:163", save:"FKO:203",
-  };
-
-  patchModelLoader(prompt, W.model,   modelName);
-  patchClipLoader (prompt, W.textEnc, clipName);
-  set(prompt, W.vae,       "vae_name", vaeName);
-  set(prompt, W.promptPos, "text",     buildPromptText(state, "inpaint"));
-  set(prompt, W.loadImg,   "image",    state.outpaintImage);
-
-  // ImagePadForOutpaint: 검정 패딩 + 마스크 자동 생성
-  prompt["FKO:pad"] = { class_type:"ImagePadForOutpaint", inputs:{
-    image:      [W.loadImg, 0],
-    left:       Math.max(0, state.outpaintLeft  || 0),
-    top:        Math.max(0, state.outpaintUp    || 0),
-    right:      Math.max(0, state.outpaintRight || 0),
-    bottom:     Math.max(0, state.outpaintDown  || 0),
-    feathering: state.outpaintFeather ?? 32,
+  // ImagePadKJ: 사용자가 선택한 색상으로 패딩 (기본 검정 0,0,0)
+  const padR = state.outpaintPadR ?? 0;
+  const padG = state.outpaintPadG ?? 0;
+  const padB = state.outpaintPadB ?? 0;
+  prompt["FKO:pad"] = { class_type:"ImagePadKJ", inputs:{
+    image:         [WF.loadImage1, 0],
+    left:          Math.max(0, state.outpaintLeft  || 0),
+    top:           Math.max(0, state.outpaintUp    || 0),
+    right:         Math.max(0, state.outpaintRight || 0),
+    bottom:        Math.max(0, state.outpaintDown  || 0),
+    extra_padding: 0,
+    pad_mode:      "color",
+    color:         `${padR}, ${padG}, ${padB}`,
   }};
 
-  // InpaintModelConditioning: 패딩 이미지 + 마스크
-  set(prompt, W.inpaintCond, "pixels", ["FKO:pad", 0]);
-  set(prompt, W.inpaintCond, "mask",   ["FKO:pad", 1]);
+  // 패딩된 이미지를 ImageScaleToTotalPixels(scaleImg1)에 전달
+  set(prompt, WF.scaleImg1, "image", ["FKO:pad", 0]);
 
-  // 기존 mask 로딩 노드 삭제
-  delete prompt[W.maskload];
-  delete prompt[W.tomask];
+  // GetImageSize는 스케일된 패딩 이미지를 읽어야 EmptyLatent 크기 == VAEEncode 크기
+  set(prompt, WF.getSize, "image", [WF.scaleImg1, 0]);
+  // sampler.latent_image는 워크플로우 기본값(EmptyLatent, FK:170) 유지 — 마스크 없음
 
-  const modelSrc = useKV ? W.kv : W.model;
-  if (!useKV) delete prompt[W.kv];
-  const loraRef    = applyLoraChain(prompt, state, modelSrc, "FKO:");
-  const modelInput = typeof loraRef === "string" ? [loraRef, 0] : loraRef;
-  set(prompt, W.sampler, "model", modelInput);
+  // 단일 이미지 컨디셔닝 경로 (이미지2 관련 노드 제거)
+  [WF.loadImage2, WF.scaleImg2, WF.vaeEnc2, WF.refPos2, WF.refNeg2].forEach(id => delete prompt[id]);
+  set(prompt, WF.sampler, "positive", [WF.refPos1, 0]);
+  set(prompt, WF.sampler, "negative", [WF.refNeg1, 0]);
 
-  set(prompt, W.sampler, "seed",         state.seed ?? 0);
-  set(prompt, W.sampler, "steps",        state.steps || 4);
-  set(prompt, W.sampler, "cfg",          state.cfg !== undefined ? state.cfg : (isBase ? 5 : 1));
-  set(prompt, W.sampler, "sampler_name", state.sampler   || "euler");
-  set(prompt, W.sampler, "scheduler",    state.scheduler || "simple");
-  set(prompt, W.sampler, "denoise",      1.0);
-
-  patchSave(prompt, W.save, state);
+  set(prompt, WF.sampler, "denoise", 1.0);
+  patchSave(prompt, WF.saveImage, state);
   return prompt;
 }

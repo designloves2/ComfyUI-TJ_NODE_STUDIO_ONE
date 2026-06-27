@@ -20,9 +20,13 @@ NODE_DIR = os.path.dirname(os.path.abspath(__file__))
 # ── Per-node config paths ─────────────────────────────────────────────────────
 FK_CONFIG_PATH  = os.path.join(NODE_DIR, 'config_klein.json')
 ZIT_CONFIG_PATH = os.path.join(NODE_DIR, 'config_zimage.json')
+K2_CONFIG_PATH  = os.path.join(NODE_DIR, 'config_krea2.json')
+QE_CONFIG_PATH  = os.path.join(NODE_DIR, 'config_qwen2511.json')
 
 FK_SUBFOLDER  = "flux2-klein-one-tj"
 ZIT_SUBFOLDER = "one-node-z-image-turbo"
+K2_SUBFOLDER  = "krea2-one-tj"
+QE_SUBFOLDER  = "qwen2511-one-tj"
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -848,6 +852,277 @@ async def zit_free_memory(request):
 
 
 # ════════════════════════════════════════════════════════════════════════════════
+# Route registration — krea2_one
+# ════════════════════════════════════════════════════════════════════════════════
+
+PromptServer.instance.routes.get("/krea2_one/gallery")(_make_gallery_handler(K2_SUBFOLDER, "krea2"))
+PromptServer.instance.routes.post("/krea2_one/save_meta")(_make_save_meta_handler("krea2"))
+PromptServer.instance.routes.post("/krea2_one/update_meta")(_make_update_meta_handler("krea2"))
+PromptServer.instance.routes.get("/krea2_one/meta")(_make_meta_get_handler())
+PromptServer.instance.routes.post("/krea2_one/open_folder")(_make_open_folder_handler())
+PromptServer.instance.routes.post("/krea2_one/delete")(_make_delete_handler("krea2"))
+PromptServer.instance.routes.post("/krea2_one/copy_to_input")(_make_copy_to_input_handler("k2"))
+PromptServer.instance.routes.get("/krea2_one/lora_triggers")(_make_lora_triggers_handler())
+
+
+@PromptServer.instance.routes.get("/krea2_one/config")
+async def k2_get_config(request):
+    cfg = _load_config(K2_CONFIG_PATH)
+    return web.json_response({
+        "selected_model":        cfg.get("selected_model",        "krea2_turbo_fp8_scaled.safetensors"),
+        "selected_text_encoder": cfg.get("selected_text_encoder", "qwen3vl_4b_fp8_scaled.safetensors"),
+        "selected_vae":          cfg.get("selected_vae",          "qwen_image_vae.safetensors"),
+        "save_subfolder":        cfg.get("save_subfolder")        or K2_SUBFOLDER,
+        "negative_prompt":       cfg.get("negative_prompt",       ""),
+        "prompt_suffix":         cfg.get("prompt_suffix",         ""),
+    })
+
+
+@PromptServer.instance.routes.post("/krea2_one/config")
+async def k2_save_config(request):
+    try:
+        patch = await request.json()
+        if not isinstance(patch, dict):
+            return web.json_response({"ok": False, "error": "invalid payload"}, status=400)
+        cfg = _load_config(K2_CONFIG_PATH)
+        cfg.update(patch)
+        _save_config(K2_CONFIG_PATH, cfg)
+        return web.json_response({"ok": True})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+
+@PromptServer.instance.routes.get("/krea2_one/seedvr2_models")
+async def k2_get_seedvr2_models(request):
+    seedvr2_dir = os.path.join(folder_paths.models_dir, "SEEDVR2")
+    models = _scan_path(seedvr2_dir)
+    return web.json_response({"models": models})
+
+
+@PromptServer.instance.routes.get("/krea2_one/models")
+async def k2_get_models(request):
+    try:
+        diff = _scan("diffusion_models")
+    except Exception:
+        diff = ["none"]
+    try:
+        gguf_list = _scan("gguf", extensions=[".gguf"])
+    except Exception:
+        gguf_list = []
+    try:
+        te = _scan("text_encoders")
+    except Exception:
+        te = ["none"]
+    try:
+        vaes = _scan("vae")
+    except Exception:
+        vaes = ["none"]
+    loras = _scan("loras")
+    # Merge gguf into diffusion_models list for model selector
+    all_models = list(dict.fromkeys([m for m in diff + gguf_list if m != "none"])) or ["none"]
+    return web.json_response({
+        "diffusion_models": all_models,
+        "gguf": gguf_list if gguf_list else [],
+        "text_encoders": te,
+        "vaes": vaes,
+        "loras": loras,
+    })
+
+
+_k2_last_images: dict = {}
+
+
+@PromptServer.instance.routes.post("/krea2_one/set_last_image")
+async def k2_set_last_image(request):
+    data = await request.json()
+    uid = str(data.get("unique_id", ""))
+    if uid:
+        _k2_last_images[uid] = data.get("image", {})
+    return web.json_response({"ok": True})
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# Qwen Image Edit 2511 ONE — routes
+# ════════════════════════════════════════════════════════════════════════════════
+
+PromptServer.instance.routes.get("/qwen2511_one/gallery")(_make_gallery_handler(QE_SUBFOLDER, "qwen2511"))
+
+
+@PromptServer.instance.routes.post("/qwen2511_one/save_meta")
+async def qe_save_meta(request):
+    data = await request.json()
+    output_dir = _get_output_dir()
+    try:
+        path = _safe_resolve_output_path(output_dir, data.get("subfolder",""), data.get("filename",""))
+        _write_meta(path, data.get("meta", {}))
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+    return web.json_response({"ok": True})
+
+
+@PromptServer.instance.routes.post("/qwen2511_one/update_meta")
+async def qe_update_meta(request):
+    data = await request.json()
+    output_dir = _get_output_dir()
+    try:
+        path = _safe_resolve_output_path(output_dir, data.get("subfolder",""), data.get("filename",""))
+        meta = _read_meta(path)
+        meta.update(data.get("patch", {}))
+        _write_meta(path, meta)
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+    return web.json_response({"ok": True})
+
+
+@PromptServer.instance.routes.get("/qwen2511_one/meta")
+async def qe_meta(request):
+    output_dir = _get_output_dir()
+    filename  = request.rel_url.query.get("filename","")
+    subfolder = request.rel_url.query.get("subfolder","")
+    try:
+        path = _safe_resolve_output_path(output_dir, subfolder, filename)
+        return web.json_response(_read_meta(path))
+    except Exception as e:
+        return web.json_response({"error": str(e)})
+
+
+@PromptServer.instance.routes.post("/qwen2511_one/open_folder")
+async def qe_open_folder(request):
+    data = await request.json()
+    output_dir = _get_output_dir()
+    try:
+        path = _safe_resolve_output_path(output_dir, data.get("subfolder",""), data.get("filename",""))
+        folder = str(Path(path).parent)
+        if os.name == "nt":
+            subprocess.Popen(["explorer", folder])
+        elif os.uname().sysname == "Darwin":
+            subprocess.Popen(["open", folder])
+        else:
+            subprocess.Popen(["xdg-open", folder])
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+    return web.json_response({"ok": True})
+
+
+@PromptServer.instance.routes.post("/qwen2511_one/delete")
+async def qe_delete(request):
+    data = await request.json()
+    output_dir = _get_output_dir()
+    try:
+        path = _safe_resolve_output_path(output_dir, data.get("subfolder",""), data.get("filename",""))
+        if os.path.exists(path):
+            os.remove(path)
+        meta = path + ".meta.json"
+        if os.path.exists(meta):
+            os.remove(meta)
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+    return web.json_response({"ok": True})
+
+
+@PromptServer.instance.routes.post("/qwen2511_one/copy_to_input")
+async def qe_copy_to_input(request):
+    data      = await request.json()
+    filename  = data.get("filename","")
+    subfolder = data.get("subfolder","") or ""
+    img_type  = data.get("type","output")
+    try:
+        if img_type == "output":
+            src = os.path.join(_get_output_dir(), subfolder, filename) if subfolder else os.path.join(_get_output_dir(), filename)
+        else:
+            src = os.path.join(folder_paths.get_input_directory(), subfolder, filename) if subfolder else os.path.join(folder_paths.get_input_directory(), filename)
+        src = str(Path(src).resolve())
+        dst_dir  = folder_paths.get_input_directory()
+        dst_name = f"qe2511_{int(time.time()*1000)}_{os.path.basename(filename)}"
+        dst_path = os.path.join(dst_dir, dst_name)
+        shutil.copy2(src, dst_path)
+        return web.json_response({"ok": True, "filename": dst_name})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+
+
+@PromptServer.instance.routes.get("/qwen2511_one/lora_triggers")
+async def qe_lora_triggers(request):
+    name = request.rel_url.query.get("name","")
+    triggers = _get_lora_triggers(name)
+    return web.json_response({"ok": bool(triggers), "triggers": triggers})
+
+
+@PromptServer.instance.routes.get("/qwen2511_one/seedvr2_models")
+async def qe_seedvr2_models(request):
+    seedvr2_dir = os.path.join(folder_paths.models_dir, "SEEDVR2")
+    models = _scan_path(seedvr2_dir) if os.path.isdir(seedvr2_dir) else []
+    return web.json_response({"models": models or ["none"]})
+
+
+@PromptServer.instance.routes.get("/qwen2511_one/config")
+async def qe_get_config(request):
+    try:
+        with open(QE_CONFIG_PATH, "r", encoding="utf-8") as f:
+            return web.json_response(json.load(f))
+    except Exception:
+        return web.json_response({})
+
+
+@PromptServer.instance.routes.post("/qwen2511_one/config")
+async def qe_post_config(request):
+    data = await request.json()
+    try:
+        try:
+            with open(QE_CONFIG_PATH, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+        except Exception:
+            cfg = {}
+        cfg.update(data)
+        with open(QE_CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+    return web.json_response({"ok": True})
+
+
+@PromptServer.instance.routes.get("/qwen2511_one/models")
+async def qe_get_models(request):
+    try:
+        diff = _scan("diffusion_models")
+    except Exception:
+        diff = ["none"]
+    try:
+        gguf_list = _scan("gguf", extensions=[".gguf"])
+    except Exception:
+        gguf_list = []
+    try:
+        te = _scan("text_encoders")
+    except Exception:
+        te = ["none"]
+    try:
+        vaes = _scan("vae")
+    except Exception:
+        vaes = ["none"]
+    loras = _scan("loras")
+    all_models = list(dict.fromkeys([m for m in diff + gguf_list if m != "none"])) or ["none"]
+    return web.json_response({
+        "diffusion_models": all_models,
+        "gguf": gguf_list if gguf_list else [],
+        "text_encoders": te,
+        "vaes": vaes,
+        "loras": loras,
+    })
+
+
+_qe_last_images: dict = {}
+
+
+@PromptServer.instance.routes.post("/qwen2511_one/set_last_image")
+async def qe_set_last_image(request):
+    data = await request.json()
+    uid = str(data.get("unique_id", ""))
+    if uid:
+        _qe_last_images[uid] = data.get("image", {})
+    return web.json_response({"ok": True})
+
+
+# ════════════════════════════════════════════════════════════════════════════════
 # Node classes
 # ════════════════════════════════════════════════════════════════════════════════
 
@@ -887,6 +1162,49 @@ class Flux2KleinOneTJNode:
                 return (torch.from_numpy(arr)[None,],)
         except Exception as e:
             print(f"[FK] output slot error: {e}")
+        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32),)
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return float("nan")
+
+
+class Krea2OneTJNode:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {},
+            "optional": {
+                "prompt_override": ("STRING", {
+                    "default": "",
+                    "multiline": True,
+                    "forceInput": True,
+                    "tooltip": "외부 프롬프트 오버라이드 — 내부 프롬프트 앞에 추가됩니다.",
+                }),
+            },
+            "hidden": {"unique_id": "UNIQUE_ID"},
+        }
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("image",)
+    FUNCTION = "get_output_image"
+    CATEGORY = " ✨ TJ_Node/Generator"
+    OUTPUT_NODE = True
+
+    def get_output_image(self, unique_id=None, prompt_override="", **kwargs):
+        uid = str(unique_id) if unique_id else ""
+        info = _k2_last_images.get(uid, {})
+        try:
+            filename = info.get("filename")
+            if filename:
+                img_type = info.get("type", "output")
+                subfolder = info.get("subfolder", "") or ""
+                base = folder_paths.get_output_directory() if img_type == "output" else folder_paths.get_input_directory()
+                path = os.path.join(base, subfolder, filename) if subfolder else os.path.join(base, filename)
+                img = Image.open(path).convert("RGB")
+                arr = np.array(img).astype(np.float32) / 255.0
+                return (torch.from_numpy(arr)[None,],)
+        except Exception as e:
+            print(f"[K2] output slot error: {e}")
         return (torch.zeros((1, 64, 64, 3), dtype=torch.float32),)
 
     @classmethod
@@ -937,11 +1255,58 @@ class ZImageTurboOneNode:
         return float("nan")
 
 
+class QwenImageEdit2511OneTJNode:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {},
+            "optional": {
+                "prompt_override": ("STRING", {
+                    "default": "",
+                    "multiline": True,
+                    "forceInput": True,
+                    "tooltip": "External prompt override appended before the internal prompt.",
+                }),
+            },
+            "hidden": {"unique_id": "UNIQUE_ID"},
+        }
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("image",)
+    FUNCTION = "get_output_image"
+    CATEGORY = " ✨ TJ_Node/Generator"
+    OUTPUT_NODE = True
+
+    def get_output_image(self, unique_id=None, prompt_override="", **kwargs):
+        uid = str(unique_id) if unique_id else ""
+        info = _qe_last_images.get(uid, {})
+        try:
+            filename = info.get("filename")
+            if filename:
+                img_type  = info.get("type", "output")
+                subfolder = info.get("subfolder", "") or ""
+                base = folder_paths.get_output_directory() if img_type == "output" else folder_paths.get_input_directory()
+                path = os.path.join(base, subfolder, filename) if subfolder else os.path.join(base, filename)
+                img = Image.open(path).convert("RGB")
+                arr = np.array(img).astype(np.float32) / 255.0
+                return (torch.from_numpy(arr)[None,],)
+        except Exception as e:
+            print(f"[QE2511] output slot error: {e}")
+        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32),)
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return float("nan")
+
+
 NODE_CLASS_MAPPINGS = {
-    "Flux2KleinOneTJNode": Flux2KleinOneTJNode,
-    "ZImageTurboOneNode":  ZImageTurboOneNode,
+    "Flux2KleinOneTJNode":         Flux2KleinOneTJNode,
+    "ZImageTurboOneNode":          ZImageTurboOneNode,
+    "Krea2OneTJNode":              Krea2OneTJNode,
+    "QwenImageEdit2511OneTJNode":  QwenImageEdit2511OneTJNode,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "Flux2KleinOneTJNode": "Flux.2 Klein ONE STUDIO (TJ)",
-    "ZImageTurboOneNode":  "Z-Image ONE STUDIO (TJ)",
+    "Flux2KleinOneTJNode":         "Flux.2 Klein ONE STUDIO (TJ)",
+    "ZImageTurboOneNode":          "Z-Image ONE STUDIO (TJ)",
+    "Krea2OneTJNode":              "Krea 2 ONE STUDIO (TJ)",
+    "QwenImageEdit2511OneTJNode":  "Qwen Image Edit 2511 ONE STUDIO (TJ)",
 }
