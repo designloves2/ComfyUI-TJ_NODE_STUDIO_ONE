@@ -5,7 +5,8 @@ import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, co
 const SEND_TARGETS = [
   { mode: "i2i",      field: "i2iImage",        label: "→ I2I" },
   { mode: "edit",     field: "editImage1",       label: "→ Edit (Img1)" },
-  { mode: "inpaint",  field: "inpaintImage",     label: "→ Paint" },
+  { mode: "inpaint",  field: "inpaintImage",     label: "→ Inpaint",  subMode: "inpaint" },
+  { mode: "inpaint",  field: "outpaintImage",    label: "→ Outpaint", subMode: "outpaint" },
   { mode: "faceswap", field: "faceswapTarget",   label: "→ Faceswap" },
   { mode: "angle",    field: "angleCameraImage",  label: "→ Angle" },
   { mode: "upscale",  field: "upscaleImage",     label: "→ Upscale" },
@@ -116,7 +117,7 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
         try {
           const n = await copyOutputToInput(img.filename, img.subfolder || "", "output");
           closeViewer(); ov.style.display = "none";
-          if (typeof onSendTo === "function") onSendTo(t.mode, t.field, n);
+          if (typeof onSendTo === "function") onSendTo(t.mode, t.field, t.subMode, n);
         } catch { b.textContent = "Error"; setTimeout(() => { b.disabled = false; b.textContent = t.label; }, 2000); }
       });
       b.style.fontSize = "11px";

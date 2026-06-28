@@ -37,18 +37,20 @@ const MODES = [
   { key: "upscale",  label: "UPSCALE",  enabled: true },
 ];
 
+const _IP = { mode:"inpaint",  label:"→ Inpaint",  field:"inpaintImage",  subMode:"inpaint" };
+const _OP = { mode:"inpaint",  label:"→ Outpaint", field:"outpaintImage", subMode:"outpaint" };
 const SEND_TO = {
   t2i:      [{ mode:"i2i",      label:"→ I2I",      field:"i2iImage" },
               { mode:"edit",     label:"→ Edit",     field:"editImage1" },
-              { mode:"inpaint",  label:"→ Paint",    field:"inpaintImage" },
+              _IP, _OP,
               { mode:"faceswap", label:"→ Faceswap", field:"faceswapTarget" },
               { mode:"upscale",  label:"→ Upscale",  field:"upscaleImage" }],
   i2i:      [{ mode:"edit",     label:"→ Edit",     field:"editImage1" },
-              { mode:"inpaint",  label:"→ Paint",    field:"inpaintImage" },
+              _IP, _OP,
               { mode:"faceswap", label:"→ Faceswap", field:"faceswapTarget" },
               { mode:"upscale",  label:"→ Upscale",  field:"upscaleImage" }],
   edit:     [{ mode:"i2i",      label:"→ I2I",      field:"i2iImage" },
-              { mode:"inpaint",  label:"→ Paint",    field:"inpaintImage" },
+              _IP, _OP,
               { mode:"faceswap", label:"→ Faceswap", field:"faceswapTarget" },
               { mode:"upscale",  label:"→ Upscale",  field:"upscaleImage" }],
   inpaint:  [{ mode:"i2i",      label:"→ I2I",      field:"i2iImage" },
@@ -57,11 +59,11 @@ const SEND_TO = {
               { mode:"upscale",  label:"→ Upscale",  field:"upscaleImage" }],
   faceswap: [{ mode:"i2i",      label:"→ I2I",      field:"i2iImage" },
               { mode:"edit",     label:"→ Edit",     field:"editImage1" },
-              { mode:"inpaint",  label:"→ Paint",    field:"inpaintImage" },
+              _IP, _OP,
               { mode:"upscale",  label:"→ Upscale",  field:"upscaleImage" }],
   upscale:  [{ mode:"i2i",      label:"→ I2I",      field:"i2iImage" },
               { mode:"edit",     label:"→ Edit",     field:"editImage1" },
-              { mode:"inpaint",  label:"→ Paint",    field:"inpaintImage" },
+              _IP, _OP,
               { mode:"faceswap", label:"→ Faceswap", field:"faceswapTarget" }],
 };
 
@@ -566,9 +568,19 @@ app.registerExtension({
             try {
               const n = await copyOutputToInput(mr.im.filename, mr.im.subfolder || "", mr.im.type || "output");
               state[t.field] = n;
-              if (t.field === "inpaintImage") state.outpaintImage = n;
-              state.mode = t.mode; persist();
-              renderPills(); renderMode();
+              if (t.field === "inpaintImage")  state.outpaintImage = n;
+              if (t.field === "outpaintImage") state.inpaintImage  = n;
+              if (t.mode === state.mode) {
+                if (t.subMode && t.subMode !== state.paintSubMode) {
+                  state.paintSubMode = t.subMode;
+                  modeHandle?.switchSubMode?.(t.subMode);
+                }
+                if (modeHandle?.setImage) { modeHandle.setImage(n); persist(); }
+                else { persist(); renderPills(); renderMode(); }
+              } else {
+                if (t.subMode) state.paintSubMode = t.subMode;
+                state.mode = t.mode; persist(); renderPills(); renderMode();
+              }
             } catch(e) { btn.disabled = false; btn.textContent = t.label; }
           });
           sendLeft.appendChild(btn);
@@ -887,9 +899,21 @@ app.registerExtension({
       galleryOv = createGalleryOverlay(
         state, ctx,
         meta => { Object.assign(state, meta); persist(); renderPills(); renderMode(); },
-        (mode, field, _extra, filename) => {
-          state[field] = filename; state.mode = mode; persist();
-          renderPills(); renderMode();
+        (mode, field, extra, filename) => {
+          state[field] = filename;
+          if (field === "inpaintImage")  state.outpaintImage = filename;
+          if (field === "outpaintImage") state.inpaintImage  = filename;
+          if (mode === state.mode) {
+            if (extra && extra !== state.paintSubMode) {
+              state.paintSubMode = extra;
+              modeHandle?.switchSubMode?.(extra);
+            }
+            if (modeHandle?.setImage) { modeHandle.setImage(filename); persist(); }
+            else { persist(); renderPills(); renderMode(); }
+          } else {
+            if (extra) state.paintSubMode = extra;
+            state.mode = mode; persist(); renderPills(); renderMode();
+          }
         }
       );
       root.appendChild(galleryOv.el);

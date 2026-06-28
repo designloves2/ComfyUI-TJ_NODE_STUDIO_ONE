@@ -50,6 +50,7 @@ export function mountControlNetLeft(leftEl, state, ctx) {
   mountLoraSection(wrap, state, ctx);
 
   return {
+    setImage(name) { state.controlnetImage = name; up.setFilename(name); ctx.persist(); },
     beforeGenerate: async () => {
       if (!state.controlnetImage) throw new Error("Upload a reference image.");
       if (!state.controlnetModel || state.controlnetModel === "none") throw new Error("Select a ControlNet Union model.");

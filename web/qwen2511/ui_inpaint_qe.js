@@ -267,6 +267,7 @@ export function mountInpaintLeft(leftEl, state, ctx) {
   }
 
   return {
+    switchSubMode,
     beforeGenerate: async () => {
       if (!state.inpaintImage) throw new Error("Upload a source image first.");
       if (state.paintSubMode === "inpaint") {

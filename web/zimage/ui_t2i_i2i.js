@@ -23,14 +23,17 @@ export function mountT2II2ILeft(leftEl, state, ctx) {
 
   // I2I image upload
   const i2iSection = el("div");
+  let _i2iUpWidget = null;
   function renderI2I() {
     clear(i2iSection);
+    _i2iUpWidget = null;
     if (state.mode !== "i2i") return;
     const up = createImageUpload({
       label: "Source Image",
       initialFilename: state.i2iImage,
       onUpload: async f => { const n = await uploadImage(f); state.i2iImage = n; ctx.persist(); ctx.resizeNode?.(); return n; },
     });
+    _i2iUpWidget = up;
     i2iSection.appendChild(panel([
       label("Source Image"), up.el,
       label("Denoise Strength"),
@@ -96,6 +99,11 @@ export function mountT2II2ILeft(leftEl, state, ctx) {
   mountLoraSection(wrap, state, ctx);
 
   return {
+    setImage(name) {
+      state.i2iImage = name;
+      if (_i2iUpWidget) { _i2iUpWidget.setFilename(name); } else { renderI2I(); }
+      ctx.persist();
+    },
     beforeGenerate: async () => {
       if (state.mode === "i2i" && !state.i2iImage) throw new Error("Upload a source image for I2I.");
     },

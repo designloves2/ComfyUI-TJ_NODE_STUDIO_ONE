@@ -1,5 +1,5 @@
 {
-  "selected_model": "Krea2\\krea2_turbo_mxfp8.safetensors",
+  "selected_model": "Krea2\\redcraftKREA2RedMix_krea2Edition.safetensors",
   "selected_text_encoder": "Qwen3\\qwen_3vl_4b_bf16.safetensors",
   "selected_vae": "qwen_image_vae.safetensors",
   "save_subfolder": "",

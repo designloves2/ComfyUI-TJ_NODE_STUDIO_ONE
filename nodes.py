@@ -22,11 +22,13 @@ FK_CONFIG_PATH  = os.path.join(NODE_DIR, 'config_klein.json')
 ZIT_CONFIG_PATH = os.path.join(NODE_DIR, 'config_zimage.json')
 K2_CONFIG_PATH  = os.path.join(NODE_DIR, 'config_krea2.json')
 QE_CONFIG_PATH  = os.path.join(NODE_DIR, 'config_qwen2511.json')
+SDXL_CONFIG_PATH = os.path.join(NODE_DIR, 'config_sdxl_one.json')
 
 FK_SUBFOLDER  = "flux2-klein-one-tj"
 ZIT_SUBFOLDER = "one-node-z-image-turbo"
 K2_SUBFOLDER  = "krea2-one-tj"
 QE_SUBFOLDER  = "qwen2511-one-tj"
+SDXL_SUBFOLDER = "sdxl-one-tj"
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -947,6 +949,113 @@ async def k2_set_last_image(request):
 
 
 # ════════════════════════════════════════════════════════════════════════════════
+# Route registration — sdxl_one
+# ════════════════════════════════════════════════════════════════════════════════
+
+PromptServer.instance.routes.get("/sdxl_one/gallery")(_make_gallery_handler(SDXL_SUBFOLDER, "sdxl_one"))
+PromptServer.instance.routes.post("/sdxl_one/save_meta")(_make_save_meta_handler("sdxl_one"))
+PromptServer.instance.routes.post("/sdxl_one/update_meta")(_make_update_meta_handler("sdxl_one"))
+PromptServer.instance.routes.get("/sdxl_one/meta")(_make_meta_get_handler())
+PromptServer.instance.routes.post("/sdxl_one/open_folder")(_make_open_folder_handler())
+PromptServer.instance.routes.post("/sdxl_one/delete")(_make_delete_handler("sdxl_one"))
+PromptServer.instance.routes.post("/sdxl_one/copy_to_input")(_make_copy_to_input_handler("sdxl"))
+PromptServer.instance.routes.get("/sdxl_one/lora_triggers")(_make_lora_triggers_handler())
+
+
+@PromptServer.instance.routes.get("/sdxl_one/config")
+async def sdxl_get_config(request):
+    cfg = _load_config(SDXL_CONFIG_PATH)
+    return web.json_response({
+        "model_loader_mode":    cfg.get("model_loader_mode",    "checkpoint"),
+        "checkpoint":           cfg.get("checkpoint",           "none"),
+        "refiner_checkpoint":   cfg.get("refiner_checkpoint",   "none"),
+        "use_refiner":          cfg.get("use_refiner",          False),
+        "refiner_step_frac":    cfg.get("refiner_step_frac",    0.8),
+        "unet":                 cfg.get("unet",                 "none"),
+        "clip_l":               cfg.get("clip_l",               "none"),
+        "clip_g":               cfg.get("clip_g",               "none"),
+        "vae":                  cfg.get("vae",                  "none"),
+        "negative_prompt":      cfg.get("negative_prompt",      ""),
+        "prompt_suffix":        cfg.get("prompt_suffix",        ""),
+        "save_subfolder":       cfg.get("save_subfolder")       or SDXL_SUBFOLDER,
+        "language":             cfg.get("language",             "en"),
+    })
+
+
+@PromptServer.instance.routes.post("/sdxl_one/config")
+async def sdxl_save_config(request):
+    try:
+        patch = await request.json()
+        if not isinstance(patch, dict):
+            return web.json_response({"ok": False, "error": "invalid payload"}, status=400)
+        cfg = _load_config(SDXL_CONFIG_PATH)
+        cfg.update(patch)
+        _save_config(SDXL_CONFIG_PATH, cfg)
+        return web.json_response({"ok": True})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+
+@PromptServer.instance.routes.get("/sdxl_one/models")
+async def sdxl_get_models(request):
+    try:
+        checkpoints = _scan("checkpoints")
+    except Exception:
+        checkpoints = ["none"]
+    try:
+        unets = _scan("unet") if hasattr(folder_paths, "get_folder_paths") else ["none"]
+    except Exception:
+        unets = ["none"]
+    try:
+        diff = _scan("diffusion_models")
+    except Exception:
+        diff = ["none"]
+    all_unets = list(dict.fromkeys([m for m in unets + diff if m != "none"])) or ["none"]
+    try:
+        te = _scan("text_encoders")
+    except Exception:
+        te = ["none"]
+    try:
+        vaes = _scan("vae")
+    except Exception:
+        vaes = ["none"]
+    loras = _scan("loras")
+    return web.json_response({
+        "checkpoints":    checkpoints,
+        "unets":          all_unets,
+        "text_encoders":  te,
+        "vaes":           vaes,
+        "loras":          loras,
+    })
+
+
+@PromptServer.instance.routes.get("/sdxl_one/esrgan_models")
+async def sdxl_get_esrgan_models(request):
+    upscale_dir = os.path.join(folder_paths.models_dir, "upscale_models")
+    models = _scan_path(upscale_dir, extensions=[".pt", ".pth", ".safetensors", ".bin"])
+    return web.json_response({"models": models})
+
+
+@PromptServer.instance.routes.get("/sdxl_one/seedvr2_models")
+async def sdxl_get_seedvr2_models(request):
+    seedvr2_dir = os.path.join(folder_paths.models_dir, "SEEDVR2")
+    models = _scan_path(seedvr2_dir)
+    return web.json_response({"models": models})
+
+
+_sdxl_last_images: dict = {}
+
+
+@PromptServer.instance.routes.post("/sdxl_one/set_last_image")
+async def sdxl_set_last_image(request):
+    data = await request.json()
+    uid = str(data.get("unique_id", ""))
+    if uid:
+        _sdxl_last_images[uid] = data.get("image", {})
+    return web.json_response({"ok": True})
+
+
+# ════════════════════════════════════════════════════════════════════════════════
 # Qwen Image Edit 2511 ONE — routes
 # ════════════════════════════════════════════════════════════════════════════════
 
@@ -1578,15 +1687,60 @@ class QwenImageEdit2511OneTJNode:
         return float("nan")
 
 
+class SDXLOneTJNode:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {},
+            "optional": {
+                "prompt_override": ("STRING", {
+                    "default": "",
+                    "multiline": True,
+                    "forceInput": True,
+                    "tooltip": "외부 프롬프트 오버라이드 — 내부 프롬프트 앞에 추가됩니다.",
+                }),
+            },
+            "hidden": {"unique_id": "UNIQUE_ID"},
+        }
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("image",)
+    FUNCTION = "get_output_image"
+    CATEGORY = " ✨ TJ_Node/Generator"
+    OUTPUT_NODE = True
+
+    def get_output_image(self, unique_id=None, prompt_override="", **kwargs):
+        uid = str(unique_id) if unique_id else ""
+        info = _sdxl_last_images.get(uid, {})
+        try:
+            filename = info.get("filename")
+            if filename:
+                img_type  = info.get("type", "output")
+                subfolder = info.get("subfolder", "") or ""
+                base = folder_paths.get_output_directory() if img_type == "output" else folder_paths.get_input_directory()
+                path = os.path.join(base, subfolder, filename) if subfolder else os.path.join(base, filename)
+                img = Image.open(path).convert("RGB")
+                arr = np.array(img).astype(np.float32) / 255.0
+                return (torch.from_numpy(arr)[None,],)
+        except Exception as e:
+            print(f"[SDXL ONE] output slot error: {e}")
+        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32),)
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return float("nan")
+
+
 NODE_CLASS_MAPPINGS = {
     "Flux2KleinOneTJNode":         Flux2KleinOneTJNode,
     "ZImageTurboOneNode":          ZImageTurboOneNode,
     "Krea2OneTJNode":              Krea2OneTJNode,
     "QwenImageEdit2511OneTJNode":  QwenImageEdit2511OneTJNode,
+    "SDXLOneTJNode":               SDXLOneTJNode,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "Flux2KleinOneTJNode":         "Flux.2 Klein ONE STUDIO (TJ)",
     "ZImageTurboOneNode":          "Z-Image ONE STUDIO (TJ)",
     "Krea2OneTJNode":              "Krea 2 ONE STUDIO (TJ)",
     "QwenImageEdit2511OneTJNode":  "Qwen Image Edit 2511 ONE STUDIO (TJ)",
+    "SDXLOneTJNode":               "SDXL ONE STUDIO (TJ)",
 }

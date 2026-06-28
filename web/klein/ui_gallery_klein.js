@@ -6,7 +6,8 @@ import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, co
 const SEND_TARGETS = [
   { mode: "i2i",      field: "i2iImage",       label: "→ I2I" },
   { mode: "edit",     field: "editImage1",      label: "→ Edit (Img1)" },
-  { mode: "inpaint",  field: "inpaintImage",    label: "→ Inpaint" },
+  { mode: "inpaint",  field: "inpaintImage",    label: "→ Inpaint",   extra: "inpaint" },
+  { mode: "inpaint",  field: "outpaintImage",   label: "→ Outpaint",  extra: "outpaint" },
   { mode: "faceswap", field: "faceswapTarget",  label: "→ Faceswap Target" },
   { mode: "upscale",  field: "upscaleImage",    label: "→ Upscale" },
 ];

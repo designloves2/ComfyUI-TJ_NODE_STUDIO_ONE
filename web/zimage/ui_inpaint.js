@@ -586,6 +586,11 @@ export function mountInpaintLeft(leftEl, state, ctx) {
   mountLoraSection(wrap, state, ctx);
 
   return {
+    setImage(name) {
+      state.inpaintImage = name; state.inpaintMaskImage = null;
+      srcUp.setFilename(name); loadSourceImage(name);
+      ctx.persist();
+    },
     beforeGenerate: async () => {
       if (!state.inpaintImage) throw new Error("소스 이미지를 업로드하세요.");
       if (!state.inpaintMaskImage) {

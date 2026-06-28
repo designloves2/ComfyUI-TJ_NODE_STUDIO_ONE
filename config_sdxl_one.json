@@ -1,0 +1,12 @@
+{
+  "selected_checkpoint": "XL\\epicrealism_pureEvolutionV5-inpainting.safetensors",
+  "selected_refiner": "XL\\epicrealism_naturalSinRC1VAE.safetensors",
+  "selected_unet": "",
+  "selected_clip_l": "",
+  "selected_clip_g": "",
+  "selected_vae": "",
+  "model_loader_mode": "checkpoint",
+  "negative_prompt": "low quality, deformed, blurry, watermark, ugly, bad anatomy, disfigured, mutated, extra limbs, poorly drawn face, bad proportions, jpeg artifacts, overexposed, underexposed, nsfw",
+  "prompt_suffix": "",
+  "save_subfolder": ""
+}

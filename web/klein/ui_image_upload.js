@@ -26,7 +26,7 @@ export function createImageUpload({ label = "Image", onUpload, initialFilename =
     objectFit: "contain", display: initialFilename ? "block" : "none",
     pointerEvents: "none",
   }});
-  if (initialFilename) img.src = `/view?filename=${encodeURIComponent(initialFilename)}&type=input`;
+  if (initialFilename) img.src = `/view?filename=${encodeURIComponent(initialFilename)}&type=input&t=${Date.now()}`;
 
   // Expand icon (top-right)
   const expandBtn = el("button", { type: "button", text: "⤢", style: {
@@ -59,7 +59,7 @@ export function createImageUpload({ label = "Image", onUpload, initialFilename =
   fi.addEventListener("change", async () => {
     const f = fi.files[0]; if (!f) return;
     const name = await onUpload(f);
-    img.src = `/view?filename=${encodeURIComponent(name)}&type=input`;
+    img.src = `/view?filename=${encodeURIComponent(name)}&type=input&t=${Date.now()}`;
     img.style.display = "block";
     hint.style.display = "none";
     expandBtn.style.display = "block";
@@ -69,13 +69,23 @@ export function createImageUpload({ label = "Image", onUpload, initialFilename =
   wrap.appendChild(box);
   wrap.appendChild(fi);
 
-  return {
-    el: wrap,
-    setFilename(name) {
-      img.src = `/view?filename=${encodeURIComponent(name)}&type=input`;
+  function show(name) {
+    if (name) {
+      img.src = `/view?filename=${encodeURIComponent(name)}&type=input&t=${Date.now()}`;
       img.style.display = "block";
       hint.style.display = "none";
       expandBtn.style.display = "block";
-    },
+    } else {
+      img.src = "";
+      img.style.display = "none";
+      hint.style.display = "block";
+      expandBtn.style.display = "none";
+    }
+  }
+
+  return {
+    el: wrap,
+    setFilename(name) { show(name); },
+    clearSlot() { show(null); },
   };
 }

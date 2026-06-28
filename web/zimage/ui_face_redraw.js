@@ -49,6 +49,7 @@ export function mountFaceRedrawLeft(leftEl, state, ctx) {
   mountLoraSection(wrap,state,ctx);
 
   return {
+    setImage(name) { state.faceImage = name; up.setFilename(name); ctx.persist(); },
     beforeGenerate:async()=>{
       if(!state.faceImage)  throw new Error("Upload a portrait image.");
       if(!state.faceDetectorModel||state.faceDetectorModel==="none") throw new Error("Select a face detector model.");

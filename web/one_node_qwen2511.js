@@ -40,10 +40,12 @@ const MODES = [
 ];
 
 // T2I → 모든 모드, 나머지 → T2I·현재모드 제외한 전체
+const _QIP = { mode:"inpaint", label:"→ Inpaint",  field:"inpaintImage",  subMode:"inpaint"  };
+const _QOP = { mode:"inpaint", label:"→ Outpaint", field:"outpaintImage", subMode:"outpaint" };
 const ALL_TARGETS = [
   { mode:"i2i",      label:"→ I2I",     field:"i2iImage"       },
   { mode:"edit",     label:"→ Edit",    field:"editImage1"     },
-  { mode:"inpaint",  label:"→ Paint",   field:"inpaintImage"   },
+  _QIP, _QOP,
   { mode:"faceswap", label:"→ Face",    field:"faceswapTarget" },
   { mode:"angle",    label:"→ Angle",   field:"angleCameraImage"},
   { mode:"upscale",  label:"→ Upscale", field:"upscaleImage"   },
@@ -288,8 +290,23 @@ app.registerExtension({
           btn.addEventListener("click",async()=>{
             const mr=modeResults[state.mode];if(!mr)return;
             btn.disabled=true;btn.textContent="Copying…";
-            try{const n=await copyOutputToInput(mr.im.filename,mr.im.subfolder||"",mr.im.type||"output");state[t.field]=n;state.mode=t.mode;persist();renderPills();renderMode();}
-            catch(e){btn.disabled=false;btn.textContent=t.label;}
+            try{
+              const n=await copyOutputToInput(mr.im.filename,mr.im.subfolder||"",mr.im.type||"output");
+              state[t.field]=n;
+              if(t.field==="inpaintImage")  state.outpaintImage=n;
+              if(t.field==="outpaintImage") state.inpaintImage=n;
+              if(t.mode===state.mode){
+                if(t.subMode&&t.subMode!==state.paintSubMode){
+                  state.paintSubMode=t.subMode;
+                  modeHandle?.switchSubMode?.(t.subMode);
+                }
+                if(modeHandle?.setImage){modeHandle.setImage(n);persist();}
+                else{persist();renderPills();renderMode();}
+              }else{
+                if(t.subMode)state.paintSubMode=t.subMode;
+                state.mode=t.mode;persist();renderPills();renderMode();
+              }
+            }catch(e){btn.disabled=false;btn.textContent=t.label;}
           });
           sendLeft.appendChild(btn);
         });
@@ -476,7 +493,22 @@ app.registerExtension({
       galleryOv=createGalleryOverlay(
         state, ctx,
         meta => { Object.assign(state, meta); persist(); renderPills(); renderMode(); },
-        (mode, field, filename) => { state[field]=filename; state.mode=mode; persist(); renderPills(); renderMode(); }
+        (mode, field, subMode, filename) => {
+          state[field]=filename;
+          if(field==="inpaintImage")  state.outpaintImage=filename;
+          if(field==="outpaintImage") state.inpaintImage=filename;
+          if(mode===state.mode){
+            if(subMode&&subMode!==state.paintSubMode){
+              state.paintSubMode=subMode;
+              modeHandle?.switchSubMode?.(subMode);
+            }
+            if(modeHandle?.setImage){modeHandle.setImage(filename);persist();}
+            else{persist();renderPills();renderMode();}
+          }else{
+            if(subMode)state.paintSubMode=subMode;
+            state.mode=mode;persist();renderPills();renderMode();
+          }
+        }
       );
       root.appendChild(galleryOv.el);
 

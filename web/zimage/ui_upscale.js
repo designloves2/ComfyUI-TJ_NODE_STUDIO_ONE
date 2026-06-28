@@ -137,6 +137,7 @@ export function mountUpscaleLeft(leftEl, state, ctx) {
   getSeedVR2Models().then(d => buildModelSelects(d.models || ["none"])).catch(() => {});
 
   return {
+    setImage(name) { state.upscaleImage = name; imgUpload.setFilename(name); ctx.persist(); },
     beforeGenerate: async () => {
       if (!state.upscaleImage) throw new Error("소스 이미지를 업로드하세요.");
       if (!state.upscaleDitModel || state.upscaleDitModel === "none") throw new Error("DiT 모델을 선택하세요.");

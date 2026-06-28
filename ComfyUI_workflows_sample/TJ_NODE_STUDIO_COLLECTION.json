@@ -1,8 +1,8 @@
 {
   "id": "7650ef2c-3ba1-4e86-9cb2-050c770dc4f8",
   "revision": 0,
-  "last_node_id": 121,
-  "last_link_id": 224,
+  "last_node_id": 130,
+  "last_link_id": 229,
   "nodes": [
     {
       "id": 39,
@@ -40,155 +40,6 @@
       "bgcolor": "rgba(0,0,0,0)"
     },
     {
-      "id": 26,
-      "type": "TJ_PromptStudio",
-      "pos": [
-        -2855.387121164134,
-        1564.7871970038977
-      ],
-      "size": [
-        400,
-        578
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 14,
-      "mode": 0,
-      "inputs": [
-        {
-          "label": "",
-          "name": "raw_prompt_input",
-          "shape": 7,
-          "type": "STRING",
-          "link": null
-        },
-        {
-          "label": "",
-          "name": "image",
-          "shape": 7,
-          "type": "IMAGE",
-          "link": 10
-        },
-        {
-          "name": "clip",
-          "shape": 7,
-          "type": "CLIP",
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "label": "Prompt_Studio ▶",
-          "name": "prompt",
-          "type": "STRING",
-          "links": [
-            11
-          ]
-        },
-        {
-          "name": "thought_process",
-          "type": "STRING",
-          "links": null
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "TJ_PromptStudio",
-        "tj_prompt_studio_advanced": true,
-        "ue_properties": {
-          "widget_ue_connectable": {},
-          "input_ue_unconnectable": {},
-          "version": "7.8"
-        },
-        "tj_prompt_studio_enhancer_height": 578,
-        "tj_prompt_studio_user_sized": true
-      },
-      "widgets_values": [
-        "(none)",
-        "(none)",
-        "Prompt_Studio",
-        "Auto",
-        "",
-        "GGUF / llama.cpp",
-        "LLM\\Qwen3VL\\Qwen3-VL-8B-NSFW-Caption-V4.5.Q8_0.gguf",
-        "LLM\\Qwen3VL\\Qwen3-VL-8B-NSFW-Caption-V4.5.mmproj-Q8_0.gguf",
-        "Auto-detect",
-        "gemma4_e4b_it_fp8_scaled.safetensors",
-        "Auto",
-        "Image",
-        "Caption (plain description)",
-        "Universal Natural Language",
-        "Photorealistic",
-        "",
-        "",
-        "이미지를 실사 사진으로 생각하고 설명하시요.",
-        true,
-        -1,
-        4096,
-        1000,
-        0.7,
-        0.9,
-        1.15,
-        860479228551792,
-        "randomize",
-        false,
-        ""
-      ],
-      "color": "#7612DA",
-      "bgcolor": "#000000"
-    },
-    {
-      "id": 28,
-      "type": "TJ_ShowAny",
-      "pos": [
-        -3283.4834069294498,
-        1214.787197003898
-      ],
-      "size": [
-        828.096285765316,
-        282.573919725618
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 15,
-      "mode": 0,
-      "inputs": [
-        {
-          "label": "",
-          "name": "any",
-          "shape": 7,
-          "type": "*",
-          "link": 11
-        }
-      ],
-      "outputs": [
-        {
-          "label": "",
-          "name": "output",
-          "type": "*",
-          "links": null
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "TJ_ShowAny",
-        "ue_properties": {
-          "widget_ue_connectable": {},
-          "input_ue_unconnectable": {},
-          "version": "7.8"
-        },
-        "tj_show_any_last_text": "이미지는 야간의 풍경을 배경으로 한 실사 사진 스타일로, 중앙에 앉아 있는 마법사를 주제로 하고 있습니다. 화면은 깊이감 있는 초점으로 구성되어 있으며, 피사체는 선명하게 보이고 배경은 부드럽게 흐릿해져 있어 시선을 중심 인물에게 집중시키고 있습니다. 조명은 자연스러운 야간 빛을 활용하여, 외곽의 달빛과 불꽃이 주요光源으로 작용하며, 피부와 옷의 질감을 생생하게 드러냅니다. 색상은 어두운 톤 기반에 붉은색, 금색 악세서리가 포인트로 사용되어 마법사의 신비로움과 열정적인 분위기를 강조합니다. 전체적으로 따뜻하고 몽환적인 분위기가 감도는 한편, 실사 사진처럼 세밀한 빛 반사와 그림자 표현이 특징이며, 8k급 해상도로 텍스처의 미세함을 자세히 보여줍니다. 주요 상세 사항으로는 큰 마법사 모자의 금색 장식, 가슴에 걸친 붉은색 보석 목걸이, 반짝이는 파란색 귀걸이, 검정색 롱 스타킹의 레이스 디테일, 그리고 불꽃이 태는 마법 지팡이가 눈에 띕니다."
-      },
-      "widgets_values": [
-        "이미지는 야간의 풍경을 배경으로 한 실사 사진 스타일로, 중앙에 앉아 있는 마법사를 주제로 하고 있습니다. 화면은 깊이감 있는 초점으로 구성되어 있으며, 피사체는 선명하게 보이고 배경은 부드럽게 흐릿해져 있어 시선을 중심 인물에게 집중시키고 있습니다. 조명은 자연스러운 야간 빛을 활용하여, 외곽의 달빛과 불꽃이 주요光源으로 작용하며, 피부와 옷의 질감을 생생하게 드러냅니다. 색상은 어두운 톤 기반에 붉은색, 금색 악세서리가 포인트로 사용되어 마법사의 신비로움과 열정적인 분위기를 강조합니다. 전체적으로 따뜻하고 몽환적인 분위기가 감도는 한편, 실사 사진처럼 세밀한 빛 반사와 그림자 표현이 특징이며, 8k급 해상도로 텍스처의 미세함을 자세히 보여줍니다. 주요 상세 사항으로는 큰 마법사 모자의 금색 장식, 가슴에 걸친 붉은색 보석 목걸이, 반짝이는 파란색 귀걸이, 검정색 롱 스타킹의 레이스 디테일, 그리고 불꽃이 태는 마법 지팡이가 눈에 띕니다.",
-        "(none)",
-        "",
-        ""
-      ],
-      "color": "#7612DA",
-      "bgcolor": "#000000"
-    },
-    {
       "id": 62,
       "type": "PixaromaLabel",
       "pos": [
@@ -224,38 +75,6 @@
       "bgcolor": "rgba(0,0,0,0)"
     },
     {
-      "id": 50,
-      "type": "MarkdownNote",
-      "pos": [
-        -3283.4834069294498,
-        89.14614837950994
-      ],
-      "size": [
-        828.0962857653158,
-        928
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 2,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [],
-      "title": "TJ NODE STUDIO ONE — 설치 및 설정 가이드",
-      "properties": {
-        "ue_properties": {
-          "widget_ue_connectable": {},
-          "version": "7.8",
-          "input_ue_unconnectable": {}
-        }
-      },
-      "widgets_values": [
-        "# TJ NODE STUDIO ONE — 설치 및 설정 가이드\n\n> **Z-Image ONE STUDIO (TJ)** · **Flux.2 Klein ONE STUDIO (TJ)**  \n> ComfyUI 올인원 이미지 생성 UI — 워크플로우 배선 없이 노드 하나에서 T2I · I2I · Inpaint · Upscale 등 모든 모드를 전환합니다.\n\n---\n\n## 목차\n\n1. [TJ NODE 패키지](#1-tj-node-패키지)\n2. [필수 커스텀 노드](#2-필수-커스텀-노드)\n3. [모델 다운로드](#3-모델-다운로드)\n4. [초기 설정](#4-초기-설정)\n5. [모드별 간략 설명](#5-모드별-간략-설명)\n\n---\n\n## 1. TJ NODE 패키지\n\n### 이 패키지 (통합 설치)\n\n| 패키지 | 설명 | GitHub |\n|---|---|---|\n| **TJ_NODE_STUDIO_ONE** | Z-Image ONE STUDIO + Flux.2 Klein ONE STUDIO 통합 | [ComfyUI-TJ_NODE_STUDIO_ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE) |\n\n### 관련 TJ 패키지\n\n| 패키지 | 설명 | GitHub |\n|---|---|---|\n| **TJ_NODE — LLM PROMPT STUDIO** | LLM 기반 프롬프트 생성 · 번역 · 보조 노드 | [ComfyUI-TJ_NODE](https://github.com/designloves2/ComfyUI-TJ_NODE) |\n\n> **설치**: ComfyUI Manager → Install Custom Nodes → `ComfyUI-TJ_NODE_STUDIO_ONE` 검색  \n> 또는 수동: `cd ComfyUI/custom_nodes && git clone https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE.git`\n\n---\n\n## 2. 필수 커스텀 노드\n\n아래 노드들은 ComfyUI Manager에서 검색하여 설치하거나 GitHub에서 직접 clone합니다.\n\n| 커스텀 노드 | 용도 | 필요 노드 | GitHub |\n|---|---|---|---|\n| **ComfyUI-KJNodes** | FluxKVCache · 보조 유틸 노드 | Flux.2 Klein | [kijai/ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes) |\n| **ComfyUI-GGUF** | GGUF 양자화 모델 로딩 | 선택 (GGUF 사용 시) | [city96/ComfyUI-GGUF](https://github.com/city96/ComfyUI-GGUF) |\n| **ComfyUI_FaceAnalysis** | Faceswap 얼굴 임베딩 분석 | Klein · Faceswap 모드 | [cubiq/ComfyUI_FaceAnalysis](https://github.com/cubiq/ComfyUI_FaceAnalysis) |\n| **ComfyUI-RMBG** | 배경 제거 (RE-BG 모드) | Z-Image · RE-BG 모드 | [1038lab/ComfyUI-RMBG](https://github.com/1038lab/ComfyUI-RMBG) |\n| **comfyui_controlnet_aux** | ControlNet 전처리기 (Depth · Canny · Pose 등) | Z-Image · ControlNet 모드 | [Fannovel16/comfyui_controlnet_aux](https://github.com/Fannovel16/comfyui_controlnet_aux) |\n| **ComfyUI-SeedVR2** | SeedVR2 AI 업스케일 (UPSCALE 모드) | 양쪽 노드 · Upscale 모드 | [kijai/ComfyUI-SeedVR2](https://github.com/kijai/ComfyUI-SeedVR2) |\n\n---\n\n## 3. 모델 다운로드\n\n### 3-1. Z-Image ONE STUDIO 모델\n\n#### Diffusion Model → `models/diffusion_models/`\n\n| 파일명 | 설명 | 다운로드 |\n|---|---|---|\n| `z_image_turbo_bf16.safetensors` | Z-Image Turbo BF16 **권장** | [다운로드](https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors) |\n\n> 전체 모델 목록: https://huggingface.co/Comfy-Org/z_image_turbo\n\n#### Text Encoder → `models/text_encoders/`\n\n| 파일명 | 설명 | 다운로드 |\n|---|---|---|\n| `qwen_3_4b.safetensors` | Qwen3-4B 텍스트 인코더 | [다운로드](https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors) |\n\n#### VAE → `models/vae/`\n\n| 파일명 | 설명 | 다운로드 |\n|---|---|---|\n| `ae.safetensors` | Z-Image VAE | [다운로드](https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors) |\n\n#### ControlNet → `models/controlnet/`  *(ControlNet 모드 사용 시)*\n\n| 파일명 | 설명 | 다운로드 |\n|---|---|---|\n| `Z-Image-Turbo-Fun-Controlnet-Union.safetensors` | Union ControlNet (Depth · Canny · Pose 등 통합) | [다운로드](https://huggingface.co/alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union/resolve/main/Z-Image-Turbo-Fun-Controlnet-Union.safetensors) |\n\n#### Face Detector → `models/ultralytics/bbox/`  *(Face Redraw 모드 사용 시)*\n\n| 파일명 | 설명 | 다운로드 |\n|---|---|---|\n| `face_yolov8m.pt` | YOLOv8 얼굴 감지 **권장** | [다운로드](https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov8m.pt) |\n| `face_yolov9c.pt` | YOLOv9 얼굴 감지 | [다운로드](https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov9c.pt) |\n\n#### BG Removal → `models/background_removal/`  *(RE-BG 모드 사용 시)*\n\n| 파일명 | 설명 | 다운로드 |\n|---|---|---|\n| `BiRefNet-general.pth` | BiRefNet 범용 배경 제거 **권장** | [다운로드](https://huggingface.co/ZhengPeng7/BiRefNet/resolve/main/BiRefNet-general.pth) |\n| `BiRefNet-portrait.pth` | BiRefNet 인물 특화 | [다운로드](https://huggingface.co/ZhengPeng7/BiRefNet-portrait/resolve/main/BiRefNet-portrait.pth) |\n\n---\n\n### 3-2. Flux.2 Klein ONE STUDIO 모델\n\n#### Diffusion Model → `models/diffusion_models/`\n\n| 파일명 | 설명 | 다운로드 |\n|---|---|---|\n| `flux2-klein-9b.safetensors` | FLUX.2 Klein 9B (메인 모델) | [Black Forest Labs HF Collection](https://huggingface.co/collections/black-forest-labs/flux2) |\n| `flux2-klein-4b.safetensors` | FLUX.2 Klein 4B (경량) | [Black Forest Labs HF Collection](https://huggingface.co/collections/black-forest-labs/flux2) |\n\n> ⚠ **9B 모델**은 HuggingFace 로그인 후 Non-Commercial License 동의 필요\n\n#### Text Encoder → `models/text_encoders/`\n\n**9B 모델용:**\n\n| 설명 | 다운로드 |\n|---|---|\n| Qwen3 8B 텍스트 인코더 (9B용) | [HuggingFace — split_files/text_encoders](https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b/tree/main/split_files/text_encoders) |\n\n**4B 모델용:**\n\n| 설명 | 다운로드 |\n|---|---|\n| 텍스트 인코더 (4B용) | [HuggingFace — split_files/text_encoders](https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-4b/tree/main/split_files/text_encoders) |\n\n#### VAE → `models/vae/`\n\n| 설명 | 다운로드 |\n|---|---|\n| Flux.2 Klein VAE | [HuggingFace — split_files/vae](https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b/tree/main/split_files/vae) |\n\n#### Faceswap LoRA → `models/loras/`  *(Faceswap 모드 사용 시)*\n\n| 파일명 | 설명 | 다운로드 |\n|---|---|---|\n| `bfs_head_v1_flux-klein_9b_step3500_rank128.safetensors` | BFS Head Swap v1 (9B용) | [다운로드](https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/blob/main/bfs_head_v1_flux-klein_9b_step3500_rank128.safetensors) |\n| `bfs_head_v1_flux-klein_4b.safetensors` | BFS Head Swap v1 (4B용) | [다운로드](https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/blob/main/bfs_head_v1_flux-klein_4b.safetensors) |\n\n#### BG Removal → `models/background_removal/`  *(Edit 모드 마스크 사용 시)*\n\n| 설명 | 다운로드 |\n|---|---|\n| BiRefNet background_removal 모음 | [HuggingFace — Comfy-Org/BiRefNet](https://huggingface.co/Comfy-Org/BiRefNet/tree/main/background_removal) |\n\n---\n\n### 3-3. SeedVR2 Upscale 모델 (공용)\n\n두 노드 모두 **UPSCALE 모드**에서 동일한 모델 폴더를 사용합니다.\n\n#### → `models/SEEDVR2/`\n\n| 파일명 | 설명 | 다운로드 |\n|---|---|---|\n| `seedvr2_ema_3b_fp16.safetensors` | SeedVR2 DiT 3B FP16 | [kijai/SeedVR2-models](https://huggingface.co/kijai/SeedVR2-models/tree/main) |\n| `seedvr2_ema_3b_fp8_e4m3fn.safetensors` | SeedVR2 DiT 3B FP8 (저VRAM) | [kijai/SeedVR2-models](https://huggingface.co/kijai/SeedVR2-models/tree/main) |\n| `seedvr2_ema_7b_fp8_e4m3fn.safetensors` | SeedVR2 DiT 7B FP8 (고품질) | [kijai/SeedVR2-models](https://huggingface.co/kijai/SeedVR2-models/tree/main) |\n| `ema_vae_fp16.safetensors` | SeedVR2 VAE FP16 | [kijai/SeedVR2-models](https://huggingface.co/kijai/SeedVR2-models/tree/main) |\n\n> DiT 모델과 VAE 모델 **둘 다** 필요합니다.  \n> Upscale 모드 → **↻ Refresh** 버튼으로 모델 목록을 새로 고칩니다.\n\n---\n\n## 4. 초기 설정\n\n### 공통 (첫 실행 시 필수)\n\nComfyUI 캔버스에서 노드를 더블클릭하거나 우상단 **⚙** 버튼을 눌러 Settings를 엽니다.\n\n| 항목 | 설명 |\n|---|---|\n| **Diffusion Model** | 다운로드한 UNet/DiT 파일 선택 |\n| **Text Encoder** | 텍스트 인코더 파일 선택 |\n| **VAE** | VAE 파일 선택 |\n| **Negative Prompt** | 전 모드 공통 부정 프롬프트 |\n| **Prompt Suffix** | 모든 프롬프트 끝에 자동 추가 키워드 |\n| **Save Subfolder** | `ComfyUI/output/` 하위 저장 폴더명 |\n| **↻ Refresh Models** | ComfyUI 재시작 없이 새 모델 파일 인식 |\n\n설정은 **브라우저 로컬스토리지에 자동 저장**되어 재시작 후에도 유지됩니다.\n\n### 모델 오버라이드 슬롯 (고급)\n\nSettings → **Model Override Slot** 체크박스를 켜면 노드에 입력 슬롯이 노출됩니다.  \n`Primitive (String)` 노드를 연결해 파일명을 입력하면 드롭다운보다 우선 적용됩니다.  \n`.gguf` 파일명 입력 시 자동으로 GGUF 로더(`UnetLoaderGGUF` / `CLIPLoaderGGUF`)를 사용합니다.\n\n---\n\n## 5. 모드별 간략 설명\n\n### Z-Image ONE STUDIO (TJ)\n\n| 모드 | 설명 | 주요 설정 |\n|---|---|---|\n| **T2I** | 텍스트 → 이미지 | 해상도 프리셋, Steps, CFG, Shift, Sampler, LoRA (최대 3개) |\n| **I2I** | 이미지 → 이미지 변형 | 소스 이미지 업로드, Denoise (0.5~1.0) |\n| **INPAINT** | 특정 영역 재생성 | 소스 이미지 업로드 → 캔버스에서 마스크 직접 드로잉 |\n| **OUTPAINT** | 캔버스 확장 | 이미지 업로드 → Up/Down/Left/Right 픽셀 설정 → 빈 영역 자동 생성 |\n| **RE-BG** | 배경 완전 재생성 | BiRefNet으로 피사체 분리 → 새 배경 생성 후 합성 |\n| **CONTROLNET** | 레퍼런스 기반 생성 | 레퍼런스 이미지 업로드 → Preprocessor 선택 (Depth/Canny/Pose 등) → Strength 조절 |\n| **FACE REDRAW** | 얼굴 자동 감지 후 재생성 | YOLOv8/v9 감지 → 크롭 → LoRA 적용 재생성 → 원본에 자연 블렌드 |\n| **UPSCALE** | SeedVR2 AI 업스케일 | DiT 모델 + VAE 선택 → Resolution / Batch Size / Attention Mode 설정 |\n\n### Flux.2 Klein ONE STUDIO (TJ)\n\n| 모드 | 설명 | 주요 설정 |\n|---|---|---|\n| **T2I** | 텍스트 → 이미지 | 해상도, Steps(권장 4), CFG(권장 1), Sampler(euler_sde), LoRA (최대 3개) |\n| **I2I** | 이미지 → 이미지 변형 | 소스 이미지, Denoise 0.5~0.75(형태 유지) / 0.8~1.0(대폭 변형) |\n| **EDIT** | 멀티 레퍼런스 편집 | 참조 이미지 1~5장, Size Source (이미지1 기준 출력 크기) |\n| **PAINT** | 특정 영역 재생성 | 소스 이미지 업로드 → 캔버스 마스크 드로잉, Outpaint 지원 |\n| **FACESWAP** | 얼굴 교체 재생성 | Source(얼굴 공여자) + Target(원본) 업로드, BFS LoRA 강도 조절 |\n| **UPSCALE** | SeedVR2 AI 업스케일 | DiT 모델 + VAE 선택 → Resolution / Batch Size / Attention Mode 설정 |\n\n---\n\n## 공통 기능\n\n| 기능 | 설명 |\n|---|---|\n| **⇌ Compare** | 드래그 슬라이더로 원본 / 결과 나란히 비교. 모드 전환 후에도 상태 유지 |\n| **🖼 Gallery** | 저장된 이미지 타일 보기. 즐겨찾기(★) · 삭제 · Send to(다른 모드로 전달) |\n| **📋 Templates** | 자주 쓰는 프롬프트 저장 · 불러오기 |\n| **🔍 Prompt Edit** | 프롬프트 헤더 🔍 클릭 → 확장 편집 팝업 |\n| **Scroll Zoom** | 결과 이미지 위 마우스 스크롤 확대/축소. 🔓/🔒 버튼으로 ON/OFF |\n| **Double Click** | 결과 이미지 더블클릭 → 전체화면 뷰어 |\n| **Send to** | 결과를 다른 모드의 소스로 즉시 전달 (→ I2I / → Inpaint / → Upscale 등) |\n| **prompt_override** | 노드 입력 슬롯에 Primitive(String) 연결 → 프롬프트 앞에 일회성 추가 |\n| **ESC** | 열린 팝업 / 갤러리 / 전체화면 닫기 |\n\n---\n\n## 폴더 구조\n\n```\nComfyUI/\n├── custom_nodes/\n│   └── ComfyUI-TJ_NODE_STUDIO_ONE/     ← 이 패키지\n│\n└── models/\n    ├── diffusion_models/               ← UNet / DiT 메인 모델\n    ├── text_encoders/                  ← CLIP / Qwen / Gemma\n    ├── vae/                            ← VAE\n    ├── loras/                          ← LoRA (Faceswap BFS 포함)\n    ├── controlnet/                     ← ControlNet (Z-Image)\n    ├── ultralytics/\n    │   └── bbox/                       ← face_yolov8m.pt 등\n    ├── background_removal/             ← BiRefNet 모델\n    └── SEEDVR2/                        ← SeedVR2 DiT + VAE\n```\n\n---\n\n## 문제 해결\n\n| 증상 | 해결 방법 |\n|---|---|\n| 모델이 드롭다운에 안 보임 | Settings → ↻ **Refresh Models** 클릭 |\n| SEEDVR2 모델 목록 안 나옴 | Upscale 모드 → **↻ Refresh** 클릭 · `models/SEEDVR2/` 폴더 확인 |\n| KV Cache 오류 (Klein) | 파일명에 `kv` 미포함 시 자동 비활성화 — KV 모델 파일명 확인 |\n| GGUF 모델 안 로딩 | ComfyUI-GGUF 커스텀 노드 설치 여부 확인 |\n| Faceswap 얼굴 미감지 | ComfyUI_FaceAnalysis 설치 + `insightface` pip 설치 확인 |\n| RE-BG 오류 | ComfyUI-RMBG 설치 + `models/background_removal/` 모델 확인 |\n\n---\n\n*MIT License · [TJ NODE STUDIO ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE)*\n"
-      ],
-      "color": "#7612DA",
-      "bgcolor": "#000000"
-    },
-    {
       "id": 35,
       "type": "PixaromaLabel",
       "pos": [
@@ -270,7 +89,7 @@
         "pinned": true,
         "no_title": true
       },
-      "order": 3,
+      "order": 2,
       "mode": 0,
       "inputs": [],
       "outputs": [],
@@ -305,7 +124,7 @@
         "pinned": true,
         "no_title": true
       },
-      "order": 4,
+      "order": 3,
       "mode": 0,
       "inputs": [],
       "outputs": [],
@@ -340,7 +159,7 @@
         "pinned": true,
         "no_title": true
       },
-      "order": 5,
+      "order": 4,
       "mode": 0,
       "inputs": [],
       "outputs": [],
@@ -361,21 +180,21 @@
       "bgcolor": "rgba(0,0,0,0)"
     },
     {
-      "id": 65,
+      "id": 38,
       "type": "PixaromaLabel",
       "pos": [
-        -3069.4834069294498,
-        -27.55949278184665
+        -2558.350442403082,
+        -239.3773347776637
       ],
       "size": [
-        372,
-        50
+        1396,
+        80
       ],
       "flags": {
         "pinned": true,
         "no_title": true
       },
-      "order": 6,
+      "order": 5,
       "mode": 0,
       "inputs": [],
       "outputs": [],
@@ -390,20 +209,52 @@
         }
       },
       "widgets_values": [
-        "{\"text\":\"INSTALL GUIDE\",\"fontSize\":50,\"fontFamily\":\"Arial\",\"fontColor\":\"#7612DA\",\"textAlign\":\"left\",\"backgroundColor\":\"transparent\",\"padding\":0,\"borderRadius\":6,\"opacity\":1,\"fontWeight\":\"normal\",\"lineHeight\":1}"
+        "{\"text\":\"TJ NODE ONE STUDIO COLLECTION\",\"fontSize\":80,\"fontFamily\":\"Arial\",\"fontColor\":\"#ffd166\",\"textAlign\":\"left\",\"backgroundColor\":\"transparent\",\"padding\":0,\"borderRadius\":6,\"opacity\":1,\"fontWeight\":\"normal\",\"lineHeight\":1}"
       ],
       "color": "rgba(0,0,0,0)",
       "bgcolor": "rgba(0,0,0,0)"
     },
     {
-      "id": 36,
-      "type": "PixaromaLabel",
+      "id": 50,
+      "type": "MarkdownNote",
       "pos": [
-        -3065.4834069294498,
-        1091.9368568999905
+        -3435.387121164134,
+        89.14614837950995
       ],
       "size": [
-        364,
+        980,
+        928
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 6,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "TJ NODE STUDIO ONE — 설치 및 설정 가이드",
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "# TJ NODE STUDIO ONE — Installation and Configuration Guide\n\n> **Z-Image ONE STUDIO · Flux.2 Klein ONE STUDIO · Qwen Image Edit 2511 ONE STUDIO · Krea 2 ONE STUDIO**  \n> ComfyUI 올인원 이미지 생성 UI — 워크플로우 배선 없이 노드 하나에서 T2I · I2I · Inpaint · Outpaint · Edit · Faceswap · Upscale 등 모든 모드를 전환합니다.\n> ComfyUI image generation UI — switch between modes in a single node without workflow wiring T2I · I2I · Inpaint · Outpaint · Edit · Faceswap · Upscale etc. Mode before.\n\n---\n\n## 목차\n\n## Table of Contents\n\n1. [TJ NODE 패키지](#1-tj-node-패키지)\n2. [TJ NODE Package](#1-tj-node-패키지)\n3. [필수 커스텀 노드](#2-필수-커스텀-노드)\n4. [Required Custom Nodes](#2-필수-커스텀-노드)\n5. [모델 다운로드](#3-모델-다운로드)\n6. [Model Downloads](#3-모델-다운로드)\n7. [초기 설정](#4-초기-설정)\n8. [Initial Setup](#4-초기-설정)\n9. [모드별 간략 설명](#5-모드별-간략-설명)\n10. [Mode Overview](#5-모드별-간략-설명)\n11. [문제 해결](#6-문제-해결)\n12. [Troubleshooting](#6-문제-해결)\n\n---\n\n## 1. TJ NODE 패키지\n\n## 1. TJ NODE Package\n\n### 이 패키지 (통합 설치)\n\n### This Package (Unified Installation)\n\n| 패키지<br><sub>Package</sub> | 설명<br><sub>Description</sub>                               | GitHub                                                       |\n| ---------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |\n| **TJ_NODE_STUDIO_ONE**       | Z-Image · Klein · QE2511 · Krea2 ONE STUDIO 통합<br><sub>Z-Image · Klein · QE2511 · Krea2 ONE STUDIO</sub> | [ComfyUI-TJ_NODE_STUDIO_ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE) |\n\n> **설치**: ComfyUI Manager → Install Custom Nodes → `ComfyUI-TJ_NODE_STUDIO_ONE` 검색  \n> **Installation**: ComfyUI Manager → Install Custom Nodes → `ComfyUI-TJ_NODE_STUDIO_ONE`\n> 또는 수동: `cd ComfyUI/custom_nodes && git clone https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE.git`\n> or manually: `cd ComfyUI/custom_nodes && git clone https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE.git`\n\n### 함께 쓰면 더 강력한 — TJ_NODE\n\n### More Powerful Together with — TJ_NODE\n\n| 패키지<br><sub>Package</sub> | 설명<br><sub>Description</sub>                               | GitHub                                                       |\n| ---------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |\n| **TJ_NODE**                  | Wireless Workflow Architecture Toolkit — LLM 프롬프트 생성 · Fake-Wire 무선 라우팅 · 대규모 워크플로우 구조화<br><sub>Wireless Workflow Architecture Toolkit — LLM generation · Fake-Wire wireless routing ·</sub> | [ComfyUI-TJ_NODE](https://github.com/designloves2/ComfyUI-TJ_NODE) |\n\n---\n\n## 2. 필수 커스텀 노드\n\n## 2. Required Custom Nodes\n\n### ⚡ 자동 설치 스크립트 (권장)\n\n### ⚡ Automatic Installation (recommended)\n\n이 패키지 폴더(`ComfyUI-TJ_NODE_STUDIO_ONE/`) 안에 설치 스크립트가 포함되어 있습니다.  \nThis Package (`ComfyUI-TJ_NODE_STUDIO_ONE/`) Installation included .\n필수 노드 **8개를 한 번에** 설치하고 pip requirements까지 처리합니다.\nrequired Node **8 ** Installation pip requirements .\n\n**Windows** — 파일 탐색기에서 더블클릭:\n**Windows** — double-click in File Explorer:\n\n```\ninstall_requirements.bat\n```\n\n**Mac / Linux** — 터미널에서 실행:\n**Mac / Linux** — run in Terminal:\n\n```bash\nchmod +x install_requirements.sh\n./install_requirements.sh\n```\n\n> 이미 설치된 노드는 자동으로 건너뜁니다. 완료 후 ComfyUI를 재시작하세요.\n> Already installed nodes are skipped automatically. Restart ComfyUI when installation is complete.\n\n---\n\n### 수동 설치 목록\n\n### Manual Installation List\n\n| 커스텀 노드<br><sub>Custom Node</sub> | 용도<br><sub>Purpose</sub>                                   | 필요 노드<br><sub>Required Node</sub>                        | GitHub                                                       |\n| ------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |\n| **ComfyUI-Impact-Pack**               | FaceDetailer — 얼굴 감지·재생성·블렌드 핵심 엔진<br><sub>FaceDetailer — core engine for face detection, regeneration, and blending</sub> | Z-Image · Face Redraw                                        | [ltdrdata/ComfyUI-Impact-Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack) |\n| **ComfyUI-Impact-Subpack**            | Impact Pack 의존 서브팩<br><sub>Impact Pack dependency subpack</sub> | Z-Image · Face Redraw                                        | [ltdrdata/ComfyUI-Impact-Subpack](https://github.com/ltdrdata/ComfyUI-Impact-Subpack) |\n| **ComfyUI-KJNodes**                   | FluxKVCache · ImagePadKJ · FluxKontext 노드 포함<br><sub>FluxKVCache · ImagePadKJ · FluxKontext Node included</sub> | Klein · QE2511                                               | [kijai/ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes) |\n| **ComfyUI-GGUF**                      | GGUF 양자화 모델 로딩<br><sub>GGUF model</sub>               | 선택 (GGUF 사용 시)<br><sub>selection (GGUF when used)</sub> | [city96/ComfyUI-GGUF](https://github.com/city96/ComfyUI-GGUF) |\n| **ComfyUI_FaceAnalysis**              | Faceswap 얼굴 임베딩 분석<br><sub>Faceswap face embedding analysis</sub> | Klein · QE2511 Faceswap                                      | [cubiq/ComfyUI_FaceAnalysis](https://github.com/cubiq/ComfyUI_FaceAnalysis) |\n| **ComfyUI-RMBG**                      | 배경 제거 (RE-BG 모드)<br><sub>background removal (RE-BG Mode)</sub> | Z-Image · RE-BG                                              | [1038lab/ComfyUI-RMBG](https://github.com/1038lab/ComfyUI-RMBG) |\n| **comfyui_controlnet_aux**            | ControlNet 전처리기 (Depth · Canny · Pose 등)<br><sub>ControlNet preprocessor (Depth · Canny · Pose etc.)</sub> | Z-Image · ControlNet                                         | [Fannovel16/comfyui_controlnet_aux](https://github.com/Fannovel16/comfyui_controlnet_aux) |\n| **ComfyUI-SeedVR2**                   | SeedVR2 AI 업스케일 (UPSCALE 모드)<br><sub>SeedVR2 AI (UPSCALE Mode)</sub> | 전체 노드<br><sub>All Node</sub>                             | [numz](https://github.com/numz) [ComfyUI-SeedVR2_VideoUpscaler](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler) |\n\n---\n\n## 3. 모델 다운로드\n\n## 3. Model Downloads\n\n### 3-1. Z-Image ONE STUDIO 모델\n\n### 3-1. Z-Image ONE STUDIO model\n\n#### Diffusion Model → `models/diffusion_models/`\n\n| 파일명<br><sub>File</sub>        | 설명<br><sub>Description</sub>                               | 다운로드<br><sub>Download</sub>                              |\n| -------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |\n| `z_image_turbo_bf16.safetensors` | Z-Image Turbo BF16 **권장**<br><sub>Z-Image Turbo BF16 **recommended**</sub> | [다운로드](https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors)<br><sub>[Download](https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors)</sub> |\n\n> 전체 모델 목록: https://huggingface.co/Comfy-Org/z_image_turbo\n> Full model list: https://huggingface.co/Comfy-Org/z_image_turbo\n\n#### Text Encoder → `models/text_encoders/`\n\n| 파일명<br><sub>File</sub> | 다운로드<br><sub>Download</sub>                              |\n| ------------------------- | ------------------------------------------------------------ |\n| `qwen_3_4b.safetensors`   | [다운로드](https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors)<br><sub>[Download](https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors)</sub> |\n\n#### VAE → `models/vae/`\n\n| 파일명<br><sub>File</sub> | 다운로드<br><sub>Download</sub>                              |\n| ------------------------- | ------------------------------------------------------------ |\n| `ae.safetensors`          | [다운로드](https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors)<br><sub>[Download](https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors)</sub> |\n\n#### ControlNet → `models/controlnet/`  *(ControlNet 모드 사용 시)*\n\n#### ControlNet → `models/controlnet/` *(ControlNet Mode when used)*\n\n| 파일명<br><sub>File</sub>                        | 다운로드<br><sub>Download</sub>                              |\n| ------------------------------------------------ | ------------------------------------------------------------ |\n| `Z-Image-Turbo-Fun-Controlnet-Union.safetensors` | [다운로드](https://huggingface.co/alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union/resolve/main/Z-Image-Turbo-Fun-Controlnet-Union.safetensors)<br><sub>[Download](https://huggingface.co/alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union/resolve/main/Z-Image-Turbo-Fun-Controlnet-Union.safetensors)</sub> |\n\n#### Face Detector → `models/ultralytics/bbox/`  *(Face Redraw 모드 사용 시)*\n\n#### Face Detector → `models/ultralytics/bbox/` *(Face Redraw Mode when used)*\n\n| 파일명<br><sub>File</sub>                                    | 다운로드<br><sub>Download</sub>                              |\n| ------------------------------------------------------------ | ------------------------------------------------------------ |\n| `face_yolov8m.pt` **권장**<br><sub>`face_yolov8m.pt` **recommended**</sub> | [다운로드](https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov8m.pt)<br><sub>[Download](https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov8m.pt)</sub> |\n| `face_yolov9c.pt`                                            | [다운로드](https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov9c.pt)<br><sub>[Download](https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov9c.pt)</sub> |\n\n#### BG Removal → `models/background_removal/`  *(RE-BG 모드 사용 시)*\n\n#### BG Removal → `models/background_removal/` *(RE-BG Mode when used)*\n\n| 다운로드<br><sub>Download</sub>                              |      |\n| ------------------------------------------------------------ | ---- |\n| [Comfy-Org/BiRefNet — background_removal](https://huggingface.co/Comfy-Org/BiRefNet/tree/main/background_removal) |      |\n\n---\n\n### 3-2. Flux.2 Klein ONE STUDIO 모델\n\n### 3-2. Flux.2 Klein ONE STUDIO model\n\n#### Diffusion Model → `models/diffusion_models/`\n\n| 모델<br><sub>model</sub>     | 설명<br><sub>Description</sub>                               | 다운로드<br><sub>Download</sub>                              |\n| ---------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |\n| `flux2-klein-9b.safetensors` | FLUX.2 Klein 9B (메인)<br><sub>FLUX.2 Klein 9B (main)</sub>  | [Black Forest Labs Collection](https://huggingface.co/collections/black-forest-labs/flux2) |\n| `flux2-klein-4b.safetensors` | FLUX.2 Klein 4B (경량)<br><sub>FLUX.2 Klein 4B (lightweight)</sub> | [Black Forest Labs Collection](https://huggingface.co/collections/black-forest-labs/flux2) |\n\n> ⚠ **9B 모델**은 HuggingFace 로그인 후 Non-Commercial License 동의 필요\n> ⚠ **9B model** is HuggingFace requires Hugging Face login and acceptance of the Non-Commercial License\n\n#### Text Encoder → `models/text_encoders/`\n\n| 대상<br><sub></sub>                      | 다운로드<br><sub>Download</sub>                              |\n| ---------------------------------------- | ------------------------------------------------------------ |\n| 9B 모델용<br><sub>9B for the model</sub> | [Comfy-Org 9B — split_files/text_encoders](https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b/tree/main/split_files/text_encoders) |\n| 4B 모델용<br><sub>4B for the model</sub> | [Comfy-Org 4B — split_files/text_encoders](https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-4b/tree/main/split_files/text_encoders) |\n\n#### VAE → `models/vae/`\n\n| 다운로드<br><sub>Download</sub>                              |\n| ------------------------------------------------------------ |\n| [Comfy-Org 9B — split_files/vae](https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-9b/tree/main/split_files/vae) |\n\n#### Faceswap LoRA → `models/loras/`  *(Faceswap 모드 사용 시)*\n\n#### Faceswap LoRA → `models/loras/` *(Faceswap Mode when used)*\n\n| 파일명<br><sub>File</sub>                                | 다운로드<br><sub>Download</sub>                              |\n| -------------------------------------------------------- | ------------------------------------------------------------ |\n| `bfs_head_v1_flux-klein_9b_step3500_rank128.safetensors` | [다운로드](https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/blob/main/bfs_head_v1_flux-klein_9b_step3500_rank128.safetensors)<br><sub>[Download](https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/blob/main/bfs_head_v1_flux-klein_9b_step3500_rank128.safetensors)</sub> |\n| `bfs_head_v1_flux-klein_4b.safetensors`                  | [다운로드](https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/blob/main/bfs_head_v1_flux-klein_4b.safetensors)<br><sub>[Download](https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/blob/main/bfs_head_v1_flux-klein_4b.safetensors)</sub> |\n\n#### BG Removal → `models/background_removal/`  *(Edit·Paint 마스크 사용 시)*\n\n#### BG Removal → `models/background_removal/` *(Edit·Paint when used)*\n\n| 다운로드<br><sub>Download</sub>                              |\n| ------------------------------------------------------------ |\n| [Comfy-Org/BiRefNet — background_removal](https://huggingface.co/Comfy-Org/BiRefNet/tree/main/background_removal) |\n\n---\n\n### 3-3. Qwen Image Edit 2511 ONE STUDIO 모델\n\n### 3-3. Qwen Image Edit 2511 ONE STUDIO model\n\n> 전체 모델 목록: https://huggingface.co/Comfy-Org/Qwen-Image-Edit_ComfyUI/tree/main/split_files\n> Full model list: https://huggingface.co/Comfy-Org/Qwen-Image-Edit_ComfyUI/tree/main/split_files\n\n#### Diffusion Model → `models/diffusion_models/`\n\n| 파일명<br><sub>File</sub>                             | 설명<br><sub>Description</sub>                               | 다운로드<br><sub>Download</sub>                              |\n| ----------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |\n| `Qwen2.5-VL-7B-Image-Edit-bf16.safetensors`           | 메인 모델 BF16 **권장**<br><sub>main model BF16 **recommended**</sub> | [HF 목록](https://huggingface.co/Comfy-Org/Qwen-Image-Edit_ComfyUI/tree/main/split_files/diffusion_models)<br><sub>[HF list](https://huggingface.co/Comfy-Org/Qwen-Image-Edit_ComfyUI/tree/main/split_files/diffusion_models)</sub> |\n| GGUF 경량 버전<br><sub>GGUF lightweight version</sub> | 저VRAM 환경<br><sub>low-VRAM environment</sub>               | [HF 목록](https://huggingface.co/unsloth/Qwen-Image-Edit-2511-GGUF/tree/main)<br><sub>[HF list](https://huggingface.co/unsloth/Qwen-Image-Edit-2511-GGUF/tree/main)</sub> |\n\n#### Text Encoder (CLIPLoader qwen_image) → `models/text_encoders/`\n\n| 파일명<br><sub>File</sub>              | 다운로드<br><sub>Download</sub>                              |\n| -------------------------------------- | ------------------------------------------------------------ |\n| `qwen2.5vl-7b-vis-encoder.safetensors` | [HF 목록](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/tree/main/split_files/text_encoders)<br><sub>[HF list](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/tree/main/split_files/text_encoders)</sub> |\n\n#### VAE → `models/vae/`\n\n| 파일명<br><sub>File</sub> | 다운로드<br><sub>Download</sub>                              |\n| ------------------------- | ------------------------------------------------------------ |\n| `ae.safetensors`          | [HF 목록](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/tree/main/split_files/vae)<br><sub>[HF list](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/tree/main/split_files/vae)</sub> |\n\n#### Lightning LoRA → `models/loras/`  *(4스텝 고속 생성, 선택사항)*\n\n#### Lightning LoRA → `models/loras/` *(4 fast generation, optional)*\n\n| 파일명<br><sub>File</sub>                                    | 다운로드<br><sub>Download</sub>                              |\n| ------------------------------------------------------------ | ------------------------------------------------------------ |\n| `Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors` | [HF 목록](https://huggingface.co/lightx2v/Qwen-Image-Edit-2511-Lightning/tree/main)<br><sub>[HF list](https://huggingface.co/lightx2v/Qwen-Image-Edit-2511-Lightning/tree/main)</sub> |\n\n#### Multi Angle LoRA → `models/loras/`  *(Angle 모드 필수)*\n\n#### Multi Angle LoRA → `models/loras/` *(Angle Mode required)*\n\n| 파일명<br><sub>File</sub>                               | 다운로드<br><sub>Download</sub>                              |\n| ------------------------------------------------------- | ------------------------------------------------------------ |\n| `qwen-image-edit-2511-multiple-angles-lora.safetensors` | [HF 목록](https://huggingface.co/fal/Qwen-Image-Edit-2511-Multiple-Angles-LoRA)<br><sub>[HF list](https://huggingface.co/fal/Qwen-Image-Edit-2511-Multiple-Angles-LoRA)</sub> |\n\n#### BFS LoRA → `models/loras/`  *(Faceswap 모드 필수)*\n\n#### BFS LoRA → `models/loras/` *(Faceswap Mode required)*\n\n| 다운로드<br><sub>Download</sub>                              |\n| ------------------------------------------------------------ |\n| [Alissonerdx/BFS-Best-Face-Swap](https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap) |\n\n---\n\n### 3-4. Krea 2 ONE STUDIO 모델\n\n### 3-4. Krea 2 ONE STUDIO model\n\n> 전체 모델 목록: https://huggingface.co/Comfy-Org/Krea2\n> Full model list: https://huggingface.co/Comfy-Org/Krea2\n\n#### Diffusion Model → `models/diffusion_models/`\n\n| 설명<br><sub>Description</sub> | 다운로드<br><sub>Download</sub>                              |\n| ------------------------------ | ------------------------------------------------------------ |\n| Krea2                          | [HF 목록](https://huggingface.co/Comfy-Org/Krea-2/tree/main/diffusion_models)<br><sub>[HF list](https://huggingface.co/Comfy-Org/Krea-2/tree/main/diffusion_models)</sub> |\n\n#### Text Encoder (CLIP krea2) → `models/text_encoders/`\n\n| 다운로드<br><sub>Download</sub>                              |\n| ------------------------------------------------------------ |\n| [HF 목록](https://huggingface.co/Comfy-Org/Krea-2/tree/main/text_encoders)<br><sub>[HF list](https://huggingface.co/Comfy-Org/Krea-2/tree/main/text_encoders)</sub> |\n\n#### VAE → `models/vae/`\n\n| 다운로드<br><sub>Download</sub>                              |\n| ------------------------------------------------------------ |\n| [HF 목록](https://huggingface.co/Comfy-Org/Krea-2/tree/main/vae)<br><sub>[HF list](https://huggingface.co/Comfy-Org/Krea-2/tree/main/vae)</sub> |\n\n---\n\n### 3-5. SeedVR2 Upscale 모델 (전체 노드 공용)\n\n### 3-5. SeedVR2 Upscale model (shared by all nodes)\n\n모든 노드의 **UPSCALE 모드**에서 동일한 폴더를 사용합니다.\nNode **UPSCALE Mode**to use.\n\n#### → `models/SEEDVR2/`\n\n| 파일명<br><sub>File</sub>               | 설명<br><sub>Description</sub>                              | 다운로드<br><sub>Download</sub>                              |\n| --------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------ |\n| `seedvr2_ema_3b_fp16.safetensors`       | DiT 3B FP16                                                 | [SeedVR2-models](https://huggingface.co/numz/SeedVR2_comfyUI/tree/main) |\n| `seedvr2_ema_3b_fp8_e4m3fn.safetensors` | DiT 3B FP8 (저VRAM)<br><sub>DiT 3B FP8 (VRAM)</sub>         | [SeedVR2-models](https://huggingface.co/numz/SeedVR2_comfyUI/tree/main) |\n| `seedvr2_ema_7b_fp8_e4m3fn.safetensors` | DiT 7B FP8 (고품질)<br><sub>DiT 7B FP8 (high quality)</sub> | [SeedVR2-models](https://huggingface.co/numz/SeedVR2_comfyUI/tree/main) |\n| `ema_vae_fp16.safetensors`              | VAE FP16                                                    | [SeedVR2-models](https://huggingface.co/numz/SeedVR2_comfyUI/tree/main) |\n\n> DiT 모델과 VAE 모델 **둘 다** 필요합니다.  \n> DiT model VAE model **both** are required.\n> Upscale 모드 → **↻ Refresh** 버튼으로 모델 목록을 새로 고칩니다.\n> Upscale Mode → **↻ Refresh** button refreshes the model list.\n\n---\n\n## 4. 초기 설정\n\n## 4. Initial Setup\n\nComfyUI 캔버스에서 노드 우상단 **⚙** 버튼을 눌러 Settings를 엽니다.\nComfyUI on the ComfyUI canvas, click the **⚙** button at the top-right of the node to open Settings.\n\n| 항목<br><sub>Item</sub>                           | 설명<br><sub>Description</sub>                               |\n| ------------------------------------------------- | ------------------------------------------------------------ |\n| **Diffusion Model**                               | 다운로드한 UNet/DiT 파일 선택<br><sub>select the downloaded UNet/DiT file</sub> |\n| **Text Encoder**                                  | 텍스트 인코더 파일 선택<br><sub>select the text encoder file</sub> |\n| **VAE**                                           | VAE 파일 선택<br><sub>select the VAE file</sub>              |\n| **↻ Refresh Models**                              | ComfyUI 재시작 없이 새 모델 파일 인식<br><sub>ComfyUI when recognize new model files</sub> |\n| **언어 / Language**<br><sub>** / Language**</sub> | 한국어 / English 전환 (선택 후 자동 새로고침)<br><sub>Korean / English before (automatically refreshes after selection)</sub> |\n| **Negative Prompt**                               | 전 모드 공통 부정 프롬프트<br><sub>negative prompt shared by all modes</sub> |\n| **Prompt Suffix**                                 | 모든 프롬프트 끝에 자동 추가 키워드<br><sub>keywords automatically appended to all prompts</sub> |\n| **Save Subfolder**                                | `ComfyUI/output/` 하위 저장 폴더명<br><sub>`ComfyUI/output/` output subfolder name</sub> |\n| **💾 Save All**                                    | 서버에 설정 영구 저장<br><sub>save settings permanently on the server</sub> |\n\n설정은 **브라우저 로컬스토리지에 자동 저장**되어 재시작 후에도 유지됩니다.\nSettings are **automatically saved in browser local storage**and remain available after restarting.\n\n### 모델 오버라이드 슬롯 (고급)\n\n### Model Override Slots (Advanced)\n\nSettings → **Model Override** 체크박스를 켜면 노드에 입력 슬롯이 노출됩니다.  \nSettings → **Model Override** enable the checkbox to expose input slots on the node.\n`Primitive (String)` 노드를 연결해 파일명을 입력하면 드롭다운보다 우선 적용됩니다.  \n`Primitive (String)` connect a Primitive (String) node and enter a filename to override the dropdown.\n`.gguf` 파일명 입력 시 자동으로 GGUF 로더를 사용합니다.\n`.gguf` entering a .gguf filename automatically uses the GGUF loader.\n\n---\n\n## 5. 모드별 간략 설명\n\n## 5. Mode Overview\n\n### Z-Image ONE STUDIO (TJ)\n\n| 모드<br><sub>Mode</sub> | 설명<br><sub>Description</sub>                               | 주요 설정<br><sub>Key Settings</sub>                         |\n| ----------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |\n| **T2I**                 | 텍스트 → 이미지<br><sub>→ image</sub>                        | 해상도 프리셋, Steps, CFG, Shift, Sampler, LoRA (최대 3개)<br><sub>resolution preset, Steps, CFG, Shift, Sampler, LoRA ( 3)</sub> |\n| **I2I**                 | 이미지 → 이미지 변형<br><sub>image → image</sub>             | 소스 이미지 업로드, Denoise (0.5~1.0)<br><sub>upload source image, Denoise (0.5~1.0)</sub> |\n| **INPAINT**             | 특정 영역 재생성<br><sub>regenerate selected area</sub>      | 소스 이미지 → 캔버스에서 마스크 드로잉 (DifferentialDiffusion)<br><sub>source image → draw a mask on the canvas (DifferentialDiffusion)</sub> |\n| **OUTPAINT**            | 캔버스 확장<br><sub>canvas expansion</sub>                   | Up/Down/Left/Right 픽셀 설정 → 빈 영역 자동 생성<br><sub>Up/Down/Left/Right pixel settings → automatically generate empty areas</sub> |\n| **RE-BG**               | 배경 완전 재생성<br><sub>completely regenerate the background</sub> | BiRefNet으로 피사체 분리 → 새 배경 생성 후 합성<br><sub>BiRefNet separate the subject → generate a new background and composite it</sub> |\n| **CONTROLNET**          | 레퍼런스 기반 생성<br><sub>reference-based generation</sub>  | 레퍼런스 이미지 → Preprocessor 선택 → Strength 조절<br><sub>reference image → Preprocessor selection → Strength adjustment</sub> |\n| **FACE REDRAW**         | 얼굴 자동 감지 후 재생성<br><sub>automatically detect and regenerate the face</sub> | YOLOv8/v9 감지 → LoRA 적용 재생성 → 원본에 자연 블렌드<br><sub>YOLOv8/v9 detection → LoRA regenerate with LoRA → blend naturally into the original</sub> |\n| **UPSCALE**             | SeedVR2 AI 업스케일<br><sub>SeedVR2 AI</sub>                 | DiT 모델 + VAE 선택 → Resolution / Attention Mode 설정<br><sub>DiT model + VAE selection → Resolution / Attention Mode settings</sub> |\n\n### Flux.2 Klein ONE STUDIO (TJ)\n\n| 모드<br><sub>Mode</sub> | 설명<br><sub>Description</sub>                               | 주요 설정<br><sub>Key Settings</sub>                         |\n| ----------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |\n| **T2I**                 | 텍스트 → 이미지<br><sub>→ image</sub>                        | 해상도, Steps(권장 4), CFG(권장 1), Sampler(euler_sde), LoRA (최대 3개)<br><sub>resolution, Steps(recommended 4), CFG(recommended 1), Sampler(euler_sde), LoRA ( 3)</sub> |\n| **I2I**                 | 이미지 → 이미지 변형<br><sub>image → image</sub>             | Denoise 0.5~0.75(형태 유지) / 0.8~1.0(대폭 변형)<br><sub>Denoise 0.5~0.75(preserve structure) / 0.8~1.0(major transformation)</sub> |\n| **EDIT**                | 멀티 레퍼런스 편집<br><sub>multi-reference editing</sub>     | 참조 이미지 1~5장, Size Source (이미지1 기준 출력 크기)<br><sub>reference images 1~5, Size Source (output size based on Image 1)</sub> |\n| **PAINT**               | 특정 영역 재생성 + Outpaint<br><sub>regenerate selected area + Outpaint</sub> | 캔버스 마스크 드로잉, 아웃페인트 방향/크기 설정<br><sub>draw a canvas mask, set Outpaint direction and size</sub> |\n| **FACESWAP**            | 얼굴 교체 재생성<br><sub>face replacement and regeneration</sub> | Source(얼굴 공여자) + Target(원본) 업로드, BFS LoRA 강도 조절<br><sub>Source(face donor) + Target(original) upload, BFS LoRA adjust strength</sub> |\n| **UPSCALE**             | SeedVR2 AI 업스케일<br><sub>SeedVR2 AI</sub>                 | DiT 모델 + VAE 선택<br><sub>DiT model + VAE selection</sub>  |\n\n### Qwen Image Edit 2511 ONE STUDIO (TJ)\n\n| 모드<br><sub>Mode</sub> | 설명<br><sub>Description</sub>                               | 주요 설정<br><sub>Key Settings</sub>                         |\n| ----------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |\n| **T2I**                 | 텍스트 → 이미지<br><sub>→ image</sub>                        | 해상도, Steps, CFG, Sampler, LoRA (최대 3개), Lightning LoRA (⚙ Settings)<br><sub>resolution, Steps, CFG, Sampler, LoRA ( 3), Lightning LoRA (⚙ Settings)</sub> |\n| **I2I**                 | 이미지 → 이미지 변형<br><sub>image → image</sub>             | 소스 이미지, Denoise 조절<br><sub>source image, Denoise adjustment</sub> |\n| **EDIT**                | 멀티 레퍼런스 텍스트 편집<br><sub>multi-reference text editing</sub> | 참조 이미지 최대 3장, Outpaint 포함<br><sub>up to three reference images, Outpaint included</sub> |\n| **PAINT**               | 특정 영역 재생성<br><sub>regenerate selected area</sub>      | ComfyUI 내장 마스크 에디터, Denoise 0.7~0.9 권장<br><sub>ComfyUI built-in mask editor, Denoise 0.7~0.9 recommended</sub> |\n| **FACESWAP**            | 얼굴 교체<br><sub>face replacement</sub>                     | Target + Source 이미지, BFS LoRA 필수<br><sub>Target + Source image, BFS LoRA required</sub> |\n| **ANGLE**               | 카메라 앵글 3D 조절<br><sub>3D camera-angle control</sub>    | H(방위각) · V(고도각) · Z(줌) 드래그 조절, Camera Angle LoRA (⚙ Settings)<br><sub>H(azimuth) · V(elevation) · Z(zoom) drag control, Camera Angle LoRA (⚙ Settings)</sub> |\n| **UPSCALE**             | SeedVR2 AI 업스케일<br><sub>SeedVR2 AI</sub>                 | DiT 모델 + VAE 선택<br><sub>DiT model + VAE selection</sub>  |\n\n### Krea 2 ONE STUDIO (TJ)\n\n| 모드<br><sub>Mode</sub> | 설명<br><sub>Description</sub>                   | 주요 설정<br><sub>Key Settings</sub>                         |\n| ----------------------- | ------------------------------------------------ | ------------------------------------------------------------ |\n| **T2I**                 | 텍스트 → 이미지<br><sub>→ image</sub>            | 해상도, Steps, CFG, Sampler, LoRA (최대 3개), Lightning LoRA (⚙ Settings)<br><sub>resolution, Steps, CFG, Sampler, LoRA ( 3), Lightning LoRA (⚙ Settings)</sub> |\n| **I2I**                 | 이미지 → 이미지 변형<br><sub>image → image</sub> | 소스 이미지, Denoise 조절<br><sub>source image, Denoise adjustment</sub> |\n| **UPSCALE**             | SeedVR2 AI 업스케일<br><sub>SeedVR2 AI</sub>     | DiT 모델 + VAE 선택<br><sub>DiT model + VAE selection</sub>  |\n\n---\n\n## 공통 기능\n\n## Common Features\n\n| 기능<br><sub>Feature</sub> | 설명<br><sub>Description</sub>                               |\n| -------------------------- | ------------------------------------------------------------ |\n| **⇌ Compare**              | 드래그 슬라이더로 원본 / 결과 나란히 비교<br><sub>original / result</sub> |\n| **🖼 Gallery**              | 저장된 이미지 정사각형 그리드 보기. 즐겨찾기(★) · 삭제 · Send to<br><sub>save image square grid view. favorite(★) · delete · Send to</sub> |\n| **📋 Templates**            | 자주 쓰는 프롬프트 저장 · 불러오기<br><sub>save · load</sub> |\n| **🔍 Prompt Edit**          | 확장 편집 팝업. TJ_NODE 설치 시 ✨ Enhance · 🖼 Image→Prompt 탭 자동 활성화 (GGUF 모델 필요)<br><sub>. TJ_NODE Installation when ✨ Enhance · 🖼 Image→Prompt Tab automatic (GGUF model required)</sub> |\n| **Scroll Zoom**            | 결과 이미지 위 마우스 스크롤 확대/축소<br><sub>result image zoom/out</sub> |\n| **Double Click**           | 결과 이미지 더블클릭 → 전체화면 뷰어<br><sub>result image click → All</sub> |\n| **Send to**                | 결과를 다른 모드의 소스로 즉시 전달<br><sub>result Mode source when send</sub> |\n| **Language**               | Settings에서 한국어 / English 전환<br><sub>Settingsto Korean / English before</sub> |\n| **ESC**                    | 열린 팝업 / 갤러리 / 전체화면 닫기<br><sub>/ Gallery / All close</sub> |\n\n### LLM 모델 안내 (Enhance · Image→Prompt)\n\n### LLM model (Enhance · Image→Prompt)\n\nLLM 기능은 **GGUF 형식** 모델만 지원합니다. 일부 모델은 호환되지 않을 수 있으므로 동작하지 않으면 다른 모델로 교체해 보세요.\nLLM The feature **GGUF ** model supports. Some models may be incompatible; try another model if it does not work..\n\n**✨ Enhance** — 텍스트 LLM GGUF 사용:\n**✨ Enhance** — uses a text LLM GGUF:\n\n| 추천<br><sub>Recommended</sub>                               | 다운로드<br><sub>Download</sub>                              |\n| ------------------------------------------------------------ | ------------------------------------------------------------ |\n| huihui-ai GGUF 컬렉션 (Qwen · Llama · Mistral 계열)<br><sub>huihui-ai GGUF collection (Qwen · Llama · Mistral family)</sub> | [noctrex/huihui-ai 컬렉션](https://huggingface.co/collections/noctrex/huihui-ai)<br><sub>[noctrex/huihui-ai collection](https://huggingface.co/collections/noctrex/huihui-ai)</sub> |\n\n**🖼 Image→Prompt** — 비전 LLM(VLM) GGUF + mmproj 파일 필요. **Qwen3-VL 계열 권장**:\n**🖼 Image→Prompt** — vision LLM(VLM) GGUF + mmproj file required. **Qwen3-VL family recommended**:\n\n| 추천<br><sub>Recommended</sub>                               | 다운로드<br><sub>Download</sub>                              |\n| ------------------------------------------------------------ | ------------------------------------------------------------ |\n| Qwen3-VL-8B-NSFW-Caption-V4.5 GGUF                           | [mradermacher GGUF](https://huggingface.co/mradermacher/Qwen3-VL-8B-NSFW-Caption-V4.5-GGUF) |\n| huihui-ai Qwen3-VL 계열 GGUF<br><sub>huihui-ai Qwen3-VL family GGUF</sub> | [noctrex/huihui-ai 컬렉션](https://huggingface.co/collections/noctrex/huihui-ai)<br><sub>[noctrex/huihui-ai collection](https://huggingface.co/collections/noctrex/huihui-ai)</sub> |\n\n> 모델 파일(`.gguf`)과 mmproj 파일을 함께 다운로드한 뒤 TJ_NODE GGUF 모델 폴더에 넣고, LLM 설정 패널에서 각각 선택하세요.\n> model file(`.gguf`) mmproj File download together, then TJ_NODE GGUF place them in the TJ_NODE GGUF model folder and, LLM select each file in the LLM settings panel.\n\n---\n\n## 6. 문제 해결\n\n## 6. Troubleshooting\n\n| 증상<br><sub>Symptom</sub>                                   | 해결 방법<br><sub>Solution</sub>                             |\n| ------------------------------------------------------------ | ------------------------------------------------------------ |\n| 모델이 드롭다운에 안 보임<br><sub>model not shown in the dropdown</sub> | Settings → ↻ **Refresh Models** 클릭<br><sub>Settings → ↻ **Refresh Models** click</sub> |\n| SEEDVR2 모델 목록 안 나옴<br><sub>SEEDVR2 model list is empty</sub> | Upscale 모드 → **↻ Refresh** 클릭 · `models/SEEDVR2/` 폴더 확인<br><sub>Upscale Mode → **↻ Refresh** click · `models/SEEDVR2/` check the folder</sub> |\n| Outpaint 생성 시 완전히 새 이미지 생성<br><sub>Outpaint generates a completely new image during Outpaint</sub> | ComfyUI-KJNodes 최신 버전 설치 확인 (`ImagePadKJ` 노드 필요)<br><sub>ComfyUI-KJNodes make sure the latest version is installed (`ImagePadKJ` node required)</sub> |\n| Face Redraw 오류<br><sub>Face Redraw error</sub>             | ComfyUI-Impact-Pack + ComfyUI-Impact-Subpack 설치 확인<br><sub>ComfyUI-Impact-Pack + ComfyUI-Impact-Subpack verify installation</sub> |\n| KV Cache 오류 (Klein)<br><sub>KV Cache error (Klein)</sub>   | 파일명에 `kv` 미포함 시 자동 비활성화 — KV 모델 파일명 확인<br><sub>Models whose filenames contain `kv` automatically disabled when the filename does not contain kv — KV check the KV model filename</sub> |\n| GGUF 모델 안 로딩<br><sub>GGUF model does not load</sub>     | ComfyUI-GGUF 커스텀 노드 설치 확인<br><sub>ComfyUI-GGUF Custom Node verify installation</sub> |\n| Faceswap 얼굴 미감지<br><sub>Faceswap face is not detected</sub> | ComfyUI_FaceAnalysis 설치 + `insightface` pip 설치 확인<br><sub>ComfyUI_FaceAnalysis Installation + `insightface` pip verify installation</sub> |\n| RE-BG 오류<br><sub>RE-BG error</sub>                         | ComfyUI-RMBG 설치 + `models/background_removal/` 모델 확인<br><sub>ComfyUI-RMBG Installation + `models/background_removal/` model check</sub> |\n| QE2511 FluxKontext 노드 미발견 오류<br><sub>QE2511 FluxKontext Node missing-node error</sub> | ComfyUI-KJNodes 최신 버전으로 업데이트<br><sub>ComfyUI-KJNodes update to the latest version</sub> |\n| 언어 전환 후 반영 안 됨<br><sub>language change is not applied</sub> | Settings에서 언어 선택 후 자동 새로고침 대기<br><sub>Settingsto automatically refreshes after selection</sub> |\n\n---\n\n## 폴더 구조\n\n## Folder Structure\n\n```\nComfyUI/\n├── custom_nodes/\n│   └── ComfyUI-TJ_NODE_STUDIO_ONE/     ← 이 패키지\n│\n└── models/\n    ├── diffusion_models/         ← UNet / DiT 메인 모델 (전체 노드)\n    ├── text_encoders/            ← CLIP / Qwen / Gemma / Krea2 인코더\n    ├── vae/                      ← VAE (전체 노드)\n    ├── loras/                    ← LoRA (Faceswap BFS, Lightning, Angle 포함)\n    ├── controlnet/               ← ControlNet Union (Z-Image)\n    ├── ultralytics/\n    │   └── bbox/                 ← face_yolov8m.pt 등 (Z-Image Face Redraw)\n    ├── background_removal/       ← BiRefNet 모델 (Z-Image RE-BG)\n    └── SEEDVR2/                  ← SeedVR2 DiT + VAE (전체 노드 Upscale)\n```\n\n---\n\n## 감사의 말 (Acknowledgements)\n\n이 패키지의 핵심 아이디어와 기본 구조는 **[yanokusnir-ai](https://github.com/yanokusnir-ai)** 님의 오픈소스 프로젝트에서 영감을 받아 탄생했습니다.\nThe core idea and basic structure of this package were inspired by **[yanokusnir-ai](https://github.com/yanokusnir-ai)** open-source project..\n\n> **[one-node-flux-2-klein](https://github.com/yanokusnir-ai/one-node-flux-2-klein)**  \n> — 단일 노드에서 Flux.2 Klein을 올인원으로 다루는 핵심 아이디어의 원작\n> — the original project behind the core idea of handling Flux.2 Klein as an all-in-one solution within a single node\n\nTJ NODE STUDIO ONE 패밀리(Z-Image · Klein · QE2511 · Krea2)는 이 아이디어를 기반으로 다중 모델·다중 모드로 확장한 파생 작업입니다.  \nTJ NODE STUDIO ONE family(Z-Image · Klein · QE2511 · Krea2) is a derivative work that expands this idea to multiple models and multiple modes.\n원작자의 기여와 오픈소스 정신에 진심으로 감사드립니다. 🙏\nWe sincerely thank the original author for their contribution and open-source spirit.. 🙏\n\n\n\nSome TJ_NODE systems were rebuilt and extended based on concepts inspired by:\n\n- TooBusy Nodes - 너무바쁜베짱이\n\n- TooBusy Nodes - TooBusy Grasshopper\n  https://github.com/designloves2/toobusy<br>\n  https://www.youtube.com/@%EB%84%88%EB%AC%B4%EB%B0%94%EC%81%9C%EB%B2%A0%EC%A7%B1%EC%9D%B4<br>\n\n- comfyui-deno-custom-nodes\n  https://github.com/Deno2026/comfyui-deno-custom-nodes<br>\n  https://www.youtube.com/@Denoise-AI<br>\n\n- RebelsPromptEnhancer node\n  https://github.com/designloves2/RebelsPromptEnhancer<br>\n  https://www.youtube.com/@realrebelai<br>\n\n  \n\nSeveral nodes were heavily reworked and integrated into the TJ wireless workflow architecture.\n\n---\n\n## License\n\n*MIT License · [TJ NODE STUDIO ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE)*"
+      ],
+      "color": "#7612DA",
+      "bgcolor": "#000000"
+    },
+    {
+      "id": 65,
+      "type": "PixaromaLabel",
+      "pos": [
+        -3131.387121164134,
+        -27.55949278184665
+      ],
+      "size": [
+        372,
         50
       ],
       "flags": {
@@ -425,121 +276,17 @@
         }
       },
       "widgets_values": [
-        "{\"text\":\"Prompt STUDIO\",\"fontSize\":50,\"fontFamily\":\"Arial\",\"fontColor\":\"#7612DA\",\"textAlign\":\"left\",\"backgroundColor\":\"transparent\",\"padding\":0,\"borderRadius\":6,\"opacity\":1,\"fontWeight\":\"normal\",\"lineHeight\":1}"
+        "{\"text\":\"INSTALL GUIDE\",\"fontSize\":50,\"fontFamily\":\"Arial\",\"fontColor\":\"#7612DA\",\"textAlign\":\"left\",\"backgroundColor\":\"transparent\",\"padding\":0,\"borderRadius\":6,\"opacity\":1,\"fontWeight\":\"normal\",\"lineHeight\":1}"
       ],
       "color": "rgba(0,0,0,0)",
       "bgcolor": "rgba(0,0,0,0)"
     },
     {
-      "id": 38,
-      "type": "PixaromaLabel",
-      "pos": [
-        -2558.350442403082,
-        -239.3773347776637
-      ],
-      "size": [
-        1396,
-        80
-      ],
-      "flags": {
-        "pinned": true,
-        "no_title": true
-      },
-      "order": 8,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [],
-      "properties": {
-        "cnr_id": "ComfyUI-Pixaroma",
-        "ver": "d9f3b76caccb44fdbbd09b27fe1b4030a6c5d355",
-        "Node name for S&R": "PixaromaLabel",
-        "ue_properties": {
-          "widget_ue_connectable": {},
-          "input_ue_unconnectable": {},
-          "version": "7.8"
-        }
-      },
-      "widgets_values": [
-        "{\"text\":\"TJ NODE ONE STUDIO COLLECTION\",\"fontSize\":80,\"fontFamily\":\"Arial\",\"fontColor\":\"#ffd166\",\"textAlign\":\"left\",\"backgroundColor\":\"transparent\",\"padding\":0,\"borderRadius\":6,\"opacity\":1,\"fontWeight\":\"normal\",\"lineHeight\":1}"
-      ],
-      "color": "rgba(0,0,0,0)",
-      "bgcolor": "rgba(0,0,0,0)"
-    },
-    {
-      "id": 27,
-      "type": "TJ_MultiImageLoader",
-      "pos": [
-        -3283.4834069294498,
-        1564.7871970038977
-      ],
-      "size": [
-        400,
-        534
-      ],
-      "flags": {
-        "pinned": true
-      },
-      "order": 9,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "label": "BATCH ▶",
-          "name": "BATCH",
-          "type": "IMAGE",
-          "links": [
-            10
-          ]
-        },
-        {
-          "label": "WIDTH ▶",
-          "name": "WIDTH",
-          "type": "INT",
-          "links": null
-        },
-        {
-          "label": "HEIGHT ▶",
-          "name": "HEIGHT",
-          "type": "INT",
-          "links": null
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "TJ_MultiImageLoader",
-        "ue_properties": {
-          "widget_ue_connectable": {},
-          "input_ue_unconnectable": {},
-          "version": "7.8"
-        },
-        "auto_sets": {
-          "0": "BATCH",
-          "1": "WIDTH",
-          "2": "HEIGHT"
-        }
-      },
-      "widgets_values": [
-        "[\"input/download/131825505.jpeg\",\"input/download/132034281.jpeg\",\"input/download/133531887.jpeg\",\"input/download/134293081.jpeg\",\"input/download/134781876.jpeg\",\"input/download/3786b5c3-3fc3-4f55-984d-b77c7b9c0977-1-1.jpeg\",\"input/download/Architecture.png\",\"input/download/ComfyUI_00076_78.jpeg\",\"input/download/TA-2026-05-15-00-13-29-midjourney-67803.tam2.jpeg\",\"input/download/TA-2026-06-05-18-20-30-midj.Fulls-66601.tam2.jpeg\",\"input/download/TA-2026-06-07-00-14-10-Low-angles-666001.tam2.jpeg\",\"input/download/ComfyUI_06452_.jpeg\",\"input/download/ComfyUI_06451_.jpeg\",\"input/download/ComfyUI_00069_71.jpeg\",\"input/download/ComfyUI_00001_vhelp_1779297191.png\",\"input/download/a6860a0b-a040-43ab-9306-d3322e980777-0_edited.jpeg\",\"input/download/V3XYF4MS075E53N2GVHWJVFY80.jpeg\",\"input/download/ZIB_image.jpeg\"]",
-        true,
-        "Keep Input Ratio",
-        "none",
-        1024,
-        1024,
-        1536,
-        1,
-        "lanczos",
-        "Center Crop",
-        "4",
-        ""
-      ],
-      "color": "#7612DA",
-      "bgcolor": "#000000"
-    },
-    {
-      "id": 61,
-      "type": "ZImageTurboOneNode",
+      "id": 74,
+      "type": "Krea2OneTJNode",
       "pos": [
         -2350.350442403082,
-        89.14614837950985
+        1214.7871970038977
       ],
       "size": [
         980,
@@ -548,7 +295,52 @@
       "flags": {
         "pinned": true
       },
-      "order": 10,
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "prompt_override",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "",
+          "name": "image",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "properties": {
+        "aux_id": "designloves2/ComfyUI-TJ_NODE_STUDIO_ONE",
+        "ver": "7ec0df1f083cd96144ba85438d41425d0b858ff2",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.8"
+        }
+      },
+      "widgets_values": [
+        ""
+      ],
+      "color": "#7612DA",
+      "bgcolor": "#0b0b0b"
+    },
+    {
+      "id": 130,
+      "type": "SDXLOneTJNode",
+      "pos": [
+        -3435.387121164134,
+        1214.7871970038977
+      ],
+      "size": [
+        980,
+        928
+      ],
+      "flags": {},
+      "order": 9,
       "mode": 0,
       "inputs": [
         {
@@ -566,6 +358,8 @@
         }
       ],
       "properties": {
+        "aux_id": "designloves2/ComfyUI-TJ_NODE_STUDIO_ONE",
+        "ver": "7ec0df1f083cd96144ba85438d41425d0b858ff2",
         "ue_properties": {
           "widget_ue_connectable": {},
           "input_ue_unconnectable": {},
@@ -592,7 +386,7 @@
       "flags": {
         "pinned": true
       },
-      "order": 11,
+      "order": 10,
       "mode": 0,
       "inputs": [
         {
@@ -611,6 +405,8 @@
         }
       ],
       "properties": {
+        "aux_id": "designloves2/ComfyUI-TJ_NODE_STUDIO_ONE",
+        "ver": "7ec0df1f083cd96144ba85438d41425d0b858ff2",
         "ue_properties": {
           "widget_ue_connectable": {},
           "input_ue_unconnectable": {},
@@ -622,6 +418,52 @@
       ],
       "color": "#7612DA",
       "bgcolor": "#000000"
+    },
+    {
+      "id": 61,
+      "type": "ZImageTurboOneNode",
+      "pos": [
+        -2350.350442403082,
+        89.14614837950985
+      ],
+      "size": [
+        980,
+        928
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "prompt_override",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "properties": {
+        "aux_id": "designloves2/ComfyUI-TJ_NODE_STUDIO_ONE",
+        "ver": "7ec0df1f083cd96144ba85438d41425d0b858ff2",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.8"
+        }
+      },
+      "widgets_values": [
+        ""
+      ],
+      "color": "#7612DA",
+      "bgcolor": "#0b0b0b"
     },
     {
       "id": 117,
@@ -656,6 +498,8 @@
         }
       ],
       "properties": {
+        "aux_id": "designloves2/ComfyUI-TJ_NODE_STUDIO_ONE",
+        "ver": "7ec0df1f083cd96144ba85438d41425d0b858ff2",
         "ue_properties": {
           "widget_ue_connectable": {},
           "input_ue_unconnectable": {},
@@ -669,38 +513,27 @@
       "bgcolor": "#0b0b0b"
     },
     {
-      "id": 74,
-      "type": "Krea2OneTJNode",
+      "id": 129,
+      "type": "PixaromaLabel",
       "pos": [
-        -2350.350442403082,
-        1214.7871970038977
+        -3181.887121164134,
+        1091.9368568999905
       ],
       "size": [
-        980,
-        928
+        456,
+        50
       ],
       "flags": {
-        "pinned": true
+        "no_title": true
       },
       "order": 13,
       "mode": 0,
-      "inputs": [
-        {
-          "name": "prompt_override",
-          "shape": 7,
-          "type": "STRING",
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "label": "",
-          "name": "image",
-          "type": "IMAGE",
-          "links": null
-        }
-      ],
+      "inputs": [],
+      "outputs": [],
       "properties": {
+        "cnr_id": "ComfyUI-Pixaroma",
+        "ver": "d9f3b76caccb44fdbbd09b27fe1b4030a6c5d355",
+        "Node name for S&R": "PixaromaLabel",
         "ue_properties": {
           "widget_ue_connectable": {},
           "input_ue_unconnectable": {},
@@ -708,38 +541,21 @@
         }
       },
       "widgets_values": [
-        ""
+        "{\"text\":\"SDXL ONE STUDIO\",\"fontSize\":50,\"fontFamily\":\"Arial\",\"fontColor\":\"#7612DA\",\"textAlign\":\"left\",\"backgroundColor\":\"transparent\",\"padding\":0,\"borderRadius\":6,\"opacity\":1,\"fontWeight\":\"normal\",\"lineHeight\":1}"
       ],
-      "color": "#7612DA",
-      "bgcolor": "#0b0b0b"
+      "color": "rgba(0,0,0,0)",
+      "bgcolor": "rgba(0,0,0,0)"
     }
   ],
-  "links": [
-    [
-      10,
-      27,
-      0,
-      26,
-      1,
-      "IMAGE"
-    ],
-    [
-      11,
-      26,
-      0,
-      28,
-      0,
-      "STRING"
-    ]
-  ],
+  "links": [],
   "groups": [],
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.544500000000007,
+      "scale": 0.49500000000001065,
       "offset": [
-        3719.8572470517015,
-        290.8782357611596
+        4454.215857009341,
+        444.4022743038576
       ]
     },
     "workflowRendererVersion": "LG",

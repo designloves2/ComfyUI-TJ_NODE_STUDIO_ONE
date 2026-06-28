@@ -1,10 +1,13 @@
 # TJ NODE STUDIO ONE (통합 패키지)
 # TJ NODE STUDIO ONE (Integrated Package)
 
-> **ComfyUI 올인원 이미지 생성 UI 패키지** — Z-Image ONE STUDIO, Flux.2 Klein ONE STUDIO, Qwen Image Edit 2511 ONE STUDIO, Krea 2 ONE STUDIO 네 가지 노드를 단일 패키지로 제공합니다.  
-> **ComfyUI all-in-one image generation UI package** — Z-Image ONE STUDIO, Flux.2 Klein ONE STUDIO, Qwen Image Edit 2511 ONE STUDIO, Krea 2 ONE STUDIO provides four nodes in a single package.
+> **ComfyUI 올인원 이미지 생성 UI 패키지** — Z-Image ONE STUDIO, Flux.2 Klein ONE STUDIO, Qwen Image Edit 2511 ONE STUDIO, Krea 2 ONE STUDIO, **SDXL ONE STUDIO** 다섯 가지 노드를 단일 패키지로 제공합니다.  
+> **ComfyUI all-in-one image generation UI package** — Z-Image ONE STUDIO, Flux.2 Klein ONE STUDIO, Qwen Image Edit 2511 ONE STUDIO, Krea 2 ONE STUDIO, **SDXL ONE STUDIO** provides five nodes in a single package.
 > 워크플로우 배선 없이 노드 하나에서 T2I · I2I · Inpaint · Outpaint · ControlNet · Edit · Faceswap · ANGLE · Upscale(SeedVR2) 등 다양한 모드를 전환합니다.
 > switch between modes in a single node without workflow wiring T2I · I2I · Inpaint · Outpaint · ControlNet · Edit · Faceswap · ANGLE · Upscale(SeedVR2) etc. switch between various modes.
+>
+> 🧪 **SDXL ONE STUDIO는 현재 테스트 버전입니다.** 기능은 동작하지만 일부 옵션이 변경될 수 있습니다.  
+> 🧪 **SDXL ONE STUDIO is currently a test/beta version.** Core features are functional but some options may change.
 >
 > ⚠️ **생성 방식**: 모든 노드의 생성은 ComfyUI 상단 **RUN**이 아닌 노드 내부의 **▶ Generate** 버튼으로 실행합니다. RUN 실행 시 마지막으로 생성된 이미지가 OUTPUT image 슬롯으로 출력됩니다.
 > ⚠️ **Generation Method**: generation for all nodes is executed using at the top of ComfyUI **RUN**instead of, use the button inside the node **▶ Generate** button. When RUN is executed, the most recently generated image is output through the OUTPUT image slot..
@@ -32,7 +35,9 @@
 6. [Qwen Image Edit 2511 ONE STUDIO — Feature Details](#qwen-image-edit-2511-one-studio--기능-상세)
 7. [Krea 2 ONE STUDIO — 기능 상세](#krea-2-one-studio--기능-상세)
 7. [Krea 2 ONE STUDIO — Feature Details](#krea-2-one-studio--기능-상세)
-8. [공통 기능](#공통-기능)
+8. [SDXL ONE STUDIO — 기능 상세 🧪](#sdxl-one-studio--기능-상세-)
+8. [SDXL ONE STUDIO — Feature Details 🧪](#sdxl-one-studio--기능-상세-)
+9. [공통 기능](#공통-기능)
 8. [Common Features](#공통-기능)
 9. [버그 수정 이력](#버그-수정-이력)
 9. [Bug Fix History](#버그-수정-이력)
@@ -50,6 +55,7 @@
 | **Flux.2 Klein ONE STUDIO (TJ)** | Flux.2-Klein (9B / 4B) | T2I · I2I · Edit · **Inpaint · Outpaint** · Faceswap · **Upscale** |
 | **Qwen Image Edit 2511 ONE STUDIO (TJ)** | Qwen2.5-VL 기반 Image Edit 모델<br><sub>Qwen2.5-VL based Image Edit model</sub>| T2I · I2I · Edit(최대 3장) · Inpaint · **Outpaint** · Faceswap · **Angle** · **Upscale**<br><sub>T2I · I2I · Edit(up to 3 images) · Inpaint · **Outpaint** · Faceswap · **Angle** · **Upscale**</sub>|
 | **Krea 2 ONE STUDIO (TJ)** | Krea.ai 이미지 생성 모델<br><sub>Krea.ai image generation model</sub>| T2I · I2I · **Upscale** |
+| **SDXL ONE STUDIO (TJ)** 🧪 | SDXL Checkpoint / Separate UNET 모델<br><sub>SDXL Checkpoint / Separate UNET model</sub>| T2I · I2I · Inpaint · Outpaint · Upscale *(테스트 버전 / Test Version)* |
 
 > **언어 지원**: 모든 노드의 Settings에서 한국어 / English 전환 가능
 > **Language Support**: Korean / English can be selected in Settings for every node
@@ -237,6 +243,64 @@ chmod +x install_requirements.sh
 | Diffusion Model | `models/diffusion_models/` | [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea-2/tree/main/diffusion_models) |
 | Text Encoder | `models/text_encoders/` | [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea-2/tree/main/text_encoders) |
 | VAE | `models/vae/` | [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea-2/tree/main/vae) |
+
+---
+
+## SDXL ONE STUDIO — 기능 상세 🧪
+## SDXL ONE STUDIO — Feature Details 🧪
+
+> 🧪 **테스트 버전 (Test / Beta Version)**  
+> SDXL ONE STUDIO는 현재 테스트 단계입니다. 핵심 기능은 동작하지만 UI 및 옵션이 향후 변경될 수 있습니다.  
+> SDXL ONE STUDIO is currently in the test stage. Core features are functional, but the UI and options may change in future versions.
+
+### 지원 모드
+### Supported Modes
+
+| 모드<br><sub>Mode</sub>| 설명<br><sub>Description</sub>|
+|---|---|
+| **T2I** | 텍스트 → 이미지 기본 생성<br><sub>basic text-to-image generation</sub>|
+| **I2I** | 소스 이미지 기반 변형 생성<br><sub>source image-based transformation</sub>|
+| **INPAINT** | 내장 풀스크린 마스크 에디터 (줌 1x–32x · 팬 · 브러시/지우개) — VAEEncodeForInpaint로 완전 마스킹<br><sub>built-in full-screen mask editor (zoom 1x–32x · pan · brush/eraser) — fully masked with VAEEncodeForInpaint</sub>|
+| **OUTPAINT** | 이미지 캔버스 확장 후 빈 영역 인페인트. 비교 슬라이더에서 패딩된 원본 미리보기 제공<br><sub>extend the image canvas and inpaint empty areas. padded original preview in compare slider</sub>|
+| **UPSCALE** | ESRGAN AI 업스케일 (latent 확대 → Refiner KSampler 정제)<br><sub>ESRGAN AI upscale (latent upscale → Refiner KSampler refinement)</sub>|
+
+### 모델 로딩 방식
+### Model Loading Mode
+
+SDXL ONE STUDIO는 Settings에서 두 가지 로딩 방식을 지원합니다.  
+SDXL ONE STUDIO supports two model loading modes in Settings.
+
+| 방식<br><sub>Mode</sub>| 설명<br><sub>Description</sub>|
+|---|---|
+| **CKPT** | 단일 Checkpoint 파일 (`models/checkpoints/`) — 가장 간단한 방식<br><sub>single Checkpoint file (`models/checkpoints/`) — simplest setup</sub>|
+| **Separate (UNET)** | UNET + DualCLIP(L/G) + VAE 분리 로딩 — GGUF·FP8 경량 모델 지원<br><sub>separate UNET + DualCLIP(L/G) + VAE loading — supports GGUF·FP8 lightweight models</sub>|
+
+> **Refiner**: CKPT / Separate 방식 모두 별도 Refiner Checkpoint를 항상 설정할 수 있습니다. Refiner는 `CheckpointLoaderSimple`로 독립 로딩됩니다.  
+> **Refiner**: In both CKPT and Separate modes, a separate Refiner Checkpoint can always be configured. The Refiner is loaded independently via `CheckpointLoaderSimple`.
+
+### 주요 기능
+### Key Features
+
+| 기능<br><sub>Feature</sub>| 설명<br><sub>Description</sub>|
+|---|---|
+| **📋 프롬프트 템플릿**<br><sub>📋 Prompt Template</sub>| 자주 쓰는 프롬프트 저장·불러오기 (Klein 공유 템플릿 DB 사용)<br><sub>save and load frequently used prompts (shared template DB with Klein)</sub>|
+| **🔍 프롬프트 확대 편집**<br><sub>🔍 Prompt Expand Edit</sub>| 전체화면 편집 팝업. TJ_NODE 설치 시 ✨ Enhance · 🖼 Image→Prompt 자동 활성화<br><sub>fullscreen edit popup. TJ_NODE install enables ✨ Enhance · 🖼 Image→Prompt</sub>|
+| **CKPT ↔ UNET 표시기**<br><sub>CKPT ↔ UNET Indicator</sub>| 현재 로딩 방식을 상단 배지로 표시. 방식 전환 시 즉시 업데이트<br><sub>display current loading mode as a top badge. Updates instantly on mode change</sub>|
+| **⇌ 비교 슬라이더**<br><sub>⇌ Compare Slider</sub>| Outpaint: 패딩된 원본 vs 결과 / Inpaint: 원본 vs 마스킹 결과<br><sub>Outpaint: padded original vs result / Inpaint: original vs masked result</sub>|
+| **마스크 에디터**<br><sub>Mask Editor</sub>| 팝업 풀스크린 에디터 — 줌·팬·브러시/지우개·크기 슬라이더 내장<br><sub>popup fullscreen editor — zoom · pan · brush/eraser · size slider built-in</sub>|
+
+### 필수 모델
+### Required Models
+
+| 종류<br><sub>Type</sub>| 경로<br><sub>Path</sub>| 비고<br><sub>Notes</sub>|
+|---|---|---|
+| **SDXL Checkpoint** (CKPT 방식) | `models/checkpoints/` | 일반 SDXL .safetensors 파일<br><sub>standard SDXL .safetensors file</sub>|
+| **SDXL UNET** (Separate 방식) | `models/diffusion_models/` | GGUF / FP8 경량 파일도 지원<br><sub>GGUF / FP8 lightweight files also supported</sub>|
+| **CLIP-L** (Separate 방식) | `models/text_encoders/` | SDXL dual-encoder: clip_l<br><sub>SDXL dual-encoder: clip_l</sub>|
+| **CLIP-G** (Separate 방식) | `models/text_encoders/` | SDXL dual-encoder: clip_g<br><sub>SDXL dual-encoder: clip_g</sub>|
+| **VAE** (Separate 방식) | `models/vae/` | sdxl_vae.safetensors 등<br><sub>sdxl_vae.safetensors etc.</sub>|
+| **Refiner Checkpoint** (선택)<br><sub>Refiner Checkpoint (optional)</sub>| `models/checkpoints/` | SDXL-Refiner 계열 모델<br><sub>SDXL-Refiner series model</sub>|
+| **ESRGAN Upscale** (Upscale 시 필수)<br><sub>ESRGAN Upscale (required for Upscale)</sub>| `models/upscale_models/` | 4x-UltraSharp 등<br><sub>4x-UltraSharp etc.</sub>|
 
 ---
 
@@ -653,8 +717,62 @@ chmod +x install_requirements.sh
 
 ---
 
-### 3-5. SeedVR2 Upscale 모델 (전체 노드 공용)
-### 3-5. SeedVR2 Upscale model (shared by all nodes)
+### 3-5. SDXL ONE STUDIO 모델 🧪
+### 3-5. SDXL ONE STUDIO model 🧪
+
+> 🧪 테스트 버전 — SDXL 계열 모델을 그대로 사용합니다.  
+> 🧪 Test Version — uses standard SDXL-family models as-is.
+
+#### Checkpoint → `models/checkpoints/`  *(CKPT 방식)*
+#### Checkpoint → `models/checkpoints/`  *(CKPT mode)*
+
+| 예시<br><sub>Example</sub>| 설명<br><sub>Description</sub>|
+|---|---|
+| `sd_xl_base_1.0.safetensors` | SDXL Base 공식 모델<br><sub>SDXL Base official model</sub>|
+| SDXL 계열 커스텀 Checkpoint | CivitAI 등에서 배포되는 SDXL 파인튠 모델<br><sub>SDXL fine-tuned models distributed on CivitAI etc.</sub>|
+
+#### Separate 방식 — UNET → `models/diffusion_models/`
+#### Separate Mode — UNET → `models/diffusion_models/`
+
+GGUF 또는 FP8 경량 SDXL UNET 파일 사용 가능.  
+GGUF or FP8 lightweight SDXL UNET files are supported.
+
+#### Separate 방식 — Text Encoder → `models/text_encoders/`
+#### Separate Mode — Text Encoder → `models/text_encoders/`
+
+| 파일<br><sub>File</sub>| 설명<br><sub>Description</sub>|
+|---|---|
+| `clip_l.safetensors` | SDXL CLIP-L 텍스트 인코더<br><sub>SDXL CLIP-L text encoder</sub>|
+| `clip_g.safetensors` | SDXL CLIP-G 텍스트 인코더 (DualCLIP 필요)<br><sub>SDXL CLIP-G text encoder (DualCLIP required)</sub>|
+
+#### VAE → `models/vae/`
+
+| 예시<br><sub>Example</sub>|
+|---|
+| `sdxl_vae.safetensors` |
+
+#### Refiner Checkpoint (선택) → `models/checkpoints/`
+#### Refiner Checkpoint (optional) → `models/checkpoints/`
+
+| 예시<br><sub>Example</sub>| 설명<br><sub>Description</sub>|
+|---|---|
+| `sd_xl_refiner_1.0.safetensors` | SDXL Refiner 공식 모델<br><sub>SDXL Refiner official model</sub>|
+
+> Refiner는 CKPT / Separate 방식 모두에서 항상 선택 가능합니다.  
+> The Refiner can always be configured regardless of CKPT or Separate loading mode.
+
+#### ESRGAN Upscale (Upscale 모드 필수) → `models/upscale_models/`
+#### ESRGAN Upscale (required for Upscale mode) → `models/upscale_models/`
+
+| 예시<br><sub>Example</sub>| 설명<br><sub>Description</sub>|
+|---|---|
+| `4x-UltraSharp.pth` | 고품질 4x 업스케일 모델 (권장)<br><sub>high-quality 4x upscale model (recommended)</sub>|
+| `4x_NMKD-Superscale-SP_178000_G.pth` | 범용 4x 업스케일 모델<br><sub>general-purpose 4x upscale model</sub>|
+
+---
+
+### 3-6. SeedVR2 Upscale 모델 (전체 노드 공용)
+### 3-6. SeedVR2 Upscale model (shared by all nodes)
 
 모든 노드의 **UPSCALE 모드**에서 동일한 폴더를 사용합니다.
 Node **UPSCALE Mode**to use.
@@ -754,6 +872,19 @@ Settings → **Model Override** enable the checkbox to expose input slots on the
 | **T2I**     | 텍스트 → 이미지<br><sub>→ image</sub>| 해상도, Steps, CFG, Sampler, LoRA (최대 3개), Lightning LoRA (⚙ Settings)<br><sub>resolution, Steps, CFG, Sampler, LoRA ( 3), Lightning LoRA (⚙ Settings)</sub>|
 | **I2I**     | 이미지 → 이미지 변형<br><sub>image → image</sub>| 소스 이미지, Denoise 조절<br><sub>source image, Denoise adjustment</sub>|
 | **UPSCALE** | SeedVR2 AI 업스케일<br><sub>SeedVR2 AI</sub>| DiT 모델 + VAE 선택<br><sub>DiT model + VAE selection</sub>|
+
+### SDXL ONE STUDIO (TJ) 🧪
+
+> 🧪 테스트 버전 — 기능 동작 중이나 일부 옵션이 변경될 수 있습니다.  
+> 🧪 Test Version — functional but some options may change.
+
+| 모드<br><sub>Mode</sub>| 설명<br><sub>Description</sub>| 주요 설정<br><sub>Key Settings</sub>|
+| ----------- | -------------------- | ------------------------------------------------------------ |
+| **T2I**     | 텍스트 → 이미지<br><sub>text → image</sub>| CKPT 또는 Separate(UNET+CLIP-L/G+VAE) 선택, 해상도, Steps, CFG, Sampler, Refiner<br><sub>CKPT or Separate(UNET+CLIP-L/G+VAE), resolution, Steps, CFG, Sampler, Refiner</sub>|
+| **I2I**     | 이미지 → 이미지 변형<br><sub>image → image</sub>| 소스 이미지, Denoise 조절<br><sub>source image, Denoise adjustment</sub>|
+| **INPAINT** | 특정 영역 재생성<br><sub>regenerate selected area</sub>| 팝업 풀스크린 마스크 에디터 (줌·팬·브러시), VAEEncodeForInpaint 방식<br><sub>popup fullscreen mask editor (zoom · pan · brush), VAEEncodeForInpaint method</sub>|
+| **OUTPAINT** | 캔버스 확장<br><sub>canvas expansion</sub>| Top/Bottom/Left/Right 픽셀 설정, 비교 슬라이더에서 패딩 미리보기<br><sub>Top/Bottom/Left/Right pixel settings, padded preview in compare slider</sub>|
+| **UPSCALE** | ESRGAN + Refiner 업스케일<br><sub>ESRGAN + Refiner upscale</sub>| ESRGAN 모델 선택 (`models/upscale_models/`), Refiner KSampler 정제<br><sub>ESRGAN model selection (`models/upscale_models/`), Refiner KSampler refinement</sub>|
 
 ---
 

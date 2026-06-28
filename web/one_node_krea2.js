@@ -279,8 +279,12 @@ app.registerExtension({
           btn.addEventListener("click",async()=>{
             const mr=modeResults[state.mode]; if(!mr)return;
             btn.disabled=true; btn.textContent="Copying…";
-            try{const n=await copyOutputToInput(mr.im.filename,mr.im.subfolder||"",mr.im.type||"output");state[t.field]=n;state.mode=t.mode;persist();renderPills();renderMode();}
-            catch(e){btn.disabled=false;btn.textContent=t.label;}
+            try{
+              const n=await copyOutputToInput(mr.im.filename,mr.im.subfolder||"",mr.im.type||"output");
+              state[t.field]=n;
+              if(t.mode===state.mode&&modeHandle?.setImage){modeHandle.setImage(n);persist();}
+              else{state.mode=t.mode;persist();renderPills();renderMode();}
+            }catch(e){btn.disabled=false;btn.textContent=t.label;}
           });
           sendLeft.appendChild(btn);
         });
@@ -444,7 +448,11 @@ app.registerExtension({
       galleryOv = createGalleryOverlay(
         state, ctx,
         meta => { Object.assign(state, meta); persist(); renderPills(); renderMode(); },
-        (mode, field, filename) => { state[field]=filename; state.mode=mode; persist(); renderPills(); renderMode(); }
+        (mode, field, filename) => {
+          state[field]=filename;
+          if(mode===state.mode&&modeHandle?.setImage){modeHandle.setImage(filename);persist();}
+          else{state.mode=mode;persist();renderPills();renderMode();}
+        }
       );
       root.appendChild(galleryOv.el);
 

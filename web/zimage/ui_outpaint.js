@@ -38,6 +38,7 @@ export function mountOutpaintLeft(leftEl, state, ctx) {
   mountLoraSection(wrap, state, ctx);
 
   return {
+    setImage(name) { state.outpaintImage = name; srcUp.setFilename(name); ctx.persist(); },
     beforeGenerate: async () => {
       if (!state.outpaintImage) throw new Error("소스 이미지를 업로드하세요.");
       const total = (state.outpaintUp||0)+(state.outpaintDown||0)+(state.outpaintLeft||0)+(state.outpaintRight||0);

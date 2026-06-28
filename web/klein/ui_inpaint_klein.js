@@ -515,6 +515,13 @@ export function mountInpaintLeft(leftEl, state, ctx) {
   }
 
   return {
+    switchSubMode,
+    setImage(name) {
+      state.inpaintImage = name; state.outpaintImage = name;
+      state.inpaintMaskImage = null;
+      srcUp.setFilename(name); loadSourceImage(name);
+      ctx.persist();
+    },
     beforeGenerate: async () => {
       if (!state.inpaintImage) throw new Error("소스 이미지를 업로드하세요.");
       if (state.paintSubMode === "inpaint") {

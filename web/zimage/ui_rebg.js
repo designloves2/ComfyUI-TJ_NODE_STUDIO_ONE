@@ -110,6 +110,7 @@ export function mountReBGLeft(leftEl, state, ctx) {
   mountLoraSection(wrap, state, ctx);
 
   return {
+    setImage(name) { state.rebgImage = name; srcUp.setFilename(name); ctx.persist(); },
     beforeGenerate: async () => {
       if (!state.rebgImage)   throw new Error("소스 이미지를 업로드하세요.");
       if (!state.rebgBgModel || state.rebgBgModel === "none")

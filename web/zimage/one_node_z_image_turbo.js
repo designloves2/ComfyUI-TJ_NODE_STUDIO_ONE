@@ -457,8 +457,12 @@ app.registerExtension({
             btn.disabled=true; btn.textContent="Copying…";
             try{
               const n=await copyOutputToInput(mr.im.filename,mr.im.subfolder||"",mr.im.type||"output");
-              state[t.field]=n; if(t.extra) t.extra(state); state.mode=t.mode; persist();
-              renderPills(); renderMode();
+              state[t.field]=n; if(t.extra) t.extra(state);
+              if(t.mode===state.mode && modeHandle?.setImage){
+                modeHandle.setImage(n); persist();
+              } else {
+                state.mode=t.mode; persist(); renderPills(); renderMode();
+              }
             }catch(e){showPopup("Copy failed: "+(e.message||e));btn.disabled=false;btn.textContent=t.label;}
           });
           sendLeft.appendChild(btn);
@@ -656,8 +660,11 @@ app.registerExtension({
       function onGallerySendTo(mode,field,extra,newFilename){
         state[field]=newFilename;
         if(extra) extra(state);
-        state.mode=mode; persist();
-        renderPills(); renderMode();
+        if(mode===state.mode && modeHandle?.setImage){
+          modeHandle.setImage(newFilename); persist();
+        } else {
+          state.mode=mode; persist(); renderPills(); renderMode();
+        }
       }
 
       galleryOv=createGalleryOverlay(state,ctx,(meta)=>{
