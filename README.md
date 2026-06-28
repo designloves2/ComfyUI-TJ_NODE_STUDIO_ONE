@@ -41,10 +41,6 @@
 
 ## 설치 방법
 
-### ComfyUI Manager (권장)
-
-ComfyUI Manager → Install Custom Nodes → `ComfyUI-TJ_NODE_STUDIO_ONE` 검색 후 설치
-
 ### 수동 설치
 
 ```bash
@@ -55,6 +51,10 @@ git clone https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE.git
 ComfyUI를 재시작하면 Add Node 메뉴에서 모든 노드를 찾을 수 있습니다.
 
 ---
+
+### ComfyUI Manager (등록 대기중)
+ComfyUI Manager → Install Custom Nodes → `ComfyUI-TJ_NODE_STUDIO_ONE` 검색 후 설치
+
 
 ## 필수 커스텀 노드
 
