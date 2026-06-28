@@ -160,7 +160,7 @@ app.registerExtension({
 
       // ── Root ───────────────────────────────────────────────────────────────
       const root = el("div",{style:{
-        width:"100%", height:`${ROOT_H}px`, boxSizing:"border-box",
+        width:`${NODE_W}px`, height:`${ROOT_H}px`, boxSizing:"border-box",
         position:"relative", overflow:"hidden",
         background:C.bg0, borderRadius:"8px",
         padding:`${PAD}px ${PAD}px ${BOTTOM_PAD}px ${PAD}px`,
@@ -225,7 +225,7 @@ app.registerExtension({
       const leftPanel=el("div",{style:{flex:"1",overflowY:"auto",overflowX:"hidden",display:"flex",flexDirection:"column",gap:"6px"}});
       leftPanel.className="qe2511v3-lp";
       leftOuter.appendChild(leftPanel);
-      const rightPanel=el("div",{style:{flex:"1",minWidth:"0",display:"flex",flexDirection:"column",gap:`${PAD}px`,height:`${RIGHT_H}px`}});
+      const rightPanel=el("div",{style:{flex:"1",minWidth:`${PREVIEW_SIZE}px`,display:"flex",flexDirection:"column",gap:`${PAD}px`,height:`${RIGHT_H}px`}});
 
       // Preview box
       const previewBox =el("div",{style:{width:`${PREVIEW_SIZE}px`,height:`${PREVIEW_SIZE}px`,flexShrink:"0",background:"#000",borderRadius:"8px",border:`1px solid ${C.border}`,position:"relative",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",alignSelf:"flex-start"}});
@@ -497,7 +497,7 @@ app.registerExtension({
         if(galleryOv?.el.style.display!=="none"){galleryOv.hide();return;}
       });
 
-      self.addDOMWidget("qe2511v3_ui","div",root,{serialize:false,computeSize:()=>[NODE_W,NODE_H]});
+      self.addDOMWidget("qe2511v3_ui","div",root,{serialize:false,computeSize:()=>[NODE_W,NODE_H+(self._extraH||0)]});
       renderPills();renderMode();applyCompareBtnStyle();
     };
   },

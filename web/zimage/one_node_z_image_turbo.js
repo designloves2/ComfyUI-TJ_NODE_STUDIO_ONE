@@ -169,7 +169,7 @@ app.registerExtension({
 
       // ── Root ────────────────────────────────────────────────────────────
       const root=el("div",{style:{
-        width:"100%",height:`${ROOT_H}px`,boxSizing:"border-box",
+        width:`${NODE_W}px`,height:`${ROOT_H}px`,boxSizing:"border-box",
         position:"relative",overflow:"hidden",
         background:C.bg0,borderRadius:"8px",
         padding:`${PAD}px ${PAD}px ${BOTTOM_PAD}px ${PAD}px`,
@@ -305,7 +305,7 @@ app.registerExtension({
       leftOuter.appendChild(leftPanel);
 
       const rightPanel=el("div",{style:{
-        flex:"1",minWidth:"0",display:"flex",flexDirection:"column",
+        flex:"1",minWidth:`${PREVIEW_SIZE}px`,display:"flex",flexDirection:"column",
         gap:`${PAD}px`,height:`${RIGHT_H}px`,
       }});
 
@@ -788,7 +788,7 @@ app.registerExtension({
 
       this.addDOMWidget("zit_ui","div",root,{
         getValue(){return null;}, setValue(){}, serialize:false,
-        computeSize(){return [NODE_W,NODE_H];},
+        computeSize(){return [NODE_W,NODE_H+(self._extraH||0)];},
       });
       self.size=[NODE_W,NODE_H]; self.setSize?.([NODE_W,NODE_H]);
     };

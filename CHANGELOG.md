@@ -29,7 +29,7 @@
 - 입력값이 0이면 64로 대체, 8 배수로 자동 반올림 처리
 
 **Textarea 클릭 시 노드 내부 패널 찌그러짐**
-- `web/klein/one_node_flux_2_klein.js` 3곳 수정:
+- 전체 4개 노드(Klein · QE2511 · Z-Image · Krea2) 동일하게 수정:
   - `root.width`: `"100%"` → `"980px"` 고정 (컨테이너 reflow 차단)
   - `rightPanel.minWidth`: `"0"` → `"640px"` (flex 레이아웃이 preview 패널을 압축 불가)
   - `computeSize`: `[NODE_W, NODE_H]` → `[NODE_W, NODE_H + _extraH]` (Override Slots 활성 시 높이 정확도)
