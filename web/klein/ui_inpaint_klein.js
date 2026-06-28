@@ -415,7 +415,7 @@ export function mountInpaintLeft(leftEl, state, ctx) {
   }});
 
   function switchSubMode(mode) {
-    state.paintSubMode = mode; ctx.persist();
+    state.paintSubMode = mode; ctx.persist(); ctx.updatePromptTA?.();
     inpaintSection.style.display  = mode === "inpaint"  ? "" : "none";
     outpaintSection.style.display = mode === "outpaint" ? "" : "none";
     applySubModeBtn(inpaintBtn,  mode === "inpaint");

@@ -20,15 +20,15 @@ export function mountT2ILeft(leftEl, state, ctx) {
       else customRow.style.display = "flex";
     }
   );
-  const wInp = numberField(state.width, 64, 4096, 64, v => { state.width  = v; ctx.persist(); });
-  const hInp = numberField(state.height, 64, 4096, 64, v => { state.height = v; ctx.persist(); });
+  const wInp = numberField(state.width,  v => { state.width  = Math.max(64, Math.round(v / 64) * 64) || 1024; ctx.persist(); }, 64);
+  const hInp = numberField(state.height, v => { state.height = Math.max(64, Math.round(v / 64) * 64) || 1024; ctx.persist(); }, 64);
   const customRow = row([col([label("W"), wInp]), col([label("H"), hInp])]);
   customRow.style.display = isCustom ? "flex" : "none";
   wrap.appendChild(panel([label("Resolution"), resDd, customRow]));
 
   // ── Steps / CFG (inline) ────────────────────────────────────────────────────
-  const stepsF = numberField(state.steps, 1, 50, 1, v => { state.steps = v; ctx.persist(); });
-  const cfgF   = numberField(state.cfg,   0, 20, 0.25, v => { state.cfg = v; ctx.persist(); });
+  const stepsF = numberField(state.steps, v => { state.steps = Math.max(1, Math.min(50,  Math.round(v) || 1)); ctx.persist(); }, 1);
+  const cfgF   = numberField(state.cfg,   v => { state.cfg   = Math.max(0, Math.min(20,  v || 0)); ctx.persist(); }, 0.25);
   wrap.appendChild(panel([row([col([label("Steps"), stepsF]), col([label("CFG"), cfgF])])]));
 
   // ── Sampler / Scheduler ──────────────────────────────────────────────────────

@@ -168,7 +168,7 @@ app.registerExtension({
 
       // ── Root ──────────────────────────────────────────────────────────────
       const root = el("div", { style: {
-        width: "100%", height: `${ROOT_H}px`, boxSizing: "border-box",
+        width: `${NODE_W}px`, height: `${ROOT_H}px`, boxSizing: "border-box",
         position: "relative", overflow: "hidden",
         background: C.bg0, borderRadius: "8px",
         padding: `${PAD}px ${PAD}px ${BOTTOM_PAD}px ${PAD}px`,
@@ -379,7 +379,7 @@ app.registerExtension({
 
       // Right panel
       const rightPanel = el("div", { style: {
-        flex: "1", minWidth: "0", display: "flex", flexDirection: "column",
+        flex: "1", minWidth: `${PREVIEW_SIZE}px`, display: "flex", flexDirection: "column",
         gap: `${PAD}px`, height: `${RIGHT_H}px`,
       }});
 
@@ -564,7 +564,9 @@ app.registerExtension({
             btn.disabled = true; btn.textContent = "Copying…";
             try {
               const n = await copyOutputToInput(mr.im.filename, mr.im.subfolder || "", mr.im.type || "output");
-              state[t.field] = n; state.mode = t.mode; persist();
+              state[t.field] = n;
+              if (t.field === "inpaintImage") state.outpaintImage = n;
+              state.mode = t.mode; persist();
               renderPills(); renderMode();
             } catch(e) { btn.disabled = false; btn.textContent = t.label; }
           });
@@ -658,10 +660,13 @@ app.registerExtension({
         },
       });
 
-      function getModePrompt(mode)    { return state.promptsByMode?.[mode] || ""; }
+      function effectiveKey(mode) {
+        return (mode === "inpaint" && state.paintSubMode === "outpaint") ? "outpaint" : mode;
+      }
+      function getModePrompt(mode)    { return state.promptsByMode?.[effectiveKey(mode)] || ""; }
       function setModePrompt(mode, v) {
         if (!state.promptsByMode) state.promptsByMode = {};
-        state.promptsByMode[mode] = v; state.prompt = v;
+        state.promptsByMode[effectiveKey(mode)] = v; state.prompt = v;
       }
       promptTA.value = getModePrompt(state.mode);
       function updateCount() {
@@ -673,6 +678,14 @@ app.registerExtension({
       promptTA.addEventListener("input", () => { setModePrompt(state.mode, promptTA.value); persist(); updateCount(); });
       promptTA.addEventListener("focus", () => promptTA.style.borderColor = LIME);
       promptTA.addEventListener("blur",  () => promptTA.style.borderColor = C.border);
+
+      ctx.updatePromptTA = () => {
+        promptTA.value = getModePrompt(state.mode);
+        promptTA.placeholder = effectiveKey(state.mode) === "outpaint"
+          ? "Scene description only — system prompt is auto-added"
+          : "Describe what you want to generate…";
+        updateCount();
+      };
 
       promptWrap.appendChild(promptHdr);
       promptWrap.appendChild(promptTA);
@@ -730,6 +743,7 @@ app.registerExtension({
           setModePrompt("faceswap", fsDefault); persist();
         }
         promptTA.value = getModePrompt(mode);
+        promptTA.placeholder = "Describe what you want to generate…";
         updateCount();
         restorePreview();
         renderSendTo();
@@ -903,7 +917,7 @@ app.registerExtension({
       // ── Register DOM widget ────────────────────────────────────────────────
       self.addDOMWidget("ui", "div", root, {
         serialize: false,
-        computeSize: () => [NODE_W, NODE_H],
+        computeSize: () => [NODE_W, NODE_H + (self._extraH || 0)],
       });
 
       // Initial render

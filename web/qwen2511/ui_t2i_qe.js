@@ -29,8 +29,8 @@ export function mountT2ILeft(leftEl, state, ctx) {
       else customRow.style.display = "flex";
     }
   );
-  const wIn = numberField(state.width,  v => { state.width  = v; ctx.persist(); }, 8);
-  const hIn = numberField(state.height, v => { state.height = v; ctx.persist(); }, 8);
+  const wIn = numberField(state.width,  v => { state.width  = Math.max(64, Math.round((v || 64) / 8) * 8); ctx.persist(); }, 8);
+  const hIn = numberField(state.height, v => { state.height = Math.max(64, Math.round((v || 64) / 8) * 8); ctx.persist(); }, 8);
   const customRow = row([col([label("W"), wIn]), col([label("H"), hIn])]);
   customRow.style.display = isCustom ? "flex" : "none";
   wrap.appendChild(panel([label("Resolution"), resDD, customRow]));

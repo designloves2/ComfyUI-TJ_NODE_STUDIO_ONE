@@ -342,14 +342,16 @@ export async function buildOutpaintGraph(state) {
   // 생성 latent는 EmptyLatent(패딩 이미지 크기) — 마스크 불필요, 모델이 전체를 새로 생성
   const prompt = await loadWorkflow("edit");
   patchT2IBase(prompt, state, WF.sampler);
-  set(prompt, WF.promptPos,  "text",  buildPromptText(state, "inpaint"));
-  set(prompt, WF.promptNeg,  "text",  state.negativePrompt || "");
-  set(prompt, WF.loadImage1, "image", state.outpaintImage);
 
-  // ImagePadKJ: 사용자가 선택한 색상으로 패딩 (기본 검정 0,0,0)
+  // 아웃페인트 시스템 프롬프트 자동 주입 — 사용자는 장면 설명만 입력
   const padR = state.outpaintPadR ?? 0;
   const padG = state.outpaintPadG ?? 0;
   const padB = state.outpaintPadB ?? 0;
+  const _padColor = `rgb(${padR}, ${padG}, ${padB})`;
+  const _sysPrompt = `Extend the composition of this image. Replace all black or ${_padColor} areas with a logical continuation of the background and foreground. Ensure the transition is invisible and the new elements perfectly match the perspective and color palette of the original image. Scene description: `;
+  set(prompt, WF.promptPos,  "text",  _sysPrompt + buildPromptText(state, "outpaint"));
+  set(prompt, WF.promptNeg,  "text",  state.negativePrompt || "");
+  set(prompt, WF.loadImage1, "image", state.outpaintImage);
   prompt["FKO:pad"] = { class_type:"ImagePadKJ", inputs:{
     image:         [WF.loadImage1, 0],
     left:          Math.max(0, state.outpaintLeft  || 0),

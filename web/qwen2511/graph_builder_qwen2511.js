@@ -228,12 +228,14 @@ export function buildOutpaintGraph(state) {
   if (total <= 0) throw new Error("Set at least one expansion value (Up/Down/Left/Right).");
 
   const { g, modelLink, clipLink, vaeLink } = buildBaseGraph(state);
-  const promptText = buildPromptText(state, "inpaint");
 
-  // ImagePadKJ: 사용자 지정 색상으로 패딩 (기본 검정 0,0,0), 마스크 불필요
+  // 아웃페인트 시스템 프롬프트 자동 주입 — 사용자는 장면 설명만 입력
   const padR = state.outpaintPadR ?? 0;
   const padG = state.outpaintPadG ?? 0;
   const padB = state.outpaintPadB ?? 0;
+  const _padColor = `rgb(${padR}, ${padG}, ${padB})`;
+  const _sysPrompt = `Extend the composition of this image. Replace all black or ${_padColor} areas with a logical continuation of the background and foreground. Ensure the transition is invisible and the new elements perfectly match the perspective and color palette of the original image. Scene description: `;
+  const promptText = _sysPrompt + buildPromptText(state, "outpaint");
   g[`${P}:loadImg1`] = { class_type: "LoadImage", inputs: { image: state.inpaintImage } };
   g[`${P}:padImg`]   = { class_type: "ImagePadKJ", inputs: {
     image:         [`${P}:loadImg1`, 0],

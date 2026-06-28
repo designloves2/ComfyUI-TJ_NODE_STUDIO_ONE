@@ -71,7 +71,10 @@ const SEND_TO = {
                { mode:"controlnet", label:"→ CN",        field:"controlnetImage" },
                { mode:"upscale",    label:"→ Upscale",  field:"upscaleImage" }],
   upscale:    [{ mode:"i2i",        label:"→ I2I",      field:"i2iImage" },
-               { mode:"inpaint",    label:"→ Inpaint",  field:"inpaintImage" }],
+               { mode:"inpaint",    label:"→ Inpaint",  field:"inpaintImage" },
+               { mode:"rebg",       label:"→ RE-BG",    field:"rebgImage" },
+               { mode:"controlnet", label:"→ CN",        field:"controlnetImage" },
+               { mode:"face_redraw",label:"→ Redraw",   field:"faceImage" }],
 };
 
 // ── Toast popup ────────────────────────────────────────────────────────────

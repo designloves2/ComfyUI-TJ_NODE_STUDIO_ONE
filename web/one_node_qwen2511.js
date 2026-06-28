@@ -333,14 +333,22 @@ app.registerExtension({
 
       const promptTA=el("textarea",{placeholder:"Describe what you want to generate…",style:{flex:"1",width:"100%",boxSizing:"border-box",background:C.bg2,color:C.text,border:`1px solid ${C.border}`,borderRadius:"6px",padding:"7px",fontSize:"13px",fontFamily:"inherit",outline:"none",resize:"none",overflowY:"auto"}});
 
-      function getModePrompt(mode){return state.promptsByMode?.[mode]||"";}
-      function setModePrompt(mode,v){if(!state.promptsByMode)state.promptsByMode={};state.promptsByMode[mode]=v;state.prompt=v;}
+      function effectiveKey(mode){return(mode==="inpaint"&&state.paintSubMode==="outpaint")?"outpaint":mode;}
+      function getModePrompt(mode){return state.promptsByMode?.[effectiveKey(mode)]||"";}
+      function setModePrompt(mode,v){if(!state.promptsByMode)state.promptsByMode={};state.promptsByMode[effectiveKey(mode)]=v;state.prompt=v;}
       promptTA.value=getModePrompt(state.mode);
       function updateCount(){const n=getModePrompt(state.mode).trim().length;charCount.textContent=` (${n} chars${n<20?" ⚠":""})`;charCount.style.color=n<20?C.warn:C.muted;}
       updateCount();
       promptTA.addEventListener("input",()=>{setModePrompt(state.mode,promptTA.value);persist();updateCount();});
       promptTA.addEventListener("focus",()=>promptTA.style.borderColor=BRAND);
       promptTA.addEventListener("blur",()=>promptTA.style.borderColor=C.border);
+      ctx.updatePromptTA=()=>{
+        promptTA.value=getModePrompt(state.mode);
+        promptTA.placeholder=effectiveKey(state.mode)==="outpaint"
+          ?"Scene description only — system prompt is auto-added"
+          :"Describe what you want to generate…";
+        updateCount();
+      };
       promptWrap.appendChild(promptHdr);promptWrap.appendChild(promptTA);
 
       rightPanel.appendChild(previewBox);rightPanel.appendChild(sendToWrap);rightPanel.appendChild(promptWrap);
@@ -380,7 +388,7 @@ app.registerExtension({
           case "upscale": modeHandle=mountUpscaleLeft(leftPanel,state,ctx);  break;
         }
         leftOuter.appendChild(seedGenWrap);
-        promptTA.value=getModePrompt(mode);updateCount();
+        promptTA.value=getModePrompt(mode);promptTA.placeholder="Describe what you want to generate…";updateCount();
         restorePreview();renderSendTo();applyCompareBtnStyle();
       }
 

@@ -370,7 +370,7 @@
   },
   "save_subfolder": "",
   "output_mode_visible": true,
-  "selected_model": "Klein9B\\flux-2-klein-9b-kv-fp8.safetensors",
+  "selected_model": "Klein9B\\flux-2-klein-9b-fp8.safetensors",
   "selected_text_encoder": "Qwen3\\qwen_3_8b_fp8mixed.safetensors",
   "selected_vae": "flux2-vae.safetensors",
   "negative_prompt": "low quality, deformed, blurry, watermark, ugly, bad anatomy, disfigured, mutated, extra limbs, poorly drawn face, bad proportions, gross proportions, jpeg artifacts, overexposed, underexposed",

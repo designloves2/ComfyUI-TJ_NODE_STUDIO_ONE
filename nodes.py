@@ -565,7 +565,12 @@ def _make_copy_to_input_handler(prefix):
         filename = data.get("filename", "")
         subfolder = data.get("subfolder", "") or ""
         img_type = data.get("type", "output")
-        base = folder_paths.get_output_directory() if img_type == "output" else folder_paths.get_input_directory()
+        if img_type == "output":
+            base = folder_paths.get_output_directory()
+        elif img_type == "temp":
+            base = folder_paths.get_temp_directory()
+        else:
+            base = folder_paths.get_input_directory()
         src = os.path.join(base, subfolder, filename) if subfolder else os.path.join(base, filename)
         if not os.path.isfile(src):
             return web.json_response({"ok": False, "error": "source not found"}, status=404)
@@ -1028,9 +1033,12 @@ async def qe_copy_to_input(request):
     img_type  = data.get("type","output")
     try:
         if img_type == "output":
-            src = os.path.join(_get_output_dir(), subfolder, filename) if subfolder else os.path.join(_get_output_dir(), filename)
+            base = _get_output_dir()
+        elif img_type == "temp":
+            base = folder_paths.get_temp_directory()
         else:
-            src = os.path.join(folder_paths.get_input_directory(), subfolder, filename) if subfolder else os.path.join(folder_paths.get_input_directory(), filename)
+            base = folder_paths.get_input_directory()
+        src = os.path.join(base, subfolder, filename) if subfolder else os.path.join(base, filename)
         src = str(Path(src).resolve())
         dst_dir  = folder_paths.get_input_directory()
         dst_name = f"qe2511_{int(time.time()*1000)}_{os.path.basename(filename)}"

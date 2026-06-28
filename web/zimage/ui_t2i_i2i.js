@@ -54,8 +54,8 @@ export function mountT2II2ILeft(leftEl, state, ctx) {
         if (p && p.w > 0) { state.width = p.w; state.height = p.h; ctx.persist(); customRow.style.display = "none"; }
         else customRow.style.display = "flex";
       });
-    const wIn = numberField(state.width,  v => { state.width  = v; ctx.persist(); }, 8);
-    const hIn = numberField(state.height, v => { state.height = v; ctx.persist(); }, 8);
+    const wIn = numberField(state.width,  v => { state.width  = Math.max(64, Math.round((v || 64) / 8) * 8); ctx.persist(); }, 8);
+    const hIn = numberField(state.height, v => { state.height = Math.max(64, Math.round((v || 64) / 8) * 8); ctx.persist(); }, 8);
     const customRow = row([col([label("W"), wIn]), col([label("H"), hIn])]);
     customRow.style.display = isCustom ? "flex" : "none";
     resSection.appendChild(panel([label("Resolution"), dd, customRow]));

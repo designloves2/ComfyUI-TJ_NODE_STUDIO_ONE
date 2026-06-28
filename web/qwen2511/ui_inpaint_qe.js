@@ -78,7 +78,7 @@ export function mountInpaintLeft(leftEl, state, ctx) {
   const inpaintBtn  = el("button", { type:"button", text:"Inpaint",  style:{ cursor:"pointer", fontFamily:"inherit", fontSize:"12px", borderRadius:"20px", padding:"5px 12px", flex:"1" }});
   const outpaintBtn = el("button", { type:"button", text:"Outpaint", style:{ cursor:"pointer", fontFamily:"inherit", fontSize:"12px", borderRadius:"20px", padding:"5px 12px", flex:"1" }});
   function switchSubMode(m) {
-    state.paintSubMode = m; ctx.persist?.();
+    state.paintSubMode = m; ctx.persist?.(); ctx.updatePromptTA?.();
     inpaintSection.style.display  = m === "inpaint"  ? "" : "none";
     outpaintSection.style.display = m === "outpaint" ? "" : "none";
     applySubModeBtn(inpaintBtn,  m === "inpaint");
