@@ -8,6 +8,7 @@ import { queuePrompt, interrupt, freeMemory, setLastImage, saveMeta,
          copyOutputToInput } from "./api_klein.js";
 import { createSettingsOverlay }  from "./ui_app_settings_klein.js";
 import { t } from "../shared/i18n.js";
+import { attachLLMPanel } from "../shared/llm_panel.js";
 import { createGalleryOverlay }   from "./ui_gallery_klein.js";
 import { mountT2ILeft }           from "./ui_t2i_klein.js";
 import { mountI2ILeft }           from "./ui_i2i_klein.js";
@@ -621,12 +622,13 @@ app.registerExtension({
       promptExpandEl.appendChild(pxHdr); promptExpandEl.appendChild(pxTA);
       const promptExpandOv = {
         show() {
-          pxTA.value = getModePrompt(state.mode);
+          promptExpandEl._tj_llm_onshow?.();
           promptExpandEl.style.display = "flex";
           setTimeout(() => pxTA.focus(), 50);
         },
         hide() { promptExpandEl.style.display = "none"; },
       };
+      attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA: () => promptTA });
 
       // ── Prompt area ────────────────────────────────────────────────────────
       const promptWrap = el("div", { style: {

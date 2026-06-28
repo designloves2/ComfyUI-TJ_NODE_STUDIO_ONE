@@ -2,6 +2,85 @@
 
 ---
 
+## v1.4.1 (2026-06-28)
+
+### Bug Fixes
+
+**[Critical] LoRA 트리거 워드가 자꾸 지워지는 버그 수정 — 전체 4개 노드**
+
+- **`loraSelect` 검색 필터 입력 시 currentValue 오염 버그** (Klein · Z-Image `ui_common.js`)
+  - 기존: `filterIn` "input" 이벤트에서 `const cur = s.value`로 표시값을 저장 → `availableLoras`가 아직 빈 배열일 때 `s.value`는 "none"으로 표시됨 → 검색 타이핑 후 `"none"` 기준으로 select 복원 → 실제 선택한 LoRA가 "none"으로 시각적으로 재표시됨
+  - 수정: `s.value`(표시값) 대신 `currentValue` 변수(JS에서 관리하는 실제 선택값)를 기준으로 필터링 후 복원 — JS로 `s.value`를 변경해도 `change` 이벤트가 발생하지 않으므로 `currentValue`는 항상 사용자가 실제 선택한 값으로 유지됨
+
+- **LoRA 변경 시 트리거 워드 처리 개선** (Klein · Z-Image · Krea2 · QE2511 전체)
+  - 기존: `!lora.triggerWord` 조건만 체크 → 이미 트리거 워드가 있으면 다른 LoRA로 교체해도 fetch 안 함 → 교체 후 이전 LoRA의 트리거 워드가 그대로 남아 잘못된 값 유지
+  - 수정: `v !== prev` (다른 LoRA로 교체)이면 트리거 워드를 초기화 후 새로 fetch; 같은 LoRA를 다시 선택하면 기존 트리거 워드 유지; "none" 선택 시 트리거 워드 초기화
+
+- **strength `||1` 연산자 버그** (전체 6개 파일)
+  - 기존: `parseFloat(strIn.value) || 1` — strength를 `0`으로 설정하면 `0 || 1 = 1`로 리셋되는 버그
+  - 수정: `isNaN(v) ? 1 : v` — 입력이 유효하지 않을 때만 1로 대체, `0` 값은 정상 저장
+  - 영향 파일: `web/klein/ui_lora_section.js` · `web/zimage/ui_lora_section.js` · `web/krea2/ui_t2i_krea2.js` (×2) · `web/qwen2511/ui_common_qe.js` · `web/qwen2511/ui_app_settings_qe.js` (×2) · `web/qwen2511/ui_faceswap_qe.js`
+
+---
+
+## v1.4 (2026-06-28)
+
+### New Features
+
+**Prompt Studio (LLM) 통합 — 프롬프트 확대창에 AI 강화 기능 추가**
+
+TJ_NODE의 Prompt Studio를 4개 노드(Klein · QE2511 · Z-Image · Krea2) 프롬프트 확대창(`🔍`)에 직접 내장.
+TJ_NODE가 설치된 경우에만 활성화되며, 미설치 시 기존 편집 기능은 그대로 동작.
+
+**새 탭 구조:**
+- `✏️ Edit` — 기존 전체화면 텍스트 편집 (변경 없음)
+- `✨ Enhance` — 현재 프롬프트를 GGUF LLM으로 강화 → 결과 팝업에서 [교체하기] / [닫기] 선택
+- `🖼 Image→Prompt` — 이미지 업로드 또는 URL 다운로드 → 비전 LLM으로 프롬프트 생성 → 현재 모드 프롬프트로 전송
+
+**설정 자동 기억 (localStorage):**
+- 마지막 선택한 GGUF 모델, mmproj 파일, Vision Task, Model Format, Aesthetic, GPU Layers, n_ctx, Max Tokens, Temperature, Seed를 브라우저에 저장
+- 4개 노드가 동일한 설정을 공유 — 한 번 설정하면 모든 노드에서 재사용
+
+**Enhance 탭 추가 필드:**
+- `Model Format` 선택 (TJ_NODE model_formats 목록에서 자동 로드)
+- `Aesthetic` 선택 (TJ_NODE aesthetics 목록에서 자동 로드)
+- `Extra Instructions` 텍스트 입력
+
+**Image→Prompt 탭 추가 필드:**
+- `Model Format` / `Aesthetic` 선택 (Enhance 탭과 공유·동기화)
+- `Custom Instruction` 텍스트 입력
+- **URL 다운로드**: 이미지 URL 입력 + ⬇ 다운로드 버튼 → `ComfyUI/input/download/` 저장 후 자동 미리보기
+- 이미지 전송 전 **1MP 이하 자동 리사이즈** (JPEG 100% 품질) — Context Overflow 방지
+
+**AI 처리 중 로딩 오버레이:**
+- Enhance / Image→Prompt 분석 중 오른쪽 결과 영역에 반투명(50%) 오버레이 + 초록 링 스피너 표시
+- 분석 완료 또는 오류 시 자동 해제
+
+**한/영 i18n 완전 지원:**
+- LLM 패널 UI 전체 텍스트(탭명, 버튼, 레이블, 오류 메시지, 설치 배너 등)를 `i18n.js`로 처리
+- `web/shared/i18n.js`에 `llm_*` 키군 KO/EN 추가
+
+**TJ_NODE 미설치 시 설치 배너:**
+- 미설치 상태에서 Enhance / Image→Prompt 탭 진입 시 설치 안내 UI 표시
+- GitHub 링크(`designloves2/ComfyUI-TJ_NODE`) 클릭 가능
+- `⬇ 지금 설치하기` 버튼 → 서버에서 `git clone` + `pip install -r requirements.txt` 자동 실행
+- 설치 완료 후 ComfyUI 재시작 안내
+
+**TJ_NODE 폴더명 자동 탐색:**
+- `ComfyUI-TJ_NODE` (공식) → `ComfyUI-TJ_NODE2` (개발용) → `TJ_NODE` 순서로 자동 탐색
+- 폴더명과 무관하게 동작
+
+**신규 파일:**
+- `web/shared/llm_panel.js` — 4개 노드 공용 LLM 패널 컴포넌트
+- `nodes.py` 엔드포인트 5개 추가:
+  - `GET /tj_studio_one/llm/models` — 설치된 GGUF/mmproj 모델 목록 + model_formats/aesthetics 반환
+  - `POST /tj_studio_one/llm/enhance` — 프롬프트 텍스트 강화 (model_format · aesthetic · extra_instructions 포함)
+  - `POST /tj_studio_one/llm/image_to_prompt` — 이미지 → 프롬프트 변환 (model_format · aesthetic · custom_instruction 포함)
+  - `POST /tj_studio_one/llm/download_image` — URL 이미지 다운로드 → `input/download/` 저장 + base64 반환
+  - `POST /tj_studio_one/llm/install_tj_node` — TJ_NODE 자동 설치 (git clone + pip)
+
+---
+
 ## v1.3 (2026-06-28)
 
 ### Bug Fixes

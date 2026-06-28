@@ -8,6 +8,7 @@ import { queuePrompt, interrupt, setLastImage, saveMeta,
          copyOutputToInput }                                                    from "./krea2/api_krea2.js";
 import { createSettingsOverlay }                                                from "./krea2/ui_app_settings_krea2.js";
 import { t } from "./shared/i18n.js";
+import { attachLLMPanel } from "./shared/llm_panel.js";
 import { createGalleryOverlay }                                                 from "./krea2/ui_gallery_krea2.js";
 import { mountT2ILeft }                                                         from "./krea2/ui_t2i_krea2.js";
 import { mountI2ILeft }                                                         from "./krea2/ui_i2i_krea2.js";
@@ -306,9 +307,10 @@ app.registerExtension({
       pxHdr.appendChild(pxApply); pxHdr.appendChild(pxClose);
       promptExpandEl.appendChild(pxHdr); promptExpandEl.appendChild(pxTA);
       const promptExpandOv = {
-        show(){ pxTA.value=getModePrompt(state.mode); promptExpandEl.style.display="flex"; setTimeout(()=>pxTA.focus(),50); },
+        show(){ promptExpandEl._tj_llm_onshow?.(); promptExpandEl.style.display="flex"; setTimeout(()=>pxTA.focus(),50); },
         hide(){ promptExpandEl.style.display="none"; },
       };
+      attachLLMPanel({promptExpandEl,pxTA,getModePrompt,setModePrompt,state,persist,updateCount,getPromptTA:()=>promptTA});
 
       // ── Prompt area ────────────────────────────────────────────────────────
       const promptWrap = el("div",{style:{height:`${PROMPT_H}px`,flexShrink:"0",display:"flex",flexDirection:"column",gap:"4px"}});

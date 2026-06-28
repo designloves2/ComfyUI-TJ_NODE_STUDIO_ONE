@@ -7,6 +7,7 @@ import { panel, label, button, select, numberField, row, col,
 import { queuePrompt, interrupt, copyOutputToInput, setLastImage,
          freeMemory, saveMeta } from "./api.js";
 import { t } from "../shared/i18n.js";
+import { attachLLMPanel } from "../shared/llm_panel.js";
 import { mountT2II2ILeft }     from "./ui_t2i_i2i.js";
 import { mountInpaintLeft }    from "./ui_inpaint.js";
 import { mountReBGLeft }       from "./ui_rebg.js";
@@ -698,8 +699,9 @@ app.registerExtension({
       promptExpandEl.appendChild(pxTA);
       promptExpandOv={
         el:promptExpandEl,
-        show(){pxTA.value=getModePrompt(state.mode);promptExpandEl.style.display="flex";setTimeout(()=>pxTA.focus(),50);}
+        show(){promptExpandEl._tj_llm_onshow?.();promptExpandEl.style.display="flex";setTimeout(()=>pxTA.focus(),50);}
       };
+      attachLLMPanel({promptExpandEl,pxTA,getModePrompt,setModePrompt,state,persist,updateCount,getPromptTA:()=>promptTA});
 
       // ── Help overlay ─────────────────────────────────────────────────────
       const HELP_SECTIONS = [

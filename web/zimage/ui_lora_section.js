@@ -26,19 +26,23 @@ export function mountLoraSection(leftEl, state, ctx) {
       twIn.addEventListener("input",()=>{lora.triggerWord=twIn.value;ctx.persist();});
 
       const loraSel = loraSelect(nameOpts, lora.name||"none", async v => {
+        const prev = lora.name;
         lora.name = v; ctx.persist();
-        if (v && v !== "none" && !lora.triggerWord) {
-          twIn.placeholder = t("lora_loading");
-          try {
-            const d = await getLoraTriggers(v);
-            if (d.ok && d.triggers?.length) {
-              lora.triggerWord = d.triggers.join(", ");
-              twIn.value = lora.triggerWord;
-              ctx.persist();
-            }
-          } catch(e) {}
-          twIn.placeholder = "Trigger word…";
-        }
+        if (v && v !== "none") {
+          if (v !== prev) { lora.triggerWord = ""; twIn.value = ""; }
+          if (!lora.triggerWord) {
+            twIn.placeholder = t("lora_loading");
+            try {
+              const d = await getLoraTriggers(v);
+              if (d.ok && d.triggers?.length) {
+                lora.triggerWord = d.triggers.join(", ");
+                twIn.value = lora.triggerWord;
+                ctx.persist();
+              }
+            } catch(e) {}
+            twIn.placeholder = "Trigger word…";
+          }
+        } else { lora.triggerWord = ""; twIn.value = ""; }
       });
 
       const strIn = el("input",{type:"number",step:"0.05",min:"0",max:"2",style:{
@@ -46,7 +50,7 @@ export function mountLoraSection(leftEl, state, ctx) {
         borderRadius:"4px",padding:"4px",fontSize:"12px",fontFamily:"inherit",outline:"none",boxSizing:"border-box",
       }});
       strIn.value=lora.strength??1;
-      strIn.addEventListener("input",()=>{lora.strength=parseFloat(strIn.value)||1;ctx.persist();});
+      strIn.addEventListener("input",()=>{const v=parseFloat(strIn.value);lora.strength=isNaN(v)?1:v;ctx.persist();});
 
       const tog = el("button",{type:"button",text:lora.enabled!==false?"ON":"OFF",style:{
         cursor:"pointer",fontFamily:"inherit",fontSize:"10px",padding:"3px 6px",

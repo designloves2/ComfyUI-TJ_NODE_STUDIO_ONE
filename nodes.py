@@ -1131,6 +1131,278 @@ async def qe_set_last_image(request):
 
 
 # ════════════════════════════════════════════════════════════════════════════════
+# Prompt Studio (LLM) API — delegates to TJ_NODE2 if installed
+# ════════════════════════════════════════════════════════════════════════════════
+
+_tj_llm_cache = None  # cached (PromptEnhancer, ImageToPrompt, utils) or (None, None, None)
+
+def _try_import_tj_llm():
+    """Load TJ_NODE LLM classes.
+    Registers the llm package under a unique alias to avoid colliding with ComfyUI's own 'nodes' module."""
+    global _tj_llm_cache
+    if _tj_llm_cache is not None:
+        return _tj_llm_cache
+
+    import importlib, importlib.util, sys, types
+    custom_nodes_dir = os.path.dirname(NODE_DIR)
+    candidates = ["ComfyUI-TJ_NODE", "ComfyUI-TJ_NODE2", "TJ_NODE"]
+
+    for folder in candidates:
+        tj_root = os.path.join(custom_nodes_dir, folder)
+        llm_dir = os.path.join(tj_root, "nodes", "llm")
+        if not os.path.isdir(llm_dir):
+            continue
+        try:
+            # Register fake parent packages so relative imports inside llm/*.py resolve correctly.
+            # We use alias prefix "_tjnode_" to avoid clashing with the real "nodes" package.
+            pkg_root  = "_tjnode_nodes"
+            pkg_llm   = "_tjnode_nodes.llm"
+
+            if pkg_root not in sys.modules:
+                root_pkg = types.ModuleType(pkg_root)
+                root_pkg.__path__ = [os.path.join(tj_root, "nodes")]
+                root_pkg.__package__ = pkg_root
+                sys.modules[pkg_root] = root_pkg
+
+            if pkg_llm not in sys.modules:
+                llm_pkg = types.ModuleType(pkg_llm)
+                llm_pkg.__path__ = [llm_dir]
+                llm_pkg.__package__ = pkg_llm
+                llm_pkg.__file__ = os.path.join(llm_dir, "__init__.py")
+                sys.modules[pkg_llm] = llm_pkg
+
+            def _load(mod_name):
+                full_key = f"{pkg_llm}.{mod_name}"
+                if full_key in sys.modules:
+                    return sys.modules[full_key]
+                filepath = os.path.join(llm_dir, f"{mod_name}.py")
+                spec = importlib.util.spec_from_file_location(full_key, filepath,
+                    submodule_search_locations=[])
+                mod = importlib.util.module_from_spec(spec)
+                mod.__package__ = pkg_llm
+                sys.modules[full_key] = mod
+                spec.loader.exec_module(mod)
+                return mod
+
+            utils = _load("_llm_utils")
+            pe    = _load("prompt_enhancer")
+            i2p   = _load("image_to_prompt")
+            result = (pe.TJ_PromptEnhancer, i2p.TJ_ImageToPrompt, utils)
+            _tj_llm_cache = result
+            print(f"[TJ_STUDIO_ONE] TJ_NODE LLM loaded from '{folder}'")
+            return result
+        except Exception as e:
+            print(f"[TJ_STUDIO_ONE] TJ_NODE load from '{folder}' failed: {e}")
+            for key in list(sys.modules.keys()):
+                if key.startswith("_tjnode_nodes.llm."):
+                    sys.modules.pop(key, None)
+
+    print("[TJ_STUDIO_ONE] TJ_NODE not found. Install ComfyUI-TJ_NODE to enable LLM features.")
+    _tj_llm_cache = (None, None, None)
+    return None, None, None
+
+
+TJ_NODE_REPO = "https://github.com/designloves2/ComfyUI-TJ_NODE"
+TJ_NODE_FOLDER = "ComfyUI-TJ_NODE"
+
+
+@PromptServer.instance.routes.post("/tj_studio_one/llm/download_image")
+async def studio_llm_download_image(request):
+    """Download an image from a URL, save to input/download/, return base64 preview."""
+    import asyncio, base64, urllib.request, urllib.error
+    from io import BytesIO
+    data = await request.json()
+    url = (data.get("url") or "").strip()
+    if not url:
+        return web.json_response({"ok": False, "error": "No URL provided"})
+    try:
+        download_dir = os.path.join(folder_paths.get_input_directory(), "download")
+        os.makedirs(download_dir, exist_ok=True)
+
+        # Sanitise filename from URL
+        raw_name = os.path.basename(url.split("?")[0]) or "image"
+        if not any(raw_name.lower().endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp")):
+            raw_name += ".jpg"
+        safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in raw_name)
+        dest_path = os.path.join(download_dir, safe_name)
+
+        def _fetch():
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return resp.read()
+
+        loop = asyncio.get_event_loop()
+        img_bytes = await loop.run_in_executor(None, _fetch)
+
+        # Validate it's actually an image and save
+        pil_img = Image.open(BytesIO(img_bytes)).convert("RGB")
+        pil_img.save(dest_path)
+
+        # Return base64 for frontend preview (resize to ≤1024 to keep payload small)
+        MAX_PREVIEW = 1024
+        if max(pil_img.size) > MAX_PREVIEW:
+            pil_img.thumbnail((MAX_PREVIEW, MAX_PREVIEW), Image.LANCZOS)
+        buf = BytesIO()
+        pil_img.save(buf, format="JPEG", quality=85)
+        b64 = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+
+        return web.json_response({"ok": True, "filename": safe_name, "b64": b64})
+    except urllib.error.URLError as e:
+        return web.json_response({"ok": False, "error": f"Download failed: {e.reason}"})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+
+
+@PromptServer.instance.routes.post("/tj_studio_one/llm/install_tj_node")
+async def studio_llm_install(request):
+    import asyncio
+    custom_nodes_dir = os.path.dirname(NODE_DIR)
+    target = os.path.join(custom_nodes_dir, TJ_NODE_FOLDER)
+    if os.path.isdir(target):
+        return web.json_response({"ok": True, "msg": "Already installed"})
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "git", "clone", "--depth=1", TJ_NODE_REPO, target,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+        if proc.returncode == 0:
+            # Run pip install if requirements.txt exists
+            req = os.path.join(target, "requirements.txt")
+            if os.path.isfile(req):
+                import sys
+                pip_proc = await asyncio.create_subprocess_exec(
+                    sys.executable, "-m", "pip", "install", "-r", req, "--quiet",
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                )
+                await asyncio.wait_for(pip_proc.communicate(), timeout=180)
+            return web.json_response({"ok": True, "msg": "Installed. Please restart ComfyUI."})
+        else:
+            return web.json_response({"ok": False, "error": stderr.decode("utf-8", errors="replace")})
+    except asyncio.TimeoutError:
+        return web.json_response({"ok": False, "error": "Timeout during installation"})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+
+
+@PromptServer.instance.routes.get("/tj_studio_one/llm/models")
+async def studio_llm_models(request):
+    _, _, utils = _try_import_tj_llm()
+    if utils is None:
+        return web.json_response({"ok": False, "error": "TJ_NODE2 not installed", "gguf": [], "mmproj": []})
+    try:
+        gguf_list = utils._text_encoder_ggufs(exclude_mmproj=True)
+        mmproj_list = utils._text_encoder_mmproj_options()
+        vision_tasks = utils._load_json_data("vision_tasks.json", [])
+        vision_task_names = [t["name"] for t in vision_tasks] if vision_tasks else [
+            "Caption (plain description)", "Caption + Format (apply model_format below)",
+            "SD/Booru Tags", "Pose & Anatomy Focus", "Custom Instruction",
+        ]
+        model_formats = getattr(utils, "MODEL_FORMAT_OPTIONS", ["Universal Natural Language"])
+        aesthetics    = getattr(utils, "AESTHETIC_OPTIONS",    ["None (no aesthetic injection)"])
+        purposes      = getattr(utils, "PURPOSE_OPTIONS",      ["Image", "Video", "Edit (Inpainting/I2V)"])
+        return web.json_response({
+            "ok": True,
+            "gguf": gguf_list, "mmproj": mmproj_list,
+            "vision_tasks": vision_task_names,
+            "model_formats": model_formats,
+            "aesthetics": aesthetics,
+            "purposes": purposes,
+        })
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e), "gguf": [], "mmproj": []})
+
+
+@PromptServer.instance.routes.post("/tj_studio_one/llm/enhance")
+async def studio_llm_enhance(request):
+    import asyncio
+    data = await request.json()
+    TJ_PromptEnhancer, _, _ = _try_import_tj_llm()
+    if TJ_PromptEnhancer is None:
+        return web.json_response({"ok": False, "error": "TJ_NODE2 not installed"})
+    try:
+        loop = asyncio.get_event_loop()
+        def _run():
+            result = TJ_PromptEnhancer().enhance(
+                get_name="(none)", set_name="studio_one_enhance",
+                raw_prompt=data.get("prompt", ""),
+                model_backend="GGUF / llama.cpp",
+                gguf_model=data.get("gguf_model", ""),
+                mmproj_file="none",
+                text_encoder_name="",
+                clip_loader_type="Auto",
+                purpose=data.get("purpose", "Image"),
+                model_format=data.get("model_format", "Universal Natural Language"),
+                aesthetic=data.get("aesthetic", "None (no aesthetic injection)"),
+                extra_instructions=data.get("extra_instructions", ""),
+                system_prompt_override="",
+                append_no_think=True,
+                n_gpu_layers=int(data.get("n_gpu_layers", -1)),
+                n_ctx=int(data.get("n_ctx", 4096)),
+                max_tokens=int(data.get("max_tokens", 1000)),
+                temperature=float(data.get("temperature", 0.7)),
+                top_p=0.9,
+                repeat_penalty=1.15,
+                seed=int(data.get("seed", 0)),
+                lock_in=False,
+                raw_prompt_input=None,
+                clip=None,
+            )
+            return result
+        out = await loop.run_in_executor(None, _run)
+        return web.json_response({"ok": True, "result": out[0] if isinstance(out, (list, tuple)) else str(out)})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+
+
+@PromptServer.instance.routes.post("/tj_studio_one/llm/image_to_prompt")
+async def studio_llm_image_to_prompt(request):
+    import asyncio, base64
+    from io import BytesIO
+    data = await request.json()
+    _, TJ_ImageToPrompt, _ = _try_import_tj_llm()
+    if TJ_ImageToPrompt is None:
+        return web.json_response({"ok": False, "error": "TJ_NODE2 not installed"})
+    try:
+        # Decode base64 image → numpy tensor [1, H, W, 3] float32
+        img_b64 = data.get("image_b64", "")
+        if not img_b64:
+            return web.json_response({"ok": False, "error": "No image data"})
+        img_bytes = base64.b64decode(img_b64.split(",")[-1])
+        pil_img = Image.open(BytesIO(img_bytes)).convert("RGB")
+        arr = np.array(pil_img).astype(np.float32) / 255.0
+        image_tensor = torch.from_numpy(arr)[None,]
+
+        loop = asyncio.get_event_loop()
+        def _run():
+            return TJ_ImageToPrompt().describe(
+                get_name="(none)", set_name="studio_one_i2p",
+                image=image_tensor,
+                model_backend="GGUF / llama.cpp",
+                gguf_model=data.get("gguf_model", ""),
+                mmproj_file=data.get("mmproj_file", "none"),
+                chat_handler=data.get("chat_handler", "Auto-detect"),
+                text_encoder_name="",
+                clip_loader_type="Auto",
+                vision_task=data.get("vision_task", "Caption (plain description)"),
+                model_format=data.get("model_format", "Universal Natural Language"),
+                aesthetic=data.get("aesthetic", "None (no aesthetic injection)"),
+                custom_instruction=data.get("custom_instruction", ""),
+                n_gpu_layers=int(data.get("n_gpu_layers", -1)),
+                n_ctx=int(data.get("n_ctx", 4096)),
+                max_tokens=int(data.get("max_tokens", 1000)),
+                temperature=float(data.get("temperature", 0.7)),
+                seed=int(data.get("seed", 0)),
+                lock_in=False,
+                clip=None,
+            )
+        out = await loop.run_in_executor(None, _run)
+        return web.json_response({"ok": True, "result": out[0] if isinstance(out, (list, tuple)) else str(out)})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+
+
+# ════════════════════════════════════════════════════════════════════════════════
 # Node classes
 # ════════════════════════════════════════════════════════════════════════════════
 

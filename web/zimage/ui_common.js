@@ -129,9 +129,8 @@ export function loraSelect(options, value, onChange) {
   buildOptions("");
 
   filterIn.addEventListener("input", () => {
-    const cur = s.value;
     buildOptions(filterIn.value);
-    if ([...s.options].find(o => o.value === cur)) s.value = cur;
+    if (options.includes(currentValue)) s.value = currentValue;
   });
 
   wrap.appendChild(filterIn);

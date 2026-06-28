@@ -121,7 +121,7 @@ export function createSettingsOverlay(state, ctx) {
     const llSel = searchableSelect(opts, ll.name||"none", v=>{ll.name=v; state.lightningLora=ll; ctx.persist?.();});
     const strIn = el("input",{type:"number",step:"0.05",min:"0",max:"2",style:{width:"60px",background:C.bg2,color:C.text,border:`1px solid ${C.border}`,borderRadius:"4px",padding:"4px",fontSize:"12px",fontFamily:"inherit",outline:"none"}});
     strIn.value = ll.strength??1;
-    strIn.addEventListener("input",()=>{ll.strength=parseFloat(strIn.value)||1;ctx.persist?.();});
+    strIn.addEventListener("input",()=>{const v=parseFloat(strIn.value);ll.strength=isNaN(v)?1:v;ctx.persist?.();});
     const onBtn = el("button",{type:"button",text:ll.enabled?"ON":"OFF",style:{cursor:"pointer",fontFamily:"inherit",fontSize:"10px",padding:"3px 8px",borderRadius:"10px",border:"none",background:ll.enabled?BRAND:"#444",color:"#fff",fontWeight:"700"}});
     onBtn.addEventListener("click",()=>{
       ll.enabled=!ll.enabled; state.lightningLora=ll;
@@ -153,7 +153,7 @@ export function createSettingsOverlay(state, ctx) {
     const alSel = searchableSelect(opts, al.name||"none", v=>{al.name=v; state.angleLora=al; ctx.persist?.();});
     const strIn = el("input",{type:"number",step:"0.05",min:"0",max:"2",style:{width:"60px",background:C.bg2,color:C.text,border:`1px solid ${C.border}`,borderRadius:"4px",padding:"4px",fontSize:"12px",fontFamily:"inherit",outline:"none"}});
     strIn.value = al.strength??1;
-    strIn.addEventListener("input",()=>{al.strength=parseFloat(strIn.value)||1;ctx.persist?.();});
+    strIn.addEventListener("input",()=>{const v=parseFloat(strIn.value);al.strength=isNaN(v)?1:v;ctx.persist?.();});
     const onBtn = el("button",{type:"button",text:al.enabled?"ON":"OFF",style:{cursor:"pointer",fontFamily:"inherit",fontSize:"10px",padding:"3px 8px",borderRadius:"10px",border:"none",background:al.enabled?BRAND:"#444",color:"#fff",fontWeight:"700"}});
     onBtn.addEventListener("click",()=>{al.enabled=!al.enabled;state.angleLora=al;ctx.persist?.();onBtn.textContent=al.enabled?"ON":"OFF";onBtn.style.background=al.enabled?BRAND:"#444";});
     angleLoraWrap.appendChild(el("div",{style:{display:"flex",flexDirection:"column",gap:"6px"}},[

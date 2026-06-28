@@ -111,6 +111,18 @@ The entire pipeline — generation, editing, background removal, upscaling — i
 
 **Settings persist** — model selection, prompt suffix, save folder, everything saves and survives restarts.
 
+**In-node LLM Integration (v1.4+, requires TJ_NODE)** — the `🔍` prompt expand button grows three tabs:
+- `✏️ Edit` — full-screen text editor (unchanged)
+- `✨ Enhance` — send the current prompt to a local GGUF LLM to expand and refine it. Supports Model Format, Aesthetic, and Extra Instructions settings.
+- `🖼 Image→Prompt` — drop an image or paste a URL to download it, run a vision LLM on it, and push the generated caption directly into the current mode's prompt field.
+
+All LLM settings (model, GPU layers, temperature, etc.) are remembered in localStorage — no re-selecting every session. Images are auto-resized to ≤1MP before sending to avoid context overflow. A ring spinner overlay shows while the model is running. Install TJ_NODE via the in-panel button or: `git clone https://github.com/designloves2/ComfyUI-TJ_NODE`
+
+**LLM models must be GGUF format.** Not all GGUF models are compatible — if one doesn't work, try a different one.
+
+- **Enhance** (text LLM): [huihui-ai GGUF collection](https://huggingface.co/collections/noctrex/huihui-ai) — Qwen / Llama / Mistral variants
+- **Image→Prompt** (vision LLM, VLM): **Qwen3-VL recommended** — [Qwen3-VL-8B-NSFW-Caption-V4.5 GGUF](https://huggingface.co/mradermacher/Qwen3-VL-8B-NSFW-Caption-V4.5-GGUF) · [huihui-ai collection](https://huggingface.co/collections/noctrex/huihui-ai). Requires both the model `.gguf` file and a matching mmproj file.
+
 ---
 
 ## SeedVR2 Upscale — Built In to All Nodes
@@ -124,12 +136,32 @@ All four nodes include a full **SeedVR2 AI upscale** mode sharing the same model
 
 ---
 
-## Bug Fixes (v1.2)
+## Recent Changes
 
+### v1.4
+- **In-node LLM integration** — ✨ Enhance and 🖼 Image→Prompt tabs in the prompt expand overlay. Requires [TJ_NODE](https://github.com/designloves2/ComfyUI-TJ_NODE); one-click install if not present.
+- **Model Format / Aesthetic / Extra Instructions** fields in Enhance tab; **Custom Instruction** in Image→Prompt tab.
+- **URL image download** — paste a URL, hit download, image is saved to `input/download/` and loaded for vision analysis.
+- **1MP auto-resize** — images are scaled down to ≤1,000,000 pixels (JPEG 100%) before sending to the vision LLM, preventing context overflow errors.
+- **Ring spinner overlay** — semi-transparent loading overlay with animated ring on the result panel while the LLM is running.
+- **Settings auto-remembered** — all LLM settings persist in localStorage, shared across all 4 nodes.
+
+### v1.4.1
+- **LoRA trigger word reset bug fix** — `loraSelect` search filter was using the display value (`s.value`) instead of the internal `currentValue` to restore selection after filtering, causing the selected LoRA to visually reset to "none" during search and corrupting the trigger word state.
+- **LoRA swap now clears and reloads trigger words** — switching to a different LoRA clears the previous trigger word and auto-fetches the new one. Re-selecting the same LoRA keeps the existing trigger word.
+- **strength=0 no longer resets to 1** — fixed `parseFloat(v) || 1` (treats 0 as falsy) to `isNaN(v) ? 1 : v` across all 4 nodes.
+
+### v1.3
+- **Send to — Preview mode fix** — images generated in `outputMode: "preview"` now work correctly with Send to buttons (all 4 nodes).
+- **Krea2 custom size / Steps / CFG crash** — `numberField()` argument order was wrong, causing "is not a function" errors. Fixed + range clamping added.
+- **Outpaint auto system prompt** — Klein · QE2511 Outpaint mode now auto-injects a continuation prompt; users write only the scene description.
+- **Panel layout fixed** — node panels no longer collapse when clicking textareas.
+
+### v1.2
 - **Outpaint color param crash** — `ImagePadKJ` color was sent as `[R,G,B]` array which ComfyUI interpreted as a node link → "Bad linked input" error. Fixed to `"R, G, B"` string format.
-- **Klein outpaint generating new images** — `GetImageSize` was reading the unscaled padded image, causing `EmptyFlux2LatentImage` and `VAEEncode` dimensions to mismatch → model ignored reference conditioning and drew entirely new content. Fixed to read from `ImageScaleToTotalPixels` output.
+- **Klein outpaint generating new images** — `GetImageSize` was reading the unscaled padded image, causing dimension mismatch → model ignored reference conditioning. Fixed to read from `ImageScaleToTotalPixels` output.
 - **Help overlay links** — URLs in all help docs are now clickable hyperlinks.
-- **Language selector position** — Language selector now appears right after Refresh Models (consistent across all 4 nodes).
+- **Language selector position** — consistent placement across all 4 nodes.
 
 ---
 

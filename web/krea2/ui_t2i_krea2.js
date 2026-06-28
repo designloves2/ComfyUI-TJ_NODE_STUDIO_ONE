@@ -58,15 +58,16 @@ export function mountT2ILeft(leftEl, state, ctx) {
       twIn.addEventListener("input", ()=>{ lora.triggerWord=twIn.value; ctx.persist(); });
 
       const loraSel = loraSelect(nameOpts, lora.name||"none", async v => {
+        const prev = lora.name;
         lora.name = v; ctx.persist();
-        if (v && v !== "none" && !lora.triggerWord) {
-          twIn.placeholder = "Loading…";
-          try {
-            const d = await getLoraTriggers(v);
-            if (d.ok && d.triggers?.length) { lora.triggerWord=d.triggers.join(", "); twIn.value=lora.triggerWord; ctx.persist(); }
-          } catch {}
-          twIn.placeholder = "Trigger word…";
-        }
+        if (v && v !== "none") {
+          if (v !== prev) { lora.triggerWord = ""; twIn.value = ""; }
+          if (!lora.triggerWord) {
+            twIn.placeholder = "Loading…";
+            try { const d = await getLoraTriggers(v); if (d.ok && d.triggers?.length) { lora.triggerWord=d.triggers.join(", "); twIn.value=lora.triggerWord; ctx.persist(); } } catch {}
+            twIn.placeholder = "Trigger word…";
+          }
+        } else { lora.triggerWord = ""; twIn.value = ""; }
       });
 
       const strInp = el("input", { type:"number", step:"0.05", min:"0", max:"2", style:{
@@ -74,7 +75,7 @@ export function mountT2ILeft(leftEl, state, ctx) {
         borderRadius:"4px", padding:"4px", fontSize:"12px", fontFamily:"inherit", outline:"none", boxSizing:"border-box",
       }});
       strInp.value = lora.strength ?? 1;
-      strInp.addEventListener("input", ()=>{ lora.strength=parseFloat(strInp.value)||1; ctx.persist(); });
+      strInp.addEventListener("input", ()=>{ { const v=parseFloat(strInp.value); lora.strength=isNaN(v)?1:v; } ctx.persist(); });
 
       const tog = el("button", { type:"button", text:lora.enabled!==false?"ON":"OFF", style:{
         cursor:"pointer", fontFamily:"inherit", fontSize:"10px", padding:"3px 6px",
@@ -129,19 +130,23 @@ export function mountLoraSectionKrea2(wrapEl, state, ctx) {
       twIn.value = lora.triggerWord || "";
       twIn.addEventListener("input", ()=>{ lora.triggerWord=twIn.value; ctx.persist(); });
       const loraSel = loraSelect(nameOpts, lora.name||"none", async v => {
+        const prev = lora.name;
         lora.name = v; ctx.persist();
-        if (v && v !== "none" && !lora.triggerWord) {
-          twIn.placeholder = "Loading…";
-          try { const d = await getLoraTriggers(v); if (d.ok && d.triggers?.length) { lora.triggerWord=d.triggers.join(", "); twIn.value=lora.triggerWord; ctx.persist(); } } catch {}
-          twIn.placeholder = "Trigger word…";
-        }
+        if (v && v !== "none") {
+          if (v !== prev) { lora.triggerWord = ""; twIn.value = ""; }
+          if (!lora.triggerWord) {
+            twIn.placeholder = "Loading…";
+            try { const d = await getLoraTriggers(v); if (d.ok && d.triggers?.length) { lora.triggerWord=d.triggers.join(", "); twIn.value=lora.triggerWord; ctx.persist(); } } catch {}
+            twIn.placeholder = "Trigger word…";
+          }
+        } else { lora.triggerWord = ""; twIn.value = ""; }
       });
       const strInp = el("input", { type:"number", step:"0.05", min:"0", max:"2", style:{
         width:"50px", background:C.bg2, color:C.text, border:`1px solid ${C.border}`,
         borderRadius:"4px", padding:"4px", fontSize:"12px", fontFamily:"inherit", outline:"none", boxSizing:"border-box",
       }});
       strInp.value = lora.strength ?? 1;
-      strInp.addEventListener("input", ()=>{ lora.strength=parseFloat(strInp.value)||1; ctx.persist(); });
+      strInp.addEventListener("input", ()=>{ { const v=parseFloat(strInp.value); lora.strength=isNaN(v)?1:v; } ctx.persist(); });
       const tog = el("button", { type:"button", text:lora.enabled!==false?"ON":"OFF", style:{
         cursor:"pointer", fontFamily:"inherit", fontSize:"10px", padding:"3px 6px",
         borderRadius:"10px", border:"none", background:lora.enabled!==false?C.lime:"#444", color:"#fff", fontWeight:"700",

@@ -119,17 +119,18 @@ export function loraSelect(options, value, onChange) {
       .filter(o => !q || o.toLowerCase().includes(q))
       .map(o => el("option", { value: o, text: o, ...(o === currentValue ? { selected: "selected" } : {}) }))
     );
-    // 옵션 교체 후 value 복원 (replaceChildren 후 selection이 초기화될 수 있음)
+    // currentValue가 전체 목록에 있으면 복원, 없으면 표시만 options[0]으로 (currentValue는 변경하지 않음)
     if (options.includes(currentValue)) s.value = currentValue;
     else if (options.length) s.value = options[0];
+    // 주의: s.value를 JS로 변경해도 "change" 이벤트는 발생하지 않음 — currentValue는 그대로 유지
   }
 
   buildOptions("");
 
   filterIn.addEventListener("input", () => {
-    const cur = s.value;
+    // currentValue 기준으로 필터링 — s.value(표시값)가 아닌 currentValue를 사용
     buildOptions(filterIn.value);
-    if ([...s.options].find(o => o.value === cur)) s.value = cur;
+    if (options.includes(currentValue)) s.value = currentValue;
   });
 
   wrap.appendChild(filterIn);
