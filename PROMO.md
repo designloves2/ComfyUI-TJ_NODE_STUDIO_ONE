@@ -1,7 +1,7 @@
 # Single ComfyUI Node That Does Everything — T2I, I2I, Inpaint, Outpaint, Faceswap, Camera Angle, BG Removal, AND AI Upscale. No Wiring. Ever.
 
 > **Free · Open Source · GitHub**  
-> Four all-in-one nodes: **Z-Image Turbo** · **Flux.2 Klein 9B** · **Qwen Image Edit 2511** · **Krea 2**  
+> Five all-in-one nodes: **Z-Image Turbo** · **Flux.2 Klein 9B** · **Qwen Image Edit 2511** · **Krea 2** · **SDXL** 🧪  
 > Korean / English UI — switch language in Settings
 
 ---
@@ -33,7 +33,7 @@ The entire pipeline — generation, editing, background removal, upscaling — i
 
 ---
 
-## Four Nodes, Four Powerhouse Models
+## Five Nodes, Five Models
 
 ### Z-Image ONE STUDIO (TJ)
 > **Z-Image Turbo** — Alibaba's flow-matching model (fast, high quality)
@@ -83,6 +83,20 @@ The entire pipeline — generation, editing, background removal, upscaling — i
 | **I2I** | Image-to-image transformation |
 | **UPSCALE** | SeedVR2 AI upscale |
 
+### SDXL ONE STUDIO (TJ) 🧪
+> **SDXL** — Checkpoint or Separate UNET loading, Refiner support, full mask editor  
+> 🧪 **Test / Beta version** — core features work but options may change
+
+| Mode | What it does |
+|---|---|
+| **T2I** | Text → image. CKPT mode (single .safetensors) or Separate mode (UNET + CLIP-L/G + VAE). Optional Refiner. |
+| **I2I** | Image-to-image with denoise control |
+| **INPAINT** | Full-screen popup mask editor — zoom 1x–32x, pan, brush/eraser, size slider. VAEEncodeForInpaint prevents bleed-through at any denoise level. |
+| **OUTPAINT** | Expand canvas in any direction. Compare slider shows padded original vs. result. |
+| **UPSCALE** | ESRGAN AI upscale → Refiner KSampler refinement pass |
+
+> The Refiner Checkpoint is always configurable regardless of whether you're in CKPT or Separate model mode — no need to switch back to CKPT just to change the Refiner.
+
 ---
 
 ## Features That Actually Matter
@@ -125,9 +139,10 @@ All LLM settings (model, GPU layers, temperature, etc.) are remembered in localS
 
 ---
 
-## SeedVR2 Upscale — Built In to All Nodes
+## SeedVR2 Upscale — Built In to All Nodes (except SDXL)
 
-All four nodes include a full **SeedVR2 AI upscale** mode sharing the same model folder.
+All nodes except SDXL include a full **SeedVR2 AI upscale** mode sharing the same model folder.  
+SDXL ONE STUDIO uses ESRGAN + Refiner for upscaling instead.
 
 - DiT model: 3B (FP16 / FP8) or 7B FP8
 - Resolution up to 4096px
@@ -137,6 +152,17 @@ All four nodes include a full **SeedVR2 AI upscale** mode sharing the same model
 ---
 
 ## Recent Changes
+
+### v1.5 (SDXL ONE STUDIO — Test Version) 🧪
+
+- **SDXL ONE STUDIO** — new node added to the package. Supports SDXL Checkpoint and Separate UNET loading modes.
+- **CKPT / Separate indicator** — top badge updates instantly when switching model loading mode.
+- **Inpaint mask editor** — same full-screen popup editor as Z-Image: zoom 1x–32x, pan, brush/eraser, size slider. `VAEEncodeForInpaint` prevents pixel bleed-through at denoise=1.
+- **Outpaint padded compare** — compare slider now shows the grey-padded original as the "before" side so the extension boundary is clearly visible.
+- **Refiner always accessible** — Refiner Checkpoint selector stays visible in both CKPT and Separate modes; no need to switch modes to update the Refiner.
+- **Prompt Template button (📋)** — added to prompt header, shares Klein's template database.
+- **Send to Inpaint / Outpaint** (Klein · QE2511) — gallery and result strip now have separate → Inpaint and → Outpaint buttons; clicking switches the sub-mode and loads the image automatically.
+- **Outpaint sub-mode switching** — `switchSubMode()` exposed on Klein/QE2511 inpaint handle so external send-to buttons can switch between inpaint and outpaint without user navigation.
 
 ### v1.4
 - **In-node LLM integration** — ✨ Enhance and 🖼 Image→Prompt tabs in the prompt expand overlay. Requires [TJ_NODE](https://github.com/designloves2/ComfyUI-TJ_NODE); one-click install if not present.
@@ -225,7 +251,18 @@ This installs all 8 required nodes in one shot, skips anything already installed
 
 - All model files: [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea2) → `models/diffusion_models/` + `models/text_encoders/` + `models/vae/`
 
-**SeedVR2 (UPSCALE mode — all nodes):**
+**SDXL ONE STUDIO 🧪** *(CKPT mode — simplest)*:
+- Checkpoint: any SDXL `.safetensors` → `models/checkpoints/`
+- Refiner (optional): `sd_xl_refiner_1.0.safetensors` or similar → `models/checkpoints/`
+- ESRGAN (Upscale mode): e.g. `4x-UltraSharp.pth` → `models/upscale_models/`
+
+**SDXL ONE STUDIO 🧪** *(Separate mode — GGUF / FP8 lightweight)*:
+- UNET: SDXL UNET file → `models/diffusion_models/`
+- CLIP-L: `clip_l.safetensors` → `models/text_encoders/`
+- CLIP-G: `clip_g.safetensors` → `models/text_encoders/`
+- VAE: `sdxl_vae.safetensors` → `models/vae/`
+
+**SeedVR2 (UPSCALE mode — Z-Image · Klein · QE2511 · Krea2):**
 - [SeedVR2-models](https://huggingface.co/numz/SeedVR2_comfyUI/tree/main) → `models/SEEDVR2/`
 - You need: DiT file (`seedvr2_ema_3b_fp16` or `_fp8` or `7b_fp8`) + `ema_vae_fp16.safetensors`
 
@@ -262,7 +299,7 @@ The core idea and architecture of this node family originated from **[yanokusnir
 > **[one-node-flux-2-klein](https://github.com/yanokusnir-ai/one-node-flux-2-klein)**  
 > — The original single-node, all-in-one concept for Flux.2 Klein
 
-TJ NODE STUDIO ONE (Z-Image · Klein · QE2511 · Krea2) grew out of that idea — expanding it to multiple models and modes.  
+TJ NODE STUDIO ONE (Z-Image · Klein · QE2511 · Krea2 · SDXL) grew out of that idea — expanding it to multiple models and modes.  
 Deep thanks to the original author for the inspiration and for keeping it open source. 🙏
 
 ---

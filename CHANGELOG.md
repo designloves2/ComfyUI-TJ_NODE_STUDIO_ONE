@@ -2,6 +2,65 @@
 
 ---
 
+## v1.5 (2026-06-29) 🧪
+
+### New Features
+
+**SDXL ONE STUDIO — 신규 노드 추가 (테스트 버전)**
+
+SDXL 전용 올인원 노드가 패키지에 추가되었습니다. 현재 테스트 단계이며 핵심 기능은 동작합니다.
+
+**모델 로딩 방식 선택 (CKPT / Separate)**
+- Settings에서 CKPT(단일 Checkpoint 파일) 또는 Separate(UNET + CLIP-L + CLIP-G + VAE) 방식 선택 가능
+- Separate 방식은 GGUF · FP8 경량 UNET 파일 지원
+- 상단 뱃지가 현재 방식(CKPT / UNET)을 표시하며 전환 즉시 업데이트
+
+**Refiner 항상 표시**
+- Settings → Separate(UNET) 선택 시에도 Refiner Checkpoint 선택 항목이 사라지지 않음
+- CKPT ↔ Separate 전환과 무관하게 항상 Refiner를 설정 가능
+- Refiner는 `CheckpointLoaderSimple`로 독립 로딩
+
+**Inpaint — 풀스크린 마스크 에디터**
+- Z-Image와 동일한 팝업 풀스크린 마스크 에디터 내장
+  - 줌 1x–32x (마우스 휠), 팬 (중클릭·우클릭 드래그)
+  - 브러시 / 지우개 / 전체 지우기, 크기 슬라이더
+  - Fit / 줌인 / 줌아웃 버튼
+- `VAEEncodeForInpaint` 방식으로 마스크 영역 latent를 완전히 0으로 처리 → denoise=1에서도 원본 픽셀 블리드 없음
+  - 기존 `VAEEncode + SetLatentNoiseMask` 방식 대비 개선
+
+**Outpaint — 패딩 원본 비교**
+- 비교 슬라이더(⇌ Compare)의 "A" 면에 회색 패딩이 포함된 원본 미리보기를 렌더링
+- 캔버스 확장 방향과 크기를 시각적으로 확인 가능
+- 패딩값 변경 시 미리보기 자동 업데이트
+
+**프롬프트 템플릿 버튼 (📋)**
+- 프롬프트 입력 헤더 우측에 `📋` 버튼 추가
+- Klein의 템플릿 오버레이(`ui_prompt_templates.js`)를 공유 사용
+
+**Send to Inpaint / Outpaint (Klein · QE2511)**
+- 갤러리(🖼 Gallery)와 결과 스트립의 Send to에 `→ Inpaint` · `→ Outpaint` 항목 각각 추가
+- 클릭 시 Paint 모드로 전환 후 Inpaint / Outpaint 서브모드로 자동 스위칭 + 이미지 자동 로드
+- `switchSubMode()` 함수를 Klein / QE2511의 inpaint 핸들에 노출하여 외부에서 서브모드 전환 가능
+
+### Bug Fixes
+
+**[SDXL Inpaint] VAEEncode → VAEEncodeForInpaint 교체**
+- 기존 `VAEEncode + GrowMask + SetLatentNoiseMask` 그래프에서 `VAEEncodeForInpaint`로 전환
+- denoise=1일 때 마스크 영역에 원본 이미지가 refine되어 나오는 현상(블리드) 수정
+- 영향 파일: `web/sdxl/graph_builder_sdxl.js`
+
+**[SDXL] setTool 변수 섀도잉 버그**
+- `createDrawingEngine` 반환 객체에서 `setTool: tool => { tool = tool; }` — 파라미터명이 외부 변수를 섀도잉하여 setter가 no-op으로 동작하는 버그
+- `setTool: v => { tool = v; }` 로 수정
+- 영향 파일: `web/sdxl/ui_inpaint_sdxl.js`
+
+**[QE2511 Gallery] onSendTo 시그니처 불일치**
+- 기존: `onSendTo(mode, field, filename)` 3인자
+- 수정: `onSendTo(mode, field, subMode, filename)` 4인자로 변경 — Outpaint 서브모드 정보 전달 가능
+- 영향 파일: `web/qwen2511/ui_gallery_qe2511.js` · `web/one_node_qwen2511.js`
+
+---
+
 ## v1.4.1 (2026-06-28)
 
 ### Bug Fixes
