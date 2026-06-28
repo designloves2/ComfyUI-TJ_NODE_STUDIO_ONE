@@ -701,6 +701,26 @@ ComfyUI/
 TJ NODE STUDIO ONE 패밀리(Z-Image · Klein · QE2511 · Krea2)는 이 아이디어를 기반으로 다중 모델·다중 모드로 확장한 파생 작업입니다.  
 원작자의 기여와 오픈소스 정신에 진심으로 감사드립니다. 🙏
 
+
+
+Some TJ_NODE systems were rebuilt and extended based on concepts inspired by:
+
+- TooBusy Nodes - 너무바쁜베짱이
+  https://github.com/designloves2/toobusy<br>
+  https://www.youtube.com/@%EB%84%88%EB%AC%B4%EB%B0%94%EC%81%9C%EB%B2%A0%EC%A7%B1%EC%9D%B4<br>
+
+- comfyui-deno-custom-nodes
+  https://github.com/Deno2026/comfyui-deno-custom-nodes<br>
+  https://www.youtube.com/@Denoise-AI<br>
+
+- RebelsPromptEnhancer node
+  https://github.com/designloves2/RebelsPromptEnhancer<br>
+  https://www.youtube.com/@realrebelai<br>
+
+  
+
+Several nodes were heavily reworked and integrated into the TJ wireless workflow architecture.
+
 ---
 
 ## 라이선스
