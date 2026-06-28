@@ -48,6 +48,9 @@ const KO = {
   inpaint_saving:    "저장 중…",
   inpaint_saved:     "마스크 저장 완료.",
   inpaint_save_err:  "저장 실패: ",
+  inpaint_save_btn:  "💾 마스크 저장",
+  inpaint_large_edit:"⤢ 크게 편집",
+  inpaint_no_mask:   "마스크 영역을 브러시로 칠하세요 (자동 저장 실패).",
 
   // RE-BG
   rebg_edge_offset:    "Edge Offset: 마스크 경계를 + 확장 / − 축소 (px). 기본 0",
@@ -533,6 +536,9 @@ const EN = {
   inpaint_saving:    "Saving…",
   inpaint_saved:     "Mask saved.",
   inpaint_save_err:  "Save failed: ",
+  inpaint_save_btn:  "💾 Save Mask",
+  inpaint_large_edit:"⤢ Large Edit",
+  inpaint_no_mask:   "Paint the mask area with brush (auto-save failed).",
 
   rebg_edge_offset:    "Edge Offset: expand (+) or shrink (−) mask boundary (px). Default 0",
   rebg_edge_blur:      "Edge Blur: blur mask to soften boundary (px). Default 0",

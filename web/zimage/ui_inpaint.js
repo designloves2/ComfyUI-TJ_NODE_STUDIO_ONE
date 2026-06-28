@@ -423,9 +423,9 @@ function createMaskEditor(state, ctx, showPopupFn) {
   };
 
   // ── 버튼들 ───────────────────────────────────────────────────────────────
-  const saveMaskBtn = button("💾 마스크 저장", async () => {
+  const saveMaskBtn = button(t("inpaint_save_btn"), async () => {
     if (!maskRef.canvas || !maskRef.origW) return;
-    saveMaskBtn.disabled = true; saveMaskBtn.textContent = "저장 중…";
+    saveMaskBtn.disabled = true; saveMaskBtn.textContent = t("inpaint_saving");
     try {
       const out = document.createElement("canvas");
       out.width = maskRef.origW; out.height = maskRef.origH;
@@ -441,16 +441,16 @@ function createMaskEditor(state, ctx, showPopupFn) {
       const data = await resp.json();
       state.inpaintMaskImage = data.name;
       ctx.persist();
-      showPopupFn("마스크가 저장됐습니다.", false);
+      showPopupFn(t("inpaint_saved"), false);
     } catch (e) {
-      showPopupFn("마스크 저장 실패: " + (e.message || e));
+      showPopupFn(t("inpaint_save_err") + (e.message || e));
     } finally {
-      saveMaskBtn.disabled = false; saveMaskBtn.textContent = "💾 마스크 저장";
+      saveMaskBtn.disabled = false; saveMaskBtn.textContent = t("inpaint_save_btn");
     }
   }, "primary");
   saveMaskBtn.style.cssText += "flex:1;";
 
-  const bigEditBtn = button("⤢ 크게 편집", () => {
+  const bigEditBtn = button(t("inpaint_large_edit"), () => {
     if (!maskRef.canvas) return;
     openPopupEditor(maskRef, state, ctx, () => engine.schedRender(), showPopupFn);
   });
@@ -590,7 +590,7 @@ export function mountInpaintLeft(leftEl, state, ctx) {
       if (!state.inpaintImage) throw new Error("소스 이미지를 업로드하세요.");
       if (!state.inpaintMaskImage) {
         const saved = await autoSaveMask().catch(() => false);
-        if (!saved) throw new Error("마스크 영역을 브러시로 칠하세요 (자동 저장 실패).");
+        if (!saved) throw new Error(t("inpaint_no_mask"));
       }
     },
     getGraph() { return buildInpaintGraph(state); },
