@@ -42,19 +42,31 @@ def _get_output_dir():
         return str(Path(os.path.join(os.path.dirname(NODE_DIR), "output")).resolve())
 
 
-def _safe_resolve_output_path(output_dir, subfolder="", filename=""):
-    base = Path(output_dir).resolve()
+def _safe_resolve_path(base_dir, subfolder="", filename=""):
+    base = Path(base_dir).resolve()
     target = base
     if subfolder:
         target = target / subfolder
     if filename:
         target = target / filename
     target = target.resolve()
-    try:
-        target.relative_to(base)
-    except Exception:
+    if not (target == base or base in target.parents):
         raise ValueError("invalid path")
     return str(target)
+
+
+def _safe_resolve_output_path(output_dir, subfolder="", filename=""):
+    return _safe_resolve_path(output_dir, subfolder, filename)
+
+
+def _open_in_file_manager(args):
+    """Launch a fixed, allow-listed OS file-manager command with a resolved
+    absolute executable path. Never takes shell input or user-controlled
+    argv[0]; only the trailing path argument may vary."""
+    exe = shutil.which(args[0])
+    if not exe:
+        raise FileNotFoundError(f"{args[0]} not found on PATH")
+    subprocess.Popen([exe, *args[1:]], shell=False)
 
 
 def _file_key(filename, subfolder=""):
@@ -517,14 +529,13 @@ def _make_open_folder_handler():
             if not os.path.exists(vpath):
                 return web.json_response({"ok": False, "error": "file not found"})
             import platform
-            import subprocess as _sp
             system = platform.system()
             if system == "Windows":
-                _sp.Popen(["explorer", "/select,", vpath.replace("/", "\\")])
+                _open_in_file_manager(["explorer", "/select,", vpath.replace("/", "\\")])
             elif system == "Darwin":
-                _sp.Popen(["open", "-R", vpath])
+                _open_in_file_manager(["open", "-R", vpath])
             else:
-                _sp.Popen(["xdg-open", os.path.dirname(vpath)])
+                _open_in_file_manager(["xdg-open", os.path.dirname(vpath)])
             return web.json_response({"ok": True})
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)})
@@ -573,7 +584,10 @@ def _make_copy_to_input_handler(prefix):
             base = folder_paths.get_temp_directory()
         else:
             base = folder_paths.get_input_directory()
-        src = os.path.join(base, subfolder, filename) if subfolder else os.path.join(base, filename)
+        try:
+            src = _safe_resolve_path(base, subfolder, filename)
+        except ValueError:
+            return web.json_response({"ok": False, "error": "invalid path"}, status=400)
         if not os.path.isfile(src):
             return web.json_response({"ok": False, "error": "source not found"}, status=404)
         new_name = f"{prefix}_{_uuid.uuid4().hex[:8]}_{os.path.basename(filename)}"
@@ -1108,11 +1122,11 @@ async def qe_open_folder(request):
         path = _safe_resolve_output_path(output_dir, data.get("subfolder",""), data.get("filename",""))
         folder = str(Path(path).parent)
         if os.name == "nt":
-            subprocess.Popen(["explorer", folder])
+            _open_in_file_manager(["explorer", folder])
         elif os.uname().sysname == "Darwin":
-            subprocess.Popen(["open", folder])
+            _open_in_file_manager(["open", folder])
         else:
-            subprocess.Popen(["xdg-open", folder])
+            _open_in_file_manager(["xdg-open", folder])
     except Exception as e:
         return web.json_response({"ok": False, "error": str(e)})
     return web.json_response({"ok": True})
@@ -1147,8 +1161,7 @@ async def qe_copy_to_input(request):
             base = folder_paths.get_temp_directory()
         else:
             base = folder_paths.get_input_directory()
-        src = os.path.join(base, subfolder, filename) if subfolder else os.path.join(base, filename)
-        src = str(Path(src).resolve())
+        src = _safe_resolve_path(base, subfolder, filename)
         dst_dir  = folder_paths.get_input_directory()
         dst_name = f"qe2511_{int(time.time()*1000)}_{os.path.basename(filename)}"
         dst_path = os.path.join(dst_dir, dst_name)
@@ -1525,7 +1538,7 @@ class Flux2KleinOneTJNode:
                     "default": "",
                     "multiline": True,
                     "forceInput": True,
-                    "tooltip": "외부 프롬프트 오버라이드 — 내부 프롬프트 앞에 추가됩니다.",
+                    "tooltip": "External prompt override — prepended before the internal prompt.",
                 }),
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
@@ -1568,7 +1581,7 @@ class Krea2OneTJNode:
                     "default": "",
                     "multiline": True,
                     "forceInput": True,
-                    "tooltip": "외부 프롬프트 오버라이드 — 내부 프롬프트 앞에 추가됩니다.",
+                    "tooltip": "External prompt override — prepended before the internal prompt.",
                 }),
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
@@ -1611,7 +1624,7 @@ class ZImageTurboOneNode:
                     "default": "",
                     "multiline": True,
                     "forceInput": True,
-                    "tooltip": "외부 프롬프트 오버라이드 — 내부 프롬프트 앞에 추가됩니다.",
+                    "tooltip": "External prompt override — prepended before the internal prompt.",
                 }),
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
@@ -1697,7 +1710,7 @@ class SDXLOneTJNode:
                     "default": "",
                     "multiline": True,
                     "forceInput": True,
-                    "tooltip": "외부 프롬프트 오버라이드 — 내부 프롬프트 앞에 추가됩니다.",
+                    "tooltip": "External prompt override — prepended before the internal prompt.",
                 }),
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
