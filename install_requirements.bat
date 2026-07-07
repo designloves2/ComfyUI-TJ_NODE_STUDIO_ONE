@@ -68,12 +68,34 @@ for /L %%i in (0,1,7) do (
             if not "%PYTHON%"=="" (
                 if exist "!FOLDER!\requirements.txt" (
                     echo [PIP] Installing requirements...
-                    "%PYTHON%" -m pip install -r "!FOLDER!\requirements.txt" --quiet
+
+                    rem dlib은 소스 빌드에 cmake/C++ 컴파일러가 필요해 초보 사용자 환경에서 실패하는
+                    rem 주 원인이므로, requirements에서 걸러내고 사전 컴파일된 wheel(dlib-bin)로 대체 설치한다.
+                    set "REQ_FILE=!FOLDER!\requirements.txt"
+                    set "REQ_FILTERED=%TEMP%\tj_req_!FOLDER!.txt"
+                    findstr /v /i "^dlib" "!REQ_FILE!" > "!REQ_FILTERED!"
+
+                    "%PYTHON%" -m pip install -r "!REQ_FILTERED!" --quiet
                     if errorlevel 1 (
                         echo [WARN] pip install had errors. Check manually.
                     ) else (
                         echo [PIP] Done.
                     )
+
+                    findstr /i /r "^dlib" "!REQ_FILE!" >nul
+                    if not errorlevel 1 (
+                        echo [PIP] Installing dlib ^(prebuilt wheel, no cmake needed^)...
+                        "%PYTHON%" -m pip install dlib-bin --quiet
+                        if errorlevel 1 (
+                            echo [WARN] dlib install skipped. Face-analysis features needing dlib may not work.
+                            echo        ^(Optional: install CMake + Visual Studio Build Tools, then run:
+                            echo         "%PYTHON%" -m pip install dlib^)
+                        ) else (
+                            echo [PIP] dlib installed successfully.
+                        )
+                    )
+
+                    del "!REQ_FILTERED!" >nul 2>&1
                 )
             )
         )

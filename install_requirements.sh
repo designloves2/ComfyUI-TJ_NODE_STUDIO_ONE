@@ -66,11 +66,29 @@ for URL in "${REPOS[@]}"; do
             # requirements.txt 가 있으면 pip install
             if [ -n "$PYTHON" ] && [ -f "$FOLDER/requirements.txt" ]; then
                 echo "[PIP] Installing requirements..."
-                if "$PYTHON" -m pip install -r "$FOLDER/requirements.txt" --quiet; then
+
+                # dlib은 소스 빌드에 cmake/C++ 컴파일러가 필요해 실패하는 주 원인이므로
+                # requirements에서 걸러내고 사전 컴파일된 wheel(dlib-bin)로 대체 설치한다.
+                REQ_FILTERED="$(mktemp)"
+                grep -vi '^dlib' "$FOLDER/requirements.txt" > "$REQ_FILTERED" || true
+
+                if "$PYTHON" -m pip install -r "$REQ_FILTERED" --quiet; then
                     echo "[PIP] Done."
                 else
                     echo "[WARN] pip install had errors. Check manually."
                 fi
+
+                if grep -qi '^dlib' "$FOLDER/requirements.txt"; then
+                    echo "[PIP] Installing dlib (prebuilt wheel, no cmake needed)..."
+                    if "$PYTHON" -m pip install dlib-bin --quiet; then
+                        echo "[PIP] dlib installed successfully."
+                    else
+                        echo "[WARN] dlib install skipped. Face-analysis features needing dlib may not work."
+                        echo "       (Optional: install CMake + a C++ compiler, then run: $PYTHON -m pip install dlib)"
+                    fi
+                fi
+
+                rm -f "$REQ_FILTERED"
             fi
         else
             echo "[ERROR] git clone failed. Check your internet connection."
