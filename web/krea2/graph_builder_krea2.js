@@ -26,7 +26,7 @@ function withLoraChain(modelLink, loras) {
 
 function buildPromptText(state, promptKey) {
   const key = promptKey || state.mode || "t2i";
-  const modePrompt = (state.promptsByMode && state.promptsByMode[key] !== undefined)
+  const modePrompt = (state.promptsByMode && key in state.promptsByMode)
     ? state.promptsByMode[key] : (state.prompt || "");
   const parts = [modePrompt];
   if (state.promptSuffix) parts.push(state.promptSuffix);
@@ -70,6 +70,38 @@ function baseGraph(state, promptText) {
   return { g, modelOut };
 }
 
+// Build the Krea2 Control LoRA chain. Control LoRA + processing params come from
+// the globally-configured Settings (state.controlLora / controlStrength / …).
+// `latentRef` is the latent link used to match the control image size.
+// Returns the model link to feed KSampler (unchanged if control is inactive).
+function applyControlChain(g, state, mode, modelOut, latentRef) {
+  const enabled  = mode === "t2i" ? state.t2iControlEnabled : state.i2iControlEnabled;
+  const ctrlImg  = mode === "t2i" ? state.t2iControlImage   : state.i2iControlImage;
+  const lora     = state.controlLora;
+  if (!(enabled && lora && lora !== "none" && ctrlImg)) return modelOut;
+
+  g["K2:ctrl_lora"] = { class_type: "Krea2ControlLoRALoader", inputs: {
+    model: modelOut, lora_name: lora, strength: state.controlStrength ?? 1.0,
+  }};
+  g["K2:ctrl_img"] = { class_type: "LoadImage", inputs: { image: ctrlImg } };
+  g["K2:ctrl_enc"] = { class_type: "Krea2ControlImageEncode", inputs: {
+    control_image:  ["K2:ctrl_img", 0],
+    vae:            ["K2:vae", 0],
+    latent:         latentRef,
+    resize:         "match_latent_size",
+    upscale_method: "lanczos",
+    crop:           "center",
+    channel_mode:   state.controlChannelMode || "rgb",
+    normalize:      state.controlNormalize   || "none",
+    invert:         state.controlInvert      ?? false,
+    batch_mode:     "independent_images",
+  }};
+  g["K2:ctrl_apply"] = { class_type: "Krea2ControlApply", inputs: {
+    model: ["K2:ctrl_lora", 0], control_latent: ["K2:ctrl_enc", 0],
+  }};
+  return ["K2:ctrl_apply", 0];
+}
+
 // ── T2I ──────────────────────────────────────────────────────────────────────
 export function buildT2IGraph(state) {
   const { g, modelOut } = baseGraph(state, buildPromptText(state, "t2i"));
@@ -77,8 +109,12 @@ export function buildT2IGraph(state) {
   g["K2:latent"]  = { class_type: "EmptyLatentImage", inputs: {
     width: state.width || 1024, height: state.height || 1024, batch_size: 1,
   }};
+
+  // ControlNet — control image matched to the empty latent size
+  const t2iModel = applyControlChain(g, state, "t2i", modelOut, ["K2:latent", 0]);
+
   g["K2:sampler"] = { class_type: "KSampler", inputs: {
-    model: modelOut,
+    model: t2iModel,
     positive: ["K2:positive", 0],
     negative: ["K2:negative", 0],
     latent_image: ["K2:latent", 0],
@@ -99,19 +135,27 @@ export function buildI2IGraph(state) {
   if (!state.i2iImage) throw new Error("No source image uploaded for I2I.");
   const { g, modelOut } = baseGraph(state, buildPromptText(state, "i2i"));
 
-  g["K2:load"]    = { class_type: "LoadImage", inputs: { image: state.i2iImage } };
-  g["K2:encode"]  = { class_type: "VAEEncode", inputs: { pixels: ["K2:load", 0], vae: ["K2:vae", 0] } };
+  g["K2:load"] = { class_type: "LoadImage", inputs: { image: state.i2iImage } };
+  // Insert ImageScale when custom output size is set
+  const k2PixSrc = (state.i2iWidth && state.i2iHeight)
+    ? (g["K2:i2iScale"] = { class_type: "ImageScale", inputs: { image: ["K2:load", 0], width: state.i2iWidth, height: state.i2iHeight, upscale_method: "lanczos", crop: "disabled" } }, ["K2:i2iScale", 0])
+    : ["K2:load", 0];
+  g["K2:encode"] = { class_type: "VAEEncode", inputs: { pixels: k2PixSrc, vae: ["K2:vae", 0] } };
+
+  // ControlNet — control image matched to the encoded source latent
+  const finalModel = applyControlChain(g, state, "i2i", modelOut, ["K2:encode", 0]);
+
   g["K2:sampler"] = { class_type: "KSampler", inputs: {
-    model: modelOut,
-    positive: ["K2:positive", 0],
-    negative: ["K2:negative", 0],
+    model:        finalModel,
+    positive:     ["K2:positive", 0],
+    negative:     ["K2:negative", 0],
     latent_image: ["K2:encode", 0],
-    seed: state.seed ?? 0,
-    steps: state.steps ?? 8,
-    cfg: state.cfg ?? 1,
-    sampler_name: state.sampler || "euler",
-    scheduler: state.scheduler || "simple",
-    denoise: state.i2iDenoise ?? 0.75,
+    seed:         state.seed ?? 0,
+    steps:        state.steps ?? 8,
+    cfg:          state.cfg ?? 1,
+    sampler_name: state.sampler   || "euler",
+    scheduler:    state.scheduler || "simple",
+    denoise:      state.i2iDenoise ?? 0.75,
   }};
   g["K2:decode"] = { class_type: "VAEDecode", inputs: { samples: ["K2:sampler", 0], vae: ["K2:vae", 0] } };
   g["K2:save"]   = saveNode(["K2:decode", 0], state);

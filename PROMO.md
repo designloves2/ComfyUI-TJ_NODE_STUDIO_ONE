@@ -81,6 +81,7 @@ The entire pipeline — generation, editing, background removal, upscaling — i
 |---|---|
 | **T2I** | Text to image |
 | **I2I** | Image-to-image transformation |
+| **I2I + ControlNet** | Krea2 Control LoRA — depth / canny / pose control during I2I (requires [comfyui-krea2-controlnet](https://github.com/facok/comfyui-krea2-controlnet)) |
 | **UPSCALE** | SeedVR2 AI upscale |
 
 ### SDXL ONE STUDIO (TJ) 🧪
@@ -171,6 +172,9 @@ SDXL ONE STUDIO uses ESRGAN + Refiner for upscaling instead.
 - **1MP auto-resize** — images are scaled down to ≤1,000,000 pixels (JPEG 100%) before sending to the vision LLM, preventing context overflow errors.
 - **Ring spinner overlay** — semi-transparent loading overlay with animated ring on the result panel while the LLM is running.
 - **Settings auto-remembered** — all LLM settings persist in localStorage, shared across all 4 nodes.
+
+### v1.5.0
+- **Krea2 I2I ControlNet** — built-in ControlNet panel in I2I mode. Select a Krea2 Control LoRA, upload a control image (depth map, canny, etc.), toggle ON/OFF without breaking regular I2I. Powered by [comfyui-krea2-controlnet](https://github.com/facok/comfyui-krea2-controlnet). Public depth LoRA: [Patil/Krea-2-depth-controlnet](https://huggingface.co/Patil/Krea-2-depth-controlnet).
 
 ### v1.4.1
 - **LoRA trigger word reset bug fix** — `loraSelect` search filter was using the display value (`s.value`) instead of the internal `currentValue` to restore selection after filtering, causing the selected LoRA to visually reset to "none" during search and corrupting the trigger word state.
@@ -301,6 +305,12 @@ The core idea and architecture of this node family originated from **[yanokusnir
 
 TJ NODE STUDIO ONE (Z-Image · Klein · QE2511 · Krea2 · SDXL) grew out of that idea — expanding it to multiple models and modes.  
 Deep thanks to the original author for the inspiration and for keeping it open source. 🙏
+
+### Krea2 ControlNet Credits
+
+- [Krea-2-controlnet](https://github.com/Tanmaypatil123/Krea-2-controlnet) — Thanks to Tanmaypatil123 for documenting the reference Krea2 control-LoRA inference pipeline.
+- [Patil/Krea-2-depth-controlnet](https://huggingface.co/Patil/Krea-2-depth-controlnet) — Thanks for providing the public depth Control LoRA weights.
+- [facok/comfyui-krea2-controlnet](https://github.com/facok/comfyui-krea2-controlnet) — Thanks for the ComfyUI Krea2 Control LoRA node implementation used in this project.
 
 ---
 

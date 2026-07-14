@@ -41,18 +41,19 @@ set REPOS[4]=https://github.com/cubiq/ComfyUI_FaceAnalysis
 set REPOS[5]=https://github.com/1038lab/ComfyUI-RMBG
 set REPOS[6]=https://github.com/Fannovel16/comfyui_controlnet_aux
 set REPOS[7]=https://github.com/city96/ComfyUI-GGUF
+set REPOS[8]=https://github.com/facok/comfyui-krea2-controlnet
 
-set COUNT=8
+set COUNT=9
 
 :: ── 설치 루프 ──────────────────────────────────────────────────────────────────
-for /L %%i in (0,1,7) do (
+for /L %%i in (0,1,8) do (
     set "URL=!REPOS[%%i]!"
 
     :: URL에서 폴더명 추출 (마지막 /뒤)
     for %%F in (!URL!) do set "FOLDER=%%~nxF"
 
     echo --------------------------------------------------------
-    echo [%%i/7] !FOLDER!
+    echo [%%i/8] !FOLDER!
     echo         !URL!
 
     if exist "!FOLDER!" (

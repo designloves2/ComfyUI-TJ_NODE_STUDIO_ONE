@@ -2,7 +2,7 @@
 import { SUBFOLDER } from "./core.js";
 
 function buildPromptText(state) {
-  const modePrompt = (state.promptsByMode && state.mode && state.promptsByMode[state.mode] !== undefined)
+  const modePrompt = (state.promptsByMode && state.mode && state.mode in state.promptsByMode)
     ? state.promptsByMode[state.mode] : (state.prompt || "");
   // 외부 오버라이드가 있으면 맨 앞에 삽입
   const parts = state.promptOverride
@@ -95,8 +95,12 @@ export function buildT2IGraph(state) {
 export function buildI2IGraph(state) {
   if (!state.i2iImage) throw new Error("No source image uploaded.");
   const g = baseGraph(state);
-  g["ZIT:load"]      = { class_type:"LoadImage", inputs:{ image:state.i2iImage } };
-  g["ZIT:vaeEnc"]    = { class_type:"VAEEncode",  inputs:{ pixels:["ZIT:load",0], vae:["ZIT:vae",0] } };
+  g["ZIT:load"] = { class_type:"LoadImage", inputs:{ image:state.i2iImage } };
+  // Insert ImageScale when custom output size is set
+  const pixSrc = (state.i2iWidth && state.i2iHeight)
+    ? (g["ZIT:scale"] = { class_type:"ImageScale", inputs:{ image:["ZIT:load",0], width:state.i2iWidth, height:state.i2iHeight, upscale_method:"lanczos", crop:"disabled" } }, ["ZIT:scale",0])
+    : ["ZIT:load",0];
+  g["ZIT:vaeEnc"]    = { class_type:"VAEEncode",  inputs:{ pixels:pixSrc, vae:["ZIT:vae",0] } };
   g["ZIT:sampler"]   = ksampler(state, ["ZIT:vaeEnc",0], state.i2iDenoise??0.75);
   g["ZIT:vaeDecode"] = { class_type:"VAEDecode", inputs:{ samples:["ZIT:sampler",0], vae:["ZIT:vae",0] } };
   g["ZIT:save"]      = saveNode(["ZIT:vaeDecode",0], state);

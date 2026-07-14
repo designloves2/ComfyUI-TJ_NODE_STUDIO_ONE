@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-tj_node_studio_one"
 description = "TJ Node ONE Studio — all-in-one generation nodes for Flux2 Klein, Z-Image, Krea2, Qwen, and SDXL with unified config/preset management."
-version = "1.5.0"
+version = "1.6.0"
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
 

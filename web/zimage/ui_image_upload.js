@@ -2,7 +2,7 @@
 import { C, el } from "./core.js";
 import { button } from "./ui_common.js";
 
-export function createImageUpload({ label = "Image", onUpload, initialFilename = null } = {}) {
+export function createImageUpload({ label = "Image", onUpload, initialFilename = null, maxPixels = null, onLoad = null } = {}) {
   const BOX = 192;
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "4px", alignItems: "center" } });
 
@@ -15,7 +15,7 @@ export function createImageUpload({ label = "Image", onUpload, initialFilename =
     overflow: "hidden",
   }});
 
-  const hint = el("div", { text: label + "\nClick to upload", style: {
+  const hint = el("div", { text: label + "\nClick or drag to upload", style: {
     color: C.muted, fontSize: "12px", textAlign: "center",
     whiteSpace: "pre", pointerEvents: "none",
     display: initialFilename ? "none" : "block",
@@ -50,6 +50,24 @@ export function createImageUpload({ label = "Image", onUpload, initialFilename =
     document.body.appendChild(ov);
   });
 
+  const warnEl = maxPixels ? el("div", { style: { fontSize: "10px", color: C.warn, textAlign: "center", display: "none" } }) : null;
+
+  function checkResolution() {
+    const w = img.naturalWidth, h = img.naturalHeight;
+    if (onLoad && w > 0) onLoad(w, h);
+    if (!maxPixels || !warnEl) return;
+    const px = w * h;
+    if (px > 0 && px > maxPixels) {
+      const mp = (px / 1_000_000).toFixed(1);
+      const maxMp = (maxPixels / 1_000_000).toFixed(0);
+      warnEl.textContent = `⚠ ${w}×${h} (${mp}MP) exceeds model max ~${maxMp}MP — adjust size below.`;
+      warnEl.style.display = "block";
+    } else {
+      warnEl.style.display = "none";
+    }
+  }
+  img.addEventListener("load", checkResolution);
+
   box.appendChild(hint);
   box.appendChild(img);
   box.appendChild(expandBtn);
@@ -66,6 +84,13 @@ export function createImageUpload({ label = "Image", onUpload, initialFilename =
   });
 
   box.addEventListener("click", () => fi.click());
+  box.addEventListener("dragover", e => { e.preventDefault(); box.style.borderColor = C.lime; });
+  box.addEventListener("dragleave", () => { box.style.borderColor = C.border; });
+  box.addEventListener("drop", async e => {
+    e.preventDefault(); box.style.borderColor = C.border;
+    const f = e.dataTransfer.files[0]; if (!f) return;
+    const name = await onUpload(f); show(name);
+  });
   wrap.appendChild(box);
   wrap.appendChild(fi);
 
@@ -82,6 +107,8 @@ export function createImageUpload({ label = "Image", onUpload, initialFilename =
       expandBtn.style.display = "none";
     }
   }
+
+  if (warnEl) wrap.appendChild(warnEl);
 
   return {
     el: wrap,

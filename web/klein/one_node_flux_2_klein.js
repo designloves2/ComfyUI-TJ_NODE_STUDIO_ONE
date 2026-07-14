@@ -677,7 +677,7 @@ app.registerExtension({
       function effectiveKey(mode) {
         return (mode === "inpaint" && state.paintSubMode === "outpaint") ? "outpaint" : mode;
       }
-      function getModePrompt(mode)    { return state.promptsByMode?.[effectiveKey(mode)] || ""; }
+      function getModePrompt(mode)    { const k=effectiveKey(mode); if(!state.promptsByMode)state.promptsByMode={}; if(!(k in state.promptsByMode))state.promptsByMode[k]=""; return state.promptsByMode[k]; }
       function setModePrompt(mode, v) {
         if (!state.promptsByMode) state.promptsByMode = {};
         state.promptsByMode[effectiveKey(mode)] = v; state.prompt = v;

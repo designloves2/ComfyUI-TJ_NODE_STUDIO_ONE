@@ -24,11 +24,11 @@ K2_CONFIG_PATH  = os.path.join(NODE_DIR, 'config_krea2.json')
 QE_CONFIG_PATH  = os.path.join(NODE_DIR, 'config_qwen2511.json')
 SDXL_CONFIG_PATH = os.path.join(NODE_DIR, 'config_sdxl_one.json')
 
-FK_SUBFOLDER  = "flux2-klein-one-tj"
-ZIT_SUBFOLDER = "one-node-z-image-turbo"
-K2_SUBFOLDER  = "krea2-one-tj"
-QE_SUBFOLDER  = "qwen2511-one-tj"
-SDXL_SUBFOLDER = "sdxl-one-tj"
+FK_SUBFOLDER  = "one_flux2-klein"
+ZIT_SUBFOLDER = "one_z-image"
+K2_SUBFOLDER  = "one_krea2"
+QE_SUBFOLDER  = "one_qwen2511"
+SDXL_SUBFOLDER = "one_sdxl"
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -896,6 +896,11 @@ async def k2_get_config(request):
         "save_subfolder":        cfg.get("save_subfolder")        or K2_SUBFOLDER,
         "negative_prompt":       cfg.get("negative_prompt",       ""),
         "prompt_suffix":         cfg.get("prompt_suffix",         ""),
+        "control_lora":          cfg.get("control_lora",          "none"),
+        "control_strength":      cfg.get("control_strength",      1.0),
+        "control_channel_mode":  cfg.get("control_channel_mode",  "rgb"),
+        "control_normalize":     cfg.get("control_normalize",     "none"),
+        "control_invert":        cfg.get("control_invert",        False),
     })
 
 

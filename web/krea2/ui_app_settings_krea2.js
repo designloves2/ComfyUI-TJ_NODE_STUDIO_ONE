@@ -1,6 +1,6 @@
 // ui_app_settings_krea2.js — Settings overlay for Krea 2 ONE STUDIO (TJ)
 import { C, el, SUBFOLDER } from "./core_krea2.js";
-import { panel, label, button, row, col } from "../klein/ui_common.js";
+import { panel, label, button, select, row, col } from "../klein/ui_common.js";
 import { getModels, getConfig, saveConfig } from "./api_krea2.js";
 import { t, getLang, setLang } from "../shared/i18n.js";
 
@@ -84,7 +84,9 @@ export function createSettingsOverlay(state, ctx) {
       const d = await getModels();
       rebuildModels(d);
       ctx.availableLoras = d.loras || [];
+      rebuildControlNet(d.loras || []);
       ctx._rerenderLoras?.();
+      ctx._rerenderControlNet?.();
     } finally { refreshBtn.textContent = "↻ Refresh Models"; }
   });
 
@@ -97,6 +99,53 @@ export function createSettingsOverlay(state, ctx) {
       modelNote,
       refreshBtn,
     ])
+  ]));
+
+  // ── ControlNet (Krea2 Control LoRA) — pre-configured, held ready ────────────
+  const cnLoraWrap = el("div");
+  let cnLoraSel;
+  function rebuildControlNet(loras) {
+    while (cnLoraWrap.firstChild) cnLoraWrap.removeChild(cnLoraWrap.firstChild);
+    const opts = ["none", ...(loras || []).filter(n => n !== "none")];
+    if (loras?.length && !opts.includes(state.controlLora)) state.controlLora = "none";
+    cnLoraSel = searchableSelect(opts, state.controlLora || "none", v => { state.controlLora = v; ctx.persist(); ctx._rerenderControlNet?.(); });
+    cnLoraWrap.appendChild(col([label("Control LoRA (depth / canny / pose …)"), cnLoraSel.el]));
+  }
+  rebuildControlNet([]);
+
+  const cnStrIn = el("input", { type: "number", step: "0.01", min: "0", max: "2", style: {
+    width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+    border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px",
+    fontSize: "12px", fontFamily: "inherit", outline: "none",
+  }});
+  cnStrIn.value = state.controlStrength ?? 1.0;
+  cnStrIn.addEventListener("input", () => { const v = parseFloat(cnStrIn.value); state.controlStrength = isNaN(v) ? 1 : v; ctx.persist(); ctx._rerenderControlNet?.(); });
+
+  const cnChannelSel = select(
+    [{ value: "rgb", label: "RGB" }, { value: "grayscale", label: "Grayscale" }],
+    state.controlChannelMode || "rgb",
+    v => { state.controlChannelMode = v; ctx.persist(); ctx._rerenderControlNet?.(); }
+  );
+  const cnNormSel = select(
+    [{ value: "none", label: "None" }, { value: "per_image_minmax", label: "Per-image MinMax" }],
+    state.controlNormalize || "none",
+    v => { state.controlNormalize = v; ctx.persist(); ctx._rerenderControlNet?.(); }
+  );
+  const cnInvertChk = el("input", { type: "checkbox" });
+  cnInvertChk.checked = state.controlInvert ?? false;
+  cnInvertChk.addEventListener("change", () => { state.controlInvert = cnInvertChk.checked; ctx.persist(); ctx._rerenderControlNet?.(); });
+  const cnInvertLbl = el("label", { style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: C.text, cursor: "pointer" } },
+    [cnInvertChk, el("span", { text: "Invert" })]);
+
+  const cnHint = el("div", { style: { fontSize: "10px", color: C.muted } });
+  cnHint.textContent = "Depth LoRA: Grayscale + Per-image MinMax  ·  Canny / Pose: RGB + None. Used by T2I & I2I ControlNet.";
+
+  ov.appendChild(panel([
+    label("ControlNet — Control LoRA (pre-configured for T2I / I2I)"),
+    cnLoraWrap,
+    row([col([label("Strength"), cnStrIn]), col([label("Channel Mode"), cnChannelSel])]),
+    row([col([label("Normalize"), cnNormSel]), col([el("div", { style: { paddingTop: "14px" } }, [cnInvertLbl])])]),
+    cnHint,
   ]));
 
   // ── Language selector ──────────────────────────────────────────────────────
@@ -160,6 +209,11 @@ export function createSettingsOverlay(state, ctx) {
       selected_vae:          state.vae              || "",
       negative_prompt:       state.negativePrompt   || "",
       prompt_suffix:         state.promptSuffix     || "",
+      control_lora:          state.controlLora      || "none",
+      control_strength:      state.controlStrength  ?? 1.0,
+      control_channel_mode:  state.controlChannelMode || "rgb",
+      control_normalize:     state.controlNormalize   || "none",
+      control_invert:        state.controlInvert    ?? false,
     });
     saveAllBtn.textContent = "✓ Saved!";
     setTimeout(() => { saveAllBtn.textContent = "💾 Save All"; }, 1500);
@@ -181,6 +235,12 @@ export function createSettingsOverlay(state, ctx) {
   getConfig().then(cfg => {
     if (cfg.negative_prompt && !state.negativePrompt) { state.negativePrompt = cfg.negative_prompt; negTA.value = cfg.negative_prompt; }
     if (cfg.prompt_suffix   && !state.promptSuffix)   { state.promptSuffix   = cfg.prompt_suffix;   suffixIn.value = cfg.prompt_suffix; }
+    // ControlNet config — apply saved values if state still at defaults
+    if ((!state.controlLora || state.controlLora === "none") && cfg.control_lora && cfg.control_lora !== "none") state.controlLora = cfg.control_lora;
+    if (cfg.control_strength     != null) { state.controlStrength    = cfg.control_strength;     cnStrIn.value = state.controlStrength; }
+    if (cfg.control_channel_mode)         { state.controlChannelMode = cfg.control_channel_mode; cnChannelSel.value = state.controlChannelMode; }
+    if (cfg.control_normalize)            { state.controlNormalize   = cfg.control_normalize;    cnNormSel.value = state.controlNormalize; }
+    if (typeof cfg.control_invert === "boolean") { state.controlInvert = cfg.control_invert; cnInvertChk.checked = state.controlInvert; }
     if (cfg.save_subfolder  && !state.saveSubfolder)  pathIn.placeholder = cfg.save_subfolder;
     visChk.checked = cfg.output_mode_visible !== false;
     if (ctx.appConfig) ctx.appConfig.output_mode_visible = visChk.checked;
@@ -188,7 +248,9 @@ export function createSettingsOverlay(state, ctx) {
     return getModels().then(d => {
       rebuildModels(d);
       ctx.availableLoras = d.loras || [];
+      rebuildControlNet(d.loras || []);
       ctx._rerenderLoras?.();
+      ctx._rerenderControlNet?.();
       applyConfigModels(cfg, d);
     });
   }).catch(() => {});

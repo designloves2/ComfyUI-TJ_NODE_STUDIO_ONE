@@ -3,6 +3,7 @@ import { C, el, clear, BRAND, RESOLUTIONS, SAMPLERS, SCHEDULERS, LORA_MAX } from
 import { panel, label, button, select, numberField, row, col, loraSelect } from "../klein/ui_common.js";
 import { buildT2IGraph } from "./graph_builder_krea2.js";
 import { getLoraTriggers } from "./api_krea2.js";
+import { mountControlNetSection } from "./ui_controlnet_krea2.js";
 
 export function mountT2ILeft(leftEl, state, ctx) {
   const wrap = el("div", { style: { display:"flex", flexDirection:"column", gap:"6px" }});
@@ -105,6 +106,8 @@ export function mountT2ILeft(leftEl, state, ctx) {
 
   ctx._rerenderLoras = rebuildLoras;
   rebuildLoras();
+
+  mountControlNetSection(wrap, state, ctx, "t2i");
 
   return {
     getSourceURL() { return null; },

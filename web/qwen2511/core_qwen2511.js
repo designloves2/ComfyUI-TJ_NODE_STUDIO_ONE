@@ -107,8 +107,11 @@ export function defaultState(saved) {
       : [],
 
     // I2I
-    i2iImage:   saved.i2iImage   || null,
-    i2iDenoise: saved.i2iDenoise ?? 0.75,
+    i2iImage:     saved.i2iImage     || null,
+    i2iWidth:     saved.i2iWidth     || null,
+    i2iHeight:    saved.i2iHeight    || null,
+    i2iLockRatio: saved.i2iLockRatio ?? true,
+    i2iDenoise:   saved.i2iDenoise   ?? 0.75,
 
     // Edit
     editImage1:     saved.editImage1     || null,

@@ -46,6 +46,7 @@ REPOS=(
     "https://github.com/1038lab/ComfyUI-RMBG"
     "https://github.com/Fannovel16/comfyui_controlnet_aux"
     "https://github.com/city96/ComfyUI-GGUF"
+    "https://github.com/facok/comfyui-krea2-controlnet"
 )
 
 TOTAL=${#REPOS[@]}

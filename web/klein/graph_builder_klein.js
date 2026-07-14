@@ -69,7 +69,7 @@ export function getUseKV(state) {
 }
 
 function buildPromptText(state, mode) {
-  const base = (state.promptsByMode && state.promptsByMode[mode]) || state.prompt || "";
+  const base = (state.promptsByMode && mode in state.promptsByMode) ? state.promptsByMode[mode] : (state.prompt || "");
   const parts = [base];
   (state.loras || []).forEach(l => {
     if (l.enabled !== false && l.name && l.name !== "none" && l.triggerWord) parts.push(l.triggerWord);
@@ -164,6 +164,12 @@ export async function buildI2IGraph(state) {
   set(prompt, "FK:153", "vae_name", i2iVae);
   set(prompt, "FK:166", "text", buildPromptText(state, "i2i"));
   set(prompt, "FKI2I:img", "image", state.i2iImage);
+
+  // Insert ImageScale when custom output size is set
+  if (state.i2iWidth && state.i2iHeight) {
+    prompt["FKI2I:scale"] = { class_type: "ImageScale", inputs: { image: ["FKI2I:img", 0], width: state.i2iWidth, height: state.i2iHeight, upscale_method: "lanczos", crop: "disabled" } };
+    set(prompt, "FKI2I:vae", "pixels", ["FKI2I:scale", 0]);
+  }
 
   let i2iModelSrc = "FK:165";
   if (useKV) {

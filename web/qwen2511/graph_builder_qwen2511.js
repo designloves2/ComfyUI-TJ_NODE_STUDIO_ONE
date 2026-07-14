@@ -11,7 +11,7 @@ function saveNode(link, state) {
 }
 
 function buildPromptText(state, mode) {
-  const base = (state.promptsByMode?.[mode] !== undefined) ? state.promptsByMode[mode] : (state.prompt || "");
+  const base = (state.promptsByMode && mode in state.promptsByMode) ? state.promptsByMode[mode] : (state.prompt || "");
   const parts = [base];
   (state.loras || []).forEach(l => {
     if (l.enabled !== false && l.name && l.name !== "none" && l.triggerWord) parts.push(l.triggerWord);
@@ -164,7 +164,13 @@ export function buildI2IGraph(state) {
   const promptText = buildPromptText(state, "i2i");
 
   g[`${P}:loadImg1`] = { class_type: "LoadImage", inputs: { image: state.i2iImage } };
-  const { posLink: i2iPos, negLink: i2iNeg } = addEditConditioning(g, clipLink, vaeLink, promptText, state.negativePrompt || "", [[`${P}:loadImg1`, 0]]);
+  // Insert ImageScale when custom output size is set
+  let imgLink = [`${P}:loadImg1`, 0];
+  if (state.i2iWidth && state.i2iHeight) {
+    g[`${P}:i2iScale`] = { class_type: "ImageScale", inputs: { image: imgLink, width: state.i2iWidth, height: state.i2iHeight, upscale_method: "lanczos", crop: "disabled" } };
+    imgLink = [`${P}:i2iScale`, 0];
+  }
+  const { posLink: i2iPos, negLink: i2iNeg } = addEditConditioning(g, clipLink, vaeLink, promptText, state.negativePrompt || "", [imgLink]);
   addKSampler(g, modelLink, [`${P}:vaeEnc`, 0], state, state.i2iDenoise ?? 0.75, i2iPos, i2iNeg);
   addDecodeAndSave(g, vaeLink, state);
   return g;

@@ -516,7 +516,7 @@ app.registerExtension({
         },
       });
 
-      function getModePrompt(mode){return state.promptsByMode?.[mode]||"";}
+      function getModePrompt(mode){if(!state.promptsByMode)state.promptsByMode={};if(!(mode in state.promptsByMode))state.promptsByMode[mode]="";return state.promptsByMode[mode];}
       function setModePrompt(mode,val){
         if(!state.promptsByMode) state.promptsByMode={};
         state.promptsByMode[mode]=val; state.prompt=val;

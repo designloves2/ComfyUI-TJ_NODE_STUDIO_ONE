@@ -54,7 +54,7 @@
 | **Z-Image ONE STUDIO (TJ)** | Z-Image Turbo (flow-matching) | T2I · I2I · Inpaint · Outpaint · RE-BG · ControlNet · Face Redraw · **Upscale** |
 | **Flux.2 Klein ONE STUDIO (TJ)** | Flux.2-Klein (9B / 4B) | T2I · I2I · Edit · **Inpaint · Outpaint** · Faceswap · **Upscale** |
 | **Qwen Image Edit 2511 ONE STUDIO (TJ)** | Qwen2.5-VL 기반 Image Edit 모델<br><sub>Qwen2.5-VL based Image Edit model</sub>| T2I · I2I · Edit(최대 3장) · Inpaint · **Outpaint** · Faceswap · **Angle** · **Upscale**<br><sub>T2I · I2I · Edit(up to 3 images) · Inpaint · **Outpaint** · Faceswap · **Angle** · **Upscale**</sub>|
-| **Krea 2 ONE STUDIO (TJ)** | Krea.ai 이미지 생성 모델<br><sub>Krea.ai image generation model</sub>| T2I · I2I · **Upscale** |
+| **Krea 2 ONE STUDIO (TJ)** | Krea.ai 이미지 생성 모델<br><sub>Krea.ai image generation model</sub>| T2I · I2I · **ControlNet(I2I)** · **Upscale** |
 | **SDXL ONE STUDIO (TJ)** 🧪 | SDXL Checkpoint / Separate UNET 모델<br><sub>SDXL Checkpoint / Separate UNET model</sub>| T2I · I2I · Inpaint · Outpaint · Upscale *(테스트 버전 / Test Version)* |
 
 > **언어 지원**: 모든 노드의 Settings에서 한국어 / English 전환 가능
@@ -373,7 +373,11 @@ SDXL ONE STUDIO supports two model loading modes in Settings.
 ## 버그 수정 이력
 ## Bug Fix History
 
-### v1.4.1 (현재)
+### v1.5.0 (현재)
+
+- **[Krea2] I2I ControlNet 추가** — comfyui-krea2-controlnet 통합. I2I 탭 하단에 ControlNet 패널 추가. Control LoRA 선택 + 강도 + Channel Mode(RGB/Grayscale) + Normalize + Invert + 컨트롤 이미지 업로드. ON/OFF 토글로 기존 I2I와 동일하게 사용 가능. Depth Control LoRA: [Patil/Krea-2-depth-controlnet](https://huggingface.co/Patil/Krea-2-depth-controlnet)
+
+### v1.4.1
 ### v1.4.1 (Current)
 
 - **[전체] LoRA 트리거 워드 초기화 버그 수정**: `loraSelect` 검색 필터 입력 시 표시값(`s.value`)이 아닌 내부 `currentValue` 기준으로 복원하도록 수정 — `availableLoras` 로드 전 UI가 "none"으로 표시된 상태에서 검색 타이핑 시 currentValue가 오염되던 문제 해결
@@ -1006,6 +1010,12 @@ Some TJ_NODE systems were rebuilt and extended based on concepts inspired by:
   
 
 Several nodes were heavily reworked and integrated into the TJ wireless workflow architecture.
+
+### Krea2 ControlNet
+
+- [Krea-2-controlnet](https://github.com/Tanmaypatil123/Krea-2-controlnet) — Thanks to Tanmaypatil123 for documenting the reference Krea2 control-LoRA inference pipeline.
+- [Patil/Krea-2-depth-controlnet](https://huggingface.co/Patil/Krea-2-depth-controlnet) — Thanks for providing the public depth Control LoRA weights.
+- [facok/comfyui-krea2-controlnet](https://github.com/facok/comfyui-krea2-controlnet) — Thanks for the ComfyUI Krea2 Control LoRA node implementation used in this project.
 
 ---
 

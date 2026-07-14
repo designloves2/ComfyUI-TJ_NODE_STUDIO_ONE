@@ -103,6 +103,7 @@ chmod +x install_requirements.sh
 | **ComfyUI-RMBG** | 배경 제거 (RE-BG 모드) | Z-Image · RE-BG | [1038lab/ComfyUI-RMBG](https://github.com/1038lab/ComfyUI-RMBG) |
 | **comfyui_controlnet_aux** | ControlNet 전처리기 (Depth · Canny · Pose 등) | Z-Image · ControlNet | [Fannovel16/comfyui_controlnet_aux](https://github.com/Fannovel16/comfyui_controlnet_aux) |
 | **ComfyUI-SeedVR2** | SeedVR2 AI 업스케일 (UPSCALE 모드) | 전체 노드 | [numz](https://github.com/numz) [ComfyUI-SeedVR2_VideoUpscaler](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler) |
+| **comfyui-krea2-controlnet** | Krea2 Control LoRA 추론 — I2I ControlNet | Krea2 ControlNet | [facok/comfyui-krea2-controlnet](https://github.com/facok/comfyui-krea2-controlnet) |
 
 ---
 
@@ -254,6 +255,21 @@ chmod +x install_requirements.sh
 | 다운로드 |
 |---|
 | [HF 목록](https://huggingface.co/Comfy-Org/Krea-2/tree/main/vae) |
+
+#### ControlNet LoRA → `models/loras/`  *(I2I ControlNet 모드, 선택사항)*
+
+> **필수 커스텀 노드**: [comfyui-krea2-controlnet](https://github.com/facok/comfyui-krea2-controlnet) (설치 스크립트에 포함됨)
+
+| 파일명 | 설명 | 다운로드 |
+|---|---|---|
+| `krea-2-depth-controlnet.safetensors` 등 | Krea2 Control LoRA (Depth) | [Patil/Krea-2-depth-controlnet](https://huggingface.co/Patil/Krea-2-depth-controlnet) |
+
+**사용 방법:**
+1. ControlNet LoRA 파일을 `models/loras/`에 배치
+2. I2I 탭 하단 **ControlNet** 패널 → **ON** 토글
+3. **Control LoRA** 드롭다운에서 파일 선택 (Settings → Refresh Models 필요)
+4. **Control Image** 업로드 (Depth맵 등 전처리된 이미지)
+5. Depth LoRA: `Channel Mode = Grayscale`, `Normalize = Per-image MinMax` 권장
 
 ---
 

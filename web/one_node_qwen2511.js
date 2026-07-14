@@ -353,7 +353,7 @@ app.registerExtension({
       const promptTA=el("textarea",{placeholder:"Describe what you want to generate…",style:{flex:"1",width:"100%",boxSizing:"border-box",background:C.bg2,color:C.text,border:`1px solid ${C.border}`,borderRadius:"6px",padding:"7px",fontSize:"13px",fontFamily:"inherit",outline:"none",resize:"none",overflowY:"auto"}});
 
       function effectiveKey(mode){return(mode==="inpaint"&&state.paintSubMode==="outpaint")?"outpaint":mode;}
-      function getModePrompt(mode){return state.promptsByMode?.[effectiveKey(mode)]||"";}
+      function getModePrompt(mode){const k=effectiveKey(mode);if(!state.promptsByMode)state.promptsByMode={};if(!(k in state.promptsByMode))state.promptsByMode[k]="";return state.promptsByMode[k];}
       function setModePrompt(mode,v){if(!state.promptsByMode)state.promptsByMode={};state.promptsByMode[effectiveKey(mode)]=v;state.prompt=v;}
       promptTA.value=getModePrompt(state.mode);
       function updateCount(){const n=getModePrompt(state.mode).trim().length;charCount.textContent=` (${n} chars${n<20?" ⚠":""})`;charCount.style.color=n<20?C.warn:C.muted;}

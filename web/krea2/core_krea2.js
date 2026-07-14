@@ -76,8 +76,25 @@ export function defaultState(saved) {
     })) : [],
 
     // I2I
-    i2iImage:   saved.i2iImage   || null,
-    i2iDenoise: saved.i2iDenoise ?? 0.75,
+    i2iImage:     saved.i2iImage     || null,
+    i2iWidth:     saved.i2iWidth     || null,
+    i2iHeight:    saved.i2iHeight    || null,
+    i2iLockRatio: saved.i2iLockRatio ?? true,
+    i2iDenoise:   saved.i2iDenoise   ?? 0.75,
+
+    // ControlNet — LoRA + processing params configured globally in Settings
+    // (function-specific control LoRA held ready; params depend on LoRA type)
+    controlLora:        saved.controlLora        ?? saved.i2iControlLora        ?? "none",
+    controlStrength:    saved.controlStrength    ?? saved.i2iControlStrength    ?? 1.0,
+    controlChannelMode: saved.controlChannelMode ?? saved.i2iControlChannelMode ?? "rgb",
+    controlNormalize:   saved.controlNormalize   ?? saved.i2iControlNormalize   ?? "none",
+    controlInvert:      saved.controlInvert      ?? saved.i2iControlInvert      ?? false,
+
+    // ControlNet — per-mode enable + control image
+    t2iControlEnabled: saved.t2iControlEnabled ?? false,
+    t2iControlImage:   saved.t2iControlImage   || null,
+    i2iControlEnabled: saved.i2iControlEnabled ?? false,
+    i2iControlImage:   saved.i2iControlImage   || (saved.i2iControlImage ?? null),
 
     // UPSCALE — SeedVR2
     upscaleImage:            saved.upscaleImage            || null,
