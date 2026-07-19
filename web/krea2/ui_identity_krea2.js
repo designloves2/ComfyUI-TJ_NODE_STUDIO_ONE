@@ -72,8 +72,8 @@ export function mountIdentityLeft(leftEl, state, ctx) {
 
   const { wIn, hIn, setAspect, el: sizeEl } = makeSizeFields(state, ctx);
 
-  // Source image (the image being edited)
-  const { el: srcEl, setFilename } = createImgUpload("Source Image", state.identityImage || null, async f => {
+  // ① Source / Scene (frame 1)
+  const { el: srcEl, setFilename } = createImgUpload("① Scene / Source", state.identityImage || null, async f => {
     const name = await uploadImage(f);
     state.identityImage = name; ctx.persist();
     return name;
@@ -82,17 +82,31 @@ export function mountIdentityLeft(leftEl, state, ctx) {
     onLoad: (w, h) => { state.identityWidth = snap8(w); state.identityHeight = snap8(h); wIn.value = state.identityWidth; hIn.value = state.identityHeight; setAspect(w / h); ctx.persist(); },
   });
 
-  // Optional 2nd reference (subject → scene, e.g. person into a scene)
-  const { el: refEl } = createImgUpload("2nd Reference (optional)\nsubject → scene", state.identityImageB || null, async f => {
+  // ② 2nd reference = subject / face (frame 2). Training order: scene first, subject second.
+  const { el: refEl, setFilename: refSetFilename } = createImgUpload("② Subject / Face\n(optional)", state.identityImageB || null, async f => {
     const name = await uploadImage(f);
     state.identityImageB = name; ctx.persist();
     return name;
   }, { onClear: () => { state.identityImageB = null; ctx.persist(); } });
 
+  // ⇄ Swap the two images (scene ↔ subject)
+  const swapBtn = el("button", { type: "button", text: "⇄ Swap ①↔②", style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 12px",
+    borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`, fontWeight: "600",
+  }});
+  swapBtn.addEventListener("click", () => {
+    const a = state.identityImage, b = state.identityImageB;
+    state.identityImage = b || null; state.identityImageB = a || null;
+    ctx.persist();
+    setFilename(state.identityImage);        // triggers source onLoad → recompute size
+    refSetFilename(state.identityImageB);
+  });
+
   wrap.appendChild(panel([
     el("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center" } }, [srcEl, refEl]),
+    el("div", { style: { display: "flex", justifyContent: "center" } }, [swapBtn]),
     sizeEl,
-    el("div", { text: "Edit as an instruction in the PROMPT box → e.g. \"recolor the car to matte black\", \"make him wear a suit\". Two images = insert the subject into the scene.", style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+    el("div", { html: "PROMPT에 <b>지시문</b>으로 편집 → 예: \"recolor the car to matte black\", \"make him wear a suit\".<br>2장 사용 시 순서: <b>① 장면(scene)</b>, <b>② 인물/얼굴(subject)</b>. 사람을 장면에 합성합니다.", style: { fontSize: "10px", color: C.muted, lineHeight: "1.55" } }),
   ]));
 
   // Identity / grounding controls
