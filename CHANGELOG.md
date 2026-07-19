@@ -2,6 +2,34 @@
 
 ---
 
+## v1.7.0 (2026-07-19)
+
+### 🧪 Krea 2 ONE STUDIO — 실험적 기능 추가 (Experimental features)
+
+> ⚠️ **아래 기능은 실험적이며 오류가 발생할 수 있습니다. 외부 커스텀 노드 + 별도 LoRA가 필요합니다.**  
+> **These features are experimental and may produce errors. They require external custom nodes + separate LoRAs.**
+
+**IDENTITY 탭 추가 (instruction-based identity edit)**
+- `comfyui-krea2edit`(`Krea2EditModelPatch` · `Krea2EditGroundedEncode`) + `krea2_identity_edit_v1_2` LoRA 사용
+- 소스 이미지 + 선택적 2번째 레퍼런스(인물→장면), `ref_boost`(정체성 강도) · `grounding_px` · `fit_mode` 조절
+- IDENTITY LoRA는 ⚙ Settings에서 **한 번만 등록**
+
+**ControlNet — Depth / Canny 추가**
+- **Depth**: `comfyui-krea2-controlnet`(Krea2 Control LoRA) + `DepthAnythingV2Preprocessor`. 구도·프레이밍·스케일 위주(세밀한 포즈는 느슨)
+- **Canny**: `ComfyUI-NK2E`(in-context) + `CannyEdgePreprocessor`. 윤곽선 정밀 — 포즈·얼굴 방향·실루엣 재현
+- 사이드 메뉴에서 **Depth/Canny 선택**, 업로드 사진을 자동 전처리, **생성 전 depth/canny 맵 미리보기** 버튼
+- 컨트롤 이미지 비율에 맞춰 **롱엣지 기준 출력 크기 자동 정렬**(center-crop 왜곡 방지)
+- ⚙ Settings에는 **LoRA 파일만 등록**, strength·임계값·depth 모델·해상도·channel/normalize/invert 등 **모든 조절값은 사이드 메뉴에서** 직접 제어
+- depth 전처리 모델은 첫 사용 시 `depth_anything_v2_vitl.pth` 자동 다운로드 (vitg/Giant는 저장소 비공개로 미지원)
+
+> ⚠️ depth·canny는 **LoRA 기반**이라 픽셀 단위로 정확하지 않습니다. 정확한 포즈엔 Canny, 대략적 구도엔 Depth를 권장합니다.
+
+### 설치 / Install
+- `install_requirements` 스크립트에 `comfyui-krea2edit`, `ComfyUI-NK2E` 추가 및 LoRA 다운로드 안내 출력
+- README에 실험적 기능·필수 노드·모델 다운로드 위치 문서화
+
+---
+
 ## v1.6.0 (2026-07-14)
 
 ### Bug Fixes & Improvements

@@ -1,5 +1,5 @@
 // ui_app_settings_krea2.js — Settings overlay for Krea 2 ONE STUDIO (TJ)
-import { C, el, SUBFOLDER } from "./core_krea2.js";
+import { C, el, SUBFOLDER, DEPTH_CKPTS, safeDepthCkpt } from "./core_krea2.js";
 import { panel, label, button, select, row, col } from "../klein/ui_common.js";
 import { getModels, getConfig, saveConfig } from "./api_krea2.js";
 import { t, getLang, setLang } from "../shared/i18n.js";
@@ -85,6 +85,7 @@ export function createSettingsOverlay(state, ctx) {
       rebuildModels(d);
       ctx.availableLoras = d.loras || [];
       rebuildControlNet(d.loras || []);
+      rebuildIdentity(d.loras || []);
       ctx._rerenderLoras?.();
       ctx._rerenderControlNet?.();
     } finally { refreshBtn.textContent = "↻ Refresh Models"; }
@@ -101,51 +102,65 @@ export function createSettingsOverlay(state, ctx) {
     ])
   ]));
 
-  // ── ControlNet (Krea2 Control LoRA) — pre-configured, held ready ────────────
-  const cnLoraWrap = el("div");
-  let cnLoraSel;
+  // ── ControlNet (Krea2 Control LoRA) — depth + canny, configured once ────────
+  const cnDepthWrap = el("div"), cnCannyWrap = el("div");
+  let cnDepthSel, cnCannySel;
   function rebuildControlNet(loras) {
-    while (cnLoraWrap.firstChild) cnLoraWrap.removeChild(cnLoraWrap.firstChild);
+    [cnDepthWrap, cnCannyWrap].forEach(w => { while (w.firstChild) w.removeChild(w.firstChild); });
     const opts = ["none", ...(loras || []).filter(n => n !== "none")];
-    if (loras?.length && !opts.includes(state.controlLora)) state.controlLora = "none";
-    cnLoraSel = searchableSelect(opts, state.controlLora || "none", v => { state.controlLora = v; ctx.persist(); ctx._rerenderControlNet?.(); });
-    cnLoraWrap.appendChild(col([label("Control LoRA (depth / canny / pose …)"), cnLoraSel.el]));
+    if (loras?.length && !opts.includes(state.controlLoraDepth)) state.controlLoraDepth = "none";
+    if (loras?.length && !opts.includes(state.controlLoraCanny)) state.controlLoraCanny = "none";
+    cnDepthSel = searchableSelect(opts, state.controlLoraDepth || "none", v => { state.controlLoraDepth = v; ctx.persist(); ctx._rerenderControlNet?.(); });
+    cnCannySel = searchableSelect(opts, state.controlLoraCanny || "none", v => { state.controlLoraCanny = v; ctx.persist(); ctx._rerenderControlNet?.(); });
+    cnDepthWrap.appendChild(col([label("Depth Control LoRA"), cnDepthSel.el]));
+    cnCannyWrap.appendChild(col([label("Canny Control LoRA"), cnCannySel.el]));
   }
   rebuildControlNet([]);
+  state.depthCkpt = safeDepthCkpt(state.depthCkpt);   // drop unavailable vitg, etc.
 
-  const cnStrIn = el("input", { type: "number", step: "0.01", min: "0", max: "2", style: {
+  const cnHint = el("div", { style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } });
+  cnHint.innerHTML = "Register the LoRA FILES here (once). <b>All tuning values</b> — type (depth / canny), strength, "
+    + "thresholds, depth model, resolution, channel/normalize/invert — are adjusted in the <b>side-menu CONTROLNET panel</b>."
+    + "<br><b>Depth</b>: Krea2 Control LoRA + <code>DepthAnythingV2Preprocessor</code> (<code>comfyui-krea2-controlnet</code>)."
+    + "<br><b>Canny</b>: NK2E in-context edit + <code>CannyEdgePreprocessor</code> (<code>ComfyUI-NK2E</code> node + NK2E canny LoRA)."
+    + "<br>LoRAs go in <code>models/loras/</code>.";
+
+  ov.appendChild(panel([
+    label("ControlNet — LoRA files (register once)"),
+    row([cnDepthWrap, cnCannyWrap]),
+    cnHint,
+  ]));
+
+  // ── Identity Edit LoRA (comfyui-krea2edit) — configure ONCE ─────────────────
+  const idLoraWrap = el("div");
+  let idLoraSel;
+  function rebuildIdentity(loras) {
+    while (idLoraWrap.firstChild) idLoraWrap.removeChild(idLoraWrap.firstChild);
+    const opts = ["none", ...(loras || []).filter(n => n !== "none")];
+    if (loras?.length && !opts.includes(state.identityLora)) state.identityLora = "none";
+    idLoraSel = searchableSelect(opts, state.identityLora || "none", v => { state.identityLora = v; ctx.persist(); });
+    idLoraWrap.appendChild(col([label("Identity Edit LoRA (krea2_identity_edit_v1_2.safetensors)"), idLoraSel.el]));
+  }
+  rebuildIdentity([]);
+
+  const idStrIn = el("input", { type: "number", step: "0.05", min: "0", max: "2", style: {
     width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
     border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px",
     fontSize: "12px", fontFamily: "inherit", outline: "none",
   }});
-  cnStrIn.value = state.controlStrength ?? 1.0;
-  cnStrIn.addEventListener("input", () => { const v = parseFloat(cnStrIn.value); state.controlStrength = isNaN(v) ? 1 : v; ctx.persist(); ctx._rerenderControlNet?.(); });
+  idStrIn.value = state.identityLoraStrength ?? 1.0;
+  idStrIn.addEventListener("input", () => { const v = parseFloat(idStrIn.value); state.identityLoraStrength = isNaN(v) ? 1.0 : v; ctx.persist(); });
 
-  const cnChannelSel = select(
-    [{ value: "rgb", label: "RGB" }, { value: "grayscale", label: "Grayscale" }],
-    state.controlChannelMode || "rgb",
-    v => { state.controlChannelMode = v; ctx.persist(); ctx._rerenderControlNet?.(); }
-  );
-  const cnNormSel = select(
-    [{ value: "none", label: "None" }, { value: "per_image_minmax", label: "Per-image MinMax" }],
-    state.controlNormalize || "none",
-    v => { state.controlNormalize = v; ctx.persist(); ctx._rerenderControlNet?.(); }
-  );
-  const cnInvertChk = el("input", { type: "checkbox" });
-  cnInvertChk.checked = state.controlInvert ?? false;
-  cnInvertChk.addEventListener("change", () => { state.controlInvert = cnInvertChk.checked; ctx.persist(); ctx._rerenderControlNet?.(); });
-  const cnInvertLbl = el("label", { style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: C.text, cursor: "pointer" } },
-    [cnInvertChk, el("span", { text: "Invert" })]);
-
-  const cnHint = el("div", { style: { fontSize: "10px", color: C.muted } });
-  cnHint.textContent = "Depth LoRA: Grayscale + Per-image MinMax  ·  Canny / Pose: RGB + None. Used by T2I & I2I ControlNet.";
+  const idHint = el("div", { style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } });
+  idHint.innerHTML = "Powers the <b>IDENTITY</b> tab. Requires the <code>comfyui-krea2edit</code> custom node "
+    + "(Krea2EditModelPatch / Krea2EditGroundedEncode) and the LoRA in <code>models/loras/</code>. "
+    + "Set here once — strength 1.0 recommended.";
 
   ov.appendChild(panel([
-    label("ControlNet — Control LoRA (pre-configured for T2I / I2I)"),
-    cnLoraWrap,
-    row([col([label("Strength"), cnStrIn]), col([label("Channel Mode"), cnChannelSel])]),
-    row([col([label("Normalize"), cnNormSel]), col([el("div", { style: { paddingTop: "14px" } }, [cnInvertLbl])])]),
-    cnHint,
+    label("Identity Edit — LoRA (one-time setup)"),
+    idLoraWrap,
+    row([col([label("LoRA Strength"), idStrIn]), col([el("div")])]),
+    idHint,
   ]));
 
   // ── Language selector ──────────────────────────────────────────────────────
@@ -209,11 +224,16 @@ export function createSettingsOverlay(state, ctx) {
       selected_vae:          state.vae              || "",
       negative_prompt:       state.negativePrompt   || "",
       prompt_suffix:         state.promptSuffix     || "",
-      control_lora:          state.controlLora      || "none",
+      control_lora_depth:    state.controlLoraDepth || "none",
+      control_lora_canny:    state.controlLoraCanny || "none",
       control_strength:      state.controlStrength  ?? 1.0,
       control_channel_mode:  state.controlChannelMode || "rgb",
-      control_normalize:     state.controlNormalize   || "none",
+      control_normalize:     state.controlNormalize   || "per_image_minmax",
       control_invert:        state.controlInvert    ?? false,
+      depth_ckpt:            state.depthCkpt        || "depth_anything_v2_vitl.pth",
+      preproc_resolution:    state.preprocResolution ?? 512,
+      identity_lora:          state.identityLora         || "none",
+      identity_lora_strength: state.identityLoraStrength ?? 1.0,
     });
     saveAllBtn.textContent = "✓ Saved!";
     setTimeout(() => { saveAllBtn.textContent = "💾 Save All"; }, 1500);
@@ -236,11 +256,20 @@ export function createSettingsOverlay(state, ctx) {
     if (cfg.negative_prompt && !state.negativePrompt) { state.negativePrompt = cfg.negative_prompt; negTA.value = cfg.negative_prompt; }
     if (cfg.prompt_suffix   && !state.promptSuffix)   { state.promptSuffix   = cfg.prompt_suffix;   suffixIn.value = cfg.prompt_suffix; }
     // ControlNet config — apply saved values if state still at defaults
-    if ((!state.controlLora || state.controlLora === "none") && cfg.control_lora && cfg.control_lora !== "none") state.controlLora = cfg.control_lora;
-    if (cfg.control_strength     != null) { state.controlStrength    = cfg.control_strength;     cnStrIn.value = state.controlStrength; }
-    if (cfg.control_channel_mode)         { state.controlChannelMode = cfg.control_channel_mode; cnChannelSel.value = state.controlChannelMode; }
-    if (cfg.control_normalize)            { state.controlNormalize   = cfg.control_normalize;    cnNormSel.value = state.controlNormalize; }
-    if (typeof cfg.control_invert === "boolean") { state.controlInvert = cfg.control_invert; cnInvertChk.checked = state.controlInvert; }
+    // (migrate legacy single control_lora → depth slot)
+    if ((!state.controlLoraDepth || state.controlLoraDepth === "none") && cfg.control_lora_depth && cfg.control_lora_depth !== "none") state.controlLoraDepth = cfg.control_lora_depth;
+    else if ((!state.controlLoraDepth || state.controlLoraDepth === "none") && cfg.control_lora && cfg.control_lora !== "none") state.controlLoraDepth = cfg.control_lora;
+    if ((!state.controlLoraCanny || state.controlLoraCanny === "none") && cfg.control_lora_canny && cfg.control_lora_canny !== "none") state.controlLoraCanny = cfg.control_lora_canny;
+    // ControlNet tuning values are adjusted in the side menu now — just seed state.
+    if (cfg.control_strength   != null)          state.controlStrength    = cfg.control_strength;
+    if (cfg.control_channel_mode)                state.controlChannelMode = cfg.control_channel_mode;
+    if (cfg.control_normalize)                   state.controlNormalize   = cfg.control_normalize;
+    if (typeof cfg.control_invert === "boolean") state.controlInvert      = cfg.control_invert;
+    if (cfg.depth_ckpt)                          state.depthCkpt          = safeDepthCkpt(cfg.depth_ckpt);
+    if (cfg.preproc_resolution != null)          state.preprocResolution  = cfg.preproc_resolution;
+    // Identity Edit LoRA config
+    if ((!state.identityLora || state.identityLora === "none") && cfg.identity_lora && cfg.identity_lora !== "none") state.identityLora = cfg.identity_lora;
+    if (cfg.identity_lora_strength != null) { state.identityLoraStrength = cfg.identity_lora_strength; idStrIn.value = state.identityLoraStrength; }
     if (cfg.save_subfolder  && !state.saveSubfolder)  pathIn.placeholder = cfg.save_subfolder;
     visChk.checked = cfg.output_mode_visible !== false;
     if (ctx.appConfig) ctx.appConfig.output_mode_visible = visChk.checked;
@@ -249,6 +278,7 @@ export function createSettingsOverlay(state, ctx) {
       rebuildModels(d);
       ctx.availableLoras = d.loras || [];
       rebuildControlNet(d.loras || []);
+      rebuildIdentity(d.loras || []);
       ctx._rerenderLoras?.();
       ctx._rerenderControlNet?.();
       applyConfigModels(cfg, d);

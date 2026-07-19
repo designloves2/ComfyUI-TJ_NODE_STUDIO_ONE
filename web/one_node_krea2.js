@@ -12,6 +12,7 @@ import { attachLLMPanel } from "./shared/llm_panel.js";
 import { createGalleryOverlay }                                                 from "./krea2/ui_gallery_krea2.js";
 import { mountT2ILeft }                                                         from "./krea2/ui_t2i_krea2.js";
 import { mountI2ILeft }                                                         from "./krea2/ui_i2i_krea2.js";
+import { mountIdentityLeft }                                                    from "./krea2/ui_identity_krea2.js";
 import { mountUpscaleLeft }                                                     from "./krea2/ui_upscale_krea2.js";
 
 // ── Layout (Klein과 동일) ──────────────────────────────────────────────────────
@@ -26,17 +27,23 @@ const ROOT_H      = PAD + TOPBAR_H + PAD + RIGHT_H + BOTTOM_PAD;
 const NODE_H      = ROOT_H + 30;
 
 const MODES = [
-  { key: "t2i",     label: "T2I",     enabled: true },
-  { key: "i2i",     label: "I2I",     enabled: true },
-  { key: "upscale", label: "UPSCALE", enabled: true },
+  { key: "t2i",      label: "T2I",      enabled: true },
+  { key: "i2i",      label: "I2I",      enabled: true },
+  { key: "identity", label: "IDENTITY", enabled: true },
+  { key: "upscale",  label: "UPSCALE",  enabled: true },
 ];
 
 // T2I → 모든 모드, 나머지 → T2I·현재모드 제외한 전체
 const SEND_TO = {
-  t2i:     [{ mode:"i2i",     label:"→ I2I",     field:"i2iImage"     },
-            { mode:"upscale", label:"→ Upscale", field:"upscaleImage" }],
-  i2i:     [{ mode:"upscale", label:"→ Upscale", field:"upscaleImage" }],
-  upscale: [{ mode:"i2i",     label:"→ I2I",     field:"i2iImage"     }],
+  t2i:      [{ mode:"i2i",      label:"→ I2I",      field:"i2iImage"      },
+             { mode:"identity", label:"→ Identity", field:"identityImage" },
+             { mode:"upscale",  label:"→ Upscale",  field:"upscaleImage"  }],
+  i2i:      [{ mode:"identity", label:"→ Identity", field:"identityImage" },
+             { mode:"upscale",  label:"→ Upscale",  field:"upscaleImage"  }],
+  identity: [{ mode:"i2i",      label:"→ I2I",      field:"i2iImage"      },
+             { mode:"upscale",  label:"→ Upscale",  field:"upscaleImage"  }],
+  upscale:  [{ mode:"i2i",      label:"→ I2I",      field:"i2iImage"      },
+             { mode:"identity", label:"→ Identity", field:"identityImage" }],
 };
 
 // ── Compare view (Klein 동일) ──────────────────────────────────────────────────
@@ -364,8 +371,9 @@ app.registerExtension({
         const mode=state.mode; clear(leftPanel); modeHandle=null;
         switch(mode){
           case "t2i":     modeHandle=mountT2ILeft(leftPanel,state,ctx);     break;
-          case "i2i":     modeHandle=mountI2ILeft(leftPanel,state,ctx);     break;
-          case "upscale": modeHandle=mountUpscaleLeft(leftPanel,state,ctx); break;
+          case "i2i":      modeHandle=mountI2ILeft(leftPanel,state,ctx);      break;
+          case "identity": modeHandle=mountIdentityLeft(leftPanel,state,ctx); break;
+          case "upscale":  modeHandle=mountUpscaleLeft(leftPanel,state,ctx);  break;
         }
         leftOuter.appendChild(seedGenWrap);
         promptTA.value=getModePrompt(mode); updateCount();

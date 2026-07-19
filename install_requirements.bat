@@ -42,11 +42,14 @@ set REPOS[5]=https://github.com/1038lab/ComfyUI-RMBG
 set REPOS[6]=https://github.com/Fannovel16/comfyui_controlnet_aux
 set REPOS[7]=https://github.com/city96/ComfyUI-GGUF
 set REPOS[8]=https://github.com/facok/comfyui-krea2-controlnet
+:: 🧪 Experimental — Krea2 IDENTITY / ControlNet(canny). May produce errors.
+set REPOS[9]=https://github.com/lbouaraba/comfyui-krea2edit
+set REPOS[10]=https://github.com/Nynxz/ComfyUI-NK2E
 
-set COUNT=9
+set COUNT=11
 
 :: ── 설치 루프 ──────────────────────────────────────────────────────────────────
-for /L %%i in (0,1,8) do (
+for /L %%i in (0,1,10) do (
     set "URL=!REPOS[%%i]!"
 
     :: URL에서 폴더명 추출 (마지막 /뒤)
@@ -106,5 +109,19 @@ for /L %%i in (0,1,8) do (
 
 echo ========================================================
 echo  Done! Restart ComfyUI to load the new nodes.
+echo ========================================================
+echo.
+echo  [Krea2 EXPERIMENTAL - IDENTITY / ControlNet depth^&canny]
+echo  These are experimental and may produce errors.
+echo  Place the LoRA files below into: models\loras\
+echo    - IDENTITY : krea2_identity_edit_v1_2.safetensors
+echo                 https://huggingface.co/conradlocke/krea2-identity-edit
+echo    - Depth    : depth control LoRA
+echo                 https://huggingface.co/Patil/Krea-2-depth-controlnet
+echo    - Canny    : NK2E canny LoRA
+echo                 https://huggingface.co/nynxz/NK2E
+echo  Depth preprocessor (depth_anything_v2_vitl.pth) auto-downloads on first use
+echo  into: comfyui_controlnet_aux\ckpts\depth-anything\  (vitg/Giant NOT supported)
+echo  Register the LoRA FILES in Settings; adjust values in the side-menu panel.
 echo ========================================================
 pause

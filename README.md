@@ -54,7 +54,7 @@
 | **Z-Image ONE STUDIO (TJ)** | Z-Image Turbo (flow-matching) | T2I · I2I · Inpaint · Outpaint · RE-BG · ControlNet · Face Redraw · **Upscale** |
 | **Flux.2 Klein ONE STUDIO (TJ)** | Flux.2-Klein (9B / 4B) | T2I · I2I · Edit · **Inpaint · Outpaint** · Faceswap · **Upscale** |
 | **Qwen Image Edit 2511 ONE STUDIO (TJ)** | Qwen2.5-VL 기반 Image Edit 모델<br><sub>Qwen2.5-VL based Image Edit model</sub>| T2I · I2I · Edit(최대 3장) · Inpaint · **Outpaint** · Faceswap · **Angle** · **Upscale**<br><sub>T2I · I2I · Edit(up to 3 images) · Inpaint · **Outpaint** · Faceswap · **Angle** · **Upscale**</sub>|
-| **Krea 2 ONE STUDIO (TJ)** | Krea.ai 이미지 생성 모델<br><sub>Krea.ai image generation model</sub>| T2I · I2I · **ControlNet(I2I)** · **Upscale** |
+| **Krea 2 ONE STUDIO (TJ)** | Krea.ai 이미지 생성 모델<br><sub>Krea.ai image generation model</sub>| T2I · I2I · **ControlNet(depth/canny 🧪)** · **IDENTITY 🧪** · **Upscale** |
 | **SDXL ONE STUDIO (TJ)** 🧪 | SDXL Checkpoint / Separate UNET 모델<br><sub>SDXL Checkpoint / Separate UNET model</sub>| T2I · I2I · Inpaint · Outpaint · Upscale *(테스트 버전 / Test Version)* |
 
 > **언어 지원**: 모든 노드의 Settings에서 한국어 / English 전환 가능
@@ -125,8 +125,11 @@ chmod +x install_requirements.sh
 | [ComfyUI-GGUF](https://github.com/city96/ComfyUI-GGUF) | GGUF 형식 모델 로딩<br><sub>GGUF format model loading</sub>| 선택 (GGUF 사용 시)<br><sub>selection (GGUF when used)</sub>|
 | [ComfyUI_FaceAnalysis](https://github.com/cubiq/ComfyUI_FaceAnalysis) | Faceswap 모드 얼굴 감지<br><sub>Faceswap mode face detection</sub>| Klein · QE2511 Faceswap |
 | [ComfyUI-RMBG](https://github.com/1038lab/ComfyUI-RMBG) | 배경 제거<br><sub>background removal</sub>| Z-Image RE-BG |
-| [comfyui_controlnet_aux](https://github.com/Fannovel16/comfyui_controlnet_aux) | ControlNet 전처리기<br><sub>ControlNet preprocessor</sub>| Z-Image ControlNet |
+| [comfyui_controlnet_aux](https://github.com/Fannovel16/comfyui_controlnet_aux) | ControlNet 전처리기 (depth/canny)<br><sub>ControlNet preprocessor (depth/canny)</sub>| Z-Image ControlNet · Krea2 ControlNet 🧪 |
 | [ComfyUI-SeedVR2](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler) | SeedVR2 AI 업스케일 노드<br><sub>SeedVR2 AI upscaling node</sub>| 전체 노드 Upscale 모드<br><sub>Upscale mode for all nodes</sub>|
+| [comfyui-krea2-controlnet](https://github.com/facok/comfyui-krea2-controlnet) 🧪 | Krea2 Control LoRA (depth)<br><sub>Krea2 Control LoRA (depth)</sub>| Krea2 ControlNet Depth |
+| [comfyui-krea2edit](https://github.com/lbouaraba/comfyui-krea2edit) 🧪 | Krea2 in-context 편집<br><sub>Krea2 in-context edit</sub>| Krea2 IDENTITY |
+| [ComfyUI-NK2E](https://github.com/Nynxz/ComfyUI-NK2E) 🧪 | Krea2 NK2E in-context (canny)<br><sub>Krea2 NK2E in-context (canny)</sub>| Krea2 ControlNet Canny |
 
 ---
 
@@ -231,8 +234,9 @@ chmod +x install_requirements.sh
 
 | 모드<br><sub>Mode</sub>| 설명<br><sub>Description</sub>|
 |---|---|
-| **T2I** | 텍스트로 이미지 생성<br><sub>generate an image from text</sub>|
-| **I2I** | 소스 이미지 기반 변형 생성<br><sub>source image-based transformation</sub>|
+| **T2I** | 텍스트로 이미지 생성 (+ ControlNet depth/canny 🧪)<br><sub>generate an image from text (+ ControlNet depth/canny 🧪)</sub>|
+| **I2I** | 소스 이미지 기반 변형 생성 (+ ControlNet depth/canny 🧪)<br><sub>source image-based transformation (+ ControlNet depth/canny 🧪)</sub>|
+| **IDENTITY** 🧪 | 지시문 기반 인물 정체성/외형 편집<br><sub>instruction-based identity / appearance editing</sub>|
 | **UPSCALE** | SeedVR2 AI 업스케일<br><sub>SeedVR2 AI</sub>|
 
 ### 필수 모델
@@ -243,6 +247,42 @@ chmod +x install_requirements.sh
 | Diffusion Model | `models/diffusion_models/` | [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea-2/tree/main/diffusion_models) |
 | Text Encoder | `models/text_encoders/` | [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea-2/tree/main/text_encoders) |
 | VAE | `models/vae/` | [Comfy-Org Krea2](https://huggingface.co/Comfy-Org/Krea-2/tree/main/vae) |
+
+### 🧪 IDENTITY · ControlNet (depth / canny) — 실험적 기능
+### 🧪 IDENTITY · ControlNet (depth / canny) — Experimental Features
+
+> ⚠️ **실험적 기능 · 오류 가능성 있음 (Experimental — may produce errors or unexpected results)**  
+> IDENTITY 탭과 ControlNet(depth/canny)은 외부 커스텀 노드 + 별도 LoRA에 의존하는 실험적 기능입니다. 결과 품질이 일정하지 않을 수 있고, 노드/모델 미설치 시 생성이 실패합니다. depth·canny는 **LoRA 기반**이라 픽셀 단위로 정확하지 않습니다.  
+> The IDENTITY tab and ControlNet (depth/canny) are experimental and depend on external custom nodes + separate LoRAs. Output quality can be inconsistent, and generation fails if the required nodes/models are missing. Because depth/canny are **LoRA-based**, they are not pixel-accurate.
+>
+> - **Depth** = 전체 구도·프레이밍·스케일을 잡음(세밀한 포즈는 느슨) / captures overall composition·framing·scale (loose on fine pose)  
+> - **Canny** = 윤곽선을 정확히 고정해 포즈·얼굴 방향·실루엣 재현 / locks contours for faithful pose·face-direction·silhouette
+
+**필수 커스텀 노드 (Required custom nodes)**
+
+| 노드<br><sub>Node</sub>| 기능<br><sub>Used for</sub>|
+|---|---|
+| [comfyui-krea2edit](https://github.com/lbouaraba/comfyui-krea2edit) | IDENTITY (`Krea2EditModelPatch` · `Krea2EditGroundedEncode`) |
+| [comfyui-krea2-controlnet](https://github.com/facok/comfyui-krea2-controlnet) | ControlNet **Depth** (`Krea2ControlLoRALoader` · `…ImageEncode` · `…Apply`) |
+| [ComfyUI-NK2E](https://github.com/Nynxz/ComfyUI-NK2E) | ControlNet **Canny** (`NK2EInContextEditNode`) |
+| [comfyui_controlnet_aux](https://github.com/Fannovel16/comfyui_controlnet_aux) | depth/canny 전처리기 (`DepthAnythingV2Preprocessor` · `CannyEdgePreprocessor`) |
+
+**필수 LoRA / 모델 (Required LoRAs / models) — `models/loras/` 에 배치**
+
+| 기능<br><sub>Feature</sub>| 파일<br><sub>File</sub>| 다운로드<br><sub>Download</sub>|
+|---|---|---|
+| IDENTITY | `krea2_identity_edit_v1_2.safetensors` | [conradlocke/krea2-identity-edit](https://huggingface.co/conradlocke/krea2-identity-edit) |
+| Depth ControlNet | depth control LoRA (예: `depth-control-lora.safetensors`) | [Patil/Krea-2-depth-controlnet](https://huggingface.co/Patil/Krea-2-depth-controlnet) |
+| Canny ControlNet | NK2E canny LoRA (예: `NK2E-canny-v0.1.safetensors`) | [nynxz/NK2E](https://huggingface.co/nynxz/NK2E) |
+
+> **Depth 전처리 모델 자동 다운로드**: depth 사용 시 `depth_anything_v2_vitl.pth`(Large, 권장)가 첫 실행에 `comfyui_controlnet_aux/ckpts/depth-anything/…` 로 자동 다운로드됩니다. (vitb/vits도 선택 가능. **vitg(Giant)는 저장소가 비공개라 지원 안 함.**)  
+> **Depth preprocessor auto-download**: on first use, `depth_anything_v2_vitl.pth` (Large, recommended) is auto-downloaded to `comfyui_controlnet_aux/ckpts/depth-anything/…`. (vitb/vits selectable too. **vitg (Giant) is unsupported — its repo is gated.**)
+
+**설정 방법 (Setup)**  
+1. 위 커스텀 노드 설치 후 ComfyUI 재시작 / install the nodes above, restart ComfyUI  
+2. LoRA 파일을 `models/loras/` 에 배치 / place the LoRA files in `models/loras/`  
+3. ⚙ **Settings** 에서 IDENTITY LoRA, Depth/Canny Control LoRA **파일만 등록** / register only the LoRA **files** in Settings  
+4. 조절값(strength·임계값·depth 모델·해상도 등)은 **사이드 메뉴 CONTROLNET 패널**에서 직접 조절 / adjust all tuning values in the **side-menu CONTROLNET panel**
 
 ---
 

@@ -36,6 +36,20 @@ export const SAMPLERS   = ["euler", "dpmpp_2m_sde", "dpmpp_2m", "euler_ancestral
 export const SCHEDULERS = ["simple", "sgm_uniform", "karras", "normal", "exponential"];
 export const LORA_MAX   = 4;
 
+// DepthAnythingV2 checkpoints publicly downloadable via comfyui_controlnet_aux.
+// NOTE: vitg (Giant) is intentionally excluded — its HF repo is gated/unavailable
+// (download returns 401), so selecting it would break generation.
+export const DEPTH_CKPTS = [
+  "depth_anything_v2_vitl.pth",
+  "depth_anything_v2_vitb.pth",
+  "depth_anything_v2_vits.pth",
+];
+
+// Coerce an unknown / unavailable depth ckpt (e.g. saved vitg) back to the default.
+export function safeDepthCkpt(name) {
+  return DEPTH_CKPTS.includes(name) ? name : "depth_anything_v2_vitl.pth";
+}
+
 // SeedVR2 options
 export const SEEDVR2_ATTN_MODES  = ["sdpa", "flash_attn_2", "flash_attn_3", "sageattn_2", "sageattn_3"];
 export const SEEDVR2_COLOR_MODES = ["lab", "wavelet", "wavelet_adaptive", "hsv", "adain", "none"];
@@ -82,19 +96,49 @@ export function defaultState(saved) {
     i2iLockRatio: saved.i2iLockRatio ?? true,
     i2iDenoise:   saved.i2iDenoise   ?? 0.75,
 
-    // ControlNet — LoRA + processing params configured globally in Settings
-    // (function-specific control LoRA held ready; params depend on LoRA type)
-    controlLora:        saved.controlLora        ?? saved.i2iControlLora        ?? "none",
+    // ControlNet — Krea2 Control LoRA. Two LoRAs (depth / canny) configured once in
+    // Settings; the side-menu picks which type per generation. Preprocessing params
+    // (channel/normalize) are derived from the type automatically. The uploaded control
+    // image is a normal photo — the app runs the depth/canny preprocessor on it.
+    controlType:        saved.controlType        || "canny",   // "canny" | "depth" (canny default)
+    controlLoraDepth:   saved.controlLoraDepth   ?? saved.controlLora ?? "none",
+    controlLoraCanny:   saved.controlLoraCanny   ?? "none",
     controlStrength:    saved.controlStrength    ?? saved.i2iControlStrength    ?? 1.0,
-    controlChannelMode: saved.controlChannelMode ?? saved.i2iControlChannelMode ?? "rgb",
-    controlNormalize:   saved.controlNormalize   ?? saved.i2iControlNormalize   ?? "none",
-    controlInvert:      saved.controlInvert      ?? saved.i2iControlInvert      ?? false,
+    // Depth encode options (Krea2ControlImageEncode) — match the reference workflow:
+    // rgb + per_image_minmax + bicubic. Canny (NK2E path) ignores these.
+    controlChannelMode: saved.controlChannelMode ?? "rgb",
+    controlNormalize:   saved.controlNormalize   ?? "per_image_minmax",
+    controlInvert:      saved.controlInvert      ?? false,
+    // Canny preprocessor
+    cannyLow:           saved.cannyLow           ?? 100,
+    cannyHigh:          saved.cannyHigh          ?? 200,
+    // Depth preprocessor
+    depthCkpt:          safeDepthCkpt(saved.depthCkpt),
+    preprocResolution:  saved.preprocResolution  ?? 512,
 
-    // ControlNet — per-mode enable + control image
+    // ControlNet — per-mode enable + control image (+ its natural pixel size, so the
+    // generation can match the control image's aspect ratio at the set long edge)
     t2iControlEnabled: saved.t2iControlEnabled ?? false,
     t2iControlImage:   saved.t2iControlImage   || null,
+    t2iControlImageW:  saved.t2iControlImageW  || null,
+    t2iControlImageH:  saved.t2iControlImageH  || null,
     i2iControlEnabled: saved.i2iControlEnabled ?? false,
     i2iControlImage:   saved.i2iControlImage   || (saved.i2iControlImage ?? null),
+    i2iControlImageW:  saved.i2iControlImageW  || null,
+    i2iControlImageH:  saved.i2iControlImageH  || null,
+
+    // IDENTITY EDIT (comfyui-krea2edit + krea2 identity edit LoRA)
+    identityImage:       saved.identityImage       || null,
+    identityImageB:      saved.identityImageB      || null,
+    identityWidth:       saved.identityWidth       || null,
+    identityHeight:      saved.identityHeight      || null,
+    identityLockRatio:   saved.identityLockRatio   ?? true,
+    identityRefBoost:    saved.identityRefBoost    ?? 1.0,
+    identityGroundingPx: saved.identityGroundingPx ?? 768,
+    identityFitMode:     saved.identityFitMode     || "fit",
+    // configured once in Settings:
+    identityLora:         saved.identityLora         || "none",
+    identityLoraStrength: saved.identityLoraStrength ?? 1.0,
 
     // UPSCALE — SeedVR2
     upscaleImage:            saved.upscaleImage            || null,

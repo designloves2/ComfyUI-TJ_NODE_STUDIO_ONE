@@ -897,10 +897,16 @@ async def k2_get_config(request):
         "negative_prompt":       cfg.get("negative_prompt",       ""),
         "prompt_suffix":         cfg.get("prompt_suffix",         ""),
         "control_lora":          cfg.get("control_lora",          "none"),
+        "control_lora_depth":    cfg.get("control_lora_depth",    cfg.get("control_lora", "none")),
+        "control_lora_canny":    cfg.get("control_lora_canny",    "none"),
         "control_strength":      cfg.get("control_strength",      1.0),
         "control_channel_mode":  cfg.get("control_channel_mode",  "rgb"),
-        "control_normalize":     cfg.get("control_normalize",     "none"),
+        "control_normalize":     cfg.get("control_normalize",     "per_image_minmax"),
         "control_invert":        cfg.get("control_invert",        False),
+        "depth_ckpt":            cfg.get("depth_ckpt",            "depth_anything_v2_vitl.pth"),
+        "preproc_resolution":    cfg.get("preproc_resolution",    512),
+        "identity_lora":          cfg.get("identity_lora",          "none"),
+        "identity_lora_strength": cfg.get("identity_lora_strength", 1.0),
     })
 
 

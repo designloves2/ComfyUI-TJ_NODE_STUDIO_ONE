@@ -47,6 +47,9 @@ REPOS=(
     "https://github.com/Fannovel16/comfyui_controlnet_aux"
     "https://github.com/city96/ComfyUI-GGUF"
     "https://github.com/facok/comfyui-krea2-controlnet"
+    # 🧪 Experimental — Krea2 IDENTITY / ControlNet(canny). May produce errors.
+    "https://github.com/lbouaraba/comfyui-krea2edit"
+    "https://github.com/Nynxz/ComfyUI-NK2E"
 )
 
 TOTAL=${#REPOS[@]}
@@ -101,4 +104,18 @@ done
 
 echo "========================================================"
 echo " Done! Restart ComfyUI to load the new nodes."
+echo "========================================================"
+echo
+echo " [Krea2 EXPERIMENTAL - IDENTITY / ControlNet depth&canny]"
+echo " These are experimental and may produce errors."
+echo " Place the LoRA files below into: models/loras/"
+echo "   - IDENTITY : krea2_identity_edit_v1_2.safetensors"
+echo "                https://huggingface.co/conradlocke/krea2-identity-edit"
+echo "   - Depth    : depth control LoRA"
+echo "                https://huggingface.co/Patil/Krea-2-depth-controlnet"
+echo "   - Canny    : NK2E canny LoRA"
+echo "                https://huggingface.co/nynxz/NK2E"
+echo " Depth preprocessor (depth_anything_v2_vitl.pth) auto-downloads on first use"
+echo " into: comfyui_controlnet_aux/ckpts/depth-anything/  (vitg/Giant NOT supported)"
+echo " Register the LoRA FILES in Settings; adjust values in the side-menu panel."
 echo "========================================================"
