@@ -2,6 +2,25 @@
 
 ---
 
+## v1.8.0 (2026-07-28)
+
+### PromptDB 파이프 수신 — ONE STUDIO 전체 노드 (TJ_NODE 연동)
+
+`ComfyUI-TJ_NODE`의 **`PromptDBLoader(TJ)`** 에서 고른 기록 한 줄(프롬프트 + 생성 설정)을
+**`TJ_PROMPT_PIPE` 소켓 하나**로 받아, 생성 시 적용합니다. (스펙: `SPEC_PROMPTDB_PIPE.md`, TJ_NODE v2.10.1+)
+
+- 5개 노드(Krea2 · Klein · Z-Image · Qwen2511 · SDXL)에 **`pipe` 입력** 추가 (`optional`, 타입 문자열만 — TJ_NODE 하드 의존성 없음, 미설치/미연결이면 기존과 동일 동작)
+- **노드 UI는 변경하지 않음.** 실행(▶ Generate) 시점에만 파이프에 **존재하는 필드**를 임시 오버라이드하고, 그래프 빌드 후 즉시 원복. 파이프에 없는 값은 노드 설정 사용.
+- 적용 필드: `positive_prompt`(현재 모드 프롬프트 교체) · `negative_prompt` · `seed` · `steps` · `cfg` · `sampler_name` · `scheduler`. `extra_settings`/`note`는 표시만.
+- **모델(`model_name`)은 파이프에서 적용하지 않음** — ONE STUDIO 노드마다 필요한 모델 계열·텍스트 인코더가 다르고(Krea2 ≠ Z-Image ≠ SDXL …) 파일만으로 계열을 신뢰성 있게 판별할 방법이 없어, **각 노드는 항상 자기 설정 모델을 사용**합니다.
+- **가드**: `sampler`/`scheduler`는 표준 ComfyUI 목록에 있을 때만 적용(없으면 노드값 유지), `seed=0` 유효값, `cfg` float 캐스팅.
+- 각 노드 기본 사이즈를 **가로 +30 / 세로 +40** 확대 (pipe 입력으로 DOM이 노드 경계를 넘지 않도록).
+- 공용 모듈 `web/shared/promptdb_pipe.js` (`readPipeRow` · `computePipeOverrides` · `applyOverridesTemp`)로 전 노드 공유.
+
+> 적용 방식은 프론트에서 pipe 링크를 역추적해 TJ_NODE의 `/tj_node/promptdb/list_rows` API로 선택 행을 읽는 방식(스펙 방식 A). 반영하려면 ComfyUI 재시작(pipe 소켓 등록) + 브라우저 새로고침 필요.
+
+---
+
 ## v1.7.0 (2026-07-19)
 
 ### 🧪 Krea 2 ONE STUDIO — 실험적 기능 추가 (Experimental features)

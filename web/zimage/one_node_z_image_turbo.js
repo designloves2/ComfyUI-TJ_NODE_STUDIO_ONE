@@ -5,7 +5,8 @@ import { C, NODE_W, PREVIEW_SIZE, LEFT_W, PAD,
 import { panel, label, button, select, numberField, row, col,
          modeBar, iconBtn, openFullscreen } from "./ui_common.js";
 import { queuePrompt, interrupt, copyOutputToInput, setLastImage,
-         freeMemory, saveMeta } from "./api.js";
+         freeMemory, saveMeta, getModels } from "./api.js";
+import { resolvePipeOverrides, applyOverridesTemp, collectModelNames } from "../shared/promptdb_pipe.js";
 import { t } from "../shared/i18n.js";
 import { attachLLMPanel } from "../shared/llm_panel.js";
 import { mountT2II2ILeft }     from "./ui_t2i_i2i.js";
@@ -28,6 +29,10 @@ const PROMPT_H   = PROMPT_LBL + 4 + PROMPT_TA_H;
 const RIGHT_H    = PREVIEW_SIZE + PAD + SEND_TO_H + PAD + PROMPT_H;
 const ROOT_H     = PAD + TOPBAR_H + PAD + RIGHT_H + BOTTOM_PAD;
 const NODE_H     = ROOT_H + 30;
+// Node box is slightly larger than the DOM content so inputs (incl. the pipe) don't
+// push the DOM past the node edge: +30 right, +40 bottom.
+const NODE_MW = NODE_W + 30;
+const NODE_MH = NODE_H + 40;
 
 const MODES = [
   { key:"t2i",         label:"T2I",         enabled:true },
@@ -131,11 +136,11 @@ app.registerExtension({
 
     nodeType.prototype.onNodeCreated=function(){
       this.color="#7612DA"; this.bgcolor=C.bg0; this.title_color="#ffffff";
-      this.resizable=false; this.size=[NODE_W,NODE_H];
+      this.resizable=false; this.size=[NODE_MW, NODE_MH];
       this._buildUI();
     };
-    nodeType.prototype.onConfigure=function(){ this.size=[NODE_W,NODE_H+(this._extraH||0)]; };
-    nodeType.prototype.onResize=function(){ this.size=[NODE_W,NODE_H+(this._extraH||0)]; };
+    nodeType.prototype.onConfigure=function(){ this.size=[NODE_MW, NODE_MH +(this._extraH||0)]; };
+    nodeType.prototype.onResize=function(){ this.size=[NODE_MW, NODE_MH +(this._extraH||0)]; };
     nodeType.prototype.onDrawConnections=function(){};
     nodeType.prototype.getSlotMenuOptions=function(){return[];};
 
@@ -197,9 +202,9 @@ app.registerExtension({
         }
         // 슬롯 수에 따라 노드 높이 동기화 (DOM은 ROOT_H 고정)
         self._extraH = enabled ? OVERRIDE_SLOTS.length * 20 : 0;
-        const newH = NODE_H + self._extraH;
-        self.size = [NODE_W, newH];
-        self.setSize?.([NODE_W, newH]);
+        const newH = NODE_MH + self._extraH;
+        self.size = [NODE_MW, newH];
+        self.setSize?.([NODE_MW, newH]);
         self.graph?.setDirtyCanvas?.(true, true);
       }
 
@@ -207,7 +212,7 @@ app.registerExtension({
         persist,appConfig,availableLoras:[],rootEl:root,
         publishOutput,showPopup,
         syncOverrideSlots,
-        resizeNode(){self.size=[NODE_W,NODE_H];self.setSize?.([NODE_W,NODE_H]);self.graph?.dirty_canvas?.(true,true);},
+        resizeNode(){self.size=[NODE_MW, NODE_MH];self.setSize?.([NODE_MW, NODE_MH]);self.graph?.dirty_canvas?.(true,true);},
       };
 
       // 초기 슬롯 동기화
@@ -595,6 +600,9 @@ app.registerExtension({
         } else {
           state.modelOverride = ""; state.clipOverride = ""; state.vaeOverride = "";
         }
+        // PromptDB pipe — present fields override node settings at generation only (UI unchanged).
+        let pipeOv=null;
+        try{ pipeOv=await resolvePipeOverrides(self, state); if(pipeOv) showPopup(pipeOv.summary,false); }catch{}
         // Model validation (override 시 각 슬롯이 연결되어 있으면 검사 생략)
         const mOk = state.modelOverride || (state.model && state.model !== "none");
         const cOk = state.clipOverride  || (state.textEncoder && state.textEncoder !== "none");
@@ -615,7 +623,9 @@ app.registerExtension({
           else if(state.seedMode==="increment") state.seed=(state.seed||0)+1;
           else if(state.seedMode==="decrement") state.seed=Math.max(0,(state.seed||0)-1);
           seedInput.value=state.seed; persist();
-          const graph=modeHandle.getGraph();
+          let graph;
+          const _restore=pipeOv?applyOverridesTemp(state,pipeOv.overrides):null;
+          try{ graph=modeHandle.getGraph(); } finally{ _restore?.(); }
           const result=await queuePrompt(graph,{onProgress:()=>{}});
           const imgs=result?.output?.images;
           if(!imgs?.length) throw new Error("No output images returned.");
@@ -797,9 +807,9 @@ app.registerExtension({
 
       this.addDOMWidget("zit_ui","div",root,{
         getValue(){return null;}, setValue(){}, serialize:false,
-        computeSize(){return [NODE_W,NODE_H+(self._extraH||0)];},
+        computeSize(){return [NODE_MW, NODE_MH +(self._extraH||0)];},
       });
-      self.size=[NODE_W,NODE_H]; self.setSize?.([NODE_W,NODE_H]);
+      self.size=[NODE_MW, NODE_MH]; self.setSize?.([NODE_MW, NODE_MH]);
     };
   },
 });

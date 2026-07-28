@@ -1551,6 +1551,9 @@ class Flux2KleinOneTJNode:
                     "forceInput": True,
                     "tooltip": "External prompt override — prepended before the internal prompt.",
                 }),
+                "pipe": ("TJ_PROMPT_PIPE", {
+                    "tooltip": "PromptDB pipe (TJ_NODE). At generation, fields present in the pipe override this node's settings; missing fields keep the node's own values. The node's UI is never changed.",
+                }),
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
@@ -1593,6 +1596,9 @@ class Krea2OneTJNode:
                     "multiline": True,
                     "forceInput": True,
                     "tooltip": "External prompt override — prepended before the internal prompt.",
+                }),
+                "pipe": ("TJ_PROMPT_PIPE", {
+                    "tooltip": "PromptDB pipe (TJ_NODE). At generation, fields present in the pipe override this node's settings; missing fields keep the node's own values. The node's UI is never changed.",
                 }),
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
@@ -1637,6 +1643,9 @@ class ZImageTurboOneNode:
                     "forceInput": True,
                     "tooltip": "External prompt override — prepended before the internal prompt.",
                 }),
+                "pipe": ("TJ_PROMPT_PIPE", {
+                    "tooltip": "PromptDB pipe (TJ_NODE). At generation, fields present in the pipe override this node's settings; missing fields keep the node's own values. The node's UI is never changed.",
+                }),
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
@@ -1680,6 +1689,9 @@ class QwenImageEdit2511OneTJNode:
                     "forceInput": True,
                     "tooltip": "External prompt override appended before the internal prompt.",
                 }),
+                "pipe": ("TJ_PROMPT_PIPE", {
+                    "tooltip": "PromptDB pipe (TJ_NODE). At generation, fields present in the pipe override this node's settings; missing fields keep the node's own values. The node's UI is never changed.",
+                }),
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
@@ -1722,6 +1734,9 @@ class SDXLOneTJNode:
                     "multiline": True,
                     "forceInput": True,
                     "tooltip": "External prompt override — prepended before the internal prompt.",
+                }),
+                "pipe": ("TJ_PROMPT_PIPE", {
+                    "tooltip": "PromptDB pipe (TJ_NODE). At generation, fields present in the pipe override this node's settings; missing fields keep the node's own values. The node's UI is never changed.",
                 }),
             },
             "hidden": {"unique_id": "UNIQUE_ID"},

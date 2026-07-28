@@ -5,7 +5,8 @@ import { C, el, clear, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, LIME, LS_KEY,
 import { panel, label, button, select, numberField, row, col,
          modeBar, iconBtn, outputModeToggle, openFullscreen } from "./ui_common.js";
 import { queuePrompt, interrupt, freeMemory, setLastImage, saveMeta,
-         copyOutputToInput } from "./api_klein.js";
+         copyOutputToInput, getModels } from "./api_klein.js";
+import { resolvePipeOverrides, applyOverridesTemp, collectModelNames } from "../shared/promptdb_pipe.js";
 import { createSettingsOverlay }  from "./ui_app_settings_klein.js";
 import { t } from "../shared/i18n.js";
 import { attachLLMPanel } from "../shared/llm_panel.js";
@@ -27,6 +28,10 @@ const PROMPT_H    = PROMPT_LBL + 4 + PROMPT_TA_H;
 const RIGHT_H     = PREVIEW_SIZE + PAD + SEND_TO_H + PAD + PROMPT_H;
 const ROOT_H      = PAD + TOPBAR_H + PAD + RIGHT_H + BOTTOM_PAD;
 const NODE_H      = ROOT_H + 30;
+// Node box is slightly larger than the DOM content so inputs (incl. the pipe) don't
+// push the DOM past the node edge: +30 right, +40 bottom.
+const NODE_MW = NODE_W + 30;
+const NODE_MH = NODE_H + 40;
 
 const MODES = [
   { key: "t2i",      label: "T2I",      enabled: true },
@@ -123,11 +128,11 @@ app.registerExtension({
       this.bgcolor      = C.bg0;
       this.title_color  = "#ffffff";
       this.resizable    = false;
-      this.size         = [NODE_W, NODE_H];
+      this.size         = [NODE_MW, NODE_MH];
       this._buildUI();
     };
-    nodeType.prototype.onConfigure = function () { this.size = [NODE_W, NODE_H + (this._extraH || 0)]; };
-    nodeType.prototype.onResize    = function () { this.size = [NODE_W, NODE_H + (this._extraH || 0)]; };
+    nodeType.prototype.onConfigure = function () { this.size = [NODE_MW, NODE_MH + (this._extraH || 0)]; };
+    nodeType.prototype.onResize    = function () { this.size = [NODE_MW, NODE_MH + (this._extraH || 0)]; };
 
     nodeType.prototype._buildUI = function () {
       const self   = this;
@@ -218,9 +223,9 @@ app.registerExtension({
           }
         }
         self._extraH = enabled ? OVERRIDE_SLOTS.length * 20 : 0;
-        const newH = NODE_H + self._extraH;
-        self.size = [NODE_W, newH];
-        self.setSize?.([NODE_W, newH]);
+        const newH = NODE_MH + self._extraH;
+        self.size = [NODE_MW, newH];
+        self.setSize?.([NODE_MW, newH]);
         self.graph?.setDirtyCanvas?.(true, true);
       }
 
@@ -791,6 +796,10 @@ app.registerExtension({
           state.modelOverride = ""; state.clipOverride = ""; state.vaeOverride = "";
         }
 
+        // PromptDB pipe — present fields override node settings at generation only (UI unchanged).
+        let pipeOv = null;
+        try { pipeOv = await resolvePipeOverrides(self, state); if (pipeOv) showPopup(pipeOv.summary, false); } catch {}
+
         // 모델 미설정 경고
         const mOk = state.modelOverride || (state.model && state.model !== "none");
         if (!mOk) {
@@ -810,7 +819,8 @@ app.registerExtension({
 
         let prompt;
         try {
-          prompt = await modeHandle.getGraph();
+          const _restore = pipeOv ? applyOverridesTemp(state, pipeOv.overrides) : null;
+          try { prompt = await modeHandle.getGraph(); } finally { _restore?.(); }
           // prompt_override 주입
           const po = getPromptOverride();
           if (po) {
@@ -943,7 +953,7 @@ app.registerExtension({
       // ── Register DOM widget ────────────────────────────────────────────────
       self.addDOMWidget("ui", "div", root, {
         serialize: false,
-        computeSize: () => [NODE_W, NODE_H + (self._extraH || 0)],
+        computeSize: () => [NODE_MW, NODE_MH + (self._extraH || 0)],
       });
 
       // Initial render

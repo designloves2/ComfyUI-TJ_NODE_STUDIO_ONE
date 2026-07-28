@@ -4,7 +4,8 @@ import { C, el, clear, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, BRAND,
          randomSeed, loadState, saveState, defaultState } from "./core_sdxl.js";
 import { panel, label, button, select, numberField, row, col,
          modeBar, iconBtn, openFullscreen } from "../klein/ui_common.js";
-import { queuePrompt, interrupt, setLastImage, saveMeta, copyOutputToInput } from "./api_sdxl.js";
+import { queuePrompt, interrupt, setLastImage, saveMeta, copyOutputToInput, getModels } from "./api_sdxl.js";
+import { resolvePipeOverrides, applyOverridesTemp } from "../shared/promptdb_pipe.js";
 import { createSettingsOverlay }  from "./ui_app_settings_sdxl.js";
 import { createGalleryOverlay }   from "./ui_gallery_sdxl.js";
 import { mountT2ILeft }           from "./ui_t2i_sdxl.js";
@@ -24,6 +25,10 @@ const PROMPT_H    = PROMPT_LBL + 4 + PROMPT_TA_H;
 const RIGHT_H     = PREVIEW_SIZE + PAD + SEND_TO_H + PAD + PROMPT_H;
 const ROOT_H      = PAD + TOPBAR_H + PAD + RIGHT_H + BOTTOM_PAD;
 const NODE_H      = ROOT_H + 30;
+// Node box is slightly larger than the DOM content so inputs (incl. the pipe) don't
+// push the DOM past the node edge: +30 right, +40 bottom.
+const NODE_MW = NODE_W + 30;
+const NODE_MH = NODE_H + 40;
 
 const MODES = [
   { key: "t2i",      label: "T2I",      enabled: true },
@@ -87,11 +92,11 @@ app.registerExtension({
       this.bgcolor     = C.bg0;
       this.title_color = "#ffffff";
       this.resizable   = false;
-      this.size        = [NODE_W, NODE_H];
+      this.size        = [NODE_MW, NODE_MH];
       this._buildUI();
     };
-    nodeType.prototype.onConfigure = function () { this.size = [NODE_W, NODE_H + (this._extraH || 0)]; };
-    nodeType.prototype.onResize    = function () { this.size = [NODE_W, NODE_H + (this._extraH || 0)]; };
+    nodeType.prototype.onConfigure = function () { this.size = [NODE_MW, NODE_MH + (this._extraH || 0)]; };
+    nodeType.prototype.onResize    = function () { this.size = [NODE_MW, NODE_MH + (this._extraH || 0)]; };
     nodeType.prototype.getSlotMenuOptions = function () { return []; };
 
     nodeType.prototype._buildUI = function () {
@@ -531,9 +536,14 @@ app.registerExtension({
 
         // Check model is set
         const mode = state.modelLoaderMode || "checkpoint";
-        const modelOk = mode === "checkpoint"
-          ? (state.checkpoint && state.checkpoint !== "none")
-          : (state.unet && state.unet !== "none");
+        const mkey = mode === "checkpoint" ? "checkpoint" : "unet";
+
+        // PromptDB pipe — present fields override node settings at generation only (UI unchanged).
+        // The model is NOT taken from the pipe: this node always keeps its own model.
+        let pipeOv = null;
+        try { pipeOv = await resolvePipeOverrides(self, state); if (pipeOv) showPopup(pipeOv.summary, false); } catch {}
+
+        const modelOk = state[mkey] && state[mkey] !== "none";
         if (!modelOk) {
           showPopup("Settings ⚙에서 모델을 선택하세요.");
           return;
@@ -561,8 +571,9 @@ app.registerExtension({
 
         let prompt;
         try {
-          prompt = modeHandle.getGraph();
-          if (prompt instanceof Promise) prompt = await prompt;
+          const _restore = pipeOv ? applyOverridesTemp(state, pipeOv.overrides) : null;
+          try { prompt = modeHandle.getGraph(); if (prompt instanceof Promise) prompt = await prompt; }
+          finally { _restore?.(); }
           // prompt_override injection (positive CLIPTextEncode nodes)
           const po = getPromptOverride();
           if (po) {
@@ -649,7 +660,7 @@ app.registerExtension({
       // Register DOM widget
       self.addDOMWidget("ui", "div", root, {
         serialize: false,
-        computeSize: () => [NODE_W, NODE_H + (self._extraH || 0)],
+        computeSize: () => [NODE_MW, NODE_MH + (self._extraH || 0)],
       });
 
       renderPills();

@@ -2,10 +2,11 @@
 import { app } from "../../scripts/app.js";
 import { C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD,
          el, clear, loadState, saveState, defaultState, randomSeed, LS_KEY } from "./krea2/core_krea2.js";
+import { resolvePipeOverrides, applyOverridesTemp, collectModelNames } from "./shared/promptdb_pipe.js";
 import { panel, label, button, select, numberField, row, col,
          modeBar, iconBtn, openFullscreen }                                    from "./klein/ui_common.js";
 import { queuePrompt, interrupt, setLastImage, saveMeta,
-         copyOutputToInput }                                                    from "./krea2/api_krea2.js";
+         copyOutputToInput, getModels }                                         from "./krea2/api_krea2.js";
 import { createSettingsOverlay }                                                from "./krea2/ui_app_settings_krea2.js";
 import { t } from "./shared/i18n.js";
 import { attachLLMPanel } from "./shared/llm_panel.js";
@@ -25,6 +26,10 @@ const PROMPT_H    = PROMPT_LBL + 4 + PROMPT_TA_H;
 const RIGHT_H     = PREVIEW_SIZE + PAD + SEND_TO_H + PAD + PROMPT_H;
 const ROOT_H      = PAD + TOPBAR_H + PAD + RIGHT_H + BOTTOM_PAD;
 const NODE_H      = ROOT_H + 30;
+// Node box is slightly larger than the DOM content so inputs (incl. the pipe) don't
+// push the DOM past the node edge: +30 right, +40 bottom.
+const NODE_MW     = NODE_W + 30;
+const NODE_MH     = NODE_H + 40;
 
 const MODES = [
   { key: "t2i",      label: "T2I",      enabled: true },
@@ -81,11 +86,11 @@ app.registerExtension({
       this.bgcolor     = C.bg0;
       this.title_color = "#ffffff";
       this.resizable   = false;
-      this.size        = [NODE_W, NODE_H];
+      this.size        = [NODE_MW, NODE_MH];
       this._buildUI();
     };
-    nodeType.prototype.onConfigure = function () { this.size = [NODE_W, NODE_H + (this._extraH||0)]; };
-    nodeType.prototype.onResize    = function () { this.size = [NODE_W, NODE_H + (this._extraH||0)]; };
+    nodeType.prototype.onConfigure = function () { this.size = [NODE_MW, NODE_MH + (this._extraH||0)]; };
+    nodeType.prototype.onResize    = function () { this.size = [NODE_MW, NODE_MH + (this._extraH||0)]; };
     nodeType.prototype.getSlotMenuOptions = function () { return []; };
 
     nodeType.prototype._buildUI = function () {
@@ -135,8 +140,8 @@ app.registerExtension({
           }
         }
         self._extraH = enabled ? OVERRIDE_SLOTS.length*20 : 0;
-        const newH = NODE_H + self._extraH;
-        self.size = [NODE_W, newH]; self.setSize?.([NODE_W, newH]);
+        const newH = NODE_MH + self._extraH;
+        self.size = [NODE_MW, newH]; self.setSize?.([NODE_MW, newH]);
         self.graph?.setDirtyCanvas?.(true, true);
       }
 
@@ -395,6 +400,11 @@ app.registerExtension({
         if(state.useModelOverride){ state.modelOverride=getOverrideSlot("model_override"); state.clipOverride=getOverrideSlot("clip_override"); state.vaeOverride=getOverrideSlot("vae_override"); }
         else{ state.modelOverride=""; state.clipOverride=""; state.vaeOverride=""; }
 
+        // PromptDB pipe — at generation, pipe fields override the node's settings
+        // (node UI is never changed; overrides applied only around getGraph, then restored).
+        let pipeOv=null;
+        try{ pipeOv=await resolvePipeOverrides(self, state); if(pipeOv) showPopup(pipeOv.summary,false); }catch{}
+
         const mOk=state.modelOverride||(state.model&&state.model!=="none");
         if(!mOk){ alert("No model selected. Open ⚙ Settings to pick a model."); running=false; genBtn.disabled=false; genBtn.textContent="▶ Generate"; loadingOv.style.display="none"; if(!modeResults[state.mode])resetPreview(); return; }
 
@@ -402,7 +412,8 @@ app.registerExtension({
 
         let prompt;
         try{
-          prompt=await modeHandle.getGraph();
+          const _restore=pipeOv?applyOverridesTemp(state,pipeOv.overrides):null;
+          try{ prompt=await modeHandle.getGraph(); } finally{ _restore?.(); }
           const po=getPromptOverride();
           if(po){ for(const n of Object.values(prompt)){ if(n.class_type==="CLIPTextEncode"&&n.inputs?.text) n.inputs.text=po+" "+n.inputs.text; } }
         }catch(err){alert(`Build error: ${err.message}`);running=false;genBtn.disabled=false;genBtn.textContent="▶ Generate";loadingOv.style.display="none";if(!modeResults[state.mode])resetPreview();return;}
@@ -484,7 +495,7 @@ app.registerExtension({
         if(galleryOv?.el.style.display!=="none"){galleryOv.hide();return;}
       });
 
-      self.addDOMWidget("k2v3_ui","div",root,{serialize:false,computeSize:()=>[NODE_W,NODE_H+(self._extraH||0)]});
+      self.addDOMWidget("k2v3_ui","div",root,{serialize:false,computeSize:()=>[NODE_MW,NODE_MH+(self._extraH||0)]});
       renderPills(); renderMode(); applyCompareBtnStyle();
     };
   },
