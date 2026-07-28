@@ -63,9 +63,11 @@
 > **🔗 PromptDB 파이프 연동 (TJ_NODE)**: 모든 ONE STUDIO 노드에 `pipe` 입력이 있어, [`ComfyUI-TJ_NODE`](https://github.com/designloves2/ComfyUI-TJ_NODE)의 **`PromptDBLoader(TJ)`** 에서 고른 기록을 **소켓 하나로** 받아 **생성 시점에 적용**합니다. 적용 필드: 프롬프트(pos/neg) · seed · steps · cfg · sampler · scheduler. **모델은 파이프에서 적용하지 않고 각 노드가 자기 설정 모델을 사용**합니다(노드마다 필요한 모델 계열이 달라서). 파이프에 있는 값만 오버라이드하고 없는 값은 노드 설정을 그대로 쓰며, 노드 UI는 변경되지 않습니다. TJ_NODE 미설치 시 해당 소켓만 비활성이고 노드는 정상 동작합니다. (TJ_NODE v2.10.1+)
 > **🔗 PromptDB pipe (TJ_NODE)**: every ONE STUDIO node has a `pipe` input that receives a selected record from **`PromptDBLoader(TJ)`** and applies it **at generation time** — prompt (pos/neg), seed, steps, cfg, sampler, scheduler. **The model is NOT taken from the pipe**; each node keeps its own configured model (different nodes need different model families). Only fields present in the pipe override the node's settings, the rest keep the node's own values, and the node UI is never changed. No hard dependency: if TJ_NODE isn't installed the socket is simply inactive. (TJ_NODE v2.10.1+)
 >
-> <!-- SCREENSHOT: PromptDBLoader(TJ) → ONE STUDIO node `pipe` connection. Replace the line below with the image. -->
-> <!-- ![PromptDBLoader pipe connection](docs/promptdb_pipe.png) -->
-> _`PromptDBLoader(TJ)` ↔ ONE STUDIO `pipe` 연결 스크린샷 자리 (예정) / screenshot placeholder_
+> ![PromptDBLoader(TJ) → Flux.2 Klein ONE STUDIO (TJ) pipe connection](docs/promptdb_pipe_connection.png)
+> _`PromptDBLoader(TJ)`의 `pipe` 출력을 ONE STUDIO 노드의 `pipe` 입력에 연결한 예시 (Flux.2 Klein) / example `pipe` connection (Flux.2 Klein)_
+>
+> ![PromptDBLoader(TJ) selected row detail](docs/promptdb_pipe_row_detail.png)
+> _선택된 기록의 상세 필드(model · seed · steps · cfg · sampler · scheduler · extra_settings · note) — model은 파이프로 전달되지 않음 / selected record's detail fields — model is not carried over the pipe_
 
 ---
 
