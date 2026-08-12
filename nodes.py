@@ -23,12 +23,14 @@ ZIT_CONFIG_PATH = os.path.join(NODE_DIR, 'config_zimage.json')
 K2_CONFIG_PATH  = os.path.join(NODE_DIR, 'config_krea2.json')
 QE_CONFIG_PATH  = os.path.join(NODE_DIR, 'config_qwen2511.json')
 SDXL_CONFIG_PATH = os.path.join(NODE_DIR, 'config_sdxl_one.json')
+MMH3_CONFIG_PATH = os.path.join(NODE_DIR, 'config_minimax_h3.json')
 
 FK_SUBFOLDER  = "one_flux2-klein"
 ZIT_SUBFOLDER = "one_z-image"
 K2_SUBFOLDER  = "one_krea2"
 QE_SUBFOLDER  = "one_qwen2511"
 SDXL_SUBFOLDER = "one_sdxl"
+MMH3_SUBFOLDER = "one_minimax_h3"
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -1536,6 +1538,240 @@ async def studio_llm_image_to_prompt(request):
 
 
 # ════════════════════════════════════════════════════════════════════════════════
+# Route registration — minimax_h3_one
+# ════════════════════════════════════════════════════════════════════════════════
+
+PromptServer.instance.routes.get("/minimax_h3_one/gallery")(_make_gallery_handler(MMH3_SUBFOLDER, "minimax_h3"))
+PromptServer.instance.routes.post("/minimax_h3_one/save_meta")(_make_save_meta_handler("minimax_h3"))
+PromptServer.instance.routes.post("/minimax_h3_one/update_meta")(_make_update_meta_handler("minimax_h3"))
+PromptServer.instance.routes.get("/minimax_h3_one/meta")(_make_meta_get_handler())
+PromptServer.instance.routes.post("/minimax_h3_one/open_folder")(_make_open_folder_handler())
+PromptServer.instance.routes.post("/minimax_h3_one/delete")(_make_delete_handler("minimax_h3"))
+PromptServer.instance.routes.post("/minimax_h3_one/copy_to_input")(_make_copy_to_input_handler("mmh3"))
+PromptServer.instance.routes.get("/minimax_h3_one/lora_triggers")(_make_lora_triggers_handler())
+
+
+@PromptServer.instance.routes.get("/minimax_h3_one/config")
+async def mmh3_get_config(request):
+    cfg = _load_config(MMH3_CONFIG_PATH)
+    return web.json_response({
+        "unet_first_last":  cfg.get("unet_first_last",  ""),
+        "unet_reference":   cfg.get("unet_reference",   ""),
+        "clip_name":        cfg.get("clip_name",        ""),
+        "vae_video":        cfg.get("vae_video",        ""),
+        "vae_audio":        cfg.get("vae_audio",        ""),
+        "turbo_lora":       cfg.get("turbo_lora",       ""),
+        "turbo_lora_strength": cfg.get("turbo_lora_strength", 1.0),
+        "upscale_model":    cfg.get("upscale_model",    ""),
+        "save_subfolder":   cfg.get("save_subfolder")   or MMH3_SUBFOLDER,
+        "negative_prompt":  cfg.get("negative_prompt",  ""),
+        "prompt_suffix":    cfg.get("prompt_suffix",    ""),
+        "avg_minutes_per_clip": cfg.get("avg_minutes_per_clip", 13.0),
+        "output_mode_visible": cfg.get("output_mode_visible", True),
+    })
+
+
+@PromptServer.instance.routes.post("/minimax_h3_one/config")
+async def mmh3_save_config(request):
+    try:
+        patch = await request.json()
+        if not isinstance(patch, dict):
+            return web.json_response({"ok": False, "error": "invalid payload"}, status=400)
+        cfg = _load_config(MMH3_CONFIG_PATH)
+        cfg.update(patch)
+        _save_config(MMH3_CONFIG_PATH, cfg)
+        return web.json_response({"ok": True})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+
+@PromptServer.instance.routes.get("/minimax_h3_one/models")
+async def mmh3_get_models(request):
+    def scan(key, ext=None):
+        try:
+            return _scan(key, extensions=ext)
+        except Exception:
+            return ["none"]
+    try:
+        gguf_list = _scan("gguf", extensions=[".gguf"])
+    except Exception:
+        gguf_list = []
+    diff = scan("diffusion_models")
+    all_unets = list(dict.fromkeys([m for m in diff + gguf_list if m != "none"])) or ["none"]
+    return web.json_response({
+        "diffusion_models": all_unets,
+        "text_encoders":    scan("text_encoders"),
+        "vaes":             scan("vae"),
+        "loras":            scan("loras"),
+        "upscale_models":   scan("upscale_models"),
+    })
+
+
+# Third-party nodes the pipeline can use. The UI disables the matching feature when
+# a pack is missing instead of failing the whole graph (see SPEC_MINIMAX_H3_RELAY §4-3).
+MMH3_OPTIONAL_NODES = [
+    "PathchSageAttentionKJ",
+    "ModelPreviewOverrideKJ",
+    "ModelPatchTorchSettings",
+    "MiniMaxH3MemoryEfficientSageAttentionPatch",
+    "MiniMaxH3Cache",
+    "MiniMaxH3TurboSampler",
+    "MiniMaxH3TurboLoRA",
+    "SolAttnPatch",
+    "RTXVideoSuperResolution",
+]
+MMH3_CORE_NODES = [
+    "MiniMaxH3ImageToVideo",
+    "MiniMaxH3ReferenceToVideo",
+    "MiniMaxH3SigmaShift",
+    "SamplerCustomAdvanced",
+    "CreateVideo",
+    "SaveVideo",
+]
+
+
+@PromptServer.instance.routes.get("/minimax_h3_one/node_availability")
+async def mmh3_node_availability(request):
+    """Which pipeline nodes are registered on this install (never imports them)."""
+    try:
+        import nodes as comfy_nodes
+        registered = comfy_nodes.NODE_CLASS_MAPPINGS
+    except Exception:
+        registered = {}
+    avail = {n: (n in registered) for n in (MMH3_CORE_NODES + MMH3_OPTIONAL_NODES)}
+    return web.json_response({
+        "ok": True,
+        "available": avail,
+        "core_ok": all(avail.get(n, False) for n in MMH3_CORE_NODES),
+        "missing_core": [n for n in MMH3_CORE_NODES if not avail.get(n, False)],
+        "missing_optional": [n for n in MMH3_OPTIONAL_NODES if not avail.get(n, False)],
+    })
+
+
+def _ffmpeg_exe():
+    """Prefer imageio-ffmpeg's bundled binary; fall back to one on PATH."""
+    try:
+        import imageio_ffmpeg
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if exe and os.path.isfile(exe):
+            return exe
+    except Exception:
+        pass
+    return shutil.which("ffmpeg")
+
+
+@PromptServer.instance.routes.post("/minimax_h3_one/stitch")
+async def mmh3_stitch(request):
+    """Concatenate the per-clip video files into one file (stream copy, no re-encode).
+
+    Body: {clips: [{filename, subfolder}], filename_prefix, trim_seconds (optional)}
+    """
+    try:
+        data = await request.json()
+        clips = data.get("clips") or []
+        if not isinstance(clips, list) or not clips:
+            return web.json_response({"ok": False, "error": "no clips supplied"}, status=400)
+
+        ffmpeg = _ffmpeg_exe()
+        if not ffmpeg:
+            return web.json_response({"ok": False, "error": "ffmpeg not found (install imageio-ffmpeg)"}, status=500)
+
+        out_dir = _get_output_dir()
+        paths = []
+        for c in clips:
+            if not isinstance(c, dict):
+                continue
+            p = _safe_resolve_output_path(out_dir, c.get("subfolder", "") or "", c.get("filename", "") or "")
+            if p and os.path.isfile(p):
+                paths.append(p)
+        if not paths:
+            return web.json_response({"ok": False, "error": "none of the clip files were found"}, status=400)
+
+        prefix = (data.get("filename_prefix") or f"{MMH3_SUBFOLDER}/MMH3_full").replace("\\", "/")
+        sub = os.path.dirname(prefix) or MMH3_SUBFOLDER
+        stem = os.path.basename(prefix) or "MMH3_full"
+        dest_dir = _safe_resolve_output_path(out_dir, sub, "")
+        if not dest_dir:
+            return web.json_response({"ok": False, "error": "invalid filename_prefix"}, status=400)
+        os.makedirs(dest_dir, exist_ok=True)
+
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        out_name = f"{stem}_{ts}.mp4"
+        out_path = os.path.join(dest_dir, out_name)
+
+        # concat demuxer needs a list file; quote-escape per ffmpeg's rules
+        list_path = os.path.join(dest_dir, f".concat_{ts}.txt")
+        with open(list_path, "w", encoding="utf-8") as fh:
+            for p in paths:
+                fh.write("file '%s'\n" % p.replace("\\", "/").replace("'", "'\\''"))
+
+        cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+               "-f", "concat", "-safe", "0", "-i", list_path]
+        trim = data.get("trim_seconds")
+        try:
+            trim = float(trim) if trim is not None else None
+        except (TypeError, ValueError):
+            trim = None
+        if trim and trim > 0:
+            # re-encode when trimming so the cut lands on an exact timestamp
+            cmd += ["-t", f"{trim:.3f}", "-c:v", "libx264", "-crf", "18", "-preset", "medium", "-c:a", "aac"]
+        else:
+            cmd += ["-c", "copy"]
+        cmd.append(out_path)
+
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+        try:
+            os.remove(list_path)
+        except OSError:
+            pass
+
+        if proc.returncode != 0 or not os.path.isfile(out_path):
+            # stream copy fails on mismatched clip params — retry with a re-encode
+            cmd_re = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+                      "-f", "concat", "-safe", "0", "-i", list_path]
+            with open(list_path, "w", encoding="utf-8") as fh:
+                for p in paths:
+                    fh.write("file '%s'\n" % p.replace("\\", "/").replace("'", "'\\''"))
+            cmd_re += ["-c:v", "libx264", "-crf", "18", "-preset", "medium", "-c:a", "aac"]
+            if trim and trim > 0:
+                cmd_re += ["-t", f"{trim:.3f}"]
+            cmd_re.append(out_path)
+            proc = subprocess.run(cmd_re, capture_output=True, text=True, timeout=3600)
+            try:
+                os.remove(list_path)
+            except OSError:
+                pass
+            if proc.returncode != 0 or not os.path.isfile(out_path):
+                return web.json_response(
+                    {"ok": False, "error": (proc.stderr or "ffmpeg failed")[:800]}, status=500)
+
+        return web.json_response({
+            "ok": True, "filename": out_name, "subfolder": sub,
+            "path": out_path, "clip_count": len(paths),
+        })
+    except subprocess.TimeoutExpired:
+        return web.json_response({"ok": False, "error": "ffmpeg timed out"}, status=500)
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+
+_mmh3_last: dict = {}
+
+
+@PromptServer.instance.routes.post("/minimax_h3_one/set_last_image")
+async def mmh3_set_last_image(request):
+    data = await request.json()
+    uid = str(data.get("unique_id", ""))
+    if uid:
+        rec = _mmh3_last.setdefault(uid, {})
+        if "image" in data:
+            rec["image"] = data.get("image", {})
+        if "video_path" in data:
+            rec["video_path"] = data.get("video_path", "")
+    return web.json_response({"ok": True})
+
+
+# ════════════════════════════════════════════════════════════════════════════════
 # Node classes
 # ════════════════════════════════════════════════════════════════════════════════
 
@@ -1769,12 +2005,61 @@ class SDXLOneTJNode:
         return float("nan")
 
 
+class MiniMaxH3OneTJNode:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {},
+            "optional": {
+                "prompt_override": ("STRING", {
+                    "default": "",
+                    "multiline": True,
+                    "forceInput": True,
+                    "tooltip": "External prompt override — prepended before the internal prompt.",
+                }),
+                "pipe": ("TJ_PROMPT_PIPE", {
+                    "tooltip": "PromptDB pipe (TJ_NODE). At generation, fields present in the pipe override this node's settings; missing fields keep the node's own values. The node's UI is never changed.",
+                }),
+            },
+            "hidden": {"unique_id": "UNIQUE_ID"},
+        }
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("last_frame", "video_path")
+    FUNCTION = "get_output"
+    CATEGORY = " ✨ TJ_Node/Generator"
+    OUTPUT_NODE = True
+
+    def get_output(self, unique_id=None, prompt_override="", **kwargs):
+        uid = str(unique_id) if unique_id else ""
+        rec = _mmh3_last.get(uid, {})
+        video_path = rec.get("video_path", "") or ""
+        info = rec.get("image", {}) or {}
+        try:
+            filename = info.get("filename")
+            if filename:
+                img_type = info.get("type", "output")
+                subfolder = info.get("subfolder", "") or ""
+                base = folder_paths.get_output_directory() if img_type == "output" else folder_paths.get_input_directory()
+                path = os.path.join(base, subfolder, filename) if subfolder else os.path.join(base, filename)
+                img = Image.open(path).convert("RGB")
+                arr = np.array(img).astype(np.float32) / 255.0
+                return (torch.from_numpy(arr)[None,], video_path)
+        except Exception as e:
+            print(f"[MMH3] output slot error: {e}")
+        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32), video_path)
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return float("nan")
+
+
 NODE_CLASS_MAPPINGS = {
     "Flux2KleinOneTJNode":         Flux2KleinOneTJNode,
     "ZImageTurboOneNode":          ZImageTurboOneNode,
     "Krea2OneTJNode":              Krea2OneTJNode,
     "QwenImageEdit2511OneTJNode":  QwenImageEdit2511OneTJNode,
     "SDXLOneTJNode":               SDXLOneTJNode,
+    "MiniMaxH3OneTJNode":          MiniMaxH3OneTJNode,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "Flux2KleinOneTJNode":         "Flux.2 Klein ONE STUDIO (TJ)",
@@ -1782,4 +2067,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Krea2OneTJNode":              "Krea 2 ONE STUDIO (TJ)",
     "QwenImageEdit2511OneTJNode":  "Qwen Image Edit 2511 ONE STUDIO (TJ)",
     "SDXLOneTJNode":               "SDXL ONE STUDIO (TJ)",
+    "MiniMaxH3OneTJNode":          "MiniMax H3 ONE STUDIO (TJ)",
 }

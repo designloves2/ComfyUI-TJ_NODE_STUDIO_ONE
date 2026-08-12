@@ -45,11 +45,16 @@ set REPOS[8]=https://github.com/facok/comfyui-krea2-controlnet
 :: 🧪 Experimental — Krea2 IDENTITY / ControlNet(canny). May produce errors.
 set REPOS[9]=https://github.com/lbouaraba/comfyui-krea2edit
 set REPOS[10]=https://github.com/Nynxz/ComfyUI-NK2E
+:: 🧪 Experimental — MiniMax H3 ONE STUDIO (video). Optional accelerators/preview.
+set REPOS[11]=https://github.com/lihaoyun6/ComfyUI-MiniMaxH3-Cache
+set REPOS[12]=https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo
+set REPOS[13]=https://github.com/kijai/ComfyUI-SolAttn_triton
+set REPOS[14]=https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI
 
-set COUNT=11
+set COUNT=15
 
 :: ── 설치 루프 ──────────────────────────────────────────────────────────────────
-for /L %%i in (0,1,10) do (
+for /L %%i in (0,1,14) do (
     set "URL=!REPOS[%%i]!"
 
     :: URL에서 폴더명 추출 (마지막 /뒤)
@@ -123,5 +128,15 @@ echo                 https://huggingface.co/nynxz/NK2E
 echo  Depth preprocessor (depth_anything_v2_vitl.pth) auto-downloads on first use
 echo  into: comfyui_controlnet_aux\ckpts\depth-anything\  (vitg/Giant NOT supported)
 echo  Register the LoRA FILES in Settings; adjust values in the side-menu panel.
+echo ========================================================
+echo.
+echo  [MiniMax H3 ONE STUDIO - EXPERIMENTAL video node]
+echo  Models ^(https://huggingface.co/Comfy-Org/MiniMax-H3^):
+echo    models\diffusion_models\ : minimax_h3_fl2va_*  ^(text / first-last^)
+echo                               minimax_h3_ref2va_* ^(reference mode^)
+echo    models\text_encoders\    : qwen3vl_*_minimax_h3_*   ^(CLIPLoader type=minimax^)
+echo    models\vae\              : minimax_h3_video_vae_*  +  minimax_h3_audio_vae_*
+echo    models\loras\            : minimax_h3 turbo LoRA ^(optional, for Accel=Turbo^)
+echo  Select them once in the node's Settings ^> Models tab.
 echo ========================================================
 pause

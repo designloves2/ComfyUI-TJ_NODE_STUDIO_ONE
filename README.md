@@ -56,6 +56,7 @@
 | **Qwen Image Edit 2511 ONE STUDIO (TJ)** | Qwen2.5-VL 기반 Image Edit 모델<br><sub>Qwen2.5-VL based Image Edit model</sub>| T2I · I2I · Edit(최대 3장) · Inpaint · **Outpaint** · Faceswap · **Angle** · **Upscale**<br><sub>T2I · I2I · Edit(up to 3 images) · Inpaint · **Outpaint** · Faceswap · **Angle** · **Upscale**</sub>|
 | **Krea 2 ONE STUDIO (TJ)** | Krea.ai 이미지 생성 모델<br><sub>Krea.ai image generation model</sub>| T2I · I2I · **ControlNet(depth/canny 🧪)** · **IDENTITY 🧪** · **Upscale** |
 | **SDXL ONE STUDIO (TJ)** 🧪 | SDXL Checkpoint / Separate UNET 모델<br><sub>SDXL Checkpoint / Separate UNET model</sub>| T2I · I2I · Inpaint · Outpaint · Upscale *(테스트 버전 / Test Version)* |
+| **MiniMax H3 ONE STUDIO (TJ)** 🧪 | MiniMax H3 영상+오디오 생성 모델<br><sub>MiniMax H3 video + audio model</sub>| Text / First-Last / Reference · **클립 릴레이 + 자동 합본** · 라이브 프리뷰 *(실험적 / Experimental)* |
 
 > **언어 지원**: 모든 노드의 Settings에서 한국어 / English 전환 가능
 > **Language Support**: Korean / English can be selected in Settings for every node
@@ -416,6 +417,67 @@ SDXL ONE STUDIO supports two model loading modes in Settings.
 | 키<br><sub>Key</sub>| 동작<br><sub>Action</sub>|
 |---|---|
 | `ESC` | 열린 팝업 / 갤러리 / 오버레이 닫기<br><sub>close open popups, Gallery, or overlays</sub>|
+
+---
+
+## MiniMax H3 ONE STUDIO — 기능 상세 🧪
+## MiniMax H3 ONE STUDIO — Feature Details 🧪
+
+> ⚠️ **실험적 기능 · 오류 가능성 있음 (Experimental — may produce errors)**
+> 영상+오디오 생성 노드입니다. 외부 커스텀 노드와 별도 모델에 의존하며, 긴 영상은 클립을 이어 붙이는 방식이라 결과가 완벽하지 않을 수 있습니다.
+> Video + audio node. It depends on external custom nodes and separate models, and long videos are assembled from chained clips, so results are not seamless.
+
+### 왜 클립으로 나누는가 / Why clips
+MiniMax H3는 프레임 수가 **17k+5 격자**에만 떨어지고 한 번에 만들 수 있는 길이가 제한적입니다(VRAM). 이 노드는 긴 프롬프트를 **클립 단위로 나눠 순차 생성**하고, 각 클립을 개별 저장한 뒤 마지막에 **하나로 합칩니다**. 클립마다 큐를 새로 제출하므로 ComfyUI가 알아서 모델을 내려 VRAM이 정리됩니다.
+MiniMax H3 only accepts frame counts on a **17k+5 grid** and a single pass is VRAM-limited. This node renders a long prompt as **sequential clips**, saves each one, then **stitches them into one file**. Each clip is its own queue submission, so ComfyUI's between-prompt unload keeps VRAM in check.
+
+### 지원 모드 / Supported Modes
+
+| 모드<br><sub>Mode</sub>| 설명<br><sub>Description</sub>|
+|---|---|
+| **Text only** (T2VA) | 프롬프트만으로 생성<br><sub>prompt only</sub>|
+| **First/Last Frame** (FL2VA) | 시작(+선택적 끝) 키프레임 지정<br><sub>start (+optional end) keyframe</sub>|
+| **Reference** (REF2VA) | 레퍼런스 이미지 최대 9장, 프롬프트에서 `<Picture 1>` 등으로 지칭<br><sub>up to 9 reference images, addressed as `<Picture 1>` …</sub>|
+
+> **Reference 모드는 전용 UNET을 사용**합니다. Settings에서 First/Last용과 Reference용 UNET을 각각 지정하세요.
+> **Reference mode uses its own UNET** — set the First/Last and Reference UNETs separately in Settings.
+
+### 주요 기능 / Key Features
+
+| 기능<br><sub>Feature</sub>| 설명<br><sub>Description</sub>|
+|---|---|
+| **라이브 프리뷰**<br><sub>Live preview</sub>| 샘플링 중 디코딩된 프레임이 노드에 실시간 표시 (`ModelPreviewOverrideKJ`). 스피너가 아니라 실제 영상이 만들어지는 걸 봅니다<br><sub>decoded frames stream into the node while sampling — not a spinner</sub>|
+| **클립 릴레이**<br><sub>Clip relay</sub>| 클립 수 · 실제 총 길이 · 예상 소요시간을 설정 즉시 표시. 실측 시간으로 예상치 자동 보정<br><sub>clip count / actual length / ETA shown live, ETA self-corrects from measured clip times</sub>|
+| **연속성**<br><sub>Continuity</sub>| Last Frame Chain(이전 클립 마지막 프레임을 다음 시작으로) / Reference / None<br><sub>last-frame chain, reference, or none</sub>|
+| **프롬프트 자동 분할**<br><sub>Prompt auto-split</sub>| `[Shot N]` 타임코드 · `---` · 빈 줄 기준으로 긴 브리프를 클립별 프롬프트로 분할<br><sub>splits a long brief on `[Shot N]`, `---`, or blank lines</sub>|
+| **합본 + 트림**<br><sub>Stitch + trim</sub>| 완료 후 ffmpeg로 자동 결합, 요청 길이에 맞춰 자르기 선택 가능<br><sub>ffmpeg concat when the run ends, optional trim to the requested length</sub>|
+| **가속 / 업스케일**<br><sub>Accel / Upscale</sub>| Turbo LoRA · SolAttn · None / Upscale Model · RTX VSR · None<br><sub>selectable acceleration and upscaling</sub>|
+
+### 필수 모델 / Required Models
+
+| 종류<br><sub>Type</sub>| 경로<br><sub>Path</sub>| 비고<br><sub>Notes</sub>|
+|---|---|---|
+| Diffusion Model (FL2VA) | `models/diffusion_models/` | Text only · First/Last 모드용<br><sub>for text-only and first/last modes</sub>|
+| Diffusion Model (REF2VA) | `models/diffusion_models/` | Reference 모드용<br><sub>for reference mode</sub>|
+| Text Encoder | `models/text_encoders/` | Qwen3-VL 계열, `CLIPLoader type=minimax`<br><sub>Qwen3-VL, loaded with `type=minimax`</sub>|
+| Video VAE / Audio VAE | `models/vae/` | 두 개 모두 필요<br><sub>both are required</sub>|
+| Turbo LoRA (선택) | `models/loras/` | Accel = Turbo LoRA 일 때<br><sub>when Accel = Turbo LoRA</sub>|
+
+다운로드 / Download: [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3)
+
+### 필수 · 선택 커스텀 노드 / Required & Optional Custom Nodes
+
+| 노드<br><sub>Node</sub>| 용도<br><sub>Purpose</sub>| 없으면<br><sub>If missing</sub>|
+|---|---|---|
+| ComfyUI 코어<br><sub>ComfyUI core</sub>| `MiniMaxH3ImageToVideo` · `MiniMaxH3ReferenceToVideo` · `MiniMaxH3SigmaShift` · `CreateVideo` · `SaveVideo` | **필수**<br><sub>required</sub>|
+| [ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes) | 라이브 프리뷰 · SageAttention 패치<br><sub>live preview, SageAttention patch</sub>| 프리뷰만 비활성<br><sub>preview disabled</sub>|
+| [ComfyUI-MiniMaxH3-Cache](https://github.com/lihaoyun6/ComfyUI-MiniMaxH3-Cache) | 스텝 캐시 가속<br><sub>step-reuse cache</sub>| 해당 옵션만 비활성<br><sub>that option disabled</sub>|
+| [ComfyUI-MiniMax-H3-Turbo](https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo) | Turbo LoRA / Turbo 샘플러<br><sub>turbo LoRA + sampler</sub>| Accel=Turbo 비활성<br><sub>turbo accel disabled</sub>|
+| [ComfyUI-SolAttn_triton](https://github.com/kijai/ComfyUI-SolAttn_triton) | SolAttn 가속<br><sub>SolAttn acceleration</sub>| Accel=SolAttn 비활성<br><sub>SolAttn disabled</sub>|
+| [Nvidia RTX Nodes](https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI) | RTX Video Super Resolution | RTX 업스케일만 비활성<br><sub>RTX upscale disabled</sub>|
+
+> 선택 노드는 설치 안 돼 있으면 **해당 기능만 꺼지고 나머지는 정상 동작**합니다 (설정 화면에 상태 표시).
+> Optional packs degrade gracefully — the matching feature switches off and everything else still runs (status is shown in Settings).
 
 ---
 
