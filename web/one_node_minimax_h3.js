@@ -401,6 +401,14 @@ app.registerExtension({
       function renderLeft() {
         clear(leftPanel);
 
+        // A saved state can hold an acceleration this mode doesn't offer (e.g. Turbo
+        // carried over into Reference). Normalise here, not only on mode switch, so a
+        // reloaded node can never sit on an option that isn't in its own dropdown.
+        if (!accelModesFor(state.generationMode).some(m => m.key === state.accelMode)) {
+          state.accelMode = "none";
+          persist();
+        }
+
         // resolution
         leftPanel.appendChild(panel([
           label("Canvas"),
