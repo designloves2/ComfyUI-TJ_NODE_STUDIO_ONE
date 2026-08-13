@@ -39,7 +39,7 @@ import { resolvePipeOverrides, applyOverridesTemp } from "./shared/promptdb_pipe
 const TOPBAR_H   = 40;
 const BOTTOM_PAD = 20;
 const STATUS_H   = 46;
-const PROMPT_H   = 300;   // the inline prompt strip is the main writing surface
+const PROMPT_H   = 150;   // the strip scrolls; the fields inside it are the tall part
 const RIGHT_H    = PREVIEW_SIZE + PAD + STATUS_H + PAD + PROMPT_H;
 const ROOT_H     = PAD + TOPBAR_H + PAD + RIGHT_H + BOTTOM_PAD;
 const NODE_H     = ROOT_H + 30;
