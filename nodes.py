@@ -1618,6 +1618,7 @@ MMH3_OPTIONAL_NODES = [
     "MiniMaxH3TurboSampler",
     "MiniMaxH3TurboLoRA",
     "SolAttnPatch",
+    "SpectrumApplyMiniMaxH3",
     "RTXVideoSuperResolution",
 ]
 MMH3_CORE_NODES = [
@@ -1753,6 +1754,152 @@ async def mmh3_stitch(request):
         return web.json_response({"ok": False, "error": "ffmpeg timed out"}, status=500)
     except Exception as e:
         return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+
+# ── Ollama prompt enhance ─────────────────────────────────────────────────────
+# Proxied server-side so the browser isn't blocked by CORS and the Ollama host stays
+# configurable. Nothing here is imported at module scope, so a missing Ollama install
+# just means the Enhance button reports "unreachable".
+
+MMH3_OLLAMA_DEFAULT = "http://127.0.0.1:11434"
+
+# Used when TJ_NODE isn't installed. The full brief-writing instruction lives in
+# ComfyUI-TJ_NODE/nodes/llm/data/model_formats.json as "Minimax H3 (Video)".
+MMH3_FALLBACK_SYSTEM_PROMPT = (
+    "You are a prompt-enrichment engine for a generative video+audio model. "
+    "Convert the user's request into ONE detailed production brief. Output only the brief.\n"
+    "Rules: refer to media as <Picture 1>/<Video 1>/<Audio 1> in input order; [Shot 1] has no "
+    "timestamp and every later shot starts with \"[Shot N] At MM:SS.mmm, the camera cuts to ...\"; "
+    "spoken words go inside <d>[Language] exact words</d>; on-screen text is quoted exactly; "
+    "the shots must add up to the target duration. End with short \"Ambient sound:\" and \"Music:\" lines."
+)
+
+
+def _mmh3_tj_node_dir():
+    base = os.path.dirname(NODE_DIR)
+    for folder in ("ComfyUI-TJ_NODE", "ComfyUI-TJ_NODE2", "TJ_NODE"):
+        p = os.path.join(base, folder, "nodes", "llm", "data", "model_formats.json")
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+@PromptServer.instance.routes.get("/minimax_h3_one/llm/system_prompt")
+async def mmh3_llm_system_prompt(request):
+    """The MiniMax H3 brief-writing instruction, reused from TJ_NODE when present."""
+    wanted = (request.query.get("name") or "minimax").lower()
+    path = _mmh3_tj_node_dir()
+    if path:
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                formats = json.load(fh)
+            for entry in formats if isinstance(formats, list) else []:
+                if not isinstance(entry, dict):
+                    continue
+                if wanted in str(entry.get("name", "")).lower():
+                    return web.json_response({
+                        "ok": True, "source": "TJ_NODE",
+                        "name": entry.get("name"),
+                        "instruction": entry.get("instruction", ""),
+                    })
+        except Exception as e:
+            print(f"[MMH3] system_prompt read failed: {e}")
+    return web.json_response({
+        "ok": True, "source": "builtin",
+        "name": "Minimax H3 (Video)",
+        "instruction": MMH3_FALLBACK_SYSTEM_PROMPT,
+    })
+
+
+@PromptServer.instance.routes.get("/minimax_h3_one/llm/ollama_models")
+async def mmh3_ollama_models(request):
+    import aiohttp
+    base = (request.query.get("server_url") or MMH3_OLLAMA_DEFAULT).rstrip("/")
+    try:
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as s:
+            async with s.get(f"{base}/api/tags") as r:
+                data = await r.json()
+        models = [m.get("name") for m in (data.get("models") or []) if m.get("name")]
+        return web.json_response({"ok": True, "models": models, "server_url": base})
+    except Exception as e:
+        return web.json_response({"ok": False, "models": [], "error": str(e), "server_url": base})
+
+
+@PromptServer.instance.routes.post("/minimax_h3_one/llm/enhance")
+async def mmh3_llm_enhance(request):
+    """Run one Ollama chat turn. `image_b64` (optional) switches the model to vision mode."""
+    import aiohttp
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "invalid payload"}, status=400)
+
+    base = (body.get("server_url") or MMH3_OLLAMA_DEFAULT).rstrip("/")
+    model = body.get("model") or ""
+    if not model:
+        return web.json_response({"ok": False, "error": "no model selected"}, status=400)
+
+    system_prompt = body.get("system_prompt") or MMH3_FALLBACK_SYSTEM_PROMPT
+    user_prompt = body.get("user_prompt") or ""
+    image_b64 = body.get("image_b64") or ""
+    if image_b64 and "," in image_b64[:64]:
+        image_b64 = image_b64.split(",", 1)[1]      # strip a data: URI prefix
+    if image_b64:
+        # Ollama refuses some PNG variants outright ("Failed to load image or audio
+        # file"), so normalize whatever we were handed to a plain RGB JPEG and cap the
+        # long edge — vision encoders downscale anyway.
+        try:
+            import base64 as _b64
+            from io import BytesIO as _BytesIO
+            img = Image.open(_BytesIO(_b64.b64decode(image_b64))).convert("RGB")
+            max_edge = int(body.get("image_max_edge", 1280) or 1280)
+            if max(img.size) > max_edge:
+                scale = max_edge / max(img.size)
+                img = img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))), Image.LANCZOS)
+            buf = _BytesIO()
+            img.save(buf, format="JPEG", quality=90)
+            image_b64 = _b64.b64encode(buf.getvalue()).decode("ascii")
+        except Exception as e:
+            return web.json_response({"ok": False, "error": f"could not read the image: {e}"}, status=400)
+
+    user_msg = {"role": "user", "content": user_prompt}
+    if image_b64:
+        user_msg["images"] = [image_b64]
+
+    payload = {
+        "model": model,
+        "messages": [{"role": "system", "content": system_prompt}, user_msg],
+        "stream": False,
+        "options": {
+            "temperature": float(body.get("temperature", 0.7) or 0.7),
+            "top_p": float(body.get("top_p", 0.9) or 0.9),
+        },
+    }
+    seed = body.get("seed")
+    if seed not in (None, ""):
+        try:
+            payload["options"]["seed"] = int(seed)
+        except (TypeError, ValueError):
+            pass
+    if body.get("think") is False:
+        payload["think"] = False
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=float(body.get("timeout", 600) or 600))
+        async with aiohttp.ClientSession(timeout=timeout) as s:
+            async with s.post(f"{base}/api/chat", json=payload) as r:
+                if r.status != 200:
+                    return web.json_response(
+                        {"ok": False, "error": f"ollama HTTP {r.status}: {(await r.text())[:300]}"}, status=502)
+                data = await r.json()
+        msg = (data.get("message") or {})
+        text = (msg.get("content") or "").strip()
+        if not text:
+            return web.json_response({"ok": False, "error": "empty response from Ollama"}, status=502)
+        return web.json_response({"ok": True, "response": text, "thinking": (msg.get("thinking") or "")})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=502)
 
 
 _mmh3_last: dict = {}

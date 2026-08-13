@@ -19,8 +19,9 @@ const N = {
   torch:  "MM:torch",
   shift:  "MM:sigma_shift",
   cache:  "MM:cache",
-  sol:    "MM:solattn",
-  turbo:  "MM:turbo_lora",
+  sol:     "MM:solattn",
+  spectrum:"MM:spectrum",
+  turbo:   "MM:turbo_lora",
   preview:"MM:preview",
   cond:   "MM:cond",
   noise:  "MM:noise",
@@ -140,6 +141,23 @@ function buildModelChain(g, state, avail) {
       int8_pv: true, verbose: false, use_tma: false, dense_blocks: "",
     }};
     m = [N.sol, 0];
+  } else if (accel === "spectrum" && has(avail, "SpectrumApplyMiniMaxH3")) {
+    g[N.spectrum] = { class_type: "SpectrumApplyMiniMaxH3", inputs: {
+      model: m,
+      enabled: true,
+      blend_weight:      state.specBlendWeight ?? 0.5,
+      degree:            Math.round(state.specDegree ?? 1),
+      ridge_lambda:      state.specRidgeLambda ?? 0.1,
+      window_size:       state.specWindowSize ?? 2.0,
+      flex_window:       state.specFlexWindow ?? 0.75,
+      warmup_steps:      Math.round(state.specWarmupSteps ?? 1),
+      tail_actual_steps: Math.round(state.specTailSteps ?? 1),
+      max_history:       Math.round(state.specMaxHistory ?? 8),
+      debug: false,
+      history_storage: state.specHistoryStore || "system_ram",
+      bootstrap_first_forecast: true,
+    }};
+    m = [N.spectrum, 0];
   }
 
   return m;

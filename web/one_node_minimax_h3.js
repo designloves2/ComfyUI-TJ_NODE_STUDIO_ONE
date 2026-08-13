@@ -28,6 +28,7 @@ import {
 import { buildClipGraph, NODE_IDS, previewNodeKey } from "./minimax/graph_builder_minimax.js";
 import { createSettingsOverlay } from "./minimax/ui_app_settings_minimax.js";
 import { mountImagePanel } from "./minimax/ui_images_minimax.js";
+import { createPromptEditOverlay } from "./minimax/ui_prompt_edit_minimax.js";
 import { resolvePipeOverrides, applyOverridesTemp } from "./shared/promptdb_pipe.js";
 
 // ── Layout ────────────────────────────────────────────────────────────────────
@@ -75,6 +76,8 @@ app.registerExtension({
       const ctx = {
         persist, rootEl: null, showPopup: null, availability: {}, availableModels: null,
         refreshPlan: null, _rerenderImages: null,
+        // the prompt editor sizes its brief to the run's real shape
+        currentPlan: () => currentPlan(),
       };
 
       // ── root ────────────────────────────────────────────────────────────────
@@ -118,7 +121,7 @@ app.registerExtension({
           key => { state.generationMode = key; persist(); renderPills(); renderLeft(); }
         ));
       }
-      let settingsOv, helpOv;
+      let settingsOv, helpOv, promptEditOv;
       topBar.appendChild(pillsWrap);
       topBar.appendChild(iconBtn("🗑", "Unload models / free VRAM", async () => {
         await freeMemory(); showPopup("VRAM freed.", false);
@@ -147,10 +150,13 @@ app.registerExtension({
       }});
       const placeholder = el("div", { style: { color: C.muted, fontSize: "12px", textAlign: "center", lineHeight: "1.7" } });
       placeholder.innerHTML = "▶ Generate to render the first clip<br><span style='font-size:10px'>live sampling frames appear here</span>";
-      const previewImg = el("img", { style: { maxWidth: "100%", maxHeight: "100%", objectFit: "contain", display: "none" } });
-      const previewVid = el("video", { autoplay: "", loop: "", muted: "", playsinline: "", style: { maxWidth: "100%", maxHeight: "100%", objectFit: "contain", display: "none" } });
+      // width/height 100% (not max-*) so a small latent preview is scaled UP to fill the
+      // box on its long edge; object-fit keeps the aspect ratio.
+      const FIT = { width: "100%", height: "100%", objectFit: "contain", display: "none" };
+      const previewImg = el("img", { style: { ...FIT, imageRendering: "auto" } });
+      const previewVid = el("video", { autoplay: "", loop: "", muted: "", playsinline: "", style: { ...FIT } });
       previewVid.muted = true;
-      const resultVid  = el("video", { controls: "", loop: "", playsinline: "", style: { maxWidth: "100%", maxHeight: "100%", objectFit: "contain", display: "none" } });
+      const resultVid  = el("video", { controls: "", loop: "", playsinline: "", style: { ...FIT } });
 
       // corner badge: LIVE while sampling, CLIP n/N when showing a finished clip
       const badge = el("div", { style: {
@@ -255,8 +261,16 @@ app.registerExtension({
       const promptTitle = el("div", { text: "PROMPTS", style: { color: C.muted, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.04em" } });
       const promptCount = el("span", { style: { color: C.muted, fontSize: "10px" } });
       promptHdr.append(promptTitle, promptCount);
-      const splitBtn = el("button", { type: "button", text: "✂ Split into clips", title: "Split this brief into one prompt per clip", style: {
+      const editBtn = el("button", { type: "button", text: "📝 Prompt Edit", title: "Open the full prompt editor (with Ollama enhance)", style: {
         marginLeft: "auto", cursor: "pointer", fontFamily: "inherit", fontSize: "10px",
+        padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text,
+        border: `1px solid ${BRAND}`, fontWeight: "600",
+      }});
+      editBtn.addEventListener("click", () => promptEditOv?.show());
+      promptHdr.appendChild(editBtn);
+
+      const splitBtn = el("button", { type: "button", text: "✂ Split into clips", title: "Split this brief into one prompt per clip", style: {
+        cursor: "pointer", fontFamily: "inherit", fontSize: "10px",
         padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
       }});
       const addBtn = el("button", { type: "button", text: "+", title: "Add a clip prompt", style: {
@@ -374,11 +388,19 @@ app.registerExtension({
         ]));
         refreshPlan();
 
-        // pipeline options
+        // pipeline options — each accel mode's knobs render right under the dropdown so
+        // switching modes never means a round-trip through the Settings modal.
+        const accelNode = (ACCEL_MODES.find(m => m.key === state.accelMode) || {}).node;
+        const accelMissing = accelNode && ctx.availability && Object.keys(ctx.availability).length
+          && !ctx.availability[accelNode];
         leftPanel.appendChild(panel([
           label("Pipeline"),
           col([label("Acceleration"), select(ACCEL_MODES.map(m => ({ value: m.key, label: m.label })),
-            state.accelMode, v => { state.accelMode = v; persist(); })]),
+            state.accelMode, v => { state.accelMode = v; persist(); renderLeft(); })]),
+          ...(accelMissing ? [el("div", {
+            html: `⚠ <code>${accelNode}</code> not installed — this run will fall back to no acceleration.`,
+            style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } })] : []),
+          ...accelSettings(),
           col([label("Upscale"), select(UPSCALE_MODES.map(m => ({ value: m.key, label: m.label })),
             state.upscaleMode, v => { state.upscaleMode = v; persist(); renderLeft(); })]),
           ...(state.upscaleMode === "rtx" ? [row([
@@ -392,6 +414,22 @@ app.registerExtension({
             style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
         ]));
 
+        // sampling steps live here too — they change per run far more often than the
+        // rest of the sampler config, which stays in Settings.
+        const turbo = state.accelMode === "turbo";
+        leftPanel.appendChild(panel([
+          label("Steps"),
+          row([
+            col([label(turbo ? "Turbo steps ●" : "Turbo steps"),
+              numberField(state.turboSteps ?? 4, v => { state.turboSteps = Math.max(1, Math.round(v)); persist(); }, 1)]),
+            col([label(turbo ? "Normal steps" : "Normal steps ●"),
+              numberField(state.steps ?? 20, v => { state.steps = Math.max(1, Math.round(v)); persist(); }, 1)]),
+          ]),
+          el("div", { text: turbo ? "● Turbo steps are in use (Accel = Turbo LoRA)."
+                                  : "● Normal steps are in use.",
+            style: { fontSize: "10px", color: C.muted } }),
+        ]));
+
         // images (mode-specific)
         const imgPanel = mountImagePanel(state, ctx);
         leftPanel.appendChild(imgPanel.el);
@@ -400,6 +438,64 @@ app.registerExtension({
         leftPanel.appendChild(mountLoraPanel());
 
         leftOuter.appendChild(seedGenWrap);
+      }
+
+      /** Tuning widgets for whichever acceleration mode is selected. */
+      function accelSettings() {
+        const n = (v, set, step = 0.05) => numberField(v, x => { set(x); persist(); }, step);
+        switch (state.accelMode) {
+          case "turbo":
+            return [
+              row([
+                col([label("Turbo strength"), n(state.turboLoraStrength ?? 1.0, v => state.turboLoraStrength = v)]),
+                col([label("Low VRAM"), (() => {
+                  const c = el("input", { type: "checkbox" });
+                  c.checked = !!state.turboLoraLowVram;
+                  c.addEventListener("change", () => { state.turboLoraLowVram = c.checked; persist(); });
+                  return el("label", { style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: C.text, cursor: "pointer", paddingTop: "6px" } },
+                    [c, el("span", { text: "low_vram" })]);
+                })()]),
+              ]),
+              el("div", { html: `LoRA: <code>${(state.turboLora || "none").split(/[\\/]/).pop()}</code> — pick the file in ⚙ Settings.`,
+                style: { fontSize: "10px", color: C.muted, wordBreak: "break-all" } }),
+            ];
+          case "solattn":
+            return [
+              row([
+                col([label("tau"), n(state.solTau ?? 1.3, v => state.solTau = v)]),
+                col([label("min tokens"), n(state.solMinTokens ?? 4096, v => state.solMinTokens = Math.round(v), 512)]),
+              ]),
+              row([
+                col([label("start %"), n(state.solStart ?? 0.2, v => state.solStart = v)]),
+                col([label("end %"),   n(state.solEnd ?? 0.9,   v => state.solEnd = v)]),
+              ]),
+            ];
+          case "spectrum":
+            return [
+              row([
+                col([label("blend weight"), n(state.specBlendWeight ?? 0.5, v => state.specBlendWeight = v)]),
+                col([label("degree"),       n(state.specDegree ?? 1, v => state.specDegree = Math.round(v), 1)]),
+              ]),
+              row([
+                col([label("ridge lambda"), n(state.specRidgeLambda ?? 0.1, v => state.specRidgeLambda = v)]),
+                col([label("window size"),  n(state.specWindowSize ?? 2.0, v => state.specWindowSize = v, 0.25)]),
+              ]),
+              row([
+                col([label("flex window"),  n(state.specFlexWindow ?? 0.75, v => state.specFlexWindow = v)]),
+                col([label("max history"),  n(state.specMaxHistory ?? 8, v => state.specMaxHistory = Math.round(v), 1)]),
+              ]),
+              row([
+                col([label("warmup steps"), n(state.specWarmupSteps ?? 1, v => state.specWarmupSteps = Math.round(v), 1)]),
+                col([label("tail steps"),   n(state.specTailSteps ?? 1, v => state.specTailSteps = Math.round(v), 1)]),
+              ]),
+              col([label("history storage"), select(
+                [{ value: "system_ram", label: "system_ram" }, { value: "vram", label: "vram" }],
+                state.specHistoryStore || "system_ram", v => { state.specHistoryStore = v; persist(); })]),
+            ];
+          default:
+            return [el("div", { text: "No acceleration patch — slowest, but the most faithful baseline.",
+              style: { fontSize: "10px", color: C.muted } })];
+        }
       }
 
       function mountLoraPanel() {
@@ -669,10 +765,15 @@ app.registerExtension({
       // ══ MOUNT ═══════════════════════════════════════════════════════════════
       settingsOv = createSettingsOverlay(state, ctx);
       root.appendChild(settingsOv.el);
+
+      promptEditOv = createPromptEditOverlay(state, ctx, () => { renderPrompts(); refreshPlan(); });
+      root.appendChild(promptEditOv.el);
+
       root.appendChild(helpEl);
 
       document.addEventListener("keydown", e => {
         if (e.key !== "Escape") return;
+        if (promptEditOv?.isOpen()) { promptEditOv.hide(); return; }
         if (helpEl.style.display !== "none") { helpEl.style.display = "none"; return; }
         if (settingsOv?.el.style.display !== "none") { settingsOv.hide(); return; }
       });

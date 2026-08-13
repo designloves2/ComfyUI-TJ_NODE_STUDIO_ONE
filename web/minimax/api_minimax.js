@@ -7,15 +7,53 @@ export async function getModels() {
   return r.json();
 }
 
-// Which pipeline nodes this install actually has. The graph builder skips optional
-// ones instead of submitting a prompt that would fail validation.
+export const MMH3_CORE_NODES = [
+  "MiniMaxH3ImageToVideo", "MiniMaxH3ReferenceToVideo", "MiniMaxH3SigmaShift",
+  "SamplerCustomAdvanced", "CreateVideo", "SaveVideo",
+];
+export const MMH3_OPTIONAL_NODES = [
+  "PathchSageAttentionKJ", "ModelPreviewOverrideKJ", "ModelPatchTorchSettings",
+  "MiniMaxH3MemoryEfficientSageAttentionPatch", "MiniMaxH3Cache",
+  "MiniMaxH3TurboSampler", "MiniMaxH3TurboLoRA", "SolAttnPatch",
+  "SpectrumApplyMiniMaxH3", "RTXVideoSuperResolution",
+];
+
+/** LiteGraph already knows every registered node type — no request needed. */
+function registryAvailability(names) {
+  const reg = (typeof LiteGraph !== "undefined" && LiteGraph.registered_node_types) || {};
+  const out = {};
+  for (const n of names) out[n] = !!reg[n];
+  return out;
+}
+
+/**
+ * Which pipeline nodes this install actually has, so the graph builder can skip the
+ * optional ones instead of submitting a prompt that fails validation.
+ *
+ * The frontend registry is the primary source: it can't go stale against a backend that
+ * hasn't been restarted since this pack was updated. The backend route is merged in as a
+ * cross-check and for the core/missing summaries.
+ */
 export async function getNodeAvailability() {
+  const all = [...MMH3_CORE_NODES, ...MMH3_OPTIONAL_NODES];
+  const local = registryAvailability(all);
+  let remote = {};
   try {
     const r = await api.fetchApi(`${API}/node_availability`);
-    return await r.json();
-  } catch {
-    return { ok: false, available: {}, core_ok: false, missing_core: [], missing_optional: [] };
-  }
+    const d = await r.json();
+    remote = d.available || {};
+  } catch { /* older backend or route missing — the registry still answers */ }
+
+  const available = {};
+  for (const n of all) available[n] = (n in remote) ? (remote[n] || local[n]) : local[n];
+  const missingCore     = MMH3_CORE_NODES.filter(n => !available[n]);
+  const missingOptional = MMH3_OPTIONAL_NODES.filter(n => !available[n]);
+  return {
+    ok: true, available,
+    core_ok: missingCore.length === 0,
+    missing_core: missingCore,
+    missing_optional: missingOptional,
+  };
 }
 
 export async function getConfig() {
@@ -96,6 +134,44 @@ export async function stitchClips(clips, filenamePrefix, trimSeconds) {
   });
   const d = await r.json();
   if (!d.ok) throw new Error(d.error || "stitch failed");
+  return d;
+}
+
+// ── Ollama prompt enhance (proxied through the node's backend) ────────────────
+// These routes were added after the node itself, so a ComfyUI that hasn't been
+// restarted since the update answers 404 — say so plainly rather than blaming Ollama.
+const RESTART_HINT = "restart ComfyUI to enable Ollama enhance (new backend route)";
+
+export async function getOllamaModels(serverUrl) {
+  try {
+    const q = serverUrl ? `?server_url=${encodeURIComponent(serverUrl)}` : "";
+    const r = await api.fetchApi(`${API}/llm/ollama_models${q}`);
+    if (r.status === 404) return { ok: false, models: [], error: RESTART_HINT, needsRestart: true };
+    return await r.json();
+  } catch (e) {
+    return { ok: false, models: [], error: String(e) };
+  }
+}
+
+/** The MiniMax H3 brief-writing instruction (from TJ_NODE when installed). */
+export async function getSystemPrompt(name = "minimax") {
+  try {
+    const r = await api.fetchApi(`${API}/llm/system_prompt?name=${encodeURIComponent(name)}`);
+    if (r.status === 404) return { ok: false, instruction: "", needsRestart: true };
+    return await r.json();
+  } catch {
+    return { ok: false, instruction: "" };
+  }
+}
+
+export async function enhancePrompt(payload) {
+  const r = await api.fetchApi(`${API}/llm/enhance`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "enhance failed");
   return d;
 }
 

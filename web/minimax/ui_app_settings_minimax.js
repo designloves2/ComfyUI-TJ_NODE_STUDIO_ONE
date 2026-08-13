@@ -175,12 +175,10 @@ export function createSettingsOverlay(state, ctx) {
   function samplingTab() {
     const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } });
     wrap.appendChild(panel([
-      label("Steps"),
-      row([
-        col([label("Normal steps"), numField(state.steps ?? 20, v => { state.steps = Math.max(1, Math.round(v)); ctx.persist(); }, { step: "1" })]),
-        col([label("Turbo steps"),  numField(state.turboSteps ?? 4, v => { state.turboSteps = Math.max(1, Math.round(v)); ctx.persist(); }, { step: "1" })]),
-      ]),
-      el("div", { text: "Turbo steps apply when Accel = Turbo LoRA (the turbo sampler replaces the normal one).", style: { fontSize: "10px", color: C.muted } }),
+      label("Steps & acceleration"),
+      el("div", { html: "Step counts and each acceleration mode's tuning knobs now live in the node's "
+        + "<b>left panel</b>, directly under the Acceleration dropdown — switching modes there doesn't "
+        + "require coming back here.", style: { fontSize: "11px", color: C.muted, lineHeight: "1.6" } }),
     ]));
     wrap.appendChild(panel([
       label("Sampler"),
@@ -198,15 +196,23 @@ export function createSettingsOverlay(state, ctx) {
       ]),
     ]));
     wrap.appendChild(panel([
-      label("SolAttn (used when Accel = SolAttn)"),
+      label("Ollama (prompt enhance)"),
+      col([label("Server URL"), (() => {
+        const inp = el("input", { type: "text", placeholder: "http://127.0.0.1:11434", style: {
+          width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+          border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px",
+          fontSize: "12px", fontFamily: "inherit", outline: "none",
+        }});
+        inp.value = state.ollamaUrl || "http://127.0.0.1:11434";
+        inp.addEventListener("input", () => { state.ollamaUrl = inp.value.trim(); ctx.persist(); });
+        return inp;
+      })()]),
       row([
-        col([label("tau"), numField(state.solTau ?? 1.3, v => { state.solTau = v; ctx.persist(); })]),
-        col([label("min tokens"), numField(state.solMinTokens ?? 4096, v => { state.solMinTokens = Math.round(v); ctx.persist(); }, { step: "512" })]),
+        col([label("Temperature"), numField(state.ollamaTemperature ?? 0.7, v => { state.ollamaTemperature = v; ctx.persist(); })]),
+        col([label("Top P"),       numField(state.ollamaTopP ?? 0.9,        v => { state.ollamaTopP = v; ctx.persist(); })]),
       ]),
-      row([
-        col([label("start %"), numField(state.solStart ?? 0.2, v => { state.solStart = v; ctx.persist(); })]),
-        col([label("end %"),   numField(state.solEnd ?? 0.9,   v => { state.solEnd = v; ctx.persist(); })]),
-      ]),
+      el("div", { text: "Used by the 📝 Prompt Edit popup's Enhance button. The MiniMax H3 brief instruction "
+        + "is loaded from TJ_NODE automatically.", style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
     ]));
     return wrap;
   }

@@ -87,9 +87,10 @@ export const GENERATION_MODES = [
   { key: "reference", label: "Reference",         hint: "up to 9 reference images (REF2VA)" },
 ];
 export const ACCEL_MODES  = [
-  { key: "turbo",  label: "Turbo LoRA" },
-  { key: "solattn", label: "SolAttn" },
-  { key: "none",   label: "None" },
+  { key: "turbo",    label: "Turbo LoRA", node: "MiniMaxH3TurboLoRA" },
+  { key: "solattn",  label: "SolAttn",    node: "SolAttnPatch" },
+  { key: "spectrum", label: "Spectrum",   node: "SpectrumApplyMiniMaxH3" },
+  { key: "none",     label: "None",       node: null },
 ];
 export const UPSCALE_MODES = [
   { key: "none",  label: "None" },
@@ -178,6 +179,16 @@ export function defaultState(saved) {
     solStart:      saved.solStart      ?? 0.2,
     solEnd:        saved.solEnd        ?? 0.9,
     solMinTokens:  saved.solMinTokens  ?? 4096,
+    // Spectrum (SpectrumApplyMiniMaxH3) — node defaults
+    specBlendWeight:  saved.specBlendWeight  ?? 0.5,
+    specDegree:       saved.specDegree       ?? 1,
+    specRidgeLambda:  saved.specRidgeLambda  ?? 0.1,
+    specWindowSize:   saved.specWindowSize   ?? 2.0,
+    specFlexWindow:   saved.specFlexWindow   ?? 0.75,
+    specWarmupSteps:  saved.specWarmupSteps  ?? 1,
+    specTailSteps:    saved.specTailSteps    ?? 1,
+    specMaxHistory:   saved.specMaxHistory   ?? 8,
+    specHistoryStore: saved.specHistoryStore || "system_ram",
 
     // upscale params
     rtxScale:   saved.rtxScale   ?? 2.0,
@@ -190,6 +201,13 @@ export function defaultState(saved) {
     previewMaxRes:   saved.previewMaxRes   ?? 512,
     previewQuality:  saved.previewQuality  ?? 85,
     previewTinyVae:  saved.previewTinyVae  || "none",
+
+    // Ollama prompt enhance
+    ollamaUrl:         saved.ollamaUrl         || "http://127.0.0.1:11434",
+    ollamaModel:       saved.ollamaModel       || "",
+    ollamaTemperature: saved.ollamaTemperature ?? 0.7,
+    ollamaTopP:        saved.ollamaTopP        ?? 0.9,
+    ollamaImage:       saved.ollamaImage       || null,
 
     // output
     saveSubfolder: saved.saveSubfolder || "",
