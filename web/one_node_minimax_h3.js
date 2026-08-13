@@ -36,6 +36,7 @@ import { createPromptEditOverlay } from "./minimax/ui_prompt_edit_minimax.js";
 import { createCommonPromptOverlay } from "./minimax/ui_common_prompt_minimax.js";
 import { createGalleryOverlay } from "./minimax/ui_gallery_minimax.js";
 import { resolvePipeOverrides, applyOverridesTemp } from "./shared/promptdb_pipe.js";
+import { attachNodeState, restoreNodeState } from "./shared/node_state.js";
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 const TOPBAR_H   = 40;
@@ -67,10 +68,7 @@ app.registerExtension({
     // values it inherited from the browser.
     nodeType.prototype.onConfigure = function () {
       this.size = [NODE_MW, NODE_MH];
-      const w = this.widgets?.find(x => x.name === "mmh3_state");
-      if (!w || !w.value) return;
-      try { this._mmh3ApplyState?.(JSON.parse(w.value)); }
-      catch (e) { console.warn("[MMH3] stored state unreadable, keeping current settings:", e); }
+      restoreNodeState(this);
     };
     nodeType.prototype.onResize    = function () { this.size = [NODE_MW, NODE_MH]; };
     nodeType.prototype.getSlotMenuOptions = function () { return []; };
@@ -82,21 +80,11 @@ app.registerExtension({
       // this from its own stored copy in onConfigure.
       const state = defaultState(loadState());
 
-      // The settings ride along in the workflow: a hidden serialised widget holds the
-      // whole state, so a saved graph keeps its own values, two nodes in one graph no
-      // longer share one blob, and the file still works on another machine. It is drawn
-      // as nothing — the DOM widget below is the real UI.
-      const stateWidget = self.addWidget("text", "mmh3_state", "", () => {});
-      stateWidget.computeSize = () => [0, -4];
-      stateWidget.draw = () => {};
-      stateWidget.hidden = true;
-
-      const persist = () => {
-        saveState(state);                                    // seed for the next new node
-        try { stateWidget.value = JSON.stringify(state); }   // what the workflow saves
-        catch {}
-      };
-      persist();
+      // The settings ride along in the workflow — see web/shared/node_state.js.
+      const persist = attachNodeState(self, {
+        state, save: saveState, normalize: defaultState,
+        rerender: () => self._mmh3Repaint?.(),
+      });
 
       if (!document.getElementById("mmh3-styles")) {
         const s = document.createElement("style"); s.id = "mmh3-styles";
@@ -1099,12 +1087,8 @@ app.registerExtension({
 
       self.addDOMWidget("mmh3_ui", "div", root, { serialize: false, computeSize: () => [NODE_MW, NODE_MH] });
 
-      // Puts every setting back on screen after the workflow hands us a stored state.
-      self._mmh3ApplyState = (obj) => {
-        if (!obj || typeof obj !== "object") return false;
-        const next = defaultState(obj);
-        for (const k of Object.keys(state)) delete state[k];
-        Object.assign(state, next);
+      // Every panel, repainted from `state` — used after a workflow restores settings.
+      self._mmh3Repaint = () => {
         seedInput.value = state.seed ?? 0;
         renderPills();
         renderLeft();
@@ -1112,7 +1096,6 @@ app.registerExtension({
         refreshPlan();
         ctx._rerenderImages?.();
         promptEditOv?.syncCommon?.();
-        return true;
       };
 
       renderPills();

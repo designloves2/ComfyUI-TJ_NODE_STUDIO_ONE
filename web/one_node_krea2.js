@@ -15,6 +15,7 @@ import { mountT2ILeft }                                                         
 import { mountI2ILeft }                                                         from "./krea2/ui_i2i_krea2.js";
 import { mountIdentityLeft }                                                    from "./krea2/ui_identity_krea2.js";
 import { mountUpscaleLeft }                                                     from "./krea2/ui_upscale_krea2.js";
+import { attachNodeState, restoreNodeState } from "./shared/node_state.js";
 
 // ── Layout (Klein과 동일) ──────────────────────────────────────────────────────
 const TOPBAR_H    = 40;
@@ -89,7 +90,10 @@ app.registerExtension({
       this.size        = [NODE_MW, NODE_MH];
       this._buildUI();
     };
-    nodeType.prototype.onConfigure = function () { this.size = [NODE_MW, NODE_MH + (this._extraH||0)]; };
+    nodeType.prototype.onConfigure = function () {
+      this.size = [NODE_MW, NODE_MH + (this._extraH||0)];
+      restoreNodeState(this);
+    };
     nodeType.prototype.onResize    = function () { this.size = [NODE_MW, NODE_MH + (this._extraH||0)]; };
     nodeType.prototype.getSlotMenuOptions = function () { return []; };
 
@@ -98,7 +102,11 @@ app.registerExtension({
       self._extraH = 0;
       const state  = defaultState(loadState());
       state.useModelOverride = false;
-      const persist   = () => saveState(state);
+      // The settings ride along in the workflow — see web/shared/node_state.js.
+      const persist = attachNodeState(self, {
+        state, save: saveState, normalize: defaultState,
+        rerender: () => self._tjRepaint?.(),
+      });
       const appConfig = { output_mode_visible: true };
       const modeResults = {};
 
@@ -496,6 +504,10 @@ app.registerExtension({
       });
 
       self.addDOMWidget("k2v3_ui","div",root,{serialize:false,computeSize:()=>[NODE_MW,NODE_MH+(self._extraH||0)]});
+      // Every panel, repainted from `state` — used after a workflow restores settings.
+      // renderMode() rebuilds the left panel, but the seed and prompt fields live
+      // outside it — a restore has to put those back by hand.
+      self._tjRepaint = () => { seedInput.value = state.seed ?? 0; promptTA.value = getModePrompt(state.mode); updateCount?.(); renderPills(); renderMode(); applyCompareBtnStyle?.(); };
       renderPills(); renderMode(); applyCompareBtnStyle();
     };
   },

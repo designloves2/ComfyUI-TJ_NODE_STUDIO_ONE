@@ -14,6 +14,7 @@ import { mountInpaintLeft }       from "./ui_inpaint_sdxl.js";
 import { mountOutpaintLeft }      from "./ui_outpaint_sdxl.js";
 import { mountUpscaleLeft }       from "./ui_upscale_sdxl.js";
 import { attachLLMPanel }         from "../shared/llm_panel.js";
+import { attachNodeState, restoreNodeState } from "../shared/node_state.js";
 
 // ── Layout ─────────────────────────────────────────────────────────────────────
 const TOPBAR_H    = 40;
@@ -95,7 +96,10 @@ app.registerExtension({
       this.size        = [NODE_MW, NODE_MH];
       this._buildUI();
     };
-    nodeType.prototype.onConfigure = function () { this.size = [NODE_MW, NODE_MH + (this._extraH || 0)]; };
+    nodeType.prototype.onConfigure = function () {
+      this.size = [NODE_MW, NODE_MH + (this._extraH || 0)];
+      restoreNodeState(this);
+    };
     nodeType.prototype.onResize    = function () { this.size = [NODE_MW, NODE_MH + (this._extraH || 0)]; };
     nodeType.prototype.getSlotMenuOptions = function () { return []; };
 
@@ -103,7 +107,11 @@ app.registerExtension({
       const self   = this;
       self._extraH = 0;
       const state  = defaultState(loadState());
-      const persist = () => saveState(state);
+      // The settings ride along in the workflow — see web/shared/node_state.js.
+      const persist = attachNodeState(self, {
+        state, save: saveState, normalize: defaultState,
+        rerender: () => self._tjRepaint?.(),
+      });
       const appConfig = { output_mode_visible: true };
       const modeResults = {};
 
@@ -663,6 +671,10 @@ app.registerExtension({
         computeSize: () => [NODE_MW, NODE_MH + (self._extraH || 0)],
       });
 
+      // Every panel, repainted from `state` — used after a workflow restores settings.
+      // renderMode() rebuilds the left panel, but the seed and prompt fields live
+      // outside it — a restore has to put those back by hand.
+      self._tjRepaint = () => { seedInput.value = state.seed ?? 0; promptTA.value = getModePrompt(state.mode); updateCount?.(); renderPills(); renderMode(); };
       renderPills();
       renderMode();
     };

@@ -17,6 +17,7 @@ import { mountEditLeft }          from "./ui_edit_klein.js";
 import { mountInpaintLeft }       from "./ui_inpaint_klein.js";
 import { mountFaceswapLeft }      from "./ui_faceswap_klein.js";
 import { mountUpscaleLeft }       from "./ui_upscale_klein.js";
+import { attachNodeState, restoreNodeState } from "../shared/node_state.js";
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 const TOPBAR_H    = 40;
@@ -131,7 +132,10 @@ app.registerExtension({
       this.size         = [NODE_MW, NODE_MH];
       this._buildUI();
     };
-    nodeType.prototype.onConfigure = function () { this.size = [NODE_MW, NODE_MH + (this._extraH || 0)]; };
+    nodeType.prototype.onConfigure = function () {
+      this.size = [NODE_MW, NODE_MH + (this._extraH || 0)];
+      restoreNodeState(this);
+    };
     nodeType.prototype.onResize    = function () { this.size = [NODE_MW, NODE_MH + (this._extraH || 0)]; };
 
     nodeType.prototype._buildUI = function () {
@@ -139,7 +143,11 @@ app.registerExtension({
       self._extraH = 0;
       const state  = defaultState(loadState());
       state.useModelOverride = false; // 오버라이드는 항상 비활성으로 시작 (저장 무시)
-      const persist = () => saveState(null, state);
+      // The settings ride along in the workflow — see web/shared/node_state.js.
+      const persist = attachNodeState(self, {
+        state, save: (s) => saveState(null, s), normalize: defaultState,
+        rerender: () => self._tjRepaint?.(),
+      });
       const appConfig = { output_mode_visible: true };
       const modeResults = {};
 
@@ -956,6 +964,10 @@ app.registerExtension({
         computeSize: () => [NODE_MW, NODE_MH + (self._extraH || 0)],
       });
 
+      // Every panel, repainted from `state` — used after a workflow restores settings.
+      // renderMode() rebuilds the left panel, but the seed and prompt fields live
+      // outside it — a restore has to put those back by hand.
+      self._tjRepaint = () => { seedInput.value = state.seed ?? 0; promptTA.value = getModePrompt(state.mode); updateCount?.(); renderPills(); renderMode(); updateKVBtn?.(); syncCompareBtn?.(); };
       // Initial render
       renderPills();
       renderMode();
