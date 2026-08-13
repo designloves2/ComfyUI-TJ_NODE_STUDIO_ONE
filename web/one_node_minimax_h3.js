@@ -16,7 +16,7 @@ import { api } from "../../scripts/api.js";
 import {
   C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, SUBFOLDER,
   el, clear, loadState, saveState, defaultState, randomSeed,
-  CLIP_LENGTHS, ASPECTS, GENERATION_MODES, ACCEL_MODES, UPSCALE_MODES, CONTINUITY_MODES,
+  CLIP_LENGTHS, ASPECTS, GENERATION_MODES, ACCEL_MODES, accelModesFor, UPSCALE_MODES, CONTINUITY_MODES,
   clipPlan, formatDuration, formatClock, framesToSeconds, resolveResolution,
   splitBrief, composeClipPrompt, promptIndexForClip, clipPositionInPrompt,
   effectiveAccel, turboLoraForMode, explainGenerationError,
@@ -122,7 +122,12 @@ app.registerExtension({
         pillsWrap.appendChild(modeBar(
           GENERATION_MODES.map(m => ({ key: m.key, label: m.label, enabled: true })),
           state.generationMode,
-          key => { state.generationMode = key; persist(); renderPills(); renderLeft(); }
+          key => {
+            state.generationMode = key;
+            // Turbo isn't offered in Reference mode, so don't leave it selected there.
+            if (!accelModesFor(key).some(m => m.key === state.accelMode)) state.accelMode = "none";
+            persist(); renderPills(); renderLeft();
+          }
         ));
       }
       let settingsOv, helpOv, promptEditOv, galleryOv, commonOv;
@@ -432,7 +437,7 @@ app.registerExtension({
           && !ctx.availability[accelNode];
         leftPanel.appendChild(panel([
           label("Pipeline"),
-          col([label("Acceleration"), select(ACCEL_MODES.map(m => ({ value: m.key, label: m.label })),
+          col([label("Acceleration"), select(accelModesFor(state.generationMode).map(m => ({ value: m.key, label: m.label })),
             state.accelMode, v => { state.accelMode = v; persist(); renderLeft(); })]),
           ...(accelMissing ? [el("div", {
             html: `⚠ <code>${accelNode}</code> not installed — this run will fall back to no acceleration.`,

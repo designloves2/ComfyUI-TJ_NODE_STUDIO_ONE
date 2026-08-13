@@ -32,9 +32,10 @@ export const DEFAULT_FRAMES = 192;   // 8.000s — the only exact-second option 
 
 export function framesToSeconds(frames) { return frames / FPS; }
 
-/** The turbo LoRA that matches the current generation mode's base model. */
+/** The turbo LoRA for the current mode — Reference has none, by design. */
 export function turboLoraForMode(state) {
-  const name = (state.generationMode === "reference") ? state.turboLoraReference : state.turboLora;
+  if ((state.generationMode || "t2v") === "reference") return "";
+  const name = state.turboLora;
   return (name && name !== "none") ? name : "";
 }
 
@@ -46,13 +47,14 @@ export function turboLoraForMode(state) {
 export function effectiveAccel(state, avail) {
   const want = state.accelMode || "turbo";
   if (want !== "turbo") return { mode: want, fellBack: false };
+  // Reference mode never runs turbo — the only turbo LoRAs that exist are fl2v, and one
+  // of those on the Ref2VA model throws inside the turbo pack.
+  if ((state.generationMode || "t2v") === "reference") {
+    return { mode: "none", fellBack: true,
+             reason: "Turbo is not available in Reference mode (turbo LoRAs are fl2v-only)." };
+  }
   if (!turboLoraForMode(state)) {
-    return {
-      mode: "none", fellBack: true,
-      reason: state.generationMode === "reference"
-        ? "No Reference turbo LoRA set — turbo skipped (an fl2v turbo LoRA would crash on the Ref2VA model)."
-        : "No turbo LoRA set — turbo skipped.",
-    };
+    return { mode: "none", fellBack: true, reason: "No turbo LoRA set — turbo skipped." };
   }
   if (avail && Object.keys(avail).length && !avail.MiniMaxH3TurboLoRA) {
     return { mode: "none", fellBack: true, reason: "comfyui-minimax-h3-turbo is not installed — turbo skipped." };
@@ -196,11 +198,18 @@ export function explainGenerationError(message) {
   return null;
 }
 export const ACCEL_MODES  = [
-  { key: "turbo",    label: "Turbo LoRA", node: "MiniMaxH3TurboLoRA" },
+  // Turbo LoRAs are trained against a specific base model and only the fl2v ones exist,
+  // so turbo is not offered in Reference mode at all (see accelModesFor).
+  { key: "turbo",    label: "Turbo LoRA", node: "MiniMaxH3TurboLoRA", modes: ["t2v", "firstlast"] },
   { key: "solattn",  label: "SolAttn",    node: "SolAttnPatch" },
   { key: "spectrum", label: "Spectrum",   node: "SpectrumApplyMiniMaxH3" },
   { key: "none",     label: "None",       node: null },
 ];
+
+/** Acceleration options valid for a generation mode. */
+export function accelModesFor(generationMode) {
+  return ACCEL_MODES.filter(m => !m.modes || m.modes.includes(generationMode || "t2v"));
+}
 export const UPSCALE_MODES = [
   { key: "none",  label: "None" },
   { key: "model", label: "Upscale Model" },

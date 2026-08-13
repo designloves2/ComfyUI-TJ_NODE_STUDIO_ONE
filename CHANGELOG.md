@@ -10,8 +10,9 @@
 
 **Turbo LoRA는 베이스 모델 전용 — Reference에서 크래시**
 - `fl2v` turbo LoRA를 **Ref2VA** 모델에 적용하면 turbo 팩 내부에서 예외가 납니다(adaln 세그먼트 3 vs 2)
-- UNET처럼 **모드별 turbo LoRA 슬롯**으로 분리 (`Text/First-Last` / `Reference`)
-- 해당 모드의 turbo LoRA가 없으면 **잘못된 LoRA를 적용하는 대신 가속을 끄고** 이유를 사이드 패널에 표시
+- 존재하는 turbo LoRA가 전부 `fl2v`용이므로 **Reference 모드에서는 Turbo 옵션 자체를 노출하지 않습니다**
+  (가속 드롭다운에 SolAttn / Spectrum / None만 표시). Turbo가 선택된 상태로 Reference로 바꾸면 자동으로 None
+- Turbo LoRA 설정은 슬롯 하나(Text only / First-Last)로 정리
 
 **무음 비디오 + 사운드트랙 요청 = 크래시**
 - 오디오 트랙이 없는 영상에서 `VHS_LoadVideo`의 AUDIO를 요구하면 프롬프트 전체가 실패
