@@ -19,6 +19,7 @@ import {
   CLIP_LENGTHS, ASPECTS, GENERATION_MODES, ACCEL_MODES, UPSCALE_MODES, CONTINUITY_MODES,
   clipPlan, formatDuration, formatClock, framesToSeconds, resolveResolution,
   splitBrief, composeClipPrompt, promptIndexForClip, clipPositionInPrompt,
+  effectiveAccel, turboLoraForMode, explainGenerationError,
 } from "./minimax/core_minimax.js";
 import { panel, label, button, select, numberField, slider, row, col, modeBar, iconBtn, openFullscreen }
   from "./klein/ui_common.js";
@@ -480,8 +481,11 @@ app.registerExtension({
       function accelSettings() {
         const n = (v, set, step = 0.05) => numberField(v, x => { set(x); persist(); }, step);
         switch (state.accelMode) {
-          case "turbo":
+          case "turbo": {
+            const eff = effectiveAccel(state, ctx.availability);
             return [
+              ...(eff.fellBack ? [el("div", { text: `⚠ ${eff.reason}`,
+                style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } })] : []),
               row([
                 col([label("Turbo strength"), n(state.turboLoraStrength ?? 1.0, v => state.turboLoraStrength = v)]),
                 col([label("Low VRAM"), (() => {
@@ -746,7 +750,12 @@ app.registerExtension({
           barInner.style.width = "100%";
         } catch (e) {
           if (e.message === "cancelled") { setStatus("Cancelled."); }
-          else { setStatus(`Error: ${e.message}`); showPopup(e.message, true); }
+          else {
+            const why = explainGenerationError(e.message);
+            setStatus(why ? `Error: ${why}` : `Error: ${e.message}`);
+            showPopup(why || e.message, true);
+            if (why) console.warn("[MMH3] underlying error:", e.message);
+          }
         } finally {
           running = false; stopRequested = false;
           genBtn.disabled = false; genBtn.textContent = "▶ Generate";

@@ -126,11 +126,19 @@ export function createSettingsOverlay(state, ctx) {
       el("div", { html: "→ <code>models/text_encoders/</code> · <code>models/vae/</code>", style: { fontSize: "10px", color: C.muted } }),
     ]));
 
-    const tl = searchableSelect(lor, state.turboLora || "none", v => { state.turboLora = v; ctx.persist(); });
+    const tl = searchableSelect(lor, state.turboLora || "none", v => { state.turboLora = v; ctx.persist(); ctx.refreshPlan?.(); });
+    const tlr = searchableSelect(lor, state.turboLoraReference || "none", v => { state.turboLoraReference = v; ctx.persist(); ctx.refreshPlan?.(); });
     const um = searchableSelect(ups, state.upscaleModel || "none", v => { state.upscaleModel = v; ctx.persist(); });
     wrap.appendChild(panel([
       label("Acceleration & Upscale"),
-      col([label("Turbo LoRA (used when Accel = Turbo LoRA)"), tl.el]),
+      row([
+        col([label("Turbo LoRA · Text / First-Last"), tl.el]),
+        col([label("Turbo LoRA · Reference"), tlr.el]),
+      ]),
+      el("div", { html: "⚠ Turbo LoRAs are trained per base model. An <code>fl2v</code> turbo LoRA applied to the "
+        + "<b>Ref2VA</b> model throws inside the turbo pack, so each mode has its own slot. Leave a slot on "
+        + "<code>none</code> and that mode simply runs without turbo.",
+        style: { fontSize: "10px", color: C.muted, lineHeight: "1.55" } }),
       row([
         col([label("Turbo strength"), numField(state.turboLoraStrength ?? 1.0, v => { state.turboLoraStrength = v; ctx.persist(); })]),
         col([label(" "), checkbox("Low VRAM turbo load", state.turboLoraLowVram, v => { state.turboLoraLowVram = v; ctx.persist(); })]),

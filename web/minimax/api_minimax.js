@@ -43,6 +43,15 @@ export async function getMediaFiles() {
   return { videos, audios };
 }
 
+/** Duration / audio-track presence for an input file (see the media_info route). */
+export async function getMediaInfo(file) {
+  try {
+    const r = await api.fetchApi(`${API}/media_info?file=${encodeURIComponent(file)}`);
+    if (!r.ok) return { ok: false };
+    return await r.json();
+  } catch { return { ok: false }; }
+}
+
 /** Upload a non-image asset (video/audio) into ComfyUI's input folder. */
 export async function uploadMedia(file) {
   const fd = new FormData();

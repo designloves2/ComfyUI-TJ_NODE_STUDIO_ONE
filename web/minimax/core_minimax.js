@@ -32,6 +32,34 @@ export const DEFAULT_FRAMES = 192;   // 8.000s — the only exact-second option 
 
 export function framesToSeconds(frames) { return frames / FPS; }
 
+/** The turbo LoRA that matches the current generation mode's base model. */
+export function turboLoraForMode(state) {
+  const name = (state.generationMode === "reference") ? state.turboLoraReference : state.turboLora;
+  return (name && name !== "none") ? name : "";
+}
+
+/**
+ * Turbo is only usable when a turbo LoRA exists for the mode's base model. Applying the
+ * wrong one is not a soft failure — it throws inside the turbo pack — so this reports
+ * when the UI should fall back and why.
+ */
+export function effectiveAccel(state, avail) {
+  const want = state.accelMode || "turbo";
+  if (want !== "turbo") return { mode: want, fellBack: false };
+  if (!turboLoraForMode(state)) {
+    return {
+      mode: "none", fellBack: true,
+      reason: state.generationMode === "reference"
+        ? "No Reference turbo LoRA set — turbo skipped (an fl2v turbo LoRA would crash on the Ref2VA model)."
+        : "No turbo LoRA set — turbo skipped.",
+    };
+  }
+  if (avail && Object.keys(avail).length && !avail.MiniMaxH3TurboLoRA) {
+    return { mode: "none", fellBack: true, reason: "comfyui-minimax-h3-turbo is not installed — turbo skipped." };
+  }
+  return { mode: "turbo", fellBack: false };
+}
+
 /**
  * Clips are driven by the prompts, not by a duration field.
  *
@@ -136,6 +164,37 @@ export const GENERATION_MODES = [
   { key: "firstlast", label: "First/Last Frame",  hint: "start + end keyframe (FL2VA)" },
   { key: "reference", label: "Reference",         hint: "up to 9 reference images (REF2VA)" },
 ];
+
+/**
+ * Known failures that come from ComfyUI's own MiniMax reference path, not from anything
+ * this node builds — turned into an explanation instead of a raw tensor error.
+ *
+ * Reproduced on ComfyUI 5727 across every resolution, checkpoint (FL2VA and Ref2VA),
+ * acceleration mode and patch combination: REF2VA conditioning yields an AV latent the
+ * audio VAE can't decode, and adding a reference audio breaks the sampler instead.
+ */
+export function explainGenerationError(message) {
+  const m = String(message || "");
+  if (/VAEDecodeAudio/i.test(m) && /must match the size of tensor/i.test(m)) {
+    return "Reference mode: ComfyUI's MiniMax reference path returns an AV latent the audio VAE "
+         + "can't decode (core issue, not this node — same failure on every resolution and checkpoint). "
+         + "Use Text only or First/Last Frame for now.";
+  }
+  if (/shape mismatch/i.test(m) && /cannot be broadcast/i.test(m)) {
+    return "Reference mode: the sampler rejects the reference tokens (core MiniMax reference path). "
+         + "Removing the reference audio changes the error but does not fix it — use Text only or "
+         + "First/Last Frame for now.";
+  }
+  if (/must match the size of tensor b \(2\)/.test(m) || /adaln/i.test(m)) {
+    return "The turbo LoRA does not match this mode's base model. Set a turbo LoRA for this mode in "
+         + "⚙ Settings, or switch Acceleration off.";
+  }
+  if (/failed to extract audio/i.test(m)) {
+    return "A reference video has no audio track but its soundtrack was requested — untick "
+         + "\"also use this clip's soundtrack\" for that video.";
+  }
+  return null;
+}
 export const ACCEL_MODES  = [
   { key: "turbo",    label: "Turbo LoRA", node: "MiniMaxH3TurboLoRA" },
   { key: "solattn",  label: "SolAttn",    node: "SolAttnPatch" },
@@ -169,7 +228,11 @@ export function defaultState(saved) {
     clipName:      saved.clipName      || "",
     vaeVideo:      saved.vaeVideo      || "",
     vaeAudio:      saved.vaeAudio      || "",
-    turboLora:     saved.turboLora     || "",
+    // Turbo LoRAs are trained per base model: an fl2v turbo LoRA on the Ref2VA UNET
+    // crashes inside the turbo pack (adaln segment mismatch), so each mode keeps its own
+    // slot exactly like the UNETs do.
+    turboLora:          saved.turboLora          || "",   // first/last + text-only
+    turboLoraReference: saved.turboLoraReference || "",   // reference mode
     turboLoraStrength: saved.turboLoraStrength ?? 1.0,
     turboLoraLowVram:  saved.turboLoraLowVram  ?? false,
     upscaleModel:  saved.upscaleModel  || "",

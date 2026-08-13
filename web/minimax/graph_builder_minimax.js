@@ -7,7 +7,7 @@
 //
 // Optional third-party nodes are gated on `avail` (from /minimax_h3_one/node_availability):
 // a missing pack disables that one feature rather than failing the whole prompt.
-import { SUBFOLDER, FPS, resolveResolution } from "./core_minimax.js";
+import { SUBFOLDER, FPS, resolveResolution, effectiveAccel, turboLoraForMode } from "./core_minimax.js";
 
 const N = {
   unet:   "MM:unet",
@@ -123,11 +123,11 @@ function buildModelChain(g, state, avail) {
     m = [N.cache, 0];
   }
 
-  const accel = state.accelMode || "turbo";
-  if (accel === "turbo" && has(avail, "MiniMaxH3TurboLoRA")
-      && state.turboLora && state.turboLora !== "none") {
+  // Turbo only when a LoRA exists for THIS mode's base model — see effectiveAccel.
+  const accel = effectiveAccel(state, avail).mode;
+  if (accel === "turbo" && has(avail, "MiniMaxH3TurboLoRA")) {
     g[N.turbo] = { class_type: "MiniMaxH3TurboLoRA", inputs: {
-      model: m, lora_name: state.turboLora,
+      model: m, lora_name: turboLoraForMode(state),
       strength: state.turboLoraStrength ?? 1.0,
       low_vram: !!state.turboLoraLowVram,
     }};
@@ -317,7 +317,9 @@ export function buildClipGraph(state, avail, opts = {}) {
     { firstFrame, lastFrame, refImages: refImages ?? state.refImages }, avail);
 
   // ── sampling ───────────────────────────────────────────────────────────────
-  const accel = state.accelMode || "turbo";
+  // The turbo sampler's 4-step schedule only makes sense with the turbo LoRA applied,
+  // so it follows the same resolution rather than state.accelMode directly.
+  const accel = effectiveAccel(state, avail).mode;
   const useTurboSampler = accel === "turbo" && has(avail, "MiniMaxH3TurboSampler");
   const steps = useTurboSampler ? (state.turboSteps ?? 4) : (state.steps ?? 20);
 

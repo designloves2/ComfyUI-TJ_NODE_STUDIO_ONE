@@ -1594,6 +1594,68 @@ async def mmh3_list_videos(request):
     return web.json_response({"videos": videos, "total": len(found), "offset": offset, "limit": limit})
 
 
+@PromptServer.instance.routes.get("/minimax_h3_one/media_info")
+async def mmh3_media_info(request):
+    """Duration / audio-track presence for a file in ComfyUI's input folder.
+
+    Asking VHS_LoadVideo for the AUDIO output of a silent clip aborts the whole prompt,
+    so the UI needs to know up front whether a reference video actually has sound (and
+    how long it is, to keep the in/out fields inside the file).
+    """
+    name = request.query.get("file", "") or ""
+    if not name:
+        return web.json_response({"ok": False, "error": "no file"}, status=400)
+    try:
+        base = folder_paths.get_input_directory()
+        path = _safe_resolve_path(base, os.path.dirname(name), os.path.basename(name))
+    except ValueError:
+        return web.json_response({"ok": False, "error": "invalid path"}, status=400)
+    if not path or not os.path.isfile(path):
+        return web.json_response({"ok": False, "error": "file not found"}, status=404)
+
+    ffmpeg = _ffmpeg_exe()
+    if not ffmpeg:
+        return web.json_response({"ok": False, "error": "ffmpeg not found"}, status=500)
+    try:
+        # `ffmpeg -i` with no output prints the stream table to stderr and exits non-zero.
+        proc = subprocess.run([ffmpeg, "-hide_banner", "-i", path],
+                              capture_output=True, text=True, timeout=60)
+        info = proc.stderr or ""
+    except subprocess.TimeoutExpired:
+        return web.json_response({"ok": False, "error": "ffmpeg timed out"}, status=500)
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+    duration = 0.0
+    for line in info.splitlines():
+        s = line.strip()
+        if s.startswith("Duration:"):
+            try:
+                hh, mm, ss = s.split(",")[0].replace("Duration:", "").strip().split(":")
+                duration = int(hh) * 3600 + int(mm) * 60 + float(ss)
+            except Exception:
+                pass
+            break
+    fps = 0.0
+    for line in info.splitlines():
+        if "Video:" in line:
+            for part in line.split(","):
+                p = part.strip()
+                if p.endswith("fps"):
+                    try:
+                        fps = float(p[:-3].strip())
+                    except Exception:
+                        pass
+            break
+    return web.json_response({
+        "ok": True, "file": name,
+        "duration": round(duration, 3),
+        "has_audio": "Audio:" in info,
+        "has_video": "Video:" in info,
+        "fps": fps,
+    })
+
+
 @PromptServer.instance.routes.post("/minimax_h3_one/reveal")
 async def mmh3_reveal(request):
     """Open the output folder in the OS file manager (no filename needed)."""

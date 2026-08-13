@@ -5,7 +5,7 @@
 // handed over from another ONE STUDIO node's gallery).
 import { C, BRAND, el, clear } from "./core_minimax.js";
 import { panel, label, select, numberField, row, col } from "../klein/ui_common.js";
-import { uploadImage, getMediaFiles, uploadMedia } from "./api_minimax.js";
+import { uploadImage, getMediaFiles, uploadMedia, getMediaInfo } from "./api_minimax.js";
 
 export function imageSlot(labelText, initialFile, onSet, { box = 132 } = {}) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "3px", alignItems: "center" } });
@@ -188,13 +188,46 @@ function mediaRow(kind, entry, idx, files, ctx, state, onRefresh) {
     col([label("out (s)"), numberField(entry.end ?? 5,   v => { entry.end   = Math.max(0, v); ctx.persist(); onRefresh(); }, 0.5)]),
     col([durTag]),
   ]));
+
+  // Source facts (length, whether there's sound). Asking VHS for the audio of a silent
+  // clip aborts the prompt, so the checkbox is only offered when a track exists.
+  const infoTag = el("div", { style: { fontSize: "9.5px", color: C.muted } });
+  box.appendChild(infoTag);
+  let sndLabel = null;
   if (isVideo) {
     const chk = el("input", { type: "checkbox" });
     chk.checked = entry.withAudio !== false;
     chk.addEventListener("change", () => { entry.withAudio = chk.checked; ctx.persist(); });
-    box.appendChild(el("label", { style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "10px", color: C.text, cursor: "pointer" } },
-      [chk, el("span", { text: "also use this clip's soundtrack" })]));
+    sndLabel = el("label", { style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "10px", color: C.text, cursor: "pointer" } },
+      [chk, el("span", { text: "also use this clip's soundtrack" })]);
+    box.appendChild(sndLabel);
+    sndLabel._chk = chk;
   }
+
+  if (entry.file) {
+    getMediaInfo(entry.file).then(info => {
+      if (!info.ok) { infoTag.textContent = ""; return; }
+      const bits = [`source ${info.duration.toFixed(2)}s`];
+      if (isVideo && info.fps) bits.push(`${info.fps}fps → resampled to 24`);
+      if (isVideo) bits.push(info.has_audio ? "has audio" : "no audio track");
+      infoTag.textContent = bits.join(" · ");
+
+      // keep the requested window inside the file
+      if (info.duration > 0 && (Number(entry.end) || 0) > info.duration) {
+        entry.end = +info.duration.toFixed(2); ctx.persist(); onRefresh(); return;
+      }
+      if (isVideo && !info.has_audio && sndLabel) {
+        entry.withAudio = false; ctx.persist();
+        sndLabel._chk.checked = false;
+        sndLabel._chk.disabled = true;
+        sndLabel.style.opacity = "0.45";
+        sndLabel.style.cursor = "default";
+        sndLabel.lastChild.textContent = "no soundtrack in this file";
+        infoTag.style.color = C.warn;
+      }
+    });
+  }
+
   box.appendChild(inp);
   return box;
 }
@@ -236,7 +269,17 @@ export function mountImagePanel(state, ctx) {
     // ── reference mode: images (9) + videos (3) + audios (3), opt-in per kind ──
     const types = state.refTypes || { images: true };
     const picker = refTypeDropdown(state, ctx, render);
-    const kids = [label("Reference"), picker.el];
+    const kids = [
+      label("Reference"),
+      // Verified broken on ComfyUI 5727 in every combination tried (see
+      // explainGenerationError). Left available because other builds may differ.
+      el("div", { html: "⚠ <b>Reference mode currently fails on this ComfyUI build</b> — the core MiniMax "
+        + "reference path returns an AV latent the audio VAE can't decode. Text only and First/Last Frame work. "
+        + "Try it if you like; the error will say what happened.",
+        style: { fontSize: "10px", color: C.warn, lineHeight: "1.55",
+                 background: C.bg2, border: `1px solid ${C.warn}33`, borderRadius: "6px", padding: "6px 8px" } }),
+      picker.el,
+    ];
 
     if (types.images) {
       const grid = el("div", { style: { display: "flex", flexWrap: "wrap", gap: "5px", justifyContent: "center" } });
