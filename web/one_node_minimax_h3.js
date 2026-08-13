@@ -23,7 +23,7 @@ import {
   parseBrief, groupShots, composeClipPrompt,
   effectiveAccel, turboLoraForMode, explainGenerationError,
 } from "./minimax/core_minimax.js";
-import { panel, label, button, select, numberField, slider, row, col, modeBar, iconBtn, openFullscreen }
+import { panel, label, button, select, loraSelect, numberField, slider, row, col, modeBar, iconBtn, openFullscreen }
   from "./klein/ui_common.js";
 import {
   queuePrompt, interrupt, freeMemory, setLastResult, stitchClips,
@@ -616,8 +616,38 @@ app.registerExtension({
         function render() {
           clear(wrap);
           const loras = state.loras || [];
-          const on = loras.filter(l => l.enabled !== false && l.name && l.name !== "none").length;
-          const kids = [label(`LoRA (${on}/${loras.length} on)`)];
+          // Live count, updated in place — picking a file must not tear the panel down
+          // and wipe what the user typed into the search box.
+          const countEl = label("");
+          const refreshCount = () => {
+            const on = loras.filter(l => l.enabled !== false && l.name && l.name !== "none").length;
+            countEl.textContent = `LoRA (${on}/${loras.length} on)`;
+          };
+          refreshCount();
+
+          // LoRAs dropped into the folder after the page loaded are invisible until the
+          // list is asked for again, so offer that here rather than making it a reload.
+          const reload = el("button", { type: "button", text: "⟳", title: "Rescan the LoRA folder", style: {
+            flexShrink: "0", cursor: "pointer", fontFamily: "inherit", fontSize: "11px",
+            padding: "1px 7px", borderRadius: "5px",
+            background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+          }});
+          reload.addEventListener("click", async () => {
+            reload.disabled = true; reload.textContent = "…";
+            try {
+              const before = (ctx.availableModels?.loras || []).length;
+              ctx.availableModels = await getModels();
+              const after = (ctx.availableModels?.loras || []).length;
+              showPopup(after === before ? `LoRA list refreshed — ${after} found.`
+                                         : `LoRA list refreshed — ${after} found (${after - before > 0 ? "+" : ""}${after - before}).`, false);
+            } catch { showPopup("Could not refresh the model list.", true); }
+            reload.disabled = false; reload.textContent = "⟳";
+            render();
+          });
+
+          const head0 = el("div", { style: { display: "flex", alignItems: "center", gap: "6px" } });
+          head0.append(countEl, el("div", { style: { flex: "1" } }), reload);
+          const kids = [head0];
           const all = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
           loras.forEach((l, i) => {
             const off = l.enabled === false;
@@ -659,7 +689,8 @@ app.registerExtension({
             tw.title = "Added to every clip's prompt while this LoRA is on";
             tw.addEventListener("input", () => { l.triggerWord = tw.value; persist(); });
 
-            const sel = select(all.map(n => ({ value: n, label: n })), l.name || "none", async v => {
+            // Searchable — a LoRA folder is far too long to scroll through.
+            const sel = loraSelect(all, l.name || "none", async v => {
               const prev = l.name;
               l.name = v; persist();
               if (v && v !== "none") {
@@ -676,10 +707,10 @@ app.registerExtension({
                   tw.placeholder = "Trigger word…";
                 }
               } else { l.triggerWord = ""; tw.value = ""; persist(); }
-              render();
+              refreshCount();   // in place — rebuilding here would wipe the search box
             });
 
-            card.append(head, sel, tw);
+            card.append(head, sel.el, tw);
             kids.push(card);
           });
           const add = el("button", { type: "button", text: "+ Add LoRA", style: {
