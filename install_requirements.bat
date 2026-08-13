@@ -50,11 +50,14 @@ set REPOS[11]=https://github.com/lihaoyun6/ComfyUI-MiniMaxH3-Cache
 set REPOS[12]=https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo
 set REPOS[13]=https://github.com/kijai/ComfyUI-SolAttn_triton
 set REPOS[14]=https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI
+:: MiniMax H3 reference videos (VHS_LoadVideo) and the Spectrum accelerator
+set REPOS[15]=https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite
+set REPOS[16]=https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3
 
-set COUNT=15
+set COUNT=17
 
 :: ── 설치 루프 ──────────────────────────────────────────────────────────────────
-for /L %%i in (0,1,14) do (
+for /L %%i in (0,1,16) do (
     set "URL=!REPOS[%%i]!"
 
     :: URL에서 폴더명 추출 (마지막 /뒤)

@@ -428,8 +428,8 @@ SDXL ONE STUDIO supports two model loading modes in Settings.
 > Video + audio node. It depends on external custom nodes and separate models, and long videos are assembled from chained clips, so results are not seamless.
 
 ### 왜 클립으로 나누는가 / Why clips
-MiniMax H3는 프레임 수가 **17k+5 격자**에만 떨어지고 한 번에 만들 수 있는 길이가 제한적입니다(VRAM). 이 노드는 긴 프롬프트를 **클립 단위로 나눠 순차 생성**하고, 각 클립을 개별 저장한 뒤 마지막에 **하나로 합칩니다**. 클립마다 큐를 새로 제출하므로 ComfyUI가 알아서 모델을 내려 VRAM이 정리됩니다.
-MiniMax H3 only accepts frame counts on a **17k+5 grid** and a single pass is VRAM-limited. This node renders a long prompt as **sequential clips**, saves each one, then **stitches them into one file**. Each clip is its own queue submission, so ComfyUI's between-prompt unload keeps VRAM in check.
+MiniMax H3는 프레임 수가 **17k+5 격자**에만 떨어지고 한 번에 만들 수 있는 길이가 제한적입니다(VRAM). 이 노드는 긴 프롬프트를 **클립 단위로 나눠 순차 생성**하고, 각 클립을 개별 저장한 뒤 마지막에 **하나로 합칩니다**. 클립마다 큐를 새로 제출하고, 클립 사이와 실행이 끝날 때 VRAM을 명시적으로 해제합니다(ComfyUI는 프롬프트 사이에 모델을 그대로 들고 있습니다).
+MiniMax H3 only accepts frame counts on a **17k+5 grid** and a single pass is VRAM-limited. This node renders a long prompt as **sequential clips**, saves each one, then **stitches them into one file**. Each clip is its own queue submission, and VRAM is freed explicitly between clips and once the run ends — ComfyUI itself keeps models resident between prompts.
 
 ### 지원 모드 / Supported Modes
 
@@ -448,10 +448,13 @@ MiniMax H3 only accepts frame counts on a **17k+5 grid** and a single pass is VR
 |---|---|
 | **라이브 프리뷰**<br><sub>Live preview</sub>| 샘플링 중 디코딩된 프레임이 노드에 실시간 표시 (`ModelPreviewOverrideKJ`). 스피너가 아니라 실제 영상이 만들어지는 걸 봅니다<br><sub>decoded frames stream into the node while sampling — not a spinner</sub>|
 | **클립 릴레이**<br><sub>Clip relay</sub>| 클립 수 · 실제 총 길이 · 예상 소요시간을 설정 즉시 표시. 실측 시간으로 예상치 자동 보정<br><sub>clip count / actual length / ETA shown live, ETA self-corrects from measured clip times</sub>|
-| **연속성**<br><sub>Continuity</sub>| Last Frame Chain(이전 클립 마지막 프레임을 다음 시작으로) / Reference / None<br><sub>last-frame chain, reference, or none</sub>|
-| **프롬프트 자동 분할**<br><sub>Prompt auto-split</sub>| `[Shot N]` 타임코드 · `---` · 빈 줄 기준으로 긴 브리프를 클립별 프롬프트로 분할<br><sub>splits a long brief on `[Shot N]`, `---`, or blank lines</sub>|
+| **연속성**<br><sub>Continuity</sub>| **Last Frame Chain** — 이전 클립의 마지막 프레임이 다음 클립의 첫 프레임이 됩니다. first frame을 받는 모델은 FL2VA뿐이라, 이어지는 클립은 어떤 모드로 시작했든 FL2VA로 렌더됩니다 · **Reference**(Reference 모드 전용) — 모든 클립이 같은 레퍼런스 이미지를 사용 · **None** — 클립 간에 아무것도 넘기지 않되 해당 모드의 모델은 그대로<br>세 경우 모두 프롬프트의 **공통 부분(스타일 머리말 · 사운드 꼬리말)은 모든 클립에 전달**됩니다<br><sub>Last Frame Chain hands the previous ending over as a real first frame (rendered by FL2VA, the only model that takes one); Reference (Reference mode only) re-uses the same reference images on every clip; None hands nothing across but stays on the run's own model. In all three the shared part of the prompt reaches every clip.</sub>|
+| **프롬프트 자동 분할**<br><sub>Prompt auto-split</sub>| `[Shot N]` 타임코드 · `---` · 빈 줄 기준으로 긴 브리프를 클립별 프롬프트로 분할. 스타일 머리말과 사운드 꼬리말은 **공통 영역으로 올려서 모든 클립이 함께 받습니다** — 길이를 늘려도 룩이 유지되는 이유입니다<br><sub>splits a long brief on `[Shot N]`, `---`, or blank lines, and lifts the style preamble and sound tail into the common header/footer so every clip carries them</sub>|
 | **합본 + 트림**<br><sub>Stitch + trim</sub>| 완료 후 ffmpeg로 자동 결합, 요청 길이에 맞춰 자르기 선택 가능<br><sub>ffmpeg concat when the run ends, optional trim to the requested length</sub>|
-| **가속 / 업스케일**<br><sub>Accel / Upscale</sub>| Turbo LoRA · SolAttn · None / Upscale Model · RTX VSR · None<br><sub>selectable acceleration and upscaling</sub>|
+| **가속 / 업스케일**<br><sub>Accel / Upscale</sub>| Turbo LoRA(FL2VA 전용) · SolAttn · Spectrum · None / Upscale Model · RTX VSR · None<br><sub>selectable acceleration and upscaling</sub>|
+| **설정 누락 차단**<br><sub>Missing-model guard</sub>| UNET이 지정되지 않은 모드는 **진입 자체가 막히고**, 상단에 무엇이 빠졌는지 경고가 뜹니다. 해당 모델이 필요한 연속성 옵션도 함께 비활성화됩니다<br><sub>a mode whose UNET is unset cannot be entered — the top bar says what Settings still needs, and continuity options needing that model are disabled too</sub>|
+| **갤러리**<br><sub>Gallery</sub>| 클립·합본을 한 곳에서. 카드마다 **생성에 쓰인 프롬프트**가 함께 저장되어 다시 불러오거나 복사할 수 있습니다. 전체화면 플레이어(스페이스=재생, ←→=이동, `[`/`]`=이전/다음, Esc=닫기)<br><sub>clips and stitched files, each card keeping the prompt it was rendered from (reuse or copy), plus a fullscreen player</sub>|
+| **설정 저장**<br><sub>Settings persistence</sub>| 노드 설정이 **워크플로우에 함께 저장**됩니다. 다른 PC에서 열거나 남에게 파일을 넘겨도 그대로 재현되고, 한 그래프에 노드를 여러 개 둬도 각자 값을 유지합니다<br><sub>settings are saved inside the workflow, so the file reproduces on another machine and multiple nodes keep separate values</sub>|
 
 ### 필수 모델 / Required Models
 
@@ -475,6 +478,8 @@ MiniMax H3 only accepts frame counts on a **17k+5 grid** and a single pass is VR
 | [ComfyUI-MiniMax-H3-Turbo](https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo) | Turbo LoRA / Turbo 샘플러<br><sub>turbo LoRA + sampler</sub>| Accel=Turbo 비활성<br><sub>turbo accel disabled</sub>|
 | [ComfyUI-SolAttn_triton](https://github.com/kijai/ComfyUI-SolAttn_triton) | SolAttn 가속<br><sub>SolAttn acceleration</sub>| Accel=SolAttn 비활성<br><sub>SolAttn disabled</sub>|
 | [Nvidia RTX Nodes](https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI) | RTX Video Super Resolution | RTX 업스케일만 비활성<br><sub>RTX upscale disabled</sub>|
+| [ComfyUI-Spectrum-MiniMax-H3](https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3) | Spectrum 가속<br><sub>Spectrum acceleration</sub>| Accel=Spectrum 비활성<br><sub>Spectrum disabled</sub>|
+| [ComfyUI-VideoHelperSuite](https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite) | Reference 모드의 **레퍼런스 비디오** 입력<br><sub>reference video inputs</sub>| 레퍼런스 비디오만 비활성 (이미지·오디오는 정상)<br><sub>reference videos disabled</sub>|
 
 > 선택 노드는 설치 안 돼 있으면 **해당 기능만 꺼지고 나머지는 정상 동작**합니다 (설정 화면에 상태 표시).
 > Optional packs degrade gracefully — the matching feature switches off and everything else still runs (status is shown in Settings).

@@ -55,6 +55,9 @@ REPOS=(
     "https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo"
     "https://github.com/kijai/ComfyUI-SolAttn_triton"
     "https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI"
+    # MiniMax H3 reference videos (VHS_LoadVideo) and the Spectrum accelerator
+    "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite"
+    "https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3"
 )
 
 TOTAL=${#REPOS[@]}
