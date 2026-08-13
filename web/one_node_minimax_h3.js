@@ -19,7 +19,7 @@ import {
   el, clear, loadState, saveState, defaultState, randomSeed,
   CLIP_LENGTHS, ASPECTS, GENERATION_MODES, ACCEL_MODES, accelModesFor, UPSCALE_MODES, CONTINUITY_MODES,
   clipPlan, formatDuration, formatClock, framesToSeconds, resolveResolution,
-  splitBrief, composeClipPrompt, promptIndexForClip, clipPositionInPrompt,
+  splitBrief, composeClipPrompt,
   effectiveAccel, turboLoraForMode, explainGenerationError,
 } from "./minimax/core_minimax.js";
 import { panel, label, button, select, numberField, slider, row, col, modeBar, iconBtn, openFullscreen }
@@ -305,32 +305,12 @@ app.registerExtension({
         clear(promptList);
         const plan = currentPlan();
         promptCount.textContent = `(${plan.promptCount} prompt${plan.promptCount > 1 ? "s" : ""} → ${plan.count} clip${plan.count > 1 ? "s" : ""} · ${plan.actualSeconds.toFixed(2)}s)`;
-        let clipStart = 0;
         state.prompts.forEach((text, i) => {
-          const reps = plan.counts[i] || 1;
-          const clipFrom = clipStart + 1, clipTo = clipStart + reps;
-          clipStart += reps;
-
           const line = el("div", { style: { display: "flex", gap: "4px", alignItems: "flex-start" } });
-          const sideCol = el("div", { style: { width: "40px", flexShrink: "0", display: "flex", flexDirection: "column", gap: "2px", alignItems: "center", paddingTop: "5px" } });
+          const sideCol = el("div", { style: { width: "28px", flexShrink: "0", display: "flex", flexDirection: "column", gap: "2px", alignItems: "center", paddingTop: "5px" } });
           sideCol.appendChild(el("div", {
-            text: reps > 1 ? `C${clipFrom}-${clipTo}` : `C${clipFrom}`,
+            text: `C${i + 1}`,
             style: { fontSize: "9px", fontWeight: "700", color: BRAND, whiteSpace: "nowrap" } }));
-
-          // x N — how many chained clips this one description covers
-          const rep = el("input", { type: "number", min: "1", max: "20", title: "clips rendered from this prompt", style: {
-            width: "38px", boxSizing: "border-box", background: C.bg2, color: C.text,
-            border: `1px solid ${reps > 1 ? BRAND : C.border}`, borderRadius: "4px",
-            padding: "2px 3px", fontSize: "10px", fontFamily: "inherit", outline: "none", textAlign: "center",
-          }});
-          rep.value = reps;
-          rep.addEventListener("change", () => {
-            const v = Math.max(1, Math.min(20, Math.round(+rep.value || 1)));
-            if (!state.promptClips) state.promptClips = [];
-            state.promptClips[i] = v;
-            persist(); refreshPlan();
-          });
-          sideCol.appendChild(rep);
 
           const ta = el("textarea", { placeholder: i === 0 ? "Describe the shot…" : "(blank = reuse the previous prompt)", style: {
             flex: "1", minHeight: "120px", boxSizing: "border-box", background: C.bg2, color: C.text,
@@ -347,11 +327,8 @@ app.registerExtension({
             border: "none", fontSize: "11px", padding: "6px 2px",
           }});
           del.addEventListener("click", () => {
-            if (state.prompts.length <= 1) { state.prompts = [""]; state.promptClips = [1]; }
-            else {
-              state.prompts.splice(i, 1);
-              if (state.promptClips) state.promptClips.splice(i, 1);
-            }
+            if (state.prompts.length <= 1) state.prompts = [""];
+            else state.prompts.splice(i, 1);
             persist(); refreshPlan();
           });
           line.append(sideCol, ta, del);
@@ -360,7 +337,6 @@ app.registerExtension({
       }
       addBtn.addEventListener("click", () => {
         state.prompts.push("");
-        (state.promptClips = state.promptClips || []).push(1);
         persist(); refreshPlan();
       });
       splitBtn.addEventListener("click", () => {
@@ -369,7 +345,6 @@ app.registerExtension({
         const parts = splitBrief(joined, currentPlan().count);
         if (parts.length <= 1) { showPopup("Could not find clip boundaries ([Shot N], --- or blank lines).", true); return; }
         state.prompts = parts;
-        state.promptClips = parts.map(() => 1);
         persist(); refreshPlan();
         showPopup(`Split into ${parts.length} prompts (one clip each).`, false);
       });
@@ -622,7 +597,7 @@ app.registerExtension({
       // separate in the editor so a split never eats the shared style/sound text.
       // A clip index maps back through the per-prompt repeat counts.
       function promptForClip(clipIdx) {
-        return composeClipPrompt(state, promptIndexForClip(state, clipIdx));
+        return composeClipPrompt(state, clipIdx);
       }
 
       function seedForClip(i) {
@@ -745,7 +720,7 @@ app.registerExtension({
               saveMeta(vid.filename, vid.subfolder || "", metaForVideo(promptForClip(i), {
                 clip: curClip, clips: plan.count, seed: seedForClip(i), mode: modeForClip,
                 // the editable source text, so "reuse" restores the editor exactly
-                prompts: [state.prompts?.[promptIndexForClip(state, i)] || ""],
+                prompts: [state.prompts?.[i] || ""],
               }));
               showResultVideo(`/view?filename=${encodeURIComponent(vid.filename)}&subfolder=${encodeURIComponent(vid.subfolder || "")}&type=${vid.type || "output"}&t=${Date.now()}`);
               badge.textContent = `CLIP ${curClip}/${totClip} done`;

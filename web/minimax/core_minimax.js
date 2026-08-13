@@ -63,61 +63,29 @@ export function effectiveAccel(state, avail) {
 }
 
 /**
- * Clips are driven by the prompts, not by a duration field.
+ * Clips are driven by the prompts, not by a duration field: one prompt, one clip.
  *
- * One prompt renders one clip by default. A prompt can be repeated over several clips
- * (`promptClips[i]`) when you want a single description to keep going — the extra clips
- * continue from the previous clip's last frame rather than restarting, which is the only
- * way one prompt can cover more than a clip's worth of time. So:
- *
- *     total clips   = sum(promptClips)
+ *     total clips   = prompts.length
  *     total seconds = total clips x clip length
  *
  * Total length is therefore a readout, never an input: change the clip length or add a
- * prompt (or bump a repeat) and it follows.
+ * prompt and it follows.
+ *
+ * There used to be a per-prompt repeat count. It only ever resent the same text, so the
+ * extra clips re-enacted the same beat with a different seed — to actually carry a scene
+ * forward you write the next prompt, and Last Frame Chain continues the picture.
  */
-export function promptClipCounts(state) {
-  const n = (state.prompts || [""]).length;
-  const raw = state.promptClips || [];
-  const out = [];
-  for (let i = 0; i < n; i++) out.push(Math.max(1, Math.round(raw[i] ?? 1)));
-  return out;
-}
-
 export function clipPlan(state, clipFramesOverride, avgMinutesPerClip) {
   const frames  = clipFramesOverride ?? state.clipFrames ?? 192;
   const clipSec = framesToSeconds(frames);
-  const counts  = promptClipCounts(state);
-  const count   = Math.max(1, counts.reduce((a, b) => a + b, 0));
+  const count   = Math.max(1, (state.prompts || [""]).length);
   const avg     = avgMinutesPerClip ?? state.avgMinutesPerClip ?? 13;
   return {
-    count, clipSec, counts,
+    count, clipSec,
     actualSeconds: count * clipSec,
     estimateMinutes: count * avg,
-    promptCount: counts.length,
+    promptCount: count,
   };
-}
-
-/** Which prompt index a given clip belongs to (walks the repeat counts). */
-export function promptIndexForClip(state, clipIndex) {
-  const counts = promptClipCounts(state);
-  let acc = 0;
-  for (let i = 0; i < counts.length; i++) {
-    acc += counts[i];
-    if (clipIndex < acc) return i;
-  }
-  return counts.length - 1;
-}
-
-/** 1-based position of this clip inside its prompt's run, e.g. "2 / 3". */
-export function clipPositionInPrompt(state, clipIndex) {
-  const counts = promptClipCounts(state);
-  let acc = 0;
-  for (let i = 0; i < counts.length; i++) {
-    if (clipIndex < acc + counts[i]) return { promptIndex: i, pos: clipIndex - acc + 1, of: counts[i] };
-    acc += counts[i];
-  }
-  return { promptIndex: counts.length - 1, pos: 1, of: 1 };
 }
 
 export function formatDuration(minutes) {
@@ -260,7 +228,6 @@ export function defaultState(saved) {
     // they are stored apart so splitting into clips never throws them away.
     prompts: Array.isArray(saved.prompts) && saved.prompts.length ? saved.prompts.slice() : [""],
     // clips rendered per prompt (>1 continues the same description across chained clips)
-    promptClips: Array.isArray(saved.promptClips) ? saved.promptClips.slice() : [],
     promptHeader: saved.promptHeader || "",
     promptFooter: saved.promptFooter || "",
     promptSuffix: saved.promptSuffix || "",

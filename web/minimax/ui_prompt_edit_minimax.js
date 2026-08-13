@@ -39,7 +39,6 @@ export function createPromptEditOverlay(state, ctx, onApply) {
       header: state.promptHeader || "",
       footer: state.promptFooter || "",
       prompts: (state.prompts || []).slice(),
-      promptClips: (state.promptClips || []).slice(),
       selected,
     });
     if (undoStack.length > 20) undoStack.shift();
@@ -51,7 +50,6 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     state.promptHeader = s.header;
     state.promptFooter = s.footer;
     state.prompts = s.prompts.slice();
-    state.promptClips = (s.promptClips || []).slice();
     selected = Math.min(s.selected, state.prompts.length - 1);
     ctx.persist();
     renderAll();
@@ -168,8 +166,8 @@ export function createPromptEditOverlay(state, ctx, onApply) {
       }});
       del.addEventListener("click", e => {
         e.stopPropagation();
-        if ((state.prompts || []).length <= 1) { state.prompts = [""]; state.promptClips = [1]; }
-        else { state.prompts.splice(i, 1); (state.promptClips || []).splice(i, 1); }
+        if ((state.prompts || []).length <= 1) state.prompts = [""];
+        else state.prompts.splice(i, 1);
         if (selected >= state.prompts.length) selected = state.prompts.length - 1;
         ctx.persist(); renderList(); loadSelected();
       });
@@ -189,7 +187,6 @@ export function createPromptEditOverlay(state, ctx, onApply) {
 
   addBtn.addEventListener("click", () => {
     (state.prompts = state.prompts || []).push("");
-    (state.promptClips = state.promptClips || []).push(1);
     selected = state.prompts.length - 1;
     ctx.persist(); renderList(); loadSelected(); editor.focus();
   });
@@ -461,7 +458,6 @@ export function createPromptEditOverlay(state, ctx, onApply) {
       const plan = ctx.currentPlan?.() || { count: 1 };
       const groups = groupShots(parsed.shots, plan.count);
       state.prompts = groups.length ? groups : [reviewText];
-      state.promptClips = state.prompts.map(() => 1);
       selected = 0;
     } else {
       state.prompts[selected] = parsed.shots.join("\n\n") || reviewText;
@@ -597,7 +593,6 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     if (splitHeader) state.promptHeader = splitHeader;
     if (splitFooter) state.promptFooter = splitFooter;
     state.prompts = groups;
-    state.promptClips = groups.map(() => 1);
     selected = 0;
     ctx.persist();
     splitOv.style.display = "none";
