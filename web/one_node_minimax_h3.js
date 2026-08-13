@@ -512,6 +512,7 @@ app.registerExtension({
               el("div", { html: `LoRA: <code>${(state.turboLora || "none").split(/[\\/]/).pop()}</code> — pick the file in ⚙ Settings.`,
                 style: { fontSize: "10px", color: C.muted, wordBreak: "break-all" } }),
             ];
+          }
           case "solattn":
             return [
               row([
