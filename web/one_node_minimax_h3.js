@@ -17,7 +17,8 @@ import { api } from "../../scripts/api.js";
 import {
   C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, SUBFOLDER,
   el, clear, loadState, saveState, defaultState, randomSeed,
-  CLIP_LENGTHS, ASPECTS, GENERATION_MODES, ACCEL_MODES, accelModesFor, UPSCALE_MODES, continuityModesFor,
+  CLIP_LENGTHS, ASPECTS, ACCEL_MODES, accelModesFor, UPSCALE_MODES,
+  continuityModesFor, generationModesFor, configIssues,
   clipPlan, formatDuration, formatClock, framesToSeconds, resolveResolution,
   parseBrief, groupShots, composeClipPrompt,
   effectiveAccel, turboLoraForMode, explainGenerationError,
@@ -85,6 +86,8 @@ app.registerExtension({
         currentPlan: () => currentPlan(),
         // gallery → editor: put a saved clip's prompt back the way it was written
         reusePrompt: null,
+        // Settings changed a model — the mode pills and continuity list gate on it
+        refreshModes: null,
       };
 
       // ── root ────────────────────────────────────────────────────────────────
@@ -120,21 +123,48 @@ app.registerExtension({
       // ── topbar ──────────────────────────────────────────────────────────────
       const topBar = el("div", { style: { display: "flex", alignItems: "center", gap: "6px", height: `${TOPBAR_H}px`, marginBottom: `${PAD}px`, flexShrink: "0" } });
       const pillsWrap = el("div", { style: { flex: "1" } });
+      // Sits between the mode pills and the icon buttons: what Settings still needs
+      // before a run can work. Clicking it opens Settings at the problem.
+      const warnTag = el("div", { style: {
+        display: "none", alignItems: "center", gap: "5px", cursor: "pointer",
+        fontSize: "11px", color: C.warn, background: "rgba(255,179,71,0.12)",
+        border: `1px solid ${C.warn}`, borderRadius: "6px", padding: "4px 9px",
+        maxWidth: "360px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+      }});
+      warnTag.addEventListener("click", () => settingsOv?.show());
+
       function renderPills() {
         clear(pillsWrap);
-        pillsWrap.appendChild(modeBar(
-          GENERATION_MODES.map(m => ({ key: m.key, label: m.label, enabled: true })),
-          state.generationMode,
-          key => {
-            state.generationMode = key;
-            // Turbo isn't offered in Reference mode, so don't leave it selected there.
-            if (!accelModesFor(key).some(m => m.key === state.accelMode)) state.accelMode = "solattn";
-            persist(); renderPills(); renderLeft();
-          }
-        ));
+        const modes = generationModesFor(state);
+        // Never sit on a mode whose model is missing — move to one that works.
+        if (!modes.find(m => m.key === state.generationMode)?.enabled) {
+          const first = modes.find(m => m.enabled);
+          if (first) { state.generationMode = first.key; persist(); }
+        }
+        pillsWrap.appendChild(modeBar(modes, state.generationMode, key => {
+          state.generationMode = key;
+          // Turbo isn't offered in Reference mode, so don't leave it selected there.
+          if (!accelModesFor(key).some(m => m.key === state.accelMode)) state.accelMode = "solattn";
+          persist(); renderPills(); renderLeft();
+        }));
+
+        const issues = configIssues(state);
+        const off = modes.filter(m => !m.enabled).map(m => m.label);
+        const parts = [];
+        if (issues.length) parts.push(`Settings needs ${issues.join(", ")}`);
+        else if (off.length) parts.push(`${off.join(" / ")} unavailable — UNET not set`);
+        if (parts.length) {
+          clear(warnTag);
+          warnTag.append(el("span", { text: "⚠" }), el("span", { text: parts.join(" · ") }));
+          warnTag.title = `${parts.join("\n")}\n\nClick to open Settings.`;
+          warnTag.style.display = "flex";
+        } else {
+          warnTag.style.display = "none";
+        }
       }
       let settingsOv, helpOv, promptEditOv, galleryOv, commonOv;
       topBar.appendChild(pillsWrap);
+      topBar.appendChild(warnTag);
       topBar.appendChild(iconBtn("🗑", "Unload models / free VRAM", async () => {
         await freeMemory(); showPopup("VRAM freed.", false);
       }));
@@ -387,6 +417,7 @@ app.registerExtension({
         renderPrompts();
       }
       ctx.refreshPlan = refreshPlan;
+      ctx.refreshModes = () => { renderPills(); renderLeft(); };
 
       function checkboxRow(text, checked, onChange) {
         const chk = el("input", { type: "checkbox" });
@@ -397,7 +428,11 @@ app.registerExtension({
       }
 
       function renderLeft() {
-        const contModes = continuityModesFor(state.generationMode);
+        const contModes = continuityModesFor(state.generationMode, state);
+        // A continuity option that this mode does not offer, or whose model is
+        // missing, must not stay selected. None is always available.
+        const cur = contModes.find(m => m.key === state.continuityMode);
+        if (!cur || cur.disabled) { state.continuityMode = "none"; persist(); }
         clear(leftPanel);
 
         // A saved state can hold an acceleration this mode doesn't offer (e.g. Turbo
@@ -457,7 +492,9 @@ app.registerExtension({
             col([label("Quality"), select(["LOW","MEDIUM","HIGH","ULTRA"].map(q => ({ value: q, label: q })),
               state.rtxQuality || "ULTRA", v => { state.rtxQuality = v; persist(); })]),
           ])] : []),
-          col([label("Continuity between clips"), select(contModes.map(m => ({ value: m.key, label: m.label })),
+          col([label("Continuity between clips"), select(
+            contModes.map(m => ({ value: m.key, disabled: m.disabled,
+              label: m.disabled ? `${m.label} — UNET not set` : m.label })),
             state.continuityMode, v => { state.continuityMode = v; persist(); renderLeft(); })]),
           el("div", { text: (contModes.find(m => m.key === state.continuityMode) || {}).hint || "",
             style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
@@ -734,11 +771,9 @@ app.registerExtension({
             //     frame. Only FL2VA takes a first frame (Ref2VA has none, and measuring a
             //     run showed that passing the frame as a reference image does nothing),
             //     so a chained clip is rendered by FL2VA whatever the run started as.
-            //   Reference — clips after the first are rendered by Ref2VA off the run's
-            //     reference images, whatever the run started as. A text-only run has no
-            //     reference images of its own, so the previous clip's final frame stands
-            //     in — that is weaker than a chain (it steers the look, it does not join
-            //     the cut), but it is what "keep referencing" can mean without one.
+            //   Reference — offered in Reference mode only, since a text-only run has
+            //     nothing to reference. The mode carries on unchanged, every clip
+            //     re-using the same reference images.
             //   None — nothing is handed between clips: no frame, and each clip is made
             //     from its prompt on the run's own model.
             //
@@ -748,17 +783,9 @@ app.registerExtension({
             let firstFrame = isRef ? null : (state.firstFrameImage || null);
             let refImages  = state.refImages || [];
             const continued = i > 0 && state.continuityMode === "lastframe" && !!chainFrame;
-            let asReference = i > 0 && state.continuityMode === "reference";
-            if (asReference) {
-              const refs = refImages.length ? refImages : (chainFrame ? [chainFrame] : []);
-              if (refs.length) refImages = refs;
-              else asReference = false;   // nothing to reference — leave the run as it is
-            }
             if (i > 0) firstFrame = continued ? chainFrame : null;
             if (continued) refImages = [];   // FL2VA takes no reference images
-            const modeForClip = continued ? "firstlast"
-              : asReference ? "reference"
-              : state.generationMode;
+            const modeForClip = continued ? "firstlast" : state.generationMode;
 
             const clipState = { ...state, generationMode: modeForClip };
             const restore = pipeOv ? applyOverridesTemp(clipState, pipeOv.overrides) : null;

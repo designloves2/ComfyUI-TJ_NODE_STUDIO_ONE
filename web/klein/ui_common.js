@@ -38,7 +38,10 @@ export function select(options, value, onChange) {
   }, onchange: e => onChange(e.target.value) }, options.map(opt => {
     const v = typeof opt === "string" ? opt : opt.value;
     const txt = typeof opt === "string" ? opt : opt.label;
-    return el("option", { value: v, text: txt, ...(v === value ? { selected: "selected" } : {}) });
+    const dis = typeof opt === "object" && opt.disabled;
+    return el("option", { value: v, text: txt,
+      ...(dis ? { disabled: "disabled" } : {}),
+      ...(v === value ? { selected: "selected" } : {}) });
   }));
   return s;
 }
@@ -81,14 +84,17 @@ export function modeBar(modes, activeKey, onSelect) {
   const wrap = el("div", { style: { display: "flex", gap: "4px", flexWrap: "wrap" } });
   modes.forEach(m => {
     const active = m.key === activeKey;
+    const off = m.enabled === false;
     const btn = el("button", { text: m.label, type: "button", style: {
-      cursor: "pointer", fontFamily: "inherit", fontSize: "12px",
+      cursor: off ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: "12px",
       padding: "5px 12px", borderRadius: "20px",
       background: active ? C.lime : C.bg2,
-      color: active ? "#ffffff" : C.text,
+      color: off ? C.muted : (active ? "#ffffff" : C.text),
       border: `1px solid ${active ? C.lime : C.border}`,
       fontWeight: active ? "700" : "400",
-    }, onclick: () => { if (m.enabled !== false) onSelect(m.key); }});
+      opacity: off ? "0.45" : "1",
+    }, onclick: () => { if (!off) onSelect(m.key); }});
+    if (off && m.reason) btn.title = m.reason;
     wrap.appendChild(btn);
   });
   return wrap;

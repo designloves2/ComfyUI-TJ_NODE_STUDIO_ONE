@@ -186,21 +186,77 @@ export const CONTINUITY_MODES = [
   { key: "lastframe", label: "Last Frame Chain",
     hint: "each clip starts from the previous clip's final frame",
     refHint: "clips after the first start from the previous clip's final frame (rendered by FL2VA, so the reference images shape the first clip only — the common prompt carries the rest)" },
-  { key: "reference", label: "Reference",
-    hint: "clips after the first are rendered by Ref2VA off the reference images — with none set, the previous clip's final frame stands in (it steers the look; it does not join the cut)",
-    refHint: "every clip re-uses the same reference images — the mode carries on unchanged" },
+  // Only offered in Reference mode: it means "keep referencing", and a text-only run
+  // has nothing to reference.
+  { key: "reference", label: "Reference", refOnly: true,
+    hint: "every clip re-uses the same reference images — the mode carries on unchanged" },
   { key: "none", label: "None",
     hint: "nothing is handed between clips — each one is made from its prompt, on the run's own model; only the common prompt keeps them consistent" },
 ];
 
-/** Continuity choices worded for the mode in play. */
-export function continuityModesFor(generationMode) {
+const isSet = (v) => !!v && v !== "none";
+
+/**
+ * Which models the settings actually name.
+ *
+ * Everything downstream keys off this: a mode whose UNET is missing cannot be entered,
+ * and a continuity option that would switch to a missing model cannot be chosen. Better
+ * to grey the choice out with a reason than to let a run die on a validation error.
+ */
+export function modelAvailability(state) {
+  return {
+    fl:  isSet(state.unetFirstLast),
+    ref: isSet(state.unetReference),
+    clip: isSet(state.clipName),
+    vaeVideo: isSet(state.vaeVideo),
+    vaeAudio: isSet(state.vaeAudio),
+  };
+}
+
+/** Everything the settings still need, in the words the Settings panel uses. */
+export function configIssues(state) {
+  const a = modelAvailability(state);
+  const missing = [];
+  if (!a.fl && !a.ref) missing.push("a UNET (First/Last or Reference)");
+  if (!a.clip)     missing.push("the text encoder");
+  if (!a.vaeVideo) missing.push("the video VAE");
+  if (!a.vaeAudio) missing.push("the audio VAE");
+  return missing;
+}
+
+/** Generation modes, with the ones whose model is missing marked unavailable. */
+export function generationModesFor(state) {
+  const a = modelAvailability(state);
+  return GENERATION_MODES.map(m => {
+    const ok = m.key === "reference" ? a.ref : a.fl;
+    return { ...m, enabled: ok, reason: ok ? "" :
+      `Set the ${m.key === "reference" ? "Reference" : "First/Last"} UNET in ⚙ Settings → Models` };
+  });
+}
+
+/**
+ * Continuity choices that make sense for the mode in play. Reference-only options are
+ * dropped outside Reference mode, and an option that would switch to a model the
+ * settings do not name is left visible but disabled, so the reason is legible. None
+ * never switches models, so it is always available — the safe fallback.
+ */
+export function continuityModesFor(generationMode, state) {
   const isRef = (generationMode || "t2v") === "reference";
-  return CONTINUITY_MODES.map(m => ({
-    key: m.key,
-    label: m.label,
-    hint: (isRef && m.refHint) ? m.refHint : m.hint,
-  }));
+  const a = state ? modelAvailability(state) : { fl: true, ref: true };
+  const need = { lastframe: "fl", reference: "ref", none: null };
+  return CONTINUITY_MODES
+    .filter(m => !m.refOnly || isRef)
+    .map(m => {
+      const k = need[m.key];
+      const ok = !k || a[k];
+      return {
+        key: m.key,
+        label: m.label,
+        hint: (isRef && m.refHint) ? m.refHint : m.hint,
+        disabled: !ok,
+        reason: ok ? "" : `Needs the ${k === "ref" ? "Reference" : "First/Last"} UNET — set it in ⚙ Settings → Models`,
+      };
+    });
 }
 
 export function loadState() {

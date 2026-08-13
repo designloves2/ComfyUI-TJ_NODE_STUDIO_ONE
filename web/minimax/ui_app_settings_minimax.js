@@ -105,8 +105,9 @@ export function createSettingsOverlay(state, ctx) {
     const lor  = ["none", ...(modelData.loras            || []).filter(x => x !== "none")];
     const ups  = ["none", ...(modelData.upscale_models   || []).filter(x => x !== "none")];
 
-    const uFL = searchableSelect(diff, state.unetFirstLast || "none", v => { state.unetFirstLast = v; ctx.persist(); });
-    const uRF = searchableSelect(diff, state.unetReference || "none", v => { state.unetReference = v; ctx.persist(); });
+    // the mode pills and the continuity list are gated on these, so re-render them
+    const uFL = searchableSelect(diff, state.unetFirstLast || "none", v => { state.unetFirstLast = v; ctx.persist(); ctx.refreshModes?.(); });
+    const uRF = searchableSelect(diff, state.unetReference || "none", v => { state.unetReference = v; ctx.persist(); ctx.refreshModes?.(); });
     wrap.appendChild(panel([
       label("Diffusion Models — the reference workflow keeps these separate on purpose"),
       row([
@@ -340,7 +341,7 @@ export function createSettingsOverlay(state, ctx) {
     if (cfg.turbo_lora_strength != null && state.turboLoraStrength == null) state.turboLoraStrength = cfg.turbo_lora_strength;
     if (cfg.prompt_suffix && !state.promptSuffix) state.promptSuffix = cfg.prompt_suffix;
     if (cfg.avg_minutes_per_clip != null) state.avgMinutesPerClip = cfg.avg_minutes_per_clip;
-    ctx.persist(); ctx.refreshPlan?.();
+    ctx.persist(); ctx.refreshPlan?.(); ctx.refreshModes?.();
   }).catch(() => {}).finally(refreshModels);
 
   renderTabs(); renderBody();
