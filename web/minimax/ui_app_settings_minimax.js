@@ -16,11 +16,14 @@ function searchableSelect(options, value, onChange) {
     width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
     border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px",
     fontSize: "12px", fontFamily: "inherit", outline: "none",
-  }, onchange: e => onChange(e.target.value) }, options.map(opt => {
+  // A long folder path is cut off by the field's width, so the whole name lives in the
+  // tooltip — on the closed select and on every entry in the open list.
+  }, onchange: e => { sel.title = e.target.value; onChange(e.target.value); } }, options.map(opt => {
     const v = typeof opt === "string" ? opt : opt.value;
     const t = typeof opt === "string" ? opt : opt.label;
-    return el("option", { value: v, text: t, ...(v === value ? { selected: "selected" } : {}) });
+    return el("option", { value: v, text: t, title: v, ...(v === value ? { selected: "selected" } : {}) });
   }));
+  sel.title = value || "";
   search.addEventListener("input", () => {
     const q = search.value.toLowerCase().trim();
     Array.from(sel.options).forEach(o => { o.hidden = q && !o.text.toLowerCase().includes(q); });
@@ -28,7 +31,7 @@ function searchableSelect(options, value, onChange) {
     if (cur) cur.hidden = false;
   });
   wrap.appendChild(search); wrap.appendChild(sel);
-  return { el: wrap, getValue: () => sel.value, setValue: v => { sel.value = v; } };
+  return { el: wrap, getValue: () => sel.value, setValue: v => { sel.value = v; sel.title = v || ""; } };
 }
 
 function numField(value, onChange, { step = "0.01", min = null, max = null } = {}) {

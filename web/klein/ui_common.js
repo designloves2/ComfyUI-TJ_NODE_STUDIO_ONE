@@ -117,17 +117,20 @@ export function loraSelect(options, value, onChange) {
     border: `1px solid ${C.border}`, borderTopWidth: "0",
     borderRadius: "0 0 6px 6px", padding: "5px",
     fontSize: "12px", fontFamily: "inherit", outline: "none",
-  }, onchange: e => { currentValue = e.target.value; onChange(e.target.value); } });
+  }, onchange: e => { currentValue = e.target.value; s.title = e.target.value; onChange(e.target.value); } });
 
   function buildOptions(filter) {
     const q = filter.toLowerCase();
     s.replaceChildren(...options
       .filter(o => !q || o.toLowerCase().includes(q))
-      .map(o => el("option", { value: o, text: o, ...(o === currentValue ? { selected: "selected" } : {}) }))
+      // A long folder path is cut off by the field's width, so carry the whole name in
+      // the tooltip — on the closed select and on each entry in the open list.
+      .map(o => el("option", { value: o, text: o, title: o, ...(o === currentValue ? { selected: "selected" } : {}) }))
     );
     // currentValue가 전체 목록에 있으면 복원, 없으면 표시만 options[0]으로 (currentValue는 변경하지 않음)
     if (options.includes(currentValue)) s.value = currentValue;
     else if (options.length) s.value = options[0];
+    s.title = s.value || "";
     // 주의: s.value를 JS로 변경해도 "change" 이벤트는 발생하지 않음 — currentValue는 그대로 유지
   }
 
@@ -144,7 +147,7 @@ export function loraSelect(options, value, onChange) {
 
   return {
     el: wrap,
-    setValue(v) { s.value = v; },
+    setValue(v) { s.value = v; s.title = v || ""; },
     get value() { return s.value; },
   };
 }
