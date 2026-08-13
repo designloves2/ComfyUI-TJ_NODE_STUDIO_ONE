@@ -40,7 +40,10 @@ const N = {
   saveLF: "MM:save_last_frame",
   loadFirst: "MM:load_first",
   loadLast:  "MM:load_last",
-  ref:    (i) => `MM:ref_${i}`,
+  ref:      (i) => `MM:ref_${i}`,
+  refVid:   (i) => `MM:refvid_${i}`,
+  refAud:   (i) => `MM:refaud_${i}`,
+  refAudTrim: (i) => `MM:refaud_trim_${i}`,
 };
 
 const has = (avail, name) => !!(avail && avail[name]);
@@ -193,7 +196,7 @@ function applyPreview(g, state, avail, modelLink, nodeId) {
   return [key, 0];
 }
 
-function buildConditioning(g, state, promptText, width, height, frames, opts) {
+function buildConditioning(g, state, promptText, width, height, frames, opts, avail) {
   const mode = state.generationMode || "t2v";
   const { firstFrame, lastFrame, refImages } = opts || {};
 
@@ -209,6 +212,49 @@ function buildConditioning(g, state, promptText, width, height, frames, opts) {
       // Autogrow inputs are addressed with the dotted path the schema expands to.
       inputs[`ref_images.ref_image_${i}`] = [N.ref(i), 0];
     });
+
+    // Reference videos. VHS_LoadVideo does the whole job in one node: force_rate pins
+    // the 24fps the model expects, and skip/cap are the in/out points in frames. Its
+    // AUDIO output is the same clip's soundtrack, which the model pairs by index.
+    if (has(avail, "VHS_LoadVideo")) {
+      (state.refVideos || []).slice(0, 3).forEach((v, i) => {
+        if (!v || !v.file) return;
+        const start = Math.max(0, Number(v.start) || 0);
+        const end   = Math.max(start, Number(v.end) || 0);
+        const skip  = Math.round(start * FPS);
+        const cap   = Math.max(0, Math.round((end - start) * FPS));   // 0 = to the end
+        g[N.refVid(i)] = { class_type: "VHS_LoadVideo", inputs: {
+          video: v.file,
+          force_rate: FPS,
+          custom_width: 0, custom_height: 0,
+          frame_load_cap: cap,
+          skip_first_frames: skip,
+          select_every_nth: 1,
+        }};
+        inputs[`ref_videos.ref_video_${i}`] = [N.refVid(i), 0];
+        if (v.withAudio !== false) {
+          inputs[`ref_video_audios.ref_video_audio_${i}`] = [N.refVid(i), 2];
+        }
+      });
+    }
+
+    // Standalone reference audio, trimmed to the requested window.
+    (state.refAudios || []).slice(0, 3).forEach((a, i) => {
+      if (!a || !a.file) return;
+      g[N.refAud(i)] = { class_type: "LoadAudio", inputs: { audio: a.file } };
+      let link = [N.refAud(i), 0];
+      const start = Math.max(0, Number(a.start) || 0);
+      const end   = Math.max(start, Number(a.end) || 0);
+      const dur   = end - start;
+      if ((start > 0 || dur > 0) && has(avail, "TrimAudioDuration")) {
+        g[N.refAudTrim(i)] = { class_type: "TrimAudioDuration", inputs: {
+          audio: link, start_index: start, duration: dur > 0 ? dur : 60.0,
+        }};
+        link = [N.refAudTrim(i), 0];
+      }
+      inputs[`ref_audios.ref_audio_${i}`] = link;
+    });
+
     g[N.cond] = { class_type: "MiniMaxH3ReferenceToVideo", inputs };
     return;
   }
@@ -266,7 +312,7 @@ export function buildClipGraph(state, avail, opts = {}) {
   // ── conditioning ───────────────────────────────────────────────────────────
   const fullPrompt = [promptText, state.promptSuffix].filter(s => s && String(s).trim()).join(", ");
   buildConditioning(g, state, fullPrompt, width, height, frames,
-    { firstFrame, lastFrame, refImages: refImages ?? state.refImages });
+    { firstFrame, lastFrame, refImages: refImages ?? state.refImages }, avail);
 
   // ── sampling ───────────────────────────────────────────────────────────────
   const accel = state.accelMode || "turbo";

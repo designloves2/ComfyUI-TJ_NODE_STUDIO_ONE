@@ -151,6 +151,21 @@ export function defaultState(saved) {
     lastFrameImage:  saved.lastFrameImage  || null,
     refImages: Array.isArray(saved.refImages) ? saved.refImages.slice(0, 9) : [],
     refImageSize: saved.refImageSize || "match",
+    // Reference videos / audios (REF2VA). The model takes up to 3 of each; videos are
+    // fed as 24fps frames plus, optionally, their own soundtrack. start/end are seconds
+    // — the trained window for a reference video is ~2-15s, so clipping matters.
+    refVideos: Array.isArray(saved.refVideos) ? saved.refVideos.slice(0, 3).map(v => ({
+      file: v.file || "", start: v.start ?? 0, end: v.end ?? 5, withAudio: v.withAudio !== false,
+    })) : [],
+    refAudios: Array.isArray(saved.refAudios) ? saved.refAudios.slice(0, 3).map(a => ({
+      file: a.file || "", start: a.start ?? 0, end: a.end ?? 5,
+    })) : [],
+    // which reference kinds are shown in the side panel (keeps it short by default)
+    refTypes: {
+      images: saved.refTypes?.images !== false,
+      videos: saved.refTypes?.videos ?? false,
+      audios: saved.refTypes?.audios ?? false,
+    },
 
     // sampling
     steps:       saved.steps       ?? 20,

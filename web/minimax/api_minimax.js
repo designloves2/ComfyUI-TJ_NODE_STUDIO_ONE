@@ -16,7 +16,44 @@ export const MMH3_OPTIONAL_NODES = [
   "MiniMaxH3MemoryEfficientSageAttentionPatch", "MiniMaxH3Cache",
   "MiniMaxH3TurboSampler", "MiniMaxH3TurboLoRA", "SolAttnPatch",
   "SpectrumApplyMiniMaxH3", "RTXVideoSuperResolution",
+  // reference video / audio inputs
+  "VHS_LoadVideo", "LoadAudio", "TrimAudioDuration",
 ];
+
+/**
+ * The file lists the loader nodes themselves accept, read straight from their COMBO
+ * options — guaranteed to match what prompt validation will allow.
+ */
+export async function getMediaFiles() {
+  const grab = async (node, field) => {
+    try {
+      const r = await api.fetchApi(`/object_info/${node}`);
+      if (!r.ok) return [];
+      const d = await r.json();
+      const inp = d?.[node]?.input;
+      const spec = (inp?.required || {})[field] || (inp?.optional || {})[field];
+      const opts = Array.isArray(spec?.[0]) ? spec[0] : (spec?.[1]?.options || []);
+      return Array.isArray(opts) ? opts.filter(x => typeof x === "string") : [];
+    } catch { return []; }
+  };
+  const [videos, audios] = await Promise.all([
+    grab("VHS_LoadVideo", "video"),
+    grab("LoadAudio", "audio"),
+  ]);
+  return { videos, audios };
+}
+
+/** Upload a non-image asset (video/audio) into ComfyUI's input folder. */
+export async function uploadMedia(file) {
+  const fd = new FormData();
+  fd.append("image", file);          // ComfyUI's upload endpoint takes the "image" field
+  fd.append("subfolder", "");
+  fd.append("type", "input");
+  const r = await api.fetchApi("/upload/image", { method: "POST", body: fd });
+  if (!r.ok) throw new Error(`upload failed (${r.status}) — put the file in ComfyUI's input folder instead`);
+  const d = await r.json();
+  return d.name;
+}
 
 /** LiteGraph already knows every registered node type — no request needed. */
 function registryAvailability(names) {
