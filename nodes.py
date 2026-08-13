@@ -1583,6 +1583,9 @@ async def mmh3_list_videos(request):
     for f in found[offset:offset + limit]:
         rel = os.path.relpath(os.path.dirname(f), output_dir)
         name = os.path.basename(f)
+        # the sidecar carries the prompt the clip was rendered from, so the gallery
+        # can show it and hand it back to the editor
+        meta = _read_json_meta(f) or {}
         videos.append({
             "filename": name,
             "subfolder": "" if rel == "." else rel.replace("\\", "/"),
@@ -1590,6 +1593,9 @@ async def mmh3_list_videos(request):
             "size": os.path.getsize(f),
             # the stitched result is the interesting one, so flag it for the UI
             "is_full": "_full" in name.lower(),
+            "meta": meta,
+            "prompt": meta.get("prompt", ""),
+            "favorite": bool(meta.get("favorite") or meta.get("favourite")),
         })
     return web.json_response({"videos": videos, "total": len(found), "offset": offset, "limit": limit})
 

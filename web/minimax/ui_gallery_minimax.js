@@ -184,6 +184,42 @@ export function createGalleryOverlay(state, ctx) {
       if (v.is_full) {
         meta.appendChild(el("div", { text: "★ stitched", style: { fontSize: "9px", color: BRAND, fontWeight: "700" } }));
       }
+
+      // The prompt the clip was rendered from, plus a one-click way back into the editor.
+      const promptText = String(v.prompt || v.meta?.prompt || "").trim();
+      if (promptText) {
+        const p = el("div", { text: promptText, style: {
+          fontSize: "9px", color: C.muted, lineHeight: "1.35", marginTop: "2px",
+          display: "-webkit-box", WebkitLineClamp: "3", WebkitBoxOrient: "vertical",
+          overflow: "hidden", cursor: "text",
+        }});
+        p.title = promptText;
+        meta.appendChild(p);
+
+        const bar = el("div", { style: { display: "flex", gap: "4px", marginTop: "4px" } });
+        const mini = (txt, tip, fn) => {
+          const b = el("button", { text: txt, style: {
+            flex: "1", fontSize: "9px", padding: "3px 0", cursor: "pointer",
+            background: C.bg2, color: C.text, border: `1px solid ${C.border}`, borderRadius: "4px",
+          }});
+          b.title = tip;
+          b.addEventListener("click", e => { e.stopPropagation(); fn(); });
+          return b;
+        };
+        bar.append(
+          mini("↩ Reuse", "Load this prompt back into the editor", () => {
+            const ok = ctx.reusePrompt?.(v.meta || { prompt: promptText });
+            ctx.showPopup?.(ok ? "Prompt loaded into the editor." : "No prompt stored for this clip.", !ok);
+            if (ok) hide();
+          }),
+          mini("⧉ Copy", "Copy the prompt to the clipboard", () => {
+            navigator.clipboard?.writeText(promptText)
+              .then(() => ctx.showPopup?.("Prompt copied.", false))
+              .catch(() => ctx.showPopup?.("Copy failed.", true));
+          }),
+        );
+        meta.appendChild(bar);
+      }
       card.append(vid, meta);
       grid.appendChild(card);
     });

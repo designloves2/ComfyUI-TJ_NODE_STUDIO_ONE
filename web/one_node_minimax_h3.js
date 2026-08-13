@@ -5,8 +5,9 @@
 // and the run ends with a stitched file.
 //
 // The relay runs here in the frontend, one `queuePrompt` per clip — the same pattern the
-// other ONE STUDIO nodes use. ComfyUI already unloads models between prompts, so each clip
-// boundary is a natural VRAM reset without reimplementing memory management.
+// other ONE STUDIO nodes use. ComfyUI keeps models resident between prompts, so the clip
+// boundary is only a VRAM reset because we ask for one: `unloadBetweenClips` frees between
+// clips, and the run always frees once it finishes.
 //
 // While a clip samples, ModelPreviewOverrideKJ streams decoded frames over the
 // `kj_preview_override` socket event tagged with this node's id — they are painted into
@@ -82,6 +83,8 @@ app.registerExtension({
         refreshPlan: null, _rerenderImages: null,
         // the prompt editor sizes its brief to the run's real shape
         currentPlan: () => currentPlan(),
+        // gallery → editor: put a saved clip's prompt back the way it was written
+        reusePrompt: null,
       };
 
       // ── root ────────────────────────────────────────────────────────────────
@@ -627,6 +630,30 @@ app.registerExtension({
         return ((state.seed ?? 0) + i) % Number.MAX_SAFE_INTEGER;
       }
 
+      // What the gallery needs to show a clip and to put its prompt back into the
+      // editor. Kept flat and small — this is written next to every video file.
+      function metaForVideo(promptText, extra = {}) {
+        const { width, height } = resolveResolution(state.aspect, state.megapixels);
+        return {
+          v: 1,
+          prompt: String(promptText || ""),
+          promptHeader: state.promptHeader || "",
+          promptFooter: state.promptFooter || "",
+          w: width, h: height,
+          mode: state.generationMode || "t2v",
+          aspect: state.aspect,
+          megapixels: state.megapixels,
+          frames: state.clipFrames,
+          steps: state.steps,
+          sampler: state.sampler,
+          accel: state.accelMode,
+          seed: state.seed,
+          node: "minimax_h3",
+          created: Date.now(),
+          ...extra,
+        };
+      }
+
       // SaveVideo / SaveImage report through `ui.PreviewVideo` / images — both land in
       // output.images, so one extractor covers them.
       function firstOutput(byNode, nodeKey) {
@@ -713,6 +740,13 @@ app.registerExtension({
             const lastImg = firstOutput(res.byNode, NODE_IDS.saveLF);
             if (vid) {
               clipRecords.push(vid);
+              // every clip carries the prompt it was actually rendered from, so the
+              // gallery can put that exact text back into the editor
+              saveMeta(vid.filename, vid.subfolder || "", metaForVideo(promptForClip(i), {
+                clip: curClip, clips: plan.count, seed: seedForClip(i), mode: modeForClip,
+                // the editable source text, so "reuse" restores the editor exactly
+                prompts: [state.prompts?.[promptIndexForClip(state, i)] || ""],
+              }));
               showResultVideo(`/view?filename=${encodeURIComponent(vid.filename)}&subfolder=${encodeURIComponent(vid.subfolder || "")}&type=${vid.type || "output"}&t=${Date.now()}`);
               badge.textContent = `CLIP ${curClip}/${totClip} done`;
             }
@@ -743,6 +777,11 @@ app.registerExtension({
               const trim = state.trimLastClip ? currentPlan().actualSeconds : null;
               const out = await stitchClips(clipRecords, `${folder}/${state.filenamePrefix || "MMH3"}_full`, trim);
               const url = `/view?filename=${encodeURIComponent(out.filename)}&subfolder=${encodeURIComponent(out.subfolder || "")}&type=output&t=${Date.now()}`;
+              // the stitched file gets every clip's prompt, in order
+              saveMeta(out.filename, out.subfolder || "", metaForVideo(
+                Array.from({ length: plan.count }, (_, i) => promptForClip(i)).join("\n\n"),
+                { clips: clipRecords.length, stitched: true, prompts: (state.prompts || []).slice() },
+              ));
               showResultVideo(url);
               badge.textContent = `FULL · ${clipRecords.length} clips`;
               await setLastResult(self.id, { videoPath: out.path });
@@ -757,10 +796,6 @@ app.registerExtension({
                                     : `Done — ${clipRecords.length} clip(s) saved.`);
           }
 
-          if (clipRecords.length) {
-            const first = clipRecords[0];
-            saveMeta(first.filename, first.subfolder || "", { ...state, clips: clipRecords.length });
-          }
           barInner.style.width = "100%";
         } catch (e) {
           if (e.message === "cancelled") { setStatus("Cancelled."); }
@@ -771,6 +806,10 @@ app.registerExtension({
             if (why) console.warn("[MMH3] underlying error:", e.message);
           }
         } finally {
+          // ComfyUI keeps the models resident after a prompt, so a finished run would
+          // otherwise sit on the whole card until the next one. The run is over here —
+          // nothing in this node still needs the weights.
+          try { await freeMemory(); } catch {}
           running = false; stopRequested = false;
           genBtn.disabled = false; genBtn.textContent = "▶ Generate";
           badge.textContent = badge.textContent.replace("● LIVE", "").trim() || badge.textContent;
@@ -831,6 +870,26 @@ app.registerExtension({
 
       commonOv = createCommonPromptOverlay(state, ctx, () => { refreshPlan(); promptEditOv?.syncCommon?.(); });
       root.appendChild(commonOv.el);
+
+      // Restores the editor from a saved clip's sidecar. Older files only carry the
+      // composed `prompt`; treat that as a single clip body so nothing is lost.
+      ctx.reusePrompt = (meta) => {
+        if (!meta) return false;
+        const parts = Array.isArray(meta.prompts) && meta.prompts.length
+          ? meta.prompts.slice()
+          : [String(meta.prompt || "")];
+        if (!parts.some(p => String(p || "").trim())) return false;
+        state.prompts = parts;
+        if (Array.isArray(meta.prompts)) {
+          state.promptHeader = meta.promptHeader || "";
+          state.promptFooter = meta.promptFooter || "";
+        }
+        persist();
+        refreshPlan();
+        promptEditOv?.syncCommon?.();
+        renderPrompts();
+        return true;
+      };
 
       galleryOv = createGalleryOverlay(state, ctx);
       root.appendChild(galleryOv.el);
