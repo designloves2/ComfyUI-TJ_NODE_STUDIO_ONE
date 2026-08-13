@@ -108,6 +108,7 @@ export function createGalleryOverlay(state, ctx) {
   function openPlayer(i) {
     const list = shown();
     if (!list.length) return;
+    stopGridVideos();   // the card under the player must not keep looping behind it
     playIndex = Math.max(0, Math.min(i, list.length - 1));
     const v = list[playIndex];
     pVideo.src = viewURL(v);
@@ -148,8 +149,18 @@ export function createGalleryOverlay(state, ctx) {
   };
   document.addEventListener("keydown", onKey, true);
 
+  // A <video> that gets detached from the document keeps playing — it just stops
+  // being visible, and it never sees another mouseleave. Every path that hides or
+  // rebuilds the grid has to stop the cards itself.
+  function stopGridVideos() {
+    for (const v of grid.querySelectorAll("video")) {
+      try { v.pause(); v.currentTime = 0; } catch {}
+    }
+  }
+
   // ── grid ───────────────────────────────────────────────────────────────────
   function renderGrid() {
+    stopGridVideos();
     clear(grid);
     const list = shown();
     countTag.textContent = `${list.length} clip${list.length === 1 ? "" : "s"}`
@@ -171,7 +182,10 @@ export function createGalleryOverlay(state, ctx) {
         width: "100%", height: "112px", objectFit: "cover", background: "#000", display: "block",
       }});
       vid.muted = true;
-      card.addEventListener("mouseenter", () => { vid.currentTime = 0; vid.play?.().catch(() => {}); });
+      card.addEventListener("mouseenter", () => {
+        stopGridVideos();               // only ever one card previewing at a time
+        vid.currentTime = 0; vid.play?.().catch(() => {});
+      });
       card.addEventListener("mouseleave", () => { try { vid.pause(); vid.currentTime = 0; } catch {} });
       card.addEventListener("dblclick", () => openPlayer(i));
 
@@ -234,7 +248,7 @@ export function createGalleryOverlay(state, ctx) {
     renderGrid();
   }
 
-  function hide() { closePlayer(); ov.style.display = "none"; }
+  function hide() { closePlayer(); stopGridVideos(); ov.style.display = "none"; }
 
   return {
     el: ov,
