@@ -187,7 +187,7 @@ export const CONTINUITY_MODES = [
     hint: "each clip starts from the previous clip's final frame",
     refHint: "clips after the first start from the previous clip's final frame (rendered by FL2VA, so the reference images shape the first clip only — the common prompt carries the rest)" },
   { key: "reference", label: "Reference",
-    hint: "every clip re-uses the same reference images",
+    hint: "clips after the first are rendered by Ref2VA off the reference images — with none set, the previous clip's final frame stands in (it steers the look; it does not join the cut)",
     refHint: "every clip re-uses the same reference images — the mode carries on unchanged" },
   { key: "none", label: "None",
     hint: "nothing is handed between clips — each one is made from its prompt, on the run's own model; only the common prompt keeps them consistent" },

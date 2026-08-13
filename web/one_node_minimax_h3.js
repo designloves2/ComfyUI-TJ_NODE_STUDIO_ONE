@@ -734,11 +734,13 @@ app.registerExtension({
             //     frame. Only FL2VA takes a first frame (Ref2VA has none, and measuring a
             //     run showed that passing the frame as a reference image does nothing),
             //     so a chained clip is rendered by FL2VA whatever the run started as.
-            //   Reference — the mode carries on unchanged, every clip re-using the same
-            //     reference images.
-            //   None — nothing is carried between clips: no frame is handed over and each
-            //     clip is made from its prompt. The run stays on its own model, so a
-            //     Reference run still renders every clip with Ref2VA and its references.
+            //   Reference — clips after the first are rendered by Ref2VA off the run's
+            //     reference images, whatever the run started as. A text-only run has no
+            //     reference images of its own, so the previous clip's final frame stands
+            //     in — that is weaker than a chain (it steers the look, it does not join
+            //     the cut), but it is what "keep referencing" can mean without one.
+            //   None — nothing is handed between clips: no frame, and each clip is made
+            //     from its prompt on the run's own model.
             //
             // Across all three the shared part of the prompt still reaches every clip,
             // which is what keeps a run looking like one piece.
@@ -746,9 +748,17 @@ app.registerExtension({
             let firstFrame = isRef ? null : (state.firstFrameImage || null);
             let refImages  = state.refImages || [];
             const continued = i > 0 && state.continuityMode === "lastframe" && !!chainFrame;
+            let asReference = i > 0 && state.continuityMode === "reference";
+            if (asReference) {
+              const refs = refImages.length ? refImages : (chainFrame ? [chainFrame] : []);
+              if (refs.length) refImages = refs;
+              else asReference = false;   // nothing to reference — leave the run as it is
+            }
             if (i > 0) firstFrame = continued ? chainFrame : null;
             if (continued) refImages = [];   // FL2VA takes no reference images
-            const modeForClip = continued ? "firstlast" : state.generationMode;
+            const modeForClip = continued ? "firstlast"
+              : asReference ? "reference"
+              : state.generationMode;
 
             const clipState = { ...state, generationMode: modeForClip };
             const restore = pipeOv ? applyOverridesTemp(clipState, pipeOv.overrides) : null;
