@@ -27,7 +27,7 @@ import { panel, label, button, select, numberField, slider, row, col, modeBar, i
   from "./klein/ui_common.js";
 import {
   queuePrompt, interrupt, freeMemory, setLastResult, stitchClips,
-  copyOutputToInput, getNodeAvailability, getModels, saveMeta, pickChainFrame,
+  copyOutputToInput, getNodeAvailability, getModels, saveMeta, pickChainFrame, getLoraTriggers,
 } from "./minimax/api_minimax.js";
 import { buildClipGraph, NODE_IDS, previewNodeKey } from "./minimax/graph_builder_minimax.js";
 import { createSettingsOverlay } from "./minimax/ui_app_settings_minimax.js";
@@ -616,24 +616,71 @@ app.registerExtension({
         function render() {
           clear(wrap);
           const loras = state.loras || [];
-          const kids = [label(`LoRA (${loras.length})`)];
+          const on = loras.filter(l => l.enabled !== false && l.name && l.name !== "none").length;
+          const kids = [label(`LoRA (${on}/${loras.length} on)`)];
           const all = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
           loras.forEach((l, i) => {
-            kids.push(row([
-              col([select(all.map(n => ({ value: n, label: n })), l.name || "none",
-                v => { state.loras[i].name = v; persist(); })]),
-            ]));
-            kids.push(row([
-              col([numberField(l.strength ?? 1.0, v => { state.loras[i].strength = v; persist(); }, 0.05)]),
-              col([(() => {
-                const b = el("button", { type: "button", text: "✕ remove", style: {
-                  width: "100%", cursor: "pointer", fontFamily: "inherit", fontSize: "10px",
-                  padding: "5px", borderRadius: "5px", background: C.bg2, color: C.muted, border: `1px solid ${C.border}`,
-                }});
-                b.addEventListener("click", () => { state.loras.splice(i, 1); persist(); render(); });
-                return b;
-              })()]),
-            ]));
+            const off = l.enabled === false;
+            const card = el("div", { style: {
+              border: `1px solid ${off ? C.dim : C.border}`, borderRadius: "6px",
+              padding: "6px", display: "flex", flexDirection: "column", gap: "5px",
+              opacity: off ? "0.55" : "1",
+            }});
+
+            // ON/OFF, then the file, then what it needs typed into the prompt.
+            const head = el("div", { style: { display: "flex", alignItems: "center", gap: "5px" } });
+            const tog = el("button", { type: "button", text: off ? "OFF" : "ON", style: {
+              flexShrink: "0", cursor: "pointer", fontFamily: "inherit", fontSize: "10px",
+              padding: "3px 9px", borderRadius: "10px", border: "none", fontWeight: "700",
+              background: off ? "#444" : BRAND, color: "#fff",
+            }});
+            tog.title = off ? "Switched off — neither the weights nor its trigger words are used"
+                            : "Switched on";
+            tog.addEventListener("click", () => { l.enabled = off; persist(); render(); });
+
+            const del = el("button", { type: "button", text: "✕", title: "Remove", style: {
+              flexShrink: "0", cursor: "pointer", fontFamily: "inherit", fontSize: "11px",
+              background: "transparent", color: C.err, border: "none", padding: "2px 4px",
+            }});
+            del.addEventListener("click", () => { state.loras.splice(i, 1); persist(); render(); });
+
+            const strWrap = el("div", { style: { flexShrink: "0", width: "62px" } });
+            strWrap.appendChild(numberField(l.strength ?? 1.0,
+              v => { l.strength = v; persist(); }, 0.05));
+
+            head.append(tog, el("div", { style: { flex: "1" } }), strWrap, del);
+
+            const tw = el("input", { type: "text", placeholder: "Trigger word…", style: {
+              width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+              border: `1px solid ${C.border}`, borderRadius: "4px", padding: "4px 6px",
+              fontSize: "11px", fontFamily: "inherit", outline: "none",
+            }});
+            tw.value = l.triggerWord || "";
+            tw.title = "Added to every clip's prompt while this LoRA is on";
+            tw.addEventListener("input", () => { l.triggerWord = tw.value; persist(); });
+
+            const sel = select(all.map(n => ({ value: n, label: n })), l.name || "none", async v => {
+              const prev = l.name;
+              l.name = v; persist();
+              if (v && v !== "none") {
+                // a different file means different words — never keep the old ones
+                if (v !== prev) { l.triggerWord = ""; tw.value = ""; }
+                if (!l.triggerWord) {
+                  tw.placeholder = "Loading…";
+                  try {
+                    const d = await getLoraTriggers(v);
+                    if (d.ok && d.triggers?.length) {
+                      l.triggerWord = d.triggers.join(", "); tw.value = l.triggerWord; persist();
+                    }
+                  } catch {}
+                  tw.placeholder = "Trigger word…";
+                }
+              } else { l.triggerWord = ""; tw.value = ""; persist(); }
+              render();
+            });
+
+            card.append(head, sel, tw);
+            kids.push(card);
           });
           const add = el("button", { type: "button", text: "+ Add LoRA", style: {
             width: "100%", cursor: "pointer", fontFamily: "inherit", fontSize: "11px",
@@ -642,7 +689,7 @@ app.registerExtension({
           add.addEventListener("click", () => {
             if (!state.loras) state.loras = [];
             if (state.loras.length >= 4) { showPopup("4 LoRAs max.", true); return; }
-            state.loras.push({ name: "none", strength: 1.0, enabled: true });
+            state.loras.push({ name: "none", strength: 1.0, triggerWord: "", enabled: true });
             persist(); render();
           });
           kids.push(add);

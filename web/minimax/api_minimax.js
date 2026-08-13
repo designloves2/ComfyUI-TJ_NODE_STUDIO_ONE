@@ -241,6 +241,13 @@ export async function enhancePrompt(payload) {
   return d;
 }
 
+// Trigger words baked into a LoRA's safetensors header, so a freshly picked LoRA can
+// fill its own trigger field instead of the user hunting for it.
+export async function getLoraTriggers(loraName) {
+  const r = await api.fetchApi(`${API}/lora_triggers?name=${encodeURIComponent(loraName)}`);
+  return await r.json();
+}
+
 export async function saveMeta(filename, subfolder, stateObj) {
   try {
     await api.fetchApi(`${API}/save_meta`, {

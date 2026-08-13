@@ -284,7 +284,8 @@ export function defaultState(saved) {
     turboLoraLowVram:  saved.turboLoraLowVram  ?? false,
     upscaleModel:  saved.upscaleModel  || "",
     loras: Array.isArray(saved.loras) ? saved.loras.map(l => ({
-      name: l.name || "none", strength: l.strength ?? 1.0, enabled: l.enabled !== false,
+      name: l.name || "none", strength: l.strength ?? 1.0,
+      triggerWord: l.triggerWord || "", enabled: l.enabled !== false,
     })) : [],
 
     // modes
@@ -494,8 +495,23 @@ export function composeClipPrompt(state, i) {
   for (let k = Math.min(i, list.length - 1); k >= 0; k--) {
     if (list[k] && list[k].trim()) { body = list[k].trim(); break; }
   }
-  return [state.promptHeader, body, state.promptFooter, state.promptSuffix]
+  return [state.promptHeader, body, state.promptFooter, loraTriggers(state), state.promptSuffix]
     .map(s => (s || "").trim()).filter(Boolean).join("\n\n");
+}
+
+/**
+ * Trigger words of the LoRAs that are switched on, as one line.
+ *
+ * A LoRA that needs a trigger does nothing without it, so the words ride along with
+ * every clip's prompt — the same arrangement the image nodes use. Switching a LoRA off
+ * drops both its weights and its words.
+ */
+export function loraTriggers(state) {
+  return (state.loras || [])
+    .filter(l => l && l.enabled !== false && l.name && l.name !== "none" && l.triggerWord)
+    .map(l => String(l.triggerWord).trim())
+    .filter(Boolean)
+    .join(", ");
 }
 
 // Kept for the plain "split this text" path (no header/footer awareness).
