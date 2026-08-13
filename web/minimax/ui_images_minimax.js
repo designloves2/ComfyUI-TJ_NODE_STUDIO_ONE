@@ -271,13 +271,11 @@ export function mountImagePanel(state, ctx) {
     const picker = refTypeDropdown(state, ctx, render);
     const kids = [
       label("Reference"),
-      // Verified broken on ComfyUI 5727 in every combination tried (see
-      // explainGenerationError). Left available because other builds may differ.
-      el("div", { html: "⚠ <b>Reference mode currently fails on this ComfyUI build</b> — the core MiniMax "
-        + "reference path returns an AV latent the audio VAE can't decode. Text only and First/Last Frame work. "
-        + "Try it if you like; the error will say what happened.",
-        style: { fontSize: "10px", color: C.warn, lineHeight: "1.55",
-                 background: C.bg2, border: `1px solid ${C.warn}33`, borderRadius: "6px", padding: "6px 8px" } }),
+      // Reference runs on the Ref2VA model, which has no turbo LoRA — SolAttn, Spectrum
+      // or None at the normal step count is the working configuration.
+      el("div", { html: "Uses the <b>Ref2VA</b> model. Acceleration here is SolAttn / Spectrum / None at the "
+        + "normal step count — Turbo is fl2v-only and isn't offered in this mode.",
+        style: { fontSize: "10px", color: C.muted, lineHeight: "1.55" } }),
       picker.el,
     ];
 

@@ -167,33 +167,24 @@ export const GENERATION_MODES = [
   { key: "reference", label: "Reference",         hint: "up to 9 reference images (REF2VA)" },
 ];
 
-/**
- * Known failures that come from ComfyUI's own MiniMax reference path, not from anything
- * this node builds — turned into an explanation instead of a raw tensor error.
- *
- * Reproduced on ComfyUI 5727 across every resolution, checkpoint (FL2VA and Ref2VA),
- * acceleration mode and patch combination: REF2VA conditioning yields an AV latent the
- * audio VAE can't decode, and adding a reference audio breaks the sampler instead.
- */
+/** Turn the tensor errors these packs throw into something actionable. */
 export function explainGenerationError(message) {
   const m = String(message || "");
-  if (/VAEDecodeAudio/i.test(m) && /must match the size of tensor/i.test(m)) {
-    return "Reference mode: ComfyUI's MiniMax reference path returns an AV latent the audio VAE "
-         + "can't decode (core issue, not this node — same failure on every resolution and checkpoint). "
-         + "Use Text only or First/Last Frame for now.";
-  }
-  if (/shape mismatch/i.test(m) && /cannot be broadcast/i.test(m)) {
-    return "Reference mode: the sampler rejects the reference tokens (core MiniMax reference path). "
-         + "Removing the reference audio changes the error but does not fix it — use Text only or "
-         + "First/Last Frame for now.";
-  }
   if (/must match the size of tensor b \(2\)/.test(m) || /adaln/i.test(m)) {
-    return "The turbo LoRA does not match this mode's base model. Set a turbo LoRA for this mode in "
-         + "⚙ Settings, or switch Acceleration off.";
+    return "The turbo LoRA doesn't match this mode's base model — turbo LoRAs are fl2v-only. "
+         + "Switch Acceleration to SolAttn, Spectrum or None.";
   }
   if (/failed to extract audio/i.test(m)) {
     return "A reference video has no audio track but its soundtrack was requested — untick "
          + "\"also use this clip's soundtrack\" for that video.";
+  }
+  if (/VAEDecodeAudio/i.test(m) && /must match the size of tensor/i.test(m)) {
+    return "The audio VAE couldn't decode this latent. Check that the Audio VAE in ⚙ Settings is the "
+         + "MiniMax audio VAE and that the mode's UNET matches (Reference needs the Ref2VA model).";
+  }
+  if (/shape mismatch/i.test(m) && /cannot be broadcast/i.test(m)) {
+    return "The sampler rejected the reference tokens. Check the Reference UNET in ⚙ Settings is the "
+         + "Ref2VA model, and that Acceleration isn't Turbo.";
   }
   return null;
 }
@@ -251,7 +242,7 @@ export function defaultState(saved) {
 
     // modes
     generationMode: saved.generationMode || "t2v",
-    accelMode:      saved.accelMode      || "turbo",
+    accelMode:      saved.accelMode      || "solattn",   // safe in all three modes
     upscaleMode:    saved.upscaleMode    || "none",
     continuityMode: saved.continuityMode || "lastframe",
 
@@ -298,7 +289,7 @@ export function defaultState(saved) {
     // sampling
     steps:       saved.steps       ?? 20,
     turboSteps:  saved.turboSteps  ?? 4,
-    sampler:     saved.sampler     || "er_sde",
+    sampler:     saved.sampler     || "res_multistep",
     scheduler:   saved.scheduler   || "simple",
     denoise:     saved.denoise     ?? 1.0,
     seed:        saved.seed        ?? 0,

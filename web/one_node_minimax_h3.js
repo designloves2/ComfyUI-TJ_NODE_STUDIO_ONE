@@ -125,7 +125,7 @@ app.registerExtension({
           key => {
             state.generationMode = key;
             // Turbo isn't offered in Reference mode, so don't leave it selected there.
-            if (!accelModesFor(key).some(m => m.key === state.accelMode)) state.accelMode = "none";
+            if (!accelModesFor(key).some(m => m.key === state.accelMode)) state.accelMode = "solattn";
             persist(); renderPills(); renderLeft();
           }
         ));
@@ -405,7 +405,7 @@ app.registerExtension({
         // carried over into Reference). Normalise here, not only on mode switch, so a
         // reloaded node can never sit on an option that isn't in its own dropdown.
         if (!accelModesFor(state.generationMode).some(m => m.key === state.accelMode)) {
-          state.accelMode = "none";
+          state.accelMode = "solattn";
           persist();
         }
 
