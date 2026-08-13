@@ -17,16 +17,16 @@ import { api } from "../../scripts/api.js";
 import {
   C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, SUBFOLDER,
   el, clear, loadState, saveState, defaultState, randomSeed,
-  CLIP_LENGTHS, ASPECTS, GENERATION_MODES, ACCEL_MODES, accelModesFor, UPSCALE_MODES, CONTINUITY_MODES,
+  CLIP_LENGTHS, ASPECTS, GENERATION_MODES, ACCEL_MODES, accelModesFor, UPSCALE_MODES, continuityModesFor,
   clipPlan, formatDuration, formatClock, framesToSeconds, resolveResolution,
-  splitBrief, composeClipPrompt,
+  parseBrief, groupShots, composeClipPrompt,
   effectiveAccel, turboLoraForMode, explainGenerationError,
 } from "./minimax/core_minimax.js";
 import { panel, label, button, select, numberField, slider, row, col, modeBar, iconBtn, openFullscreen }
   from "./klein/ui_common.js";
 import {
   queuePrompt, interrupt, freeMemory, setLastResult, stitchClips,
-  copyOutputToInput, getNodeAvailability, getModels, saveMeta,
+  copyOutputToInput, getNodeAvailability, getModels, saveMeta, pickChainFrame,
 } from "./minimax/api_minimax.js";
 import { buildClipGraph, NODE_IDS, previewNodeKey } from "./minimax/graph_builder_minimax.js";
 import { createSettingsOverlay } from "./minimax/ui_app_settings_minimax.js";
@@ -206,13 +206,17 @@ app.registerExtension({
         previewVid.style.display = "none";
         resultVid.src = url;
         resultVid.style.display = "block";
-        resultVid.play?.().catch(() => {});
+        // Loaded and ready, but left paused — a clip finishing mid-run should not start
+        // making noise on its own. The user presses play.
+        try { resultVid.pause(); resultVid.currentTime = 0; } catch {}
         fsBtn.style.display = "block";
       }
       function resetPreview() {
         placeholder.style.display = "block";
         previewImg.style.display = "none";
         previewVid.style.display = "none";
+        // hiding a playing <video> does not stop it
+        try { resultVid.pause(); } catch {}
         resultVid.style.display = "none";
         badge.style.display = "none";
         fsBtn.style.display = "none";
@@ -342,11 +346,19 @@ app.registerExtension({
       splitBtn.addEventListener("click", () => {
         const joined = state.prompts.filter(p => p && p.trim()).join("\n\n");
         if (!joined.trim()) { showPopup("Nothing to split — write the brief in the first box.", true); return; }
-        const parts = splitBrief(joined, currentPlan().count);
-        if (parts.length <= 1) { showPopup("Could not find clip boundaries ([Shot N], --- or blank lines).", true); return; }
+        // The style preamble and the sound/music tail are what every clip needs to look
+        // and sound like the same piece. Splitting used to glue them onto the first and
+        // last clip, leaving everything in between without them, so lift them out as the
+        // common header/footer instead — composeClipPrompt then gives them to each clip.
+        const { header, shots, footer } = parseBrief(joined);
+        if (shots.length <= 1) { showPopup("Could not find clip boundaries ([Shot N], --- or blank lines).", true); return; }
+        const parts = groupShots(shots, shots.length);
+        if (header) state.promptHeader = header;
+        if (footer) state.promptFooter = footer;
         state.prompts = parts;
         persist(); refreshPlan();
-        showPopup(`Split into ${parts.length} prompts (one clip each).`, false);
+        const carried = [header && "header", footer && "tail"].filter(Boolean).join(" + ");
+        showPopup(`Split into ${parts.length} clips${carried ? ` — shared ${carried} kept on every clip` : ""}.`, false);
       });
 
       rightPanel.append(previewBox, statusWrap, promptWrap);
@@ -376,7 +388,16 @@ app.registerExtension({
       }
       ctx.refreshPlan = refreshPlan;
 
+      function checkboxRow(text, checked, onChange) {
+        const chk = el("input", { type: "checkbox" });
+        chk.checked = !!checked;
+        chk.addEventListener("change", () => onChange(chk.checked));
+        return el("label", { style: { display: "flex", alignItems: "center", gap: "6px",
+          fontSize: "11px", color: C.text, cursor: "pointer" } }, [chk, el("span", { text })]);
+      }
+
       function renderLeft() {
+        const contModes = continuityModesFor(state.generationMode);
         clear(leftPanel);
 
         // A saved state can hold an acceleration this mode doesn't offer (e.g. Turbo
@@ -410,8 +431,8 @@ app.registerExtension({
             String(state.clipFrames), v => { state.clipFrames = parseInt(v, 10); persist(); refreshPlan(); }),
           totalLine,
           planLine,
-          el("div", { html: "Length follows the prompts — add a prompt for another clip, or raise a prompt's "
-            + "<b>×N</b> to let one description run over several chained clips.",
+          el("div", { text: "Length follows the prompts: one prompt is one clip. Add a prompt "
+            + "(or split the brief into shots) to make the piece longer.",
             style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
         ]));
         refreshPlan();
@@ -436,9 +457,32 @@ app.registerExtension({
             col([label("Quality"), select(["LOW","MEDIUM","HIGH","ULTRA"].map(q => ({ value: q, label: q })),
               state.rtxQuality || "ULTRA", v => { state.rtxQuality = v; persist(); })]),
           ])] : []),
-          col([label("Continuity between clips"), select(CONTINUITY_MODES.map(m => ({ value: m.key, label: m.label })),
+          col([label("Continuity between clips"), select(contModes.map(m => ({ value: m.key, label: m.label })),
             state.continuityMode, v => { state.continuityMode = v; persist(); renderLeft(); })]),
-          el("div", { text: (CONTINUITY_MODES.find(m => m.key === state.continuityMode) || {}).hint || "",
+          el("div", { text: (contModes.find(m => m.key === state.continuityMode) || {}).hint || "",
+            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+          el("div", { text: "One prompt renders one clip. To make a longer piece that holds together, split the brief into shots — each shot becomes a clip and continuity carries the look forward.",
+            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5", marginTop: "2px" } }),
+        ]));
+
+        // Stitching is a per-run choice: sometimes you want the single assembled file,
+        // sometimes you want the clips left alone to cut yourself.
+        leftPanel.appendChild(panel([
+          label("Output"),
+          checkboxRow("Stitch clips into one file", state.stitchAtEnd !== false, v => {
+            state.stitchAtEnd = v; persist(); renderLeft();
+          }),
+          ...(state.stitchAtEnd !== false ? [
+            checkboxRow("Trim the tail to the planned length", !!state.trimLastClip, v => {
+              state.trimLastClip = v; persist();
+            }),
+          ] : []),
+          checkboxRow("Free VRAM between clips", state.unloadBetweenClips !== false, v => {
+            state.unloadBetweenClips = v; persist();
+          }),
+          el("div", { text: state.stitchAtEnd !== false
+              ? "Individual clips are always kept as well."
+              : "Clips are saved separately — nothing is assembled.",
             style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
         ]));
 
@@ -636,6 +680,10 @@ app.registerExtension({
         const arr = out?.images || out?.gifs || [];
         return arr.length ? arr[0] : null;
       }
+      function allOutputs(byNode, nodeKey) {
+        const out = byNode?.[nodeKey];
+        return out?.images || out?.gifs || [];
+      }
 
       genBtn.onclick = async () => {
         if (running) return;
@@ -668,7 +716,7 @@ app.registerExtension({
           const plan = currentPlan();
           totClip = plan.count;
           const clipRecords = [];
-          let chainFrame = state.firstFrameImage || null;
+          let chainFrame = state.generationMode === "reference" ? null : (state.firstFrameImage || null);
           const clipTimes = [];
 
           for (let i = 0; i < plan.count; i++) {
@@ -679,16 +727,27 @@ app.registerExtension({
             badge.style.display = "block";
             badge.textContent = `● CLIP ${curClip}/${totClip}`;
 
-            // continuity: chain from the previous clip's final frame
-            let firstFrame = state.firstFrameImage || null;
+            // Continuity: carry the previous clip's final frame forward.
+            //
+            // Only FL2VA can start from a given frame. Ref2VA has no first-frame input,
+            // and measuring a run proved that handing it the frame as a reference image
+            // does nothing — clip 2's opening sat as far from it as from an unrelated
+            // frame. So whatever the run started as, a continued clip is rendered by
+            // FL2VA with the previous ending as its first frame. What keeps the look
+            // together across that switch is the shared part of the prompt, which every
+            // clip carries (composeClipPrompt always prepends the common header and
+            // appends the common tail).
+            const isRef = state.generationMode === "reference";
+            let firstFrame = isRef ? null : (state.firstFrameImage || null);
             let refImages  = state.refImages || [];
+            const continued = i > 0 && state.continuityMode === "lastframe" && !!chainFrame;
             if (i > 0) {
-              if (state.continuityMode === "lastframe" && chainFrame) firstFrame = chainFrame;
+              if (continued) firstFrame = chainFrame;
               else if (state.continuityMode === "none") firstFrame = null;
             }
-            // Last-frame chaining only means anything on a mode that accepts a first frame.
-            const modeForClip = (i > 0 && state.continuityMode === "lastframe" && state.generationMode === "t2v")
-              ? "firstlast" : state.generationMode;
+            const modeForClip = continued ? "firstlast" : state.generationMode;
+            // FL2VA takes no reference images; passing them would only be noise.
+            if (continued) refImages = [];
 
             const clipState = { ...state, generationMode: modeForClip };
             const restore = pipeOv ? applyOverridesTemp(clipState, pipeOv.overrides) : null;
@@ -727,7 +786,20 @@ app.registerExtension({
             }
             if (lastImg) {
               await setLastResult(self.id, { image: lastImg });
-              try { chainFrame = await copyOutputToInput(lastImg.filename, lastImg.subfolder || "", lastImg.type || "output"); }
+              // Prefer the newest trailing frame that is not a fade-to-black; the plain
+              // last frame is the fallback when the tail is unreadable or all dark.
+              let carry = lastImg;
+              const tail = allOutputs(res.byNode, NODE_IDS.tailPrev);
+              if (tail.length) {
+                const pick = await pickChainFrame(tail.map(t => ({
+                  filename: t.filename, subfolder: t.subfolder || "", type: t.type || "temp",
+                })));
+                if (pick?.picked) {
+                  carry = pick.picked;
+                  if (pick.steppedBack) console.info("[MMH3] chain frame stepped back past a black tail:", pick.checked);
+                }
+              }
+              try { chainFrame = await copyOutputToInput(carry.filename, carry.subfolder || "", carry.type || "output"); }
               catch { chainFrame = null; }
             }
 

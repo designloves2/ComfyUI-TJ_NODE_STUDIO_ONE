@@ -38,6 +38,8 @@ const N = {
   save:   "MM:save_video",
   lastF:  "MM:last_frame",
   saveLF: "MM:save_last_frame",
+  tailF:  "MM:tail_frames",
+  tailPrev: "MM:tail_preview",
   loadFirst: "MM:load_first",
   loadLast:  "MM:load_last",
   ref:      (i) => `MM:ref_${i}`,
@@ -45,6 +47,10 @@ const N = {
   refAud:   (i) => `MM:refaud_${i}`,
   refAudTrim: (i) => `MM:refaud_trim_${i}`,
 };
+
+// How many trailing frames to keep as chain candidates. Enough to step over a short
+// fade-out without reaching back into a materially different moment.
+export const TAIL_CANDIDATES = 8;
 
 const has = (avail, name) => !!(avail && avail[name]);
 
@@ -206,6 +212,9 @@ function buildConditioning(g, state, promptText, width, height, frames, opts, av
       prompt: promptText, width, height, length: frames,
       ref_image_size: state.refImageSize || "match",
     };
+    // Ref2VA has no first_frame input. Feeding a previous clip's final frame in here as
+    // an extra reference was measured and does nothing for continuity, so the relay
+    // switches continued clips to FL2VA instead and never sends a frame this way.
     (refImages || []).slice(0, 9).forEach((name, i) => {
       if (!name) return;
       g[N.ref(i)] = { class_type: "LoadImage", inputs: { image: name } };
@@ -376,7 +385,7 @@ export function buildClipGraph(state, avail, opts = {}) {
     format: "auto", codec: "auto",
   }};
 
-  // Final frame is saved as a PNG so the next clip can chain from it (and so the node
+  // Final frame is saved as a PNG so the next clip can continue from it (and so the node
   // has an IMAGE to hand downstream).
   if (saveLastFrame) {
     g[N.lastF] = { class_type: "ImageFromBatch", inputs: {
@@ -386,6 +395,14 @@ export function buildClipGraph(state, avail, opts = {}) {
       images: [N.lastF, 0],
       filename_prefix: `${folder}/frames/${stem}_clip${clipTag}_last`,
     }};
+    // A clip sometimes fades to black over its final frames, and handing that to the
+    // next clip starts it from an empty screen. Keep a short tail as temp previews so
+    // the relay can step back to the last frame that actually has a picture in it.
+    const tail = Math.min(TAIL_CANDIDATES, frames);
+    g[N.tailF] = { class_type: "ImageFromBatch", inputs: {
+      image: images, batch_index: Math.max(0, frames - tail), length: tail,
+    }};
+    g[N.tailPrev] = { class_type: "PreviewImage", inputs: { images: [N.tailF, 0] } };
   }
 
   return { graph: g, meta: { width, height, frames, steps, seed, videoNode: N.save, lastFrameNode: N.saveLF } };

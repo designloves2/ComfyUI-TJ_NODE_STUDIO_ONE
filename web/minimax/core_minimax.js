@@ -174,11 +174,33 @@ export const UPSCALE_MODES = [
   { key: "model", label: "Upscale Model" },
   { key: "rtx",   label: "RTX VSR" },
 ];
+/**
+ * How a clip picks up from the one before it.
+ *
+ * Only FL2VA accepts a first frame, so a continued clip is always rendered by FL2VA
+ * whatever the run started as. In Reference mode that means the reference images shape
+ * the opening clip and the picture carries the rest. Across every option the common part
+ * of the prompt goes to all clips, which is what holds the look together.
+ */
 export const CONTINUITY_MODES = [
-  { key: "lastframe", label: "Last Frame Chain", hint: "each clip starts from the previous clip's final frame" },
-  { key: "reference", label: "Reference",        hint: "every clip re-uses the same reference images" },
-  { key: "none",      label: "None",             hint: "clips are independent" },
+  { key: "lastframe", label: "Last Frame Chain",
+    hint: "each clip starts from the previous clip's final frame",
+    refHint: "clips after the first start from the previous clip's final frame (rendered by FL2VA, so the reference images shape the first clip only — the common prompt carries the rest)" },
+  { key: "reference", label: "Reference",
+    hint: "every clip re-uses the same reference images" },
+  { key: "none", label: "None",
+    hint: "clips are independent — only the common prompt keeps them consistent" },
 ];
+
+/** Continuity choices worded for the mode in play. */
+export function continuityModesFor(generationMode) {
+  const isRef = (generationMode || "t2v") === "reference";
+  return CONTINUITY_MODES.map(m => ({
+    key: m.key,
+    label: m.label,
+    hint: (isRef && m.refHint) ? m.refHint : m.hint,
+  }));
+}
 
 export function loadState() {
   try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}"); } catch { return {}; }

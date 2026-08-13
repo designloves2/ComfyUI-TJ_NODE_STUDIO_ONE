@@ -251,8 +251,22 @@ export async function saveMeta(filename, subfolder, stateObj) {
   } catch (e) { console.warn("[MMH3] saveMeta:", e); }
 }
 
-// Free VRAM between clips. ComfyUI already unloads between prompts, but an explicit
-// /free also drops cached models when `unload_models` is set.
+// Of a clip's trailing frames, the newest one that is not a fade-to-black. Returns null
+// when nothing is usable, so the caller can fall back to the plain last frame.
+export async function pickChainFrame(images) {
+  try {
+    const r = await api.fetchApi(`${API}/pick_chain_frame`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ images }),
+    });
+    const d = await r.json();
+    return d.ok ? d : null;
+  } catch (e) { console.warn("[MMH3] pickChainFrame:", e); return null; }
+}
+
+// Free VRAM between clips. ComfyUI keeps models resident between prompts, so an explicit
+// /free with `unload_models` is what actually drops them.
 export async function freeMemory({ unloadModels = true, emptyCache = true } = {}) {
   try {
     await api.fetchApi("/free", {

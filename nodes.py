@@ -1600,6 +1600,67 @@ async def mmh3_list_videos(request):
     return web.json_response({"videos": videos, "total": len(found), "offset": offset, "limit": limit})
 
 
+@PromptServer.instance.routes.post("/minimax_h3_one/pick_chain_frame")
+async def mmh3_pick_chain_frame(request):
+    """Pick the last of a clip's trailing frames that still has a picture in it.
+
+    A clip sometimes fades to black over its final frames. Continuing from one of those
+    starts the next clip on an empty screen, so the relay hands over the newest frame
+    that is above the blackness floor and only falls back to the true last frame when
+    every candidate is dark.
+    """
+    try:
+        from PIL import Image
+        import numpy as np
+
+        data = await request.json()
+        images = data.get("images") or []
+        floor = float(data.get("floor", 6.0))   # mean 0-255; a fade-out sits near 0
+
+        checked = []
+        for it in images:
+            name = (it or {}).get("filename", "")
+            if not name:
+                continue
+            sub = (it or {}).get("subfolder", "") or ""
+            kind = (it or {}).get("type", "temp")
+            if kind == "output":
+                base = folder_paths.get_output_directory()
+            elif kind == "input":
+                base = folder_paths.get_input_directory()
+            else:
+                base = folder_paths.get_temp_directory()
+            try:
+                path = _safe_resolve_path(base, sub, name)
+            except ValueError:
+                continue
+            if not os.path.isfile(path):
+                continue
+            try:
+                with Image.open(path) as im:
+                    arr = np.asarray(im.convert("L"), dtype=np.float32)
+                checked.append({"item": it, "mean": float(arr.mean())})
+            except Exception:
+                continue
+
+        if not checked:
+            return web.json_response({"ok": False, "error": "no readable candidates"})
+        for c in reversed(checked):
+            if c["mean"] >= floor:
+                return web.json_response({
+                    "ok": True, "picked": c["item"], "mean": round(c["mean"], 2),
+                    "steppedBack": c is not checked[-1],
+                    "checked": [round(x["mean"], 2) for x in checked],
+                })
+        return web.json_response({
+            "ok": False, "error": "every candidate frame is black",
+            "checked": [round(x["mean"], 2) for x in checked],
+        })
+    except Exception as e:
+        print(f"[TJ_NODE_ONE/minimax_h3] pick_chain_frame error: {e}")
+        return web.json_response({"ok": False, "error": str(e)})
+
+
 @PromptServer.instance.routes.get("/minimax_h3_one/media_info")
 async def mmh3_media_info(request):
     """Duration / audio-track presence for a file in ComfyUI's input folder.
