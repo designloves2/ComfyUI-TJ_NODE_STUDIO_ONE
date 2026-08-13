@@ -330,7 +330,7 @@ app.registerExtension({
           sideCol.appendChild(rep);
 
           const ta = el("textarea", { placeholder: i === 0 ? "Describe the shot…" : "(blank = reuse the previous prompt)", style: {
-            flex: "1", minHeight: "60px", boxSizing: "border-box", background: C.bg2, color: C.text,
+            flex: "1", minHeight: "120px", boxSizing: "border-box", background: C.bg2, color: C.text,
             border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px",
             fontSize: "12px", fontFamily: "inherit", outline: "none", resize: "vertical",
           }});
