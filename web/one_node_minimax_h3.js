@@ -62,14 +62,41 @@ app.registerExtension({
       this.size        = [NODE_MW, NODE_MH];
       this._buildUI();
     };
-    nodeType.prototype.onConfigure = function () { this.size = [NODE_MW, NODE_MH]; };
+    // Runs after the workflow's widgets_values have been applied, which is the first
+    // moment the stored state is readable. A node dropped fresh has none, and keeps the
+    // values it inherited from the browser.
+    nodeType.prototype.onConfigure = function () {
+      this.size = [NODE_MW, NODE_MH];
+      const w = this.widgets?.find(x => x.name === "mmh3_state");
+      if (!w || !w.value) return;
+      try { this._mmh3ApplyState?.(JSON.parse(w.value)); }
+      catch (e) { console.warn("[MMH3] stored state unreadable, keeping current settings:", e); }
+    };
     nodeType.prototype.onResize    = function () { this.size = [NODE_MW, NODE_MH]; };
     nodeType.prototype.getSlotMenuOptions = function () { return []; };
 
     nodeType.prototype._buildUI = function () {
       const self  = this;
+      // Seeded from the last settings used in this browser, so a freshly dropped node
+      // starts where the user left off. A node loaded from a saved workflow overwrites
+      // this from its own stored copy in onConfigure.
       const state = defaultState(loadState());
-      const persist = () => saveState(state);
+
+      // The settings ride along in the workflow: a hidden serialised widget holds the
+      // whole state, so a saved graph keeps its own values, two nodes in one graph no
+      // longer share one blob, and the file still works on another machine. It is drawn
+      // as nothing — the DOM widget below is the real UI.
+      const stateWidget = self.addWidget("text", "mmh3_state", "", () => {});
+      stateWidget.computeSize = () => [0, -4];
+      stateWidget.draw = () => {};
+      stateWidget.hidden = true;
+
+      const persist = () => {
+        saveState(state);                                    // seed for the next new node
+        try { stateWidget.value = JSON.stringify(state); }   // what the workflow saves
+        catch {}
+      };
+      persist();
 
       if (!document.getElementById("mmh3-styles")) {
         const s = document.createElement("style"); s.id = "mmh3-styles";
@@ -1071,6 +1098,22 @@ app.registerExtension({
       });
 
       self.addDOMWidget("mmh3_ui", "div", root, { serialize: false, computeSize: () => [NODE_MW, NODE_MH] });
+
+      // Puts every setting back on screen after the workflow hands us a stored state.
+      self._mmh3ApplyState = (obj) => {
+        if (!obj || typeof obj !== "object") return false;
+        const next = defaultState(obj);
+        for (const k of Object.keys(state)) delete state[k];
+        Object.assign(state, next);
+        seedInput.value = state.seed ?? 0;
+        renderPills();
+        renderLeft();
+        renderPrompts();
+        refreshPlan();
+        ctx._rerenderImages?.();
+        promptEditOv?.syncCommon?.();
+        return true;
+      };
 
       renderPills();
       renderLeft();
