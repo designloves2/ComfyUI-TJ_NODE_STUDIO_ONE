@@ -310,7 +310,9 @@ export function buildClipGraph(state, avail, opts = {}) {
   const modelLink = applyPreview(g, state, avail, modelLink0, nodeId);
 
   // ── conditioning ───────────────────────────────────────────────────────────
-  const fullPrompt = [promptText, state.promptSuffix].filter(s => s && String(s).trim()).join(", ");
+  // `promptText` arrives fully composed (header + shots + footer + suffix) from
+  // composeClipPrompt; the builder does not re-append anything.
+  const fullPrompt = String(promptText || "").trim();
   buildConditioning(g, state, fullPrompt, width, height, frames,
     { firstFrame, lastFrame, refImages: refImages ?? state.refImages }, avail);
 

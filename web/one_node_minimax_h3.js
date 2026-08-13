@@ -17,7 +17,8 @@ import {
   C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, SUBFOLDER,
   el, clear, loadState, saveState, defaultState, randomSeed,
   CLIP_LENGTHS, ASPECTS, GENERATION_MODES, ACCEL_MODES, UPSCALE_MODES, CONTINUITY_MODES,
-  clipPlan, formatDuration, formatClock, framesToSeconds, resolveResolution, splitBrief,
+  clipPlan, formatDuration, formatClock, framesToSeconds, resolveResolution,
+  splitBrief, composeClipPrompt,
 } from "./minimax/core_minimax.js";
 import { panel, label, button, select, numberField, slider, row, col, modeBar, iconBtn, openFullscreen }
   from "./klein/ui_common.js";
@@ -561,13 +562,9 @@ app.registerExtension({
       // ══ RELAY LOOP ══════════════════════════════════════════════════════════
       let running = false, stopRequested = false;
 
-      function promptForClip(i) {
-        const list = state.prompts || [];
-        for (let k = Math.min(i, list.length - 1); k >= 0; k--) {
-          if (list[k] && list[k].trim()) return list[k].trim();
-        }
-        return "";
-      }
+      // Header + this clip's shots + footer, assembled only now — the parts stay
+      // separate in the editor so a split never eats the shared style/sound text.
+      function promptForClip(i) { return composeClipPrompt(state, i); }
 
       function seedForClip(i) {
         if (!state.seedPerClip) return state.seed ?? 0;

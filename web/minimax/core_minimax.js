@@ -142,8 +142,12 @@ export function defaultState(saved) {
     avgMinutesPerClip: saved.avgMinutesPerClip ?? 13,
     unloadBetweenClips: saved.unloadBetweenClips ?? true,
 
-    // prompts — one entry per clip (blank entries reuse the last non-blank one)
+    // prompts — one entry per clip (blank entries reuse the last non-blank one).
+    // header/footer are the parts every clip shares (style preamble, ambient/music tail);
+    // they are stored apart so splitting into clips never throws them away.
     prompts: Array.isArray(saved.prompts) && saved.prompts.length ? saved.prompts.slice() : [""],
+    promptHeader: saved.promptHeader || "",
+    promptFooter: saved.promptFooter || "",
     promptSuffix: saved.promptSuffix || "",
 
     // images
@@ -249,35 +253,96 @@ export function el(tag, props, children) {
 export function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 export function randomSeed() { return Math.floor(Math.random() * 1e15); }
 
-// Split a long brief into per-clip prompts. Handles the `[Shot N] 0.0~3.0s` timecode
-// format emitted by the minimax-h3-prompt skill, plus plain `---` separators.
-export function splitBrief(text, clipCount) {
+// A MiniMax brief is three parts, not just a list of shots: a preamble that sets the
+// visual style and opening composition, the [Shot N] blocks, and trailing
+// "Ambient sound:" / "Music:" paragraphs. The preamble and tail apply to every clip, so
+// they are kept aside and re-attached at queue time instead of being split away.
+const SHOT_LINE_RE = /^[ \t]*\[(?:Shot|SHOT|샷)[ \t]*\d+\][^\n]*$/gm;
+const TAIL_RE = /^[ \t]*(?:Ambient sound|Ambience|Sound|Music|Soundtrack|배경음|음악|사운드)[ \t]*:/i;
+
+/** Split a brief into { header, shots[], footer }. Never loses text. */
+export function parseBrief(text) {
   const raw = String(text || "").trim();
-  if (!raw) return [];
-  if (raw.includes("---")) {
+  if (!raw) return { header: "", shots: [], footer: "" };
+
+  SHOT_LINE_RE.lastIndex = 0;
+  const starts = [];
+  let m;
+  while ((m = SHOT_LINE_RE.exec(raw)) !== null) starts.push(m.index);
+
+  if (!starts.length) {
+    // No shot markers — fall back to `---` groups, else treat the whole thing as one shot.
     const parts = raw.split(/^\s*-{3,}\s*$/m).map(s => s.trim()).filter(Boolean);
-    if (parts.length > 1) return parts;
+    return parts.length > 1
+      ? { header: "", shots: parts, footer: "" }
+      : { header: "", shots: [raw], footer: "" };
   }
-  const shotRe = /^\s*\[(?:Shot|SHOT|샷)\s*\d+\][^\n]*$/gm;
-  if (shotRe.test(raw)) {
-    shotRe.lastIndex = 0;
-    const idx = [];
-    let m;
-    while ((m = shotRe.exec(raw)) !== null) idx.push(m.index);
-    if (idx.length > 1) {
-      const parts = [];
-      for (let i = 0; i < idx.length; i++) {
-        parts.push(raw.slice(idx[i], i + 1 < idx.length ? idx[i + 1] : undefined).trim());
-      }
-      return parts;
-    }
+
+  const header = raw.slice(0, starts[0]).trim();
+  const blocks = starts.map((s, i) => raw.slice(s, i + 1 < starts.length ? starts[i + 1] : undefined).trim());
+
+  // The tail lives inside the last block; cut it at the first "Ambient sound:"-style line.
+  let footer = "";
+  const last = blocks[blocks.length - 1];
+  const lines = last.split("\n");
+  let cut = -1;
+  for (let i = 1; i < lines.length; i++) {
+    if (TAIL_RE.test(lines[i])) { cut = i; break; }
   }
-  const paras = raw.split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
-  if (clipCount && paras.length > clipCount) {
-    // fold extra paragraphs into the last clip rather than dropping them
-    const head = paras.slice(0, clipCount - 1);
-    head.push(paras.slice(clipCount - 1).join("\n\n"));
-    return head;
+  if (cut > 0) {
+    blocks[blocks.length - 1] = lines.slice(0, cut).join("\n").trim();
+    footer = lines.slice(cut).join("\n").trim();
   }
-  return paras.length ? paras : [raw];
+  return { header, shots: blocks.filter(Boolean), footer };
+}
+
+/**
+ * Group shots into `groups` clips. `breaks` is a set of shot indices that start a new
+ * clip; when omitted the shots are spread as evenly as possible.
+ */
+export function groupShots(shots, groups, breaks) {
+  if (!shots.length) return [];
+  if (breaks && breaks.length) {
+    const cuts = [...new Set(breaks)].filter(i => i > 0 && i < shots.length).sort((a, b) => a - b);
+    const out = [];
+    let prev = 0;
+    for (const c of cuts) { out.push(shots.slice(prev, c)); prev = c; }
+    out.push(shots.slice(prev));
+    return out.map(g => g.join("\n\n"));
+  }
+  const n = Math.max(1, Math.min(groups || 1, shots.length));
+  const per = Math.ceil(shots.length / n);
+  const out = [];
+  for (let i = 0; i < shots.length; i += per) out.push(shots.slice(i, i + per).join("\n\n"));
+  return out;
+}
+
+/** Default break points that spread `count` shots over `groups` clips. */
+export function evenBreaks(count, groups) {
+  const n = Math.max(1, Math.min(groups || 1, count));
+  const per = Math.ceil(count / n);
+  const b = [];
+  for (let i = per; i < count; i += per) b.push(i);
+  return b;
+}
+
+/** What actually gets sent for clip `i`: common header + that clip's shots + common tail. */
+export function composeClipPrompt(state, i) {
+  const list = state.prompts || [];
+  let body = "";
+  for (let k = Math.min(i, list.length - 1); k >= 0; k--) {
+    if (list[k] && list[k].trim()) { body = list[k].trim(); break; }
+  }
+  return [state.promptHeader, body, state.promptFooter, state.promptSuffix]
+    .map(s => (s || "").trim()).filter(Boolean).join("\n\n");
+}
+
+// Kept for the plain "split this text" path (no header/footer awareness).
+export function splitBrief(text, clipCount) {
+  const { header, shots, footer } = parseBrief(text);
+  if (!shots.length) return [];
+  const groups = groupShots(shots, clipCount || shots.length);
+  if (!header && !footer) return groups;
+  return groups.map((g, i) => [i === 0 ? header : "", g, i === groups.length - 1 ? footer : ""]
+    .filter(Boolean).join("\n\n"));
 }
