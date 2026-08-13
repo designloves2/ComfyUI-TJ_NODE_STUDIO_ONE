@@ -727,27 +727,28 @@ app.registerExtension({
             badge.style.display = "block";
             badge.textContent = `● CLIP ${curClip}/${totClip}`;
 
-            // Continuity: carry the previous clip's final frame forward.
+            // Continuity decides what a clip after the first inherits. The first clip is
+            // always rendered by whatever mode the run is in.
             //
-            // Only FL2VA can start from a given frame. Ref2VA has no first-frame input,
-            // and measuring a run proved that handing it the frame as a reference image
-            // does nothing — clip 2's opening sat as far from it as from an unrelated
-            // frame. So whatever the run started as, a continued clip is rendered by
-            // FL2VA with the previous ending as its first frame. What keeps the look
-            // together across that switch is the shared part of the prompt, which every
-            // clip carries (composeClipPrompt always prepends the common header and
-            // appends the common tail).
+            //   Last Frame Chain — the previous clip's ending becomes this clip's first
+            //     frame. Only FL2VA takes a first frame (Ref2VA has none, and measuring a
+            //     run showed that passing the frame as a reference image does nothing),
+            //     so a chained clip is rendered by FL2VA whatever the run started as.
+            //   Reference — the mode carries on unchanged, every clip re-using the same
+            //     reference images.
+            //   None — nothing is carried between clips: no frame is handed over and each
+            //     clip is made from its prompt. The run stays on its own model, so a
+            //     Reference run still renders every clip with Ref2VA and its references.
+            //
+            // Across all three the shared part of the prompt still reaches every clip,
+            // which is what keeps a run looking like one piece.
             const isRef = state.generationMode === "reference";
             let firstFrame = isRef ? null : (state.firstFrameImage || null);
             let refImages  = state.refImages || [];
             const continued = i > 0 && state.continuityMode === "lastframe" && !!chainFrame;
-            if (i > 0) {
-              if (continued) firstFrame = chainFrame;
-              else if (state.continuityMode === "none") firstFrame = null;
-            }
+            if (i > 0) firstFrame = continued ? chainFrame : null;
+            if (continued) refImages = [];   // FL2VA takes no reference images
             const modeForClip = continued ? "firstlast" : state.generationMode;
-            // FL2VA takes no reference images; passing them would only be noise.
-            if (continued) refImages = [];
 
             const clipState = { ...state, generationMode: modeForClip };
             const restore = pipeOv ? applyOverridesTemp(clipState, pipeOv.overrides) : null;

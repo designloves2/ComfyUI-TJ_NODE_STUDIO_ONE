@@ -187,9 +187,10 @@ export const CONTINUITY_MODES = [
     hint: "each clip starts from the previous clip's final frame",
     refHint: "clips after the first start from the previous clip's final frame (rendered by FL2VA, so the reference images shape the first clip only — the common prompt carries the rest)" },
   { key: "reference", label: "Reference",
-    hint: "every clip re-uses the same reference images" },
+    hint: "every clip re-uses the same reference images",
+    refHint: "every clip re-uses the same reference images — the mode carries on unchanged" },
   { key: "none", label: "None",
-    hint: "clips are independent — only the common prompt keeps them consistent" },
+    hint: "nothing is handed between clips — each one is made from its prompt, on the run's own model; only the common prompt keeps them consistent" },
 ];
 
 /** Continuity choices worded for the mode in play. */
