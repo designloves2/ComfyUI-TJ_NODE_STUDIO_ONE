@@ -2,6 +2,7 @@
 TJ Node ONE — Combined package for flux2 klein One (TJ) + Z-Image ONE (TJ)
 """
 import os
+import sys
 import json
 import glob
 import time
@@ -1549,6 +1550,75 @@ PromptServer.instance.routes.post("/minimax_h3_one/open_folder")(_make_open_fold
 PromptServer.instance.routes.post("/minimax_h3_one/delete")(_make_delete_handler("minimax_h3"))
 PromptServer.instance.routes.post("/minimax_h3_one/copy_to_input")(_make_copy_to_input_handler("mmh3"))
 PromptServer.instance.routes.get("/minimax_h3_one/lora_triggers")(_make_lora_triggers_handler())
+
+
+@PromptServer.instance.routes.get("/minimax_h3_one/videos")
+async def mmh3_list_videos(request):
+    """Clips and stitched files in the node's output folder, newest first.
+
+    The shared gallery handler only globs PNGs; this node's results are videos.
+    """
+    output_dir = _get_output_dir()
+    try:
+        offset = max(0, int(request.query.get("offset", 0)))
+    except Exception:
+        offset = 0
+    try:
+        limit = min(max(1, int(request.query.get("limit", 60))), 300)
+    except Exception:
+        limit = 60
+    subf = request.query.get("subfolder", "") or MMH3_SUBFOLDER
+    try:
+        search = _safe_resolve_output_path(output_dir, subf)
+    except ValueError:
+        return web.json_response({"videos": [], "total": 0, "error": "invalid subfolder"}, status=400)
+
+    found = []
+    if search and os.path.isdir(search):
+        for ext in ("*.mp4", "*.webm", "*.mkv", "*.mov"):
+            found += glob.glob(os.path.join(search, "**", ext), recursive=True)
+    found = sorted(set(found), key=os.path.getmtime, reverse=True)
+
+    videos = []
+    for f in found[offset:offset + limit]:
+        rel = os.path.relpath(os.path.dirname(f), output_dir)
+        name = os.path.basename(f)
+        videos.append({
+            "filename": name,
+            "subfolder": "" if rel == "." else rel.replace("\\", "/"),
+            "mtime": os.path.getmtime(f),
+            "size": os.path.getsize(f),
+            # the stitched result is the interesting one, so flag it for the UI
+            "is_full": "_full" in name.lower(),
+        })
+    return web.json_response({"videos": videos, "total": len(found), "offset": offset, "limit": limit})
+
+
+@PromptServer.instance.routes.post("/minimax_h3_one/reveal")
+async def mmh3_reveal(request):
+    """Open the output folder in the OS file manager (no filename needed)."""
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    output_dir = _get_output_dir()
+    subf = (data.get("subfolder") or MMH3_SUBFOLDER)
+    try:
+        target = _safe_resolve_output_path(output_dir, subf)
+    except ValueError:
+        return web.json_response({"ok": False, "error": "invalid subfolder"}, status=400)
+    if not target or not os.path.isdir(target):
+        target = output_dir
+    try:
+        if os.name == "nt":
+            _open_in_file_manager(["explorer", os.path.normpath(target)])
+        elif sys.platform == "darwin":
+            _open_in_file_manager(["open", target])
+        else:
+            _open_in_file_manager(["xdg-open", target])
+        return web.json_response({"ok": True, "path": target})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
 
 
 @PromptServer.instance.routes.get("/minimax_h3_one/config")

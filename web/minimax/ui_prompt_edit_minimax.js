@@ -39,6 +39,7 @@ export function createPromptEditOverlay(state, ctx, onApply) {
       header: state.promptHeader || "",
       footer: state.promptFooter || "",
       prompts: (state.prompts || []).slice(),
+      promptClips: (state.promptClips || []).slice(),
       selected,
     });
     if (undoStack.length > 20) undoStack.shift();
@@ -50,6 +51,7 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     state.promptHeader = s.header;
     state.promptFooter = s.footer;
     state.prompts = s.prompts.slice();
+    state.promptClips = (s.promptClips || []).slice();
     selected = Math.min(s.selected, state.prompts.length - 1);
     ctx.persist();
     renderAll();
@@ -166,8 +168,8 @@ export function createPromptEditOverlay(state, ctx, onApply) {
       }});
       del.addEventListener("click", e => {
         e.stopPropagation();
-        if ((state.prompts || []).length <= 1) state.prompts = [""];
-        else state.prompts.splice(i, 1);
+        if ((state.prompts || []).length <= 1) { state.prompts = [""]; state.promptClips = [1]; }
+        else { state.prompts.splice(i, 1); (state.promptClips || []).splice(i, 1); }
         if (selected >= state.prompts.length) selected = state.prompts.length - 1;
         ctx.persist(); renderList(); loadSelected();
       });
@@ -187,6 +189,7 @@ export function createPromptEditOverlay(state, ctx, onApply) {
 
   addBtn.addEventListener("click", () => {
     (state.prompts = state.prompts || []).push("");
+    (state.promptClips = state.promptClips || []).push(1);
     selected = state.prompts.length - 1;
     ctx.persist(); renderList(); loadSelected(); editor.focus();
   });
@@ -365,24 +368,9 @@ export function createPromptEditOverlay(state, ctx, onApply) {
       });
       const text = (d.response || "").trim();
       if (!text) throw new Error("empty response");
-
-      snapshot(target === "all" ? "enhance → all clips" : `enhance → clip ${selected + 1}`);
-      if (target === "all") {
-        // Keep the model's preamble and sound/music tail as the shared parts rather
-        // than folding them into clip 1 and the last clip.
-        const parsed = parseBrief(text);
-        const plan = ctx.currentPlan?.() || { count: 1 };
-        if (parsed.header) state.promptHeader = parsed.header;
-        if (parsed.footer) state.promptFooter = parsed.footer;
-        const groups = groupShots(parsed.shots, plan.count);
-        state.prompts = groups.length ? groups : [text];
-        selected = 0;
-      } else {
-        state.prompts[selected] = text;
-      }
-      ctx.persist(); renderAll(); onApply?.();
-      statusTag.textContent = target === "all"
-        ? `done — ${state.prompts.length} clip prompt(s), common parts kept` : "done";
+      // Never write straight in — show what came back and let the user decide.
+      openReview(text, target);
+      statusTag.textContent = "review the result";
       statusTag.style.color = C.ok;
     } catch (e) {
       statusTag.textContent = `⚠ ${String(e.message).slice(0, 90)}`;
@@ -392,6 +380,105 @@ export function createPromptEditOverlay(state, ctx, onApply) {
       busy = false; enhBtn.disabled = false; enhBtn.textContent = oldLabel;
     }
   });
+
+  // ── LLM result review ──────────────────────────────────────────────────────
+  // The model's answer lands here first. It's shown already separated into the common
+  // header, the shots and the sound/music tail, so applying it fills the right fields
+  // instead of dumping one blob into the current clip.
+  const reviewOv = el("div", { style: {
+    display: "none", position: "absolute", inset: "0", zIndex: "20",
+    background: "rgba(11,11,11,0.985)", borderRadius: "inherit",
+    flexDirection: "column", padding: "12px", gap: "8px", boxSizing: "border-box",
+  }});
+  let reviewText = "", reviewTarget = "one";
+
+  const rvHdr = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" } });
+  rvHdr.appendChild(el("div", { text: "✨ Enhance result", style: { color: "#fff", fontSize: "13px", fontWeight: "700" } }));
+  const rvInfo = el("div", { style: { fontSize: "10.5px", color: C.muted, flex: "1" } });
+  rvHdr.appendChild(rvInfo);
+
+  const rvBody = el("div", { style: { flex: "1", overflowY: "auto", display: "flex", flexDirection: "column", gap: "7px" } });
+  rvBody.className = "mmh3-lp";
+
+  const rvFoot = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" } });
+  const rvSummary = el("div", { style: { fontSize: "10.5px", color: C.muted, flex: "1" } });
+  const rvCancel = el("button", { type: "button", text: "✕ Discard", style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "6px 12px",
+    borderRadius: "6px", background: C.bg2, color: C.muted, border: `1px solid ${C.border}`,
+  }});
+  const rvAgain = el("button", { type: "button", text: "↻ Enhance again", style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "6px 12px",
+    borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+  }});
+  const rvApply = button("✓ Apply", () => applyReview(), "primary");
+  rvFoot.append(rvSummary, rvCancel, rvAgain, rvApply);
+  reviewOv.append(rvHdr, rvBody, rvFoot);
+
+  function reviewBlock(title, text, accent) {
+    const b = el("div", { style: {
+      background: C.bg1, border: `1px solid ${accent || C.border}`, borderRadius: "7px", padding: "8px 10px",
+      display: "flex", flexDirection: "column", gap: "3px",
+    }});
+    b.append(
+      el("div", { text: title, style: { fontSize: "9.5px", fontWeight: "700", color: accent || C.muted, letterSpacing: "0.05em" } }),
+      el("div", { text, style: { fontSize: "11px", color: C.text, lineHeight: "1.55", whiteSpace: "pre-wrap" } }),
+    );
+    return b;
+  }
+
+  function openReview(text, target) {
+    reviewText = text; reviewTarget = target;
+    const parsed = parseBrief(text);
+    const plan = ctx.currentPlan?.() || { count: 1 };
+    clear(rvBody);
+
+    if (reviewTarget === "all") {
+      rvInfo.textContent = `${parsed.shots.length} shot(s) → will be grouped into ${Math.min(plan.count, parsed.shots.length) || 1} clip prompt(s)`;
+      if (parsed.header) rvBody.appendChild(reviewBlock("→ COMMON HEADER", parsed.header, C.ok));
+      const groups = groupShots(parsed.shots, plan.count);
+      groups.forEach((g, i) => rvBody.appendChild(reviewBlock(`→ CLIP ${i + 1}`, g, BRAND)));
+      if (parsed.footer) rvBody.appendChild(reviewBlock("→ COMMON SOUND / MUSIC", parsed.footer, C.ok));
+      rvSummary.textContent = `Applying replaces ${plan.promptCount} prompt(s)`
+        + (parsed.header ? " + the common header" : "") + (parsed.footer ? " + the common tail" : "");
+    } else {
+      rvInfo.textContent = `${text.length} chars → clip ${selected + 1}`;
+      // A single-clip apply still lifts the common parts out if the model wrote them.
+      if (parsed.header) rvBody.appendChild(reviewBlock("→ COMMON HEADER", parsed.header, C.ok));
+      rvBody.appendChild(reviewBlock(`→ CLIP ${selected + 1}`, parsed.shots.join("\n\n") || text, BRAND));
+      if (parsed.footer) rvBody.appendChild(reviewBlock("→ COMMON SOUND / MUSIC", parsed.footer, C.ok));
+      rvSummary.textContent = `Applying replaces clip ${selected + 1}`
+        + (parsed.header || parsed.footer ? " and the common parts" : "");
+    }
+    reviewOv.style.display = "flex";
+  }
+
+  function applyReview() {
+    const parsed = parseBrief(reviewText);
+    snapshot(reviewTarget === "all" ? "enhance → all clips" : `enhance → clip ${selected + 1}`);
+    if (parsed.header) state.promptHeader = parsed.header;
+    if (parsed.footer) state.promptFooter = parsed.footer;
+    if (reviewTarget === "all") {
+      const plan = ctx.currentPlan?.() || { count: 1 };
+      const groups = groupShots(parsed.shots, plan.count);
+      state.prompts = groups.length ? groups : [reviewText];
+      state.promptClips = state.prompts.map(() => 1);
+      selected = 0;
+    } else {
+      state.prompts[selected] = parsed.shots.join("\n\n") || reviewText;
+    }
+    ctx.persist();
+    reviewOv.style.display = "none";
+    renderAll(); onApply?.();
+    statusTag.textContent = "applied";
+    statusTag.style.color = C.ok;
+  }
+
+  rvCancel.addEventListener("click", () => {
+    reviewOv.style.display = "none";
+    statusTag.textContent = "discarded";
+    statusTag.style.color = C.muted;
+  });
+  rvAgain.addEventListener("click", () => { reviewOv.style.display = "none"; enhBtn.click(); });
 
   // ── split dialog ───────────────────────────────────────────────────────────
   // 8s holds one to three shots, so "one shot per clip" is usually wrong. The parsed
@@ -510,6 +597,7 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     if (splitHeader) state.promptHeader = splitHeader;
     if (splitFooter) state.promptFooter = splitFooter;
     state.prompts = groups;
+    state.promptClips = groups.map(() => 1);
     selected = 0;
     ctx.persist();
     splitOv.style.display = "none";
@@ -545,7 +633,7 @@ export function createPromptEditOverlay(state, ctx, onApply) {
   });
   footer.append(splitBtn, previewBtn, planTag, button("✓ Done", () => hide(), "primary"));
 
-  ov.append(hdr, commonWrap, body, enhWrap, footer, splitOv);
+  ov.append(hdr, commonWrap, body, enhWrap, footer, splitOv, reviewOv);
 
   function refreshPlanTag() {
     const p = ctx.currentPlan?.();
@@ -580,5 +668,11 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     },
     hide,
     isOpen: () => ov.style.display !== "none",
+    /** Pull header/footer back in after the Common Prompt popup edited them. */
+    syncCommon() {
+      headerTA.value = state.promptHeader || "";
+      footerTA.value = state.promptFooter || "";
+      refreshPreviewTag();
+    },
   };
 }

@@ -1,5 +1,5 @@
 // core_minimax.js — MiniMax H3 ONE STUDIO (TJ) constants, state, helpers
-export const BRAND = "#00B3A4";
+export const BRAND = "#7612DA";   // pack-wide TJ purple, same as every other ONE STUDIO node
 export const C = {
   lime: BRAND, bg0: "#0b0b0b", bg1: "#111111", bg2: "#181818",
   bg3: "#222222", border: "#2a2a2a", borderH: "#3c3c3c",
@@ -32,12 +32,62 @@ export const DEFAULT_FRAMES = 192;   // 8.000s — the only exact-second option 
 
 export function framesToSeconds(frames) { return frames / FPS; }
 
-export function clipPlan(totalSeconds, clipFrames, avgMinutesPerClip) {
-  const clipSec = framesToSeconds(clipFrames);
-  const count   = Math.max(1, Math.ceil((totalSeconds || clipSec) / clipSec));
-  const actual  = count * clipSec;
-  const minutes = count * (avgMinutesPerClip ?? 13);
-  return { count, clipSec, actualSeconds: actual, estimateMinutes: minutes };
+/**
+ * Clips are driven by the prompts, not by a duration field.
+ *
+ * One prompt renders one clip by default. A prompt can be repeated over several clips
+ * (`promptClips[i]`) when you want a single description to keep going — the extra clips
+ * continue from the previous clip's last frame rather than restarting, which is the only
+ * way one prompt can cover more than a clip's worth of time. So:
+ *
+ *     total clips   = sum(promptClips)
+ *     total seconds = total clips x clip length
+ *
+ * Total length is therefore a readout, never an input: change the clip length or add a
+ * prompt (or bump a repeat) and it follows.
+ */
+export function promptClipCounts(state) {
+  const n = (state.prompts || [""]).length;
+  const raw = state.promptClips || [];
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(Math.max(1, Math.round(raw[i] ?? 1)));
+  return out;
+}
+
+export function clipPlan(state, clipFramesOverride, avgMinutesPerClip) {
+  const frames  = clipFramesOverride ?? state.clipFrames ?? 192;
+  const clipSec = framesToSeconds(frames);
+  const counts  = promptClipCounts(state);
+  const count   = Math.max(1, counts.reduce((a, b) => a + b, 0));
+  const avg     = avgMinutesPerClip ?? state.avgMinutesPerClip ?? 13;
+  return {
+    count, clipSec, counts,
+    actualSeconds: count * clipSec,
+    estimateMinutes: count * avg,
+    promptCount: counts.length,
+  };
+}
+
+/** Which prompt index a given clip belongs to (walks the repeat counts). */
+export function promptIndexForClip(state, clipIndex) {
+  const counts = promptClipCounts(state);
+  let acc = 0;
+  for (let i = 0; i < counts.length; i++) {
+    acc += counts[i];
+    if (clipIndex < acc) return i;
+  }
+  return counts.length - 1;
+}
+
+/** 1-based position of this clip inside its prompt's run, e.g. "2 / 3". */
+export function clipPositionInPrompt(state, clipIndex) {
+  const counts = promptClipCounts(state);
+  let acc = 0;
+  for (let i = 0; i < counts.length; i++) {
+    if (clipIndex < acc + counts[i]) return { promptIndex: i, pos: clipIndex - acc + 1, of: counts[i] };
+    acc += counts[i];
+  }
+  return { promptIndex: counts.length - 1, pos: 1, of: 1 };
 }
 
 export function formatDuration(minutes) {
@@ -146,6 +196,8 @@ export function defaultState(saved) {
     // header/footer are the parts every clip shares (style preamble, ambient/music tail);
     // they are stored apart so splitting into clips never throws them away.
     prompts: Array.isArray(saved.prompts) && saved.prompts.length ? saved.prompts.slice() : [""],
+    // clips rendered per prompt (>1 continues the same description across chained clips)
+    promptClips: Array.isArray(saved.promptClips) ? saved.promptClips.slice() : [],
     promptHeader: saved.promptHeader || "",
     promptFooter: saved.promptFooter || "",
     promptSuffix: saved.promptSuffix || "",

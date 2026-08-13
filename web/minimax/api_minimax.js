@@ -121,6 +121,26 @@ export async function getGallery({ offset = 0, limit = 20, subfolder = SUBFOLDER
   return r.json();
 }
 
+/** Clips written by this node, newest first (the shared gallery only lists PNGs). */
+export async function listVideos(subfolder, { offset = 0, limit = 120 } = {}) {
+  const r = await api.fetchApi(`${API}/videos?offset=${offset}&limit=${limit}&subfolder=${encodeURIComponent(subfolder || SUBFOLDER)}`);
+  return r.json();
+}
+
+export async function revealOutputFolder(subfolder) {
+  try {
+    const r = await api.fetchApi(`${API}/reveal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subfolder: subfolder || SUBFOLDER }),
+    });
+    if (r.status === 404) return { ok: false, error: "restart ComfyUI to enable this" };
+    return await r.json();
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
 export async function deleteImage(filename, subfolder) {
   const r = await api.fetchApi(`${API}/delete`, {
     method: "POST",
