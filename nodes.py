@@ -1690,6 +1690,10 @@ MMH3_OPTIONAL_NODES = [
     "SolAttnPatch",
     "SpectrumApplyMiniMaxH3",
     "RTXVideoSuperResolution",
+    # reference video / audio inputs
+    "VHS_LoadVideo",
+    "LoadAudio",
+    "TrimAudioDuration",
 ]
 MMH3_CORE_NODES = [
     "MiniMaxH3ImageToVideo",
