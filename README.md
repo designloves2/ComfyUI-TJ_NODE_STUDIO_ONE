@@ -38,11 +38,13 @@
 8. [SDXL ONE STUDIO — 기능 상세 🧪](#sdxl-one-studio--기능-상세-)
 8. [SDXL ONE STUDIO — Feature Details 🧪](#sdxl-one-studio--기능-상세-)
 9. [공통 기능](#공통-기능)
-8. [Common Features](#공통-기능)
-9. [버그 수정 이력](#버그-수정-이력)
-9. [Bug Fix History](#버그-수정-이력)
-10. [라이선스](#라이선스)
-10. [License](#라이선스)
+9. [Common Features](#공통-기능)
+10. [MiniMax H3 ONE STUDIO — 기능 상세 🧪](#minimax-h3-one-studio--기능-상세-)
+10. [MiniMax H3 ONE STUDIO — Feature Details 🧪](#minimax-h3-one-studio--기능-상세-)
+11. [버그 수정 이력](#버그-수정-이력)
+11. [Bug Fix History](#버그-수정-이력)
+12. [라이선스](#라이선스)
+12. [License](#라이선스)
 
 ---
 
@@ -140,6 +142,12 @@ chmod +x install_requirements.sh
 | [comfyui-krea2-controlnet](https://github.com/facok/comfyui-krea2-controlnet) 🧪 | Krea2 Control LoRA (depth)<br><sub>Krea2 Control LoRA (depth)</sub>| Krea2 ControlNet Depth |
 | [comfyui-krea2edit](https://github.com/lbouaraba/comfyui-krea2edit) 🧪 | Krea2 in-context 편집<br><sub>Krea2 in-context edit</sub>| Krea2 IDENTITY |
 | [ComfyUI-NK2E](https://github.com/Nynxz/ComfyUI-NK2E) 🧪 | Krea2 NK2E in-context (canny)<br><sub>Krea2 NK2E in-context (canny)</sub>| Krea2 ControlNet Canny |
+| [ComfyUI-MiniMaxH3-Cache](https://github.com/lihaoyun6/ComfyUI-MiniMaxH3-Cache) 🧪 | 스텝 재사용 캐시<br><sub>step-reuse cache</sub>| MiniMax H3 (선택)<br><sub>optional</sub>|
+| [ComfyUI-MiniMax-H3-Turbo](https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo) 🧪 | Turbo LoRA · Turbo 샘플러<br><sub>turbo LoRA + sampler</sub>| MiniMax H3 Accel=Turbo |
+| [ComfyUI-SolAttn_triton](https://github.com/kijai/ComfyUI-SolAttn_triton) 🧪 | SolAttn 가속<br><sub>SolAttn acceleration</sub>| MiniMax H3 Accel=SolAttn (기본값)<br><sub>default</sub>|
+| [ComfyUI-Spectrum-MiniMax-H3](https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3) 🧪 | Spectrum 가속<br><sub>Spectrum acceleration</sub>| MiniMax H3 Accel=Spectrum |
+| [ComfyUI-VideoHelperSuite](https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite) 🧪 | 레퍼런스 **비디오** 입력<br><sub>reference video inputs</sub>| MiniMax H3 Reference 모드<br><sub>Reference mode</sub>|
+| [Nvidia RTX Nodes](https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI) 🧪 | RTX Video Super Resolution | MiniMax H3 Upscale=RTX VSR |
 
 ---
 
@@ -666,6 +674,19 @@ chmod +x install_requirements.sh
 | **ComfyUI-RMBG**           | 배경 제거 (RE-BG 모드)<br><sub>background removal (RE-BG Mode)</sub>| Z-Image · RE-BG         | [1038lab/ComfyUI-RMBG](https://github.com/1038lab/ComfyUI-RMBG) |
 | **comfyui_controlnet_aux** | ControlNet 전처리기 (Depth · Canny · Pose 등)<br><sub>ControlNet preprocessor (Depth · Canny · Pose etc.)</sub>| Z-Image · ControlNet    | [Fannovel16/comfyui_controlnet_aux](https://github.com/Fannovel16/comfyui_controlnet_aux) |
 | **ComfyUI-SeedVR2**        | SeedVR2 AI 업스케일 (UPSCALE 모드)<br><sub>SeedVR2 AI (UPSCALE Mode)</sub>| 전체 노드<br><sub>All Node</sub>| [numz](https://github.com/numz) [ComfyUI-SeedVR2_VideoUpscaler](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler) |
+| **comfyui-krea2-controlnet** 🧪 | Krea2 Control LoRA (depth)<br><sub>Krea2 Control LoRA (depth)</sub>| Krea2 · ControlNet Depth | [facok/comfyui-krea2-controlnet](https://github.com/facok/comfyui-krea2-controlnet) |
+| **comfyui-krea2edit** 🧪 | Krea2 in-context 편집<br><sub>Krea2 in-context edit</sub>| Krea2 · IDENTITY | [lbouaraba/comfyui-krea2edit](https://github.com/lbouaraba/comfyui-krea2edit) |
+| **ComfyUI-NK2E** 🧪 | Krea2 NK2E in-context (canny)<br><sub>Krea2 NK2E in-context (canny)</sub>| Krea2 · ControlNet Canny | [Nynxz/ComfyUI-NK2E](https://github.com/Nynxz/ComfyUI-NK2E) |
+| **ComfyUI-KJNodes** 🧪 | 라이브 프리뷰 (`ModelPreviewOverrideKJ`) · SageAttention 패치<br><sub>live preview + SageAttention patch</sub>| MiniMax H3 | [kijai/ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes) |
+| **ComfyUI-SolAttn_triton** 🧪 | SolAttn 가속 (**기본 가속값**)<br><sub>SolAttn acceleration (default)</sub>| MiniMax H3 | [kijai/ComfyUI-SolAttn_triton](https://github.com/kijai/ComfyUI-SolAttn_triton) |
+| **ComfyUI-Spectrum-MiniMax-H3** 🧪 | Spectrum 가속<br><sub>Spectrum acceleration</sub>| MiniMax H3 | [xmarre/ComfyUI-Spectrum-MiniMax-H3](https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3) |
+| **ComfyUI-MiniMaxH3-Cache** 🧪 | 스텝 재사용 캐시<br><sub>step-reuse cache</sub>| MiniMax H3 | [lihaoyun6/ComfyUI-MiniMaxH3-Cache](https://github.com/lihaoyun6/ComfyUI-MiniMaxH3-Cache) |
+| **ComfyUI-MiniMax-H3-Turbo** 🧪 | Turbo LoRA · Turbo 샘플러 (FL2VA 전용)<br><sub>turbo LoRA + sampler, FL2VA only</sub>| MiniMax H3 | [Larryvrh/ComfyUI-MiniMax-H3-Turbo](https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo) |
+| **ComfyUI-VideoHelperSuite** 🧪 | 레퍼런스 **비디오** 입력 (`VHS_LoadVideo`)<br><sub>reference video inputs</sub>| MiniMax H3 · Reference | [Kosinkadink/ComfyUI-VideoHelperSuite](https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite) |
+| **Nvidia RTX Nodes** 🧪 | RTX Video Super Resolution | MiniMax H3 · Upscale | [Comfy-Org/Nvidia_RTX_Nodes_ComfyUI](https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI) |
+
+> MiniMax H3용 노드는 **모두 선택 사항**입니다. 없으면 해당 기능만 꺼지고 나머지는 정상 동작하며, 노드 설정 화면에 상태가 표시됩니다.
+> Every MiniMax H3 pack is optional — a missing one only switches its own feature off, and Settings shows the status.
 
 ---
 
@@ -891,8 +912,50 @@ GGUF or FP8 lightweight SDXL UNET files are supported.
 
 ---
 
-### 3-6. SeedVR2 Upscale 모델 (전체 노드 공용)
-### 3-6. SeedVR2 Upscale model (shared by all nodes)
+### 3-6. MiniMax H3 ONE STUDIO 모델 🧪
+### 3-6. MiniMax H3 ONE STUDIO model 🧪
+
+영상+오디오 노드입니다. **UNET 2종 · 텍스트 인코더 · VAE 2종**이 모두 필요합니다.
+Video + audio node. It needs **two UNETs, a text encoder and both VAEs**.
+
+전부 한 저장소에 있습니다 / All from one repo: [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3)
+
+#### Diffusion Model → `models/diffusion_models/`
+
+| 파일명<br><sub>File</sub>| 설명<br><sub>Description</sub>| 필요 모드<br><sub>Needed for</sub>|
+| --- | --- | --- |
+| `minimax_h3_fl2va_*` | First/Last-to-Video+Audio | **Text only · First/Last** — 그리고 Last Frame Chain으로 이어지는 모든 클립<br><sub>and every chained clip</sub>|
+| `minimax_h3_ref2va_*` | Reference-to-Video+Audio | **Reference** |
+
+> 두 모드를 다 쓰려면 **둘 다** 받아야 합니다. Settings에서 각각 지정하며, 지정되지 않은 모드는 노드에서 진입이 막히고 상단에 경고가 뜹니다.
+> Download **both** if you want both modes. They are set separately in Settings; a mode whose UNET is unset cannot be entered and the node's top bar says so.
+
+#### Text Encoder → `models/text_encoders/`
+
+| 파일명<br><sub>File</sub>| 설명<br><sub>Description</sub>|
+| --- | --- |
+| `qwen3vl_*_minimax_h3_*` | Qwen3-VL 계열. `CLIPLoader type=minimax` 로 로드됩니다<br><sub>loaded with `type=minimax`</sub>|
+
+#### VAE → `models/vae/`
+
+| 파일명<br><sub>File</sub>| 설명<br><sub>Description</sub>|
+| --- | --- |
+| `minimax_h3_video_vae_*` | 영상 VAE<br><sub>video VAE</sub>|
+| `minimax_h3_audio_vae_*` | 오디오 VAE<br><sub>audio VAE</sub>|
+
+> **둘 다 필수**입니다. 그리고 오디오 슬롯에는 반드시 `minimax_h3_audio_vae_*` 를 넣으세요 — 다른 오디오 VAE(예: LTX)를 넣으면 디코딩 단계에서 `size of tensor a … must match … b (128)` 같은 크기 불일치 오류가 납니다.
+> **Both are required**, and the audio slot must hold a `minimax_h3_audio_vae_*` file — pointing it at another audio VAE (LTX's, for example) fails at decode with a tensor-size mismatch.
+
+#### Turbo LoRA (선택) → `models/loras/`
+
+| 파일명<br><sub>File</sub>| 설명<br><sub>Description</sub>|
+| --- | --- |
+| `minimax_h3*turbo*` | 4스텝 고속 생성. **FL2VA 전용** — Reference 모드에서는 선택지에 나타나지 않습니다<br><sub>4-step fast path, FL2VA only — not offered in Reference mode</sub>|
+
+---
+
+### 3-7. SeedVR2 Upscale 모델 (전체 노드 공용)
+### 3-7. SeedVR2 Upscale model (shared by all nodes)
 
 모든 노드의 **UPSCALE 모드**에서 동일한 폴더를 사용합니다.
 Node **UPSCALE Mode**to use.
@@ -931,8 +994,23 @@ ComfyUI on the ComfyUI canvas, click the **⚙** button at the top-right of the 
 | **Save Subfolder**   | `ComfyUI/output/` 하위 저장 폴더명<br><sub>`ComfyUI/output/` output subfolder name</sub>|
 | **💾 Save All**       | 서버에 설정 영구 저장<br><sub>save settings permanently on the server</sub>|
 
-설정은 **브라우저 로컬스토리지에 자동 저장**되어 재시작 후에도 유지됩니다.
-Settings are **automatically saved in browser local storage**and remain available after restarting.
+**MiniMax H3는 항목이 조금 다릅니다** — UNET을 **First/Last용과 Reference용 두 개** 지정하고, VAE도
+**영상용·오디오용 두 개**를 지정합니다. 지정되지 않은 모델이 있으면 노드 상단에 ⚠ 경고가 뜨고, 그 모델이
+필요한 모드와 연속성 옵션은 선택할 수 없습니다.
+**MiniMax H3 differs**: it takes two UNETs (First/Last and Reference) and two VAEs (video and audio).
+Anything unset raises a ⚠ in the node's top bar, and the modes and continuity options needing it are disabled.
+
+**설정이 저장되는 곳 / Where settings live** *(v1.10.0~)*
+
+- **워크플로우 파일** — 노드 설정이 워크플로우와 함께 저장됩니다. 다른 PC에서 열거나 파일을 남에게 넘겨도
+  그대로 재현되고, 한 그래프에 같은 노드를 여러 개 둬도 각자 값을 유지합니다
+- **브라우저** — 마지막에 쓰던 설정이 별도로 기억되어, **새로 꺼낸 노드**가 그 값을 물려받습니다.
+  남의 워크플로우를 여는 것만으로는 이 값이 바뀌지 않습니다
+- v1.10.0 이전에 저장한 워크플로우는 설정이 파일에 담겨 있지 않습니다 — 다시 설정하고 저장하면 이후로는 유지됩니다
+
+- **Workflow file** — settings are stored in the workflow, so it reproduces elsewhere and multiple nodes keep separate values.
+- **Browser** — the settings you last used are remembered separately and seed any newly added node; opening someone else's workflow does not overwrite them.
+- Workflows saved before v1.10.0 carry no settings — set them once more and save.
 
 ### 모델 오버라이드 슬롯 (고급)
 ### Model Override Slots (Advanced)
@@ -1006,6 +1084,36 @@ Settings → **Model Override** enable the checkbox to expose input slots on the
 | **OUTPAINT** | 캔버스 확장<br><sub>canvas expansion</sub>| Top/Bottom/Left/Right 픽셀 설정, 비교 슬라이더에서 패딩 미리보기<br><sub>Top/Bottom/Left/Right pixel settings, padded preview in compare slider</sub>|
 | **UPSCALE** | ESRGAN + Refiner 업스케일<br><sub>ESRGAN + Refiner upscale</sub>| ESRGAN 모델 선택 (`models/upscale_models/`), Refiner KSampler 정제<br><sub>ESRGAN model selection (`models/upscale_models/`), Refiner KSampler refinement</sub>|
 
+### MiniMax H3 ONE STUDIO (TJ) 🧪
+
+> 🧪 실험적 — 영상+오디오 노드. 긴 영상은 클립을 이어 붙여 만들므로 결과가 완벽하지 않을 수 있습니다.
+> 🧪 Experimental — video + audio. Long videos are assembled from chained clips, so results are not seamless.
+
+| 모드<br><sub>Mode</sub>| 설명<br><sub>Description</sub>| 주요 설정<br><sub>Key Settings</sub>|
+| --- | --- | --- |
+| **Text only** (T2VA) | 프롬프트만으로 영상+오디오<br><sub>prompt only</sub>| 클립 길이, 해상도(비율·MP), Steps, 가속<br><sub>clip length, aspect + MP, steps, accel</sub>|
+| **First/Last Frame** (FL2VA) | 시작(+선택적 끝) 키프레임<br><sub>start (+optional end) keyframe</sub>| 키프레임 이미지 업로드<br><sub>keyframe upload</sub>|
+| **Reference** (REF2VA) | 레퍼런스 이미지·비디오·오디오로 인물/장면 고정<br><sub>reference images, videos and audio</sub>| 이미지 최대 9장 · 비디오/오디오 각 3개(인·아웃 구간 지정)<br><sub>up to 9 images, 3 videos, 3 audio with in/out points</sub>|
+
+**클립과 길이 / Clips and length**
+
+프롬프트 **1개 = 클립 1개**입니다. 총 길이는 입력하는 값이 아니라 `클립 수 × 클립 길이`로 따라옵니다. 길게 만들려면 프롬프트를 추가하거나, 긴 브리프를 **✂ Split into clips** 로 샷 단위 분리하세요. 분리하면 스타일 머리말과 사운드 꼬리말이 **공통 영역으로 올라가 모든 클립에 함께 전달**되므로 길이를 늘려도 룩이 유지됩니다.
+One prompt is one clip; total length follows from `clips × clip length` rather than being typed in. Split a long brief into shots to make a longer piece — the shared style and sound text is lifted into the common header/footer so every clip carries it.
+
+| 연속성<br><sub>Continuity</sub>| 동작<br><sub>What it does</sub>|
+| --- | --- |
+| **Last Frame Chain** | 이전 클립의 마지막 프레임이 다음 클립의 첫 프레임이 됩니다. first frame을 받는 모델은 FL2VA뿐이라, 이어지는 클립은 **어떤 모드로 시작했든 FL2VA로 렌더**됩니다 (Reference 이미지는 첫 클립에만 적용)<br><sub>frame-exact continuation; continued clips render on FL2VA whatever the run started as</sub>|
+| **Reference** *(Reference 모드 전용)* | 모든 클립이 같은 레퍼런스 이미지를 사용. 컷은 붙지 않지만 인물·화풍이 유지됩니다<br><sub>every clip re-uses the same references</sub>|
+| **None** | 클립 간 전달 없음. 해당 모드의 모델은 그대로 유지되며, 공통 프롬프트만 일관성을 잡아줍니다<br><sub>nothing handed across; the run stays on its own model</sub>|
+
+**그 밖에 / Also**
+
+- **라이브 프리뷰** — 샘플링 중 디코딩 프레임이 노드에 실시간 표시 (KJNodes 필요)
+- **갤러리** — 클립·합본을 한 곳에서. 카드마다 생성에 쓰인 프롬프트가 저장되어 `↩ Reuse` / `⧉ Copy` 가능. 전체화면 플레이어(Space 재생, ←→ 이동, `[`/`]` 이전·다음, Esc 닫기)
+- **Prompt Edit / COMMON Prompt** — 클립별 프롬프트 편집 팝업, 공통 머리말·꼬리말 분리 편집, Ollama LLM으로 브리프 확장(결과는 팝업으로 먼저 검토)
+- **스티치 On/Off** — 합본 여부를 왼쪽 패널에서 선택. 개별 클립은 항상 저장됩니다
+- **VRAM** — 클립 사이(선택)와 **실행 종료 시(항상)** 자동 해제
+
 ---
 
 ## 공통 기능
@@ -1064,6 +1172,14 @@ LLM The feature **GGUF ** model supports. Some models may be incompatible; try a
 | RE-BG 오류<br><sub>RE-BG error</sub>| ComfyUI-RMBG 설치 + `models/background_removal/` 모델 확인<br><sub>ComfyUI-RMBG Installation + `models/background_removal/` model check</sub>|
 | QE2511 FluxKontext 노드 미발견 오류<br><sub>QE2511 FluxKontext Node missing-node error</sub>| ComfyUI-KJNodes 최신 버전으로 업데이트<br><sub>ComfyUI-KJNodes update to the latest version</sub>|
 | 언어 전환 후 반영 안 됨<br><sub>language change is not applied</sub>| Settings에서 언어 선택 후 자동 새로고침 대기<br><sub>Settingsto automatically refreshes after selection</sub>|
+| **[MiniMax H3]** 모드 버튼이 눌리지 않음<br><sub>a mode pill is greyed out</sub>| 그 모드의 UNET이 지정되지 않은 상태입니다. 상단 ⚠ 경고를 클릭 → Settings에서 First/Last · Reference UNET 지정<br><sub>its UNET is unset — click the ⚠ in the top bar and set it in Settings</sub>|
+| **[MiniMax H3]** 오디오 디코딩 크기 불일치 오류<br><sub>audio decode tensor-size mismatch</sub>| 오디오 VAE 슬롯에 `minimax_h3_audio_vae_*` 가 맞게 지정됐는지 확인. 다른 오디오 VAE(LTX 등)를 넣으면 발생합니다<br><sub>the audio VAE slot must hold a MiniMax audio VAE</sub>|
+| **[MiniMax H3]** Reference 모드에서 Turbo가 안 보임<br><sub>Turbo missing in Reference mode</sub>| 정상입니다. Turbo LoRA는 FL2VA 전용이라 Reference에서는 제공되지 않습니다 (걸면 adaln 오류) — SolAttn·Spectrum·None 사용<br><sub>expected: turbo LoRAs are FL2VA-only</sub>|
+| **[MiniMax H3]** 레퍼런스 **비디오** 항목이 없음<br><sub>reference video inputs missing</sub>| ComfyUI-VideoHelperSuite 설치 확인 (`VHS_LoadVideo`)<br><sub>install ComfyUI-VideoHelperSuite</sub>|
+| **[MiniMax H3]** 합본(스티치) 실패<br><sub>stitching fails</sub>| ffmpeg가 필요합니다. `pip install imageio-ffmpeg` 또는 시스템 PATH에 ffmpeg 설치<br><sub>needs ffmpeg — `pip install imageio-ffmpeg` or put one on PATH</sub>|
+| **[MiniMax H3]** 클립이 이어지지 않고 따로 노는 느낌<br><sub>clips feel unrelated</sub>| Continuity를 **Last Frame Chain**으로. 그리고 공통 스타일·사운드 문구는 **COMMON Prompt**에 넣으세요(모든 클립에 전달됩니다)<br><sub>use Last Frame Chain, and put shared style/sound text in COMMON Prompt</sub>|
+| **[MiniMax H3]** 생성 후 VRAM이 안 내려감<br><sub>VRAM stays high after a run</sub>| 실행이 끝나면 자동 해제됩니다. 즉시 비우려면 상단 🗑 버튼<br><sub>freed automatically when a run ends; 🗑 in the top bar frees it now</sub>|
+| **[전체]** 워크플로우를 열었는데 설정이 기본값<br><sub>settings are default after opening a workflow</sub>| v1.10.0 이전에 저장한 워크플로우입니다. 그때는 설정이 파일에 담기지 않았습니다 — 다시 설정하고 저장하면 이후로는 유지됩니다<br><sub>saved before v1.10.0, when settings were not stored in the file</sub>|
 
 ---
 
@@ -1084,7 +1200,21 @@ ComfyUI/
     ├── ultralytics/
     │   └── bbox/                 ← face_yolov8m.pt 등 (Z-Image Face Redraw)
     ├── background_removal/       ← BiRefNet 모델 (Z-Image RE-BG)
+    ├── upscale_models/           ← ESRGAN 계열 (SDXL Upscale · MiniMax H3 Upscale)
     └── SEEDVR2/                  ← SeedVR2 DiT + VAE (전체 노드 Upscale)
+```
+
+MiniMax H3는 위 폴더들을 그대로 씁니다 — UNET 2종은 `diffusion_models/`, 텍스트 인코더는 `text_encoders/`,
+**영상 VAE와 오디오 VAE 두 개 모두** `vae/`, Turbo LoRA(선택)는 `loras/`.
+결과물은 `output/one_minimax_h3/` 아래에 모입니다:
+
+```
+output/
+└── one_minimax_h3/
+    ├── MMH3_clip001_*.mp4        ← 클립별 결과 (항상 저장)
+    ├── MMH3_full_*.mp4           ← 합본 (스티치를 켠 경우)
+    ├── frames/                   ← 각 클립의 마지막 프레임 PNG (체인·노드 IMAGE 출력용)
+    └── metadata/                 ← 클립별 사이드카 JSON (생성에 쓰인 프롬프트 등)
 ```
 
 ---
@@ -1126,6 +1256,17 @@ Some TJ_NODE systems were rebuilt and extended based on concepts inspired by:
   
 
 Several nodes were heavily reworked and integrated into the TJ wireless workflow architecture.
+
+### MiniMax H3 🧪
+
+- [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3) — 모델 / models
+- [lihaoyun6/ComfyUI-MiniMaxH3-Cache](https://github.com/lihaoyun6/ComfyUI-MiniMaxH3-Cache) — 스텝 재사용 캐시 / step-reuse cache
+- [Larryvrh/ComfyUI-MiniMax-H3-Turbo](https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo) — Turbo LoRA · 샘플러 / turbo LoRA + sampler
+- [kijai/ComfyUI-SolAttn_triton](https://github.com/kijai/ComfyUI-SolAttn_triton) — SolAttn 가속 / acceleration
+- [xmarre/ComfyUI-Spectrum-MiniMax-H3](https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3) — Spectrum 가속 / acceleration
+- [kijai/ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes) — 라이브 프리뷰 / live preview
+- [Kosinkadink/ComfyUI-VideoHelperSuite](https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite) — 레퍼런스 비디오 입력 / reference video inputs
+- [Comfy-Org/Nvidia_RTX_Nodes_ComfyUI](https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI) — RTX Video Super Resolution
 
 ### Krea2 ControlNet
 
