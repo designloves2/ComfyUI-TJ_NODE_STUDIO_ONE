@@ -515,6 +515,9 @@ app.registerExtension({
             style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
           el("div", { text: "One prompt renders one clip. To make a longer piece that holds together, split the brief into shots — each shot becomes a clip and continuity carries the look forward.",
             style: { fontSize: "10px", color: C.muted, lineHeight: "1.5", marginTop: "2px" } }),
+          // Worth flipping per run alongside continuity, so it sits here rather than in
+          // Settings — its tuning fields stay there.
+          checkboxRow("H3 Cache (step reuse)", !!state.useCache, v => { state.useCache = v; persist(); }),
         ]));
 
         // Stitching is a per-run choice: sometimes you want the single assembled file,

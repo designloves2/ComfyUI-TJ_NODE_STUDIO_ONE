@@ -160,7 +160,10 @@ export function createSettingsOverlay(state, ctx) {
         col([checkbox("Torch settings patch", state.useTorchPatch, v => { state.useTorchPatch = v; ctx.persist(); })]),
         col([checkbox("fp16 accumulation", state.fp16Accum, v => { state.fp16Accum = v; ctx.persist(); })]),
       ]),
-      checkbox("H3 Cache (step reuse)", state.useCache, v => { state.useCache = v; ctx.persist(); renderBody(); }),
+      // The on/off lives in the node's left panel — it gets flipped per run. These are
+      // the tuning values behind it, which are set once.
+      label(state.useCache ? "H3 Cache (step reuse) — ON in the node's left panel"
+                           : "H3 Cache (step reuse) — OFF in the node's left panel"),
       ...(state.useCache ? [row([
         col([label("reuse threshold"), numField(state.cacheThreshold ?? 0.3, v => { state.cacheThreshold = v; ctx.persist(); })]),
         col([label("max steps"), numField(state.cacheMaxSteps ?? 2, v => { state.cacheMaxSteps = Math.round(v); ctx.persist(); }, { step: "1" })]),
