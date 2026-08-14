@@ -1,10 +1,15 @@
 # TJ NODE STUDIO ONE (통합 패키지)
 # TJ NODE STUDIO ONE (Integrated Package)
 
-> **ComfyUI 올인원 이미지 생성 UI 패키지** — Z-Image ONE STUDIO, Flux.2 Klein ONE STUDIO, Qwen Image Edit 2511 ONE STUDIO, Krea 2 ONE STUDIO, **SDXL ONE STUDIO** 다섯 가지 노드를 단일 패키지로 제공합니다.  
-> **ComfyUI all-in-one image generation UI package** — Z-Image ONE STUDIO, Flux.2 Klein ONE STUDIO, Qwen Image Edit 2511 ONE STUDIO, Krea 2 ONE STUDIO, **SDXL ONE STUDIO** provides five nodes in a single package.
+> **ComfyUI 올인원 이미지 생성 UI 패키지** — Z-Image ONE STUDIO, Flux.2 Klein ONE STUDIO, Qwen Image Edit 2511 ONE STUDIO, Krea 2 ONE STUDIO, **SDXL ONE STUDIO**, Minimax H3 ONE STUDIO 여섯 가지 노드를 단일 패키지로 제공합니다.  
+> **ComfyUI all-in-one image generation UI package** — Z-Image ONE STUDIO, Flux.2 Klein ONE STUDIO, Qwen Image Edit 2511 ONE STUDIO, Krea 2 ONE STUDIO, **SDXL ONE STUDIO**, Minimax H3 ONE STUDIO provides six nodes in a single package.
+>
 > 워크플로우 배선 없이 노드 하나에서 T2I · I2I · Inpaint · Outpaint · ControlNet · Edit · Faceswap · ANGLE · Upscale(SeedVR2) 등 다양한 모드를 전환합니다.
 > switch between modes in a single node without workflow wiring T2I · I2I · Inpaint · Outpaint · ControlNet · Edit · Faceswap · ANGLE · Upscale(SeedVR2) etc. switch between various modes.
+>
+> 미니맥스 H3 노드가 새롭게 추가 되었습니다. FL2VA / REF2VA / Turbo Lora / Cache와 멀티 프롬포트로 동시에 여러개의 클립을 생성하거나 이전 클립의 라스트 프레임을 다음 클립의 퍼스트 프레임으로 받아서 연속적인 영상을 만들수 있습니다. 여러개 클립의 생성시 최종 클립이 완료되면 모든 영상을 스티치하여 하나의 영상으로 생성도 가능합니다.
+>
+> The MiniMax H3 node has been added. Using FL2VA, REF2VA, Turbo Lora, and Cache, along with multi-port functionality, you can create multiple clips simultaneously or use the last frame of the previous clip as the first frame of the next clip to generate a continuous video. When creating multiple clips, once the final clip is complete, you can stitch all the clips together to create a single video.
 >
 > 🧪 **SDXL ONE STUDIO는 현재 테스트 버전입니다.** 기능은 동작하지만 일부 옵션이 변경될 수 있습니다.  
 > 🧪 **SDXL ONE STUDIO is currently a test/beta version.** Core features are functional but some options may change.
@@ -15,6 +20,7 @@
 ---
 
 <img width="1201" height="816" alt="Screen Shot 2026-06-27 at 05 58 39 907 AM" src="https://github.com/user-attachments/assets/aaf0686e-e09b-43b4-8aff-c6d369e5f06c" />
+<img width="988" height="984" alt="image" src="https://github.com/user-attachments/assets/5764b302-b95d-40e1-98aa-a1a63c135c51" />
 
 
 
