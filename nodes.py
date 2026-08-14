@@ -1823,6 +1823,8 @@ MMH3_OPTIONAL_NODES = [
     "VHS_LoadVideo",
     "LoadAudio",
     "TrimAudioDuration",
+    # Audio Lock — pins the real soundtrack into the AV latent (ships with TJ_NODE)
+    "TJ_H3_AudioLock",
 ]
 MMH3_CORE_NODES = [
     "MiniMaxH3ImageToVideo",

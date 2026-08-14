@@ -18,6 +18,8 @@ export const MMH3_OPTIONAL_NODES = [
   "SpectrumApplyMiniMaxH3", "RTXVideoSuperResolution",
   // reference video / audio inputs
   "VHS_LoadVideo", "LoadAudio", "TrimAudioDuration",
+  // Audio Lock — pins the real soundtrack into the AV latent (ships with TJ_NODE)
+  "TJ_H3_AudioLock",
 ];
 
 /**

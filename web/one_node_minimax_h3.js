@@ -28,6 +28,7 @@ import { panel, label, button, select, loraSelect, numberField, slider, row, col
 import {
   queuePrompt, interrupt, freeMemory, setLastResult, stitchClips,
   copyOutputToInput, getNodeAvailability, getModels, saveMeta, pickChainFrame, getLoraTriggers,
+  getMediaFiles, uploadMedia,
 } from "./minimax/api_minimax.js";
 import { buildClipGraph, NODE_IDS, previewNodeKey } from "./minimax/graph_builder_minimax.js";
 import { createSettingsOverlay } from "./minimax/ui_app_settings_minimax.js";
@@ -434,6 +435,31 @@ app.registerExtension({
       ctx.refreshPlan = refreshPlan;
       ctx.refreshModes = () => { renderPills(); renderLeft(); };
 
+      // Audio for the lock: pick something already in ComfyUI's input folder, or
+      // upload one. Same two-control shape the reference-audio rows use.
+      function audioFilePicker() {
+        const files = ctx.audioFiles || [];
+        const opts = ['', ...files].map(f => ({ value: f, label: f || (ctx.audioFiles ? '— pick a file —' : 'loading…') }));
+        const sel = select(opts, state.lockAudioFile || '', v => { state.lockAudioFile = v; persist(); renderLeft(); });
+        const up = el('button', { type: 'button', text: '⬆ upload', style: {
+          cursor: 'pointer', fontFamily: 'inherit', fontSize: '10px', padding: '4px 8px',
+          borderRadius: '5px', background: C.bg3, color: C.text, border: `1px solid ${C.border}`,
+        }});
+        const inp = el('input', { type: 'file', accept: 'audio/*', style: { display: 'none' } });
+        up.addEventListener('click', () => inp.click());
+        inp.addEventListener('change', async () => {
+          const f = inp.files[0]; inp.value = '';
+          if (!f) return;
+          up.textContent = '…';
+          try {
+            state.lockAudioFile = await uploadMedia(f);
+            ctx.audioFiles = null;                 // force a refetch so it lists
+            persist(); loadAudioFiles(); renderLeft();
+          } catch (e) { showPopup(e.message, true); up.textContent = '⬆ upload'; }
+        });
+        return row([col([sel]), col([up, inp])]);
+      }
+
       function checkboxRow(text, checked, onChange) {
         const chk = el("input", { type: "checkbox" });
         chk.checked = !!checked;
@@ -444,6 +470,8 @@ app.registerExtension({
 
       function renderLeft() {
         const contModes = continuityModesFor(state.generationMode, state);
+        const lockAvailable = !!ctx.availability?.TJ_H3_AudioLock;
+        const hasTrim       = !!ctx.availability?.TrimAudioDuration;
         // A continuity option that this mode does not offer, or whose model is
         // missing, must not stay selected. None is always available.
         const cur = contModes.find(m => m.key === state.continuityMode);
@@ -518,6 +546,45 @@ app.registerExtension({
           // Worth flipping per run alongside continuity, so it sits here rather than in
           // Settings — its tuning fields stay there.
           checkboxRow("H3 Cache (step reuse)", !!state.useCache, v => { state.useCache = v; persist(); }),
+
+          // ── Audio Lock ────────────────────────────────────────────────────
+          // H3 treats a reference track as a reference and writes new audio over it.
+          // Locking pins the real thing into the latent instead, which is what lip-sync
+          // and music videos need. Per-run choice, so it lives here and not in Settings.
+          ...(lockAvailable ? [
+            checkboxRow("Lock audio (keep the source track)", !!state.audioLock, v => {
+              state.audioLock = v; persist(); renderLeft();
+            }),
+          ] : [
+            el("div", { html: "⚠ <code>TJ_H3_AudioLock</code> not installed — audio lock unavailable. "
+              + "It ships with <b>TJ_NODE</b>.",
+              style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+          ]),
+          ...(lockAvailable && state.audioLock ? [
+            col([label("Audio file"), audioFilePicker()]),
+            ...(!hasTrim ? [el("div", {
+              html: "⚠ <code>TrimAudioDuration</code> missing — every clip would lock onto the "
+                  + "start of the track. Install it, or keep this to a single clip.",
+              style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } })] : []),
+            row([
+              col([label("Mode"), select([
+                { value: "lock",  label: "Lock — source as-is" },
+                { value: "remix", label: "Remix — partly kept" },
+              ], state.audioLockMode || "lock", v => { state.audioLockMode = v; persist(); renderLeft(); })]),
+              // strength only means anything in remix; the value survives switching back
+              ...(state.audioLockMode === "remix" ? [
+                col([label("Strength"), numberField(state.audioLockStrength ?? 0.5,
+                  v => { state.audioLockStrength = Math.min(1, Math.max(0, v)); persist(); }, 0.05)]),
+              ] : []),
+            ]),
+            col([label("Fit"), select([
+              { value: "pad_silence",  label: "Pad silence" },
+              { value: "loop",         label: "Loop" },
+              { value: "stretch_none", label: "None (pad + warn)" },
+            ], state.audioLockFit || "pad_silence", v => { state.audioLockFit = v; persist(); })]),
+            el("div", { text: "The saved video uses the source audio directly — no codec round trip.",
+              style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+          ] : []),
         ]));
 
         // Stitching is a per-run choice: sometimes you want the single assembled file,
@@ -1107,9 +1174,16 @@ app.registerExtension({
 
       // model list drives the LoRA dropdown; fetch once in the background
       getModels().then(d => { ctx.availableModels = d; renderLeft(); }).catch(() => {});
+      function loadAudioFiles() {
+        getMediaFiles().then(d => { ctx.audioFiles = d.audios || []; renderLeft(); })
+                      .catch(() => { ctx.audioFiles = []; });
+      }
+      loadAudioFiles();
       getNodeAvailability().then(av => {
         ctx.availability = av.available || {};
         ctx.availabilityInfo = av;
+        // The panel gates options on this and rendered before it arrived, so redraw.
+        renderLeft();
         if (av.core_ok === false) {
           showPopup(`Missing core nodes: ${(av.missing_core || []).join(", ")}`, true);
         } else if ((av.missing_optional || []).length) {

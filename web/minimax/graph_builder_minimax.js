@@ -7,7 +7,7 @@
 //
 // Optional third-party nodes are gated on `avail` (from /minimax_h3_one/node_availability):
 // a missing pack disables that one feature rather than failing the whole prompt.
-import { SUBFOLDER, FPS, resolveResolution, effectiveAccel, turboLoraForMode } from "./core_minimax.js";
+import { SUBFOLDER, FPS, resolveResolution, effectiveAccel, turboLoraForMode, framesToSeconds } from "./core_minimax.js";
 
 const N = {
   unet:   "MM:unet",
@@ -46,6 +46,9 @@ const N = {
   refVid:   (i) => `MM:refvid_${i}`,
   refAud:   (i) => `MM:refaud_${i}`,
   refAudTrim: (i) => `MM:refaud_trim_${i}`,
+  audioLock:  "MM:audio_lock",
+  lockAud:    "MM:lock_audio",
+  lockAudTrim:"MM:lock_audio_trim",
 };
 
 // How many trailing frames to keep as chain candidates. Enough to step over a short
@@ -53,6 +56,54 @@ const N = {
 export const TAIL_CANDIDATES = 8;
 
 const has = (avail, name) => !!(avail && avail[name]);
+
+/**
+ * Wire the lock, if it applies. Returns true when the sampler should read from it.
+ *
+ * The relay renders one clip per prompt, so each clip has to be handed *its own slice*
+ * of the track — feeding the whole file to every clip would repeat the same seconds N
+ * times in the stitched result. The slice is cut with TrimAudioDuration, the same node
+ * the reference-audio inputs already use.
+ */
+function buildAudioLock(g, state, avail, clipIndex, frames) {
+  if (!state.audioLock) return false;
+  // Say what's wrong up front rather than silently rendering without the lock — a run
+  // that quietly ignores it looks like the lock simply doesn't work.
+  if (!has(avail, "TJ_H3_AudioLock"))
+    throw new Error("Audio lock needs the TJ_H3_AudioLock node — install the TJ_NODE pack, or switch the lock off.");
+  if (!state.lockAudioFile)
+    throw new Error("Audio lock is on but no audio file is selected — pick one under Lock audio in the left panel.");
+
+  const clipSeconds = framesToSeconds(frames);
+  const startSec = clipIndex * clipSeconds;
+
+  g[N.lockAud] = { class_type: "LoadAudio", inputs: { audio: state.lockAudioFile } };
+  let audioLink = [N.lockAud, 0];
+
+  // Without the trimmer every clip would lock onto the opening seconds of the track.
+  if (has(avail, "TrimAudioDuration")) {
+    g[N.lockAudTrim] = { class_type: "TrimAudioDuration", inputs: {
+      audio: audioLink, start_index: startSec, duration: clipSeconds,
+    }};
+    audioLink = [N.lockAudTrim, 0];
+  }
+
+  g[N.audioLock] = { class_type: "TJ_H3_AudioLock", inputs: {
+    av_latent: [N.cond, 1],
+    audio:     audioLink,
+    audio_vae: [N.vaeA, 0],
+    mode:      state.audioLockMode || "lock",
+    strength:  state.audioLockStrength ?? 0.5,
+    fit:       state.audioLockFit || "pad_silence",
+    // TJ_NODE's wireless Set/Get widgets are declared `required`, so an API graph that
+    // omits them is rejected outright with required_input_missing.
+    get_name_av_latent: "(none)",
+    get_name_audio:     "(none)",
+    get_name_audio_vae: "(none)",
+    auto_set: false,
+  }};
+  return true;
+}
 
 function requireModels(state) {
   const mode = state.generationMode || "t2v";
@@ -345,10 +396,17 @@ export function buildClipGraph(state, avail, opts = {}) {
   g[N.guider] = { class_type: "BasicGuider", inputs: {
     model: modelLink, conditioning: [N.cond, 0],
   }};
+  // ── audio lock ─────────────────────────────────────────────────────────────
+  // H3 treats ref_audio as a reference and regenerates the sound, which is no good for
+  // lip-sync or a music video. TJ_H3_AudioLock encodes the real audio into the AV latent
+  // and hands the sampler a nested denoise mask of video=1 / audio=0, so every step
+  // restores the audio untouched while the video still generates.
+  const lockAudio = buildAudioLock(g, state, avail, clipIndex, frames);
+
   g[N.sampler] = { class_type: "SamplerCustomAdvanced", inputs: {
     noise: [N.noise, 0], guider: [N.guider, 0],
     sampler: [N.sampSel, 0], sigmas: [N.sched, 0],
-    latent_image: [N.cond, 1],
+    latent_image: lockAudio ? [N.audioLock, 0] : [N.cond, 1],
   }};
 
   // ── decode ─────────────────────────────────────────────────────────────────
@@ -376,8 +434,11 @@ export function buildClipGraph(state, avail, opts = {}) {
 
   // ── outputs ────────────────────────────────────────────────────────────────
   const clipTag = String(clipIndex + 1).padStart(3, "0");
+  // The lock's own audio output passes the source through untouched. Decoding it back
+  // out of the latent instead would cost a neural-codec round trip, which is audible
+  // even though the lock held — so that path is only for when the lock is off.
   g[N.video] = { class_type: "CreateVideo", inputs: {
-    images, fps: FPS, audio: [N.decodeA, 0],
+    images, fps: FPS, audio: lockAudio ? [N.audioLock, 1] : [N.decodeA, 0],
   }};
   g[N.save] = { class_type: "SaveVideo", inputs: {
     video: [N.video, 0],

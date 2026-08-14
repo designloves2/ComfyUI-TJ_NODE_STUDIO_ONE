@@ -283,6 +283,13 @@ export function defaultState(saved) {
     turboLoraStrength: saved.turboLoraStrength ?? 1.0,
     turboLoraLowVram:  saved.turboLoraLowVram  ?? false,
     upscaleModel:  saved.upscaleModel  || "",
+    // Audio Lock — pin the soundtrack instead of letting the model regenerate it
+    audioLock:         saved.audioLock         ?? false,
+    lockAudioFile:     saved.lockAudioFile     || "",
+    audioLockMode:     saved.audioLockMode     || "lock",
+    audioLockStrength: saved.audioLockStrength ?? 0.5,
+    audioLockFit:      saved.audioLockFit      || "pad_silence",
+
     loras: Array.isArray(saved.loras) ? saved.loras.map(l => ({
       name: l.name || "none", strength: l.strength ?? 1.0,
       triggerWord: l.triggerWord || "", enabled: l.enabled !== false,
