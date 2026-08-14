@@ -75,6 +75,26 @@ export function effectiveAccel(state, avail) {
  * extra clips re-enacted the same beat with a different seed — to actually carry a scene
  * forward you write the next prompt, and Last Frame Chain continues the picture.
  */
+/**
+ * Seconds from what someone would actually type for a length: `3:20`, `200`, `200s`,
+ * `3m20s`, `3분 20초`. Returns 0 when there is nothing usable, so callers can fall back.
+ */
+export function parseTargetSeconds(text) {
+  const raw = String(text || "").trim().toLowerCase();
+  if (!raw) return 0;
+
+  const clock = raw.match(/^(\d+)\s*:\s*([0-5]?\d(?:\.\d+)?)$/);       // 3:20
+  if (clock) return (+clock[1]) * 60 + (+clock[2]);
+
+  // 3m20s / 3분 20초 / 3분 / 20초 — either script, both parts optional
+  const min = raw.match(/(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes|분)/);
+  const sec = raw.match(/(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds|초)/);
+  if (min || sec) return (min ? +min[1] * 60 : 0) + (sec ? +sec[1] : 0);
+
+  const plain = raw.match(/^(\d+(?:\.\d+)?)$/);                         // bare number = seconds
+  return plain ? +plain[1] : 0;
+}
+
 export function clipPlan(state, clipFramesOverride, avgMinutesPerClip) {
   const frames  = clipFramesOverride ?? state.clipFrames ?? 192;
   const clipSec = framesToSeconds(frames);
@@ -283,6 +303,11 @@ export function defaultState(saved) {
     turboLoraStrength: saved.turboLoraStrength ?? 1.0,
     turboLoraLowVram:  saved.turboLoraLowVram  ?? false,
     upscaleModel:  saved.upscaleModel  || "",
+    // What to ask the LLM for, when you want a piece of a given length rather than
+    // however many prompts happen to be in the editor. Briefing only — the run's real
+    // length still comes from the prompts it produces.
+    targetLength: saved.targetLength || "",
+
     // Audio Lock — pin the soundtrack instead of letting the model regenerate it
     audioLock:         saved.audioLock         ?? false,
     lockAudioFile:     saved.lockAudioFile     || "",

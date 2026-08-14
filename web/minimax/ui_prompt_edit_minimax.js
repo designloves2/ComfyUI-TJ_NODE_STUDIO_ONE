@@ -6,7 +6,7 @@
 //
 // The brief-writing instruction is the same "Minimax H3 (Video)" system prompt TJ_NODE
 // ships, fetched from the backend (with a built-in fallback when TJ_NODE isn't present).
-import { C, BRAND, el, clear, parseBrief, groupShots, evenBreaks, composeClipPrompt } from "./core_minimax.js";
+import { C, BRAND, el, clear, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt } from "./core_minimax.js";
 import { panel, label, button, select, row, col } from "../klein/ui_common.js";
 import { getOllamaModels, getSystemPrompt, enhancePrompt, uploadImage } from "./api_minimax.js";
 
@@ -229,6 +229,33 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     borderRadius: "6px", background: BRAND, color: "#fff", border: "none", fontWeight: "700",
   }});
 
+  // How long the finished piece should be. Only the LLM briefing uses it: it decides how
+  // many shots to ask for. The run's real length still comes from the prompts that come
+  // back, so this never contradicts "one prompt, one clip".
+  const lenIn = el("input", { type: "text", placeholder: "3:20", style: {
+    width: "74px", boxSizing: "border-box", background: C.bg2, color: C.text,
+    border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px",
+    fontSize: "12px", fontFamily: "inherit", outline: "none", textAlign: "center",
+  }});
+  lenIn.value = state.targetLength || "";
+  lenIn.title = "Target length for the whole piece — 3:20, 200s, or 3분 20초. Blank = one shot per prompt already in the editor.";
+  const lenTag = el("div", { style: { fontSize: "10px", color: C.muted, whiteSpace: "nowrap" } });
+  function targetPlan() {
+    const plan = ctx.currentPlan?.() || { count: 1, clipSec: 8 };
+    const secs = parseTargetSeconds(lenIn.value);
+    if (!(secs > 0)) return { shots: plan.count, seconds: plan.count * plan.clipSec, clipSec: plan.clipSec, fromField: false };
+    const shots = Math.max(1, Math.round(secs / plan.clipSec));
+    return { shots, seconds: shots * plan.clipSec, clipSec: plan.clipSec, fromField: true };
+  }
+  function renderLenTag() {
+    const t = targetPlan();
+    lenTag.textContent = t.fromField
+      ? `→ ${t.shots} clips × ${t.clipSec.toFixed(2)}s = ${t.seconds.toFixed(1)}s`
+      : `→ ${t.shots} clip${t.shots > 1 ? "s" : ""} (from the editor)`;
+  }
+  lenIn.addEventListener("input", () => { state.targetLength = lenIn.value; ctx.persist(); renderLenTag(); });
+  renderLenTag();
+
   const imgRow = el("div", { style: { display: "none", alignItems: "center", gap: "8px" } });
   function renderImageRow() {
     clear(imgRow);
@@ -270,7 +297,9 @@ export function createPromptEditOverlay(state, ctx, onApply) {
   }
 
   const enhBottom = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } });
-  enhBottom.append(modelSelWrap, targetSel, enhBtn);
+  enhBottom.append(modelSelWrap, targetSel,
+    el("div", { text: "Length", style: { fontSize: "11px", color: C.muted } }), lenIn, lenTag,
+    enhBtn);
   enhWrap.append(enhTop, imgRow, enhBottom);
 
   function renderModelSel() {
@@ -316,12 +345,12 @@ export function createPromptEditOverlay(state, ctx, onApply) {
 
   // Give the model the run's actual shape so the brief fits the clips we'll render.
   function buildUserPrompt(baseText) {
-    const plan = ctx.currentPlan?.() || { count: 1, clipSec: 8, actualSeconds: 8 };
+    const t = targetPlan();
     const lines = [
-      `Target duration: ${plan.actualSeconds.toFixed(2)} seconds total, split into ${plan.count} shot(s) of ~${plan.clipSec.toFixed(2)}s each.`,
+      `Target duration: ${t.seconds.toFixed(2)} seconds total, split into ${t.shots} shot(s) of ~${t.clipSec.toFixed(2)}s each.`,
     ];
-    if (plan.count > 1) {
-      lines.push(`Write exactly ${plan.count} shots, separated by a line containing only ---, one shot per clip.`);
+    if (t.shots > 1) {
+      lines.push(`Write exactly ${t.shots} shots, separated by a line containing only ---, one shot per clip.`);
     }
     if (state.generationMode === "reference" && (state.refImages || []).length) {
       lines.push(`${state.refImages.length} reference image(s) are supplied; refer to them as <Picture 1>…<Picture ${state.refImages.length}>.`);
@@ -430,12 +459,15 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     clear(rvBody);
 
     if (reviewTarget === "all") {
-      rvInfo.textContent = `${parsed.shots.length} shot(s) → will be grouped into ${Math.min(plan.count, parsed.shots.length) || 1} clip prompt(s)`;
+      // Preview exactly what applying does: one shot, one clip.
+      const shots = parsed.shots.length ? parsed.shots : [text];
+      const secs = shots.length * (plan.clipSec || 0);
+      rvInfo.textContent = `${shots.length} shot(s) → ${shots.length} clip prompt(s)`
+        + (secs ? ` · ${secs.toFixed(1)}s total` : "");
       if (parsed.header) rvBody.appendChild(reviewBlock("→ COMMON HEADER", parsed.header, C.ok));
-      const groups = groupShots(parsed.shots, plan.count);
-      groups.forEach((g, i) => rvBody.appendChild(reviewBlock(`→ CLIP ${i + 1}`, g, BRAND)));
+      shots.forEach((g, i) => rvBody.appendChild(reviewBlock(`→ CLIP ${i + 1}`, g, BRAND)));
       if (parsed.footer) rvBody.appendChild(reviewBlock("→ COMMON SOUND / MUSIC", parsed.footer, C.ok));
-      rvSummary.textContent = `Applying replaces ${plan.promptCount} prompt(s)`
+      rvSummary.textContent = `Applying replaces ${plan.promptCount} prompt(s) with ${shots.length}`
         + (parsed.header ? " + the common header" : "") + (parsed.footer ? " + the common tail" : "");
     } else {
       rvInfo.textContent = `${text.length} chars → clip ${selected + 1}`;
@@ -455,9 +487,10 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     if (parsed.header) state.promptHeader = parsed.header;
     if (parsed.footer) state.promptFooter = parsed.footer;
     if (reviewTarget === "all") {
-      const plan = ctx.currentPlan?.() || { count: 1 };
-      const groups = groupShots(parsed.shots, plan.count);
-      state.prompts = groups.length ? groups : [reviewText];
+      // One shot becomes one clip. Regrouping the shots down to however many prompts
+      // happened to be in the editor was why asking for a long piece still produced a
+      // single clip — the model wrote the shots and they were merged straight back.
+      state.prompts = parsed.shots.length ? parsed.shots.slice() : [reviewText];
       selected = 0;
     } else {
       state.prompts[selected] = parsed.shots.join("\n\n") || reviewText;
