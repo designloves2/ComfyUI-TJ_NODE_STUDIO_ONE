@@ -3,7 +3,7 @@
 // by every clip; per-run choices live in the node's left panel instead.
 import { C, BRAND, el, clear, SUBFOLDER, SAMPLERS, SCHEDULERS } from "./core_minimax.js";
 import { panel, label, button, select, numberField, row, col } from "../klein/ui_common.js";
-import { getModels, getConfig, saveConfig, getNodeAvailability } from "./api_minimax.js";
+import { getModels, getConfig, saveConfig, getNodeAvailability, getOllamaModels } from "./api_minimax.js";
 
 function searchableSelect(options, value, onChange) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } });
@@ -206,7 +206,7 @@ export function createSettingsOverlay(state, ctx) {
       ]),
     ]));
     wrap.appendChild(panel([
-      label("Ollama (prompt enhance)"),
+      label("Ollama server"),
       col([label("Server URL"), (() => {
         const inp = el("input", { type: "text", placeholder: "http://127.0.0.1:11434", style: {
           width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
@@ -221,10 +221,116 @@ export function createSettingsOverlay(state, ctx) {
         col([label("Temperature"), numField(state.ollamaTemperature ?? 0.7, v => { state.ollamaTemperature = v; ctx.persist(); })]),
         col([label("Top P"),       numField(state.ollamaTopP ?? 0.9,        v => { state.ollamaTopP = v; ctx.persist(); })]),
       ]),
-      el("div", { text: "Used by the 📝 Prompt Edit popup's Enhance button. The MiniMax H3 brief instruction "
-        + "is loaded from TJ_NODE automatically.", style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+      el("div", { text: "Only read when Vision source below is set to Ollama.",
+        style: { fontSize: "10px", color: C.muted } }),
     ]));
+
+    // Prompt Edit's Enhance button needs two roles either way — something that reads an
+    // image and something that writes the brief text — and now two ways to run them.
+    // Ollama hits the external server, same as always. Native batches images through
+    // TextGenerate on a ComfyUI-loaded CLIP: proven (SPEC §C5) to attend to every image
+    // in a batch correctly, where Ollama's `images` array was tested and only ever
+    // looked at one of them (§C0) — and it costs no separate server or model file, since
+    // the same CLIPLoader(type=minimax) family MiniMax H3 already loads for text can do
+    // vision too when it's a Qwen3-VL checkpoint.
+    wrap.appendChild(panel([
+      label("Image → Brief — vision source"),
+      (() => {
+        const srcRow = el("div", { style: { display: "flex", gap: "4px" } });
+        const SOURCES = [
+          { key: "ollama", label: "Ollama" },
+          { key: "native", label: "Native (CLIP, no server)" },
+        ];
+        function renderSrc() {
+          clear(srcRow);
+          SOURCES.forEach(s => {
+            const active = (state.visionSource || "ollama") === s.key;
+            const b = el("button", { type: "button", text: s.label, style: {
+              cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 10px",
+              borderRadius: "6px", fontWeight: active ? "700" : "400",
+              background: active ? BRAND : C.bg2, color: "#fff",
+              border: `1px solid ${active ? BRAND : C.border}`,
+            }});
+            b.addEventListener("click", () => { state.visionSource = s.key; ctx.persist(); renderModelPickers(); });
+            srcRow.appendChild(b);
+          });
+        }
+        renderSrc();
+        return srcRow;
+      })(),
+      (() => {
+        const pickWrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px", marginTop: "6px" } });
+        renderModelPickersInto = pickWrap;
+        return pickWrap;
+      })(),
+    ]));
+    renderModelPickers();
     return wrap;
+  }
+
+  // Two model pickers, swapped out by source. Declared at module scope inside
+  // ollamaTab() so the vision-source toggle above can trigger a re-render.
+  let renderModelPickersInto = null;
+  function renderModelPickers() {
+    const wrap2 = renderModelPickersInto;
+    if (!wrap2) return;
+    clear(wrap2);
+    const source = state.visionSource || "ollama";
+
+    if (source === "ollama") {
+      const briefWrap = el("div"), visionWrap = el("div");
+      const statusRow = el("div", { style: { fontSize: "10px", color: C.muted } });
+      let models = [];
+      function renderPickers() {
+        clear(briefWrap); clear(visionWrap);
+        const opts = ["", ...models];
+        const mk = (val, onChange) => select(
+          opts.map(m => ({ value: m, label: m || "(none)" })),
+          models.includes(val) ? val : "", onChange);
+        briefWrap.appendChild(mk(state.ollamaModel, v => { state.ollamaModel = v; ctx.persist(); }));
+        visionWrap.appendChild(mk(state.ollamaVisionModel, v => { state.ollamaVisionModel = v; ctx.persist(); }));
+      }
+      (async () => {
+        statusRow.textContent = "connecting to Ollama…";
+        const d = await getOllamaModels(state.ollamaUrl);
+        models = d.models || [];
+        statusRow.textContent = d.ok
+          ? `${models.length} model${models.length === 1 ? "" : "s"} available`
+          : `⚠ ${String(d.error || "unreachable").slice(0, 80)}`;
+        statusRow.style.color = d.ok ? C.muted : C.warn;
+        renderPickers();
+      })().catch(() => { statusRow.textContent = "⚠ could not reach Ollama"; statusRow.style.color = C.warn; });
+      wrap2.append(
+        row([col([label("Brief model (writes the prompt)"), briefWrap]),
+             col([label("Vision model (reads images)"), visionWrap])]),
+        statusRow,
+        el("div", { text: "The brief writer never sees an image, so any text model works there. A single Ollama "
+          + "call with several images attached was tested and only one was ever attended to — images are analyzed "
+          + "one at a time and merged as text before the brief model sees them.",
+          style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+      );
+    } else {
+      const missing = [];
+      if (!availability.available?.TJ_MultiImageLoader)  missing.push("TJ_MultiImageLoader (TJ_NODE)");
+      if (!availability.available?.TextGenerate)          missing.push("TextGenerate (ComfyUI core — update ComfyUI)");
+      if (!availability.available?.TJStudioOneTextOutput) missing.push("TJStudioOneTextOutput (this package)");
+      if (missing.length) {
+        wrap2.appendChild(el("div", { text: `⚠ Native vision needs: ${missing.join(", ")}`,
+          style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
+        return;
+      }
+      const clipList = ["none", ...(modelData.text_encoders || []).filter(x => x !== "none")];
+      const briefPick  = searchableSelect(clipList, state.nativeBriefClip  || "none", v => { state.nativeBriefClip  = v === "none" ? "" : v; ctx.persist(); });
+      const visionPick = searchableSelect(clipList, state.nativeVisionClip || "none", v => { state.nativeVisionClip = v === "none" ? "" : v; ctx.persist(); });
+      wrap2.append(
+        row([col([label("Brief CLIP (writes the prompt)"), briefPick.el]),
+             col([label("Vision CLIP (reads images)"), visionPick.el])]),
+        el("div", { text: "Both run through TextGenerate on ComfyUI's own model loading — no external server. "
+          + "A Qwen3-VL checkpoint (the kind already used for MiniMax H3 text encoding) can be picked for either "
+          + "or both roles; the same file works for both if you don't want two loaded at once.",
+          style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+      );
+    }
   }
 
   function previewTab() {

@@ -22,11 +22,12 @@ import {
   clipPlan, formatDuration, formatClock, framesToSeconds, resolveResolution,
   parseBrief, groupShots, composeClipPrompt,
   effectiveAccel, turboLoraForMode, explainGenerationError,
+  promptText, promptFirstFrame, promptEnabled, activePrompts,
 } from "./minimax/core_minimax.js";
 import { panel, label, button, select, loraSelect, numberField, slider, row, col, modeBar, iconBtn, openFullscreen }
   from "./klein/ui_common.js";
 import {
-  queuePrompt, interrupt, freeMemory, setLastResult, stitchClips,
+  queuePrompt, interrupt, freeMemory, setLastResult,
   copyOutputToInput, getNodeAvailability, getModels, saveMeta, pickChainFrame, getLoraTriggers,
   getMediaFiles, uploadMedia,
 } from "./minimax/api_minimax.js";
@@ -351,24 +352,44 @@ app.registerExtension({
       promptList.className = "mmh3-lp";
       promptWrap.append(promptHdr, promptList);
 
+      function normPrompt(p) {
+        return typeof p === "string" ? { text: p, firstFrame: "", enabled: true } : p;
+      }
       function renderPrompts() {
         clear(promptList);
         const plan = currentPlan();
-        promptCount.textContent = `(${plan.promptCount} prompt${plan.promptCount > 1 ? "s" : ""} → ${plan.count} clip${plan.count > 1 ? "s" : ""} · ${plan.actualSeconds.toFixed(2)}s)`;
-        state.prompts.forEach((text, i) => {
-          const line = el("div", { style: { display: "flex", gap: "4px", alignItems: "flex-start" } });
+        const onCount = state.prompts.filter(p => promptEnabled(p)).length;
+        promptCount.textContent = `(${plan.promptCount} prompt${plan.promptCount > 1 ? "s" : ""} · ${onCount} on → ${plan.count} clip${plan.count > 1 ? "s" : ""} · ${plan.actualSeconds.toFixed(2)}s)`;
+        state.prompts.forEach((raw, i) => {
+          const p = normPrompt(raw);
+          const on = promptEnabled(p);
+          const line = el("div", { style: { display: "flex", gap: "4px", alignItems: "flex-start", opacity: on ? "1" : "0.5" } });
           const sideCol = el("div", { style: { width: "28px", flexShrink: "0", display: "flex", flexDirection: "column", gap: "2px", alignItems: "center", paddingTop: "5px" } });
           sideCol.appendChild(el("div", {
             text: `C${i + 1}`,
             style: { fontSize: "9px", fontWeight: "700", color: BRAND, whiteSpace: "nowrap" } }));
+          const cb = el("input", { type: "checkbox" });
+          cb.checked = on;
+          cb.title = on ? "On — included in the run" : "Off — skipped when running";
+          cb.style.cursor = "pointer";
+          cb.addEventListener("change", () => {
+            state.prompts[i] = normPrompt(state.prompts[i]);
+            state.prompts[i].enabled = cb.checked;
+            persist(); refreshPlan();
+          });
+          sideCol.appendChild(cb);
 
           const ta = el("textarea", { placeholder: i === 0 ? "Describe the shot…" : "(blank = reuse the previous prompt)", style: {
             flex: "1", minHeight: "120px", boxSizing: "border-box", background: C.bg2, color: C.text,
             border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px",
             fontSize: "12px", fontFamily: "inherit", outline: "none", resize: "vertical",
           }});
-          ta.value = text || "";
-          ta.addEventListener("input", () => { state.prompts[i] = ta.value; persist(); });
+          ta.value = promptText(p);
+          ta.addEventListener("input", () => {
+            state.prompts[i] = normPrompt(state.prompts[i]);
+            state.prompts[i].text = ta.value;
+            persist();
+          });
           ta.addEventListener("focus", () => ta.style.borderColor = BRAND);
           ta.addEventListener("blur",  () => ta.style.borderColor = C.border);
 
@@ -377,7 +398,7 @@ app.registerExtension({
             border: "none", fontSize: "11px", padding: "6px 2px",
           }});
           del.addEventListener("click", () => {
-            if (state.prompts.length <= 1) state.prompts = [""];
+            if (state.prompts.length <= 1) state.prompts = [{ text: "", firstFrame: "", enabled: true }];
             else state.prompts.splice(i, 1);
             persist(); refreshPlan();
           });
@@ -386,11 +407,11 @@ app.registerExtension({
         });
       }
       addBtn.addEventListener("click", () => {
-        state.prompts.push("");
+        state.prompts.push({ text: "", firstFrame: "", enabled: true });
         persist(); refreshPlan();
       });
       splitBtn.addEventListener("click", () => {
-        const joined = state.prompts.filter(p => p && p.trim()).join("\n\n");
+        const joined = state.prompts.map(promptText).filter(t => t && t.trim()).join("\n\n");
         if (!joined.trim()) { showPopup("Nothing to split — write the brief in the first box.", true); return; }
         // The style preamble and the sound/music tail are what every clip needs to look
         // and sound like the same piece. Splitting used to glue them onto the first and
@@ -401,7 +422,7 @@ app.registerExtension({
         const parts = groupShots(shots, shots.length);
         if (header) state.promptHeader = header;
         if (footer) state.promptFooter = footer;
-        state.prompts = parts;
+        state.prompts = parts.map(t => ({ text: t, firstFrame: "", enabled: true }));
         persist(); refreshPlan();
         const carried = [header && "header", footer && "tail"].filter(Boolean).join(" + ");
         showPopup(`Split into ${parts.length} clips${carried ? ` — shared ${carried} kept on every clip` : ""}.`, false);
@@ -587,24 +608,14 @@ app.registerExtension({
           ] : []),
         ]));
 
-        // Stitching is a per-run choice: sometimes you want the single assembled file,
-        // sometimes you want the clips left alone to cut yourself.
+        // Clips are always saved separately now — combine them from the Gallery's
+        // 🔗 Stitch mode instead, which picks clips in click order (see SPEC A6).
         leftPanel.appendChild(panel([
           label("Output"),
-          checkboxRow("Stitch clips into one file", state.stitchAtEnd !== false, v => {
-            state.stitchAtEnd = v; persist(); renderLeft();
-          }),
-          ...(state.stitchAtEnd !== false ? [
-            checkboxRow("Trim the tail to the planned length", !!state.trimLastClip, v => {
-              state.trimLastClip = v; persist();
-            }),
-          ] : []),
           checkboxRow("Free VRAM between clips", state.unloadBetweenClips !== false, v => {
             state.unloadBetweenClips = v; persist();
           }),
-          el("div", { text: state.stitchAtEnd !== false
-              ? "Individual clips are always kept as well."
-              : "Clips are saved separately — nothing is assembled.",
+          el("div", { text: "Clips are saved separately. Combine them afterward from 🖼 Gallery → 🔗 스티치.",
             style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
         ]));
 
@@ -914,21 +925,26 @@ app.registerExtension({
           persist();
 
           const plan = currentPlan();
-          totClip = plan.count;
+          const active = activePrompts(state);   // { p, i } — i = original prompt index, never renumbered
+          if (!active.length) throw new Error("No prompts are switched on.");
+          totClip = active.length;
           const clipRecords = [];
           let chainFrame = state.generationMode === "reference" ? null : (state.firstFrameImage || null);
           const clipTimes = [];
 
-          for (let i = 0; i < plan.count; i++) {
-            if (stopRequested) { setStatus(`Stopped after ${i} clip(s).`); break; }
-            curClip = i + 1;
+          for (let pos = 0; pos < active.length; pos++) {
+            if (stopRequested) { setStatus(`Stopped after ${pos} clip(s).`); break; }
+            const i = active[pos].i;   // original prompt index — drives seed, filenames, audio-lock offset
+            curClip = pos + 1;
             const clipStart = Date.now();
-            setStatus(`Clip ${curClip}/${totClip} · building graph…`);
+            setStatus(`Clip ${curClip}/${totClip} (prompt ${i + 1}) · building graph…`);
             badge.style.display = "block";
             badge.textContent = `● CLIP ${curClip}/${totClip}`;
 
-            // Continuity decides what a clip after the first inherits. The first clip is
-            // always rendered by whatever mode the run is in.
+            // Continuity decides what a clip after the first inherits. The first *active*
+            // clip is always rendered by whatever mode the run is in — "first" here means
+            // first in the on/off filtered sequence, not prompt index 0, so resuming a run
+            // from clip 11 renders clip 11 in the run's base mode rather than FL2VA.
             //
             //   Last Frame Chain — the previous clip's ending becomes this clip's first
             //     frame. Only FL2VA takes a first frame (Ref2VA has none, and measuring a
@@ -945,10 +961,19 @@ app.registerExtension({
             const isRef = state.generationMode === "reference";
             let firstFrame = isRef ? null : (state.firstFrameImage || null);
             let refImages  = state.refImages || [];
-            const continued = i > 0 && state.continuityMode === "lastframe" && !!chainFrame;
-            if (i > 0) firstFrame = continued ? chainFrame : null;
+            const continued = pos > 0 && state.continuityMode === "lastframe" && !!chainFrame;
+            if (pos > 0) firstFrame = continued ? chainFrame : null;
             if (continued) refImages = [];   // FL2VA takes no reference images
-            const modeForClip = continued ? "firstlast" : state.generationMode;
+
+            // Per-prompt first-image override (A3) beats the continuity default outright.
+            // Like Last Frame Chain, only FL2VA accepts a first frame, so a clip with an
+            // override is forced to FL2VA even in Reference mode — the reference images
+            // drop out for that clip, same rule as the chained case above.
+            const override = promptFirstFrame(state.prompts[i]);
+            let overridden = false;
+            if (override) { firstFrame = override; refImages = []; overridden = true; }
+
+            const modeForClip = (continued || overridden) ? "firstlast" : state.generationMode;
 
             const clipState = { ...state, generationMode: modeForClip };
             const restore = pipeOv ? applyOverridesTemp(clipState, pipeOv.overrides) : null;
@@ -959,7 +984,7 @@ app.registerExtension({
                 promptText: promptForClip(i),
                 seed: seedForClip(i),
                 firstFrame,
-                lastFrame: (i === plan.count - 1) ? (state.lastFrameImage || null) : null,
+                lastFrame: (pos === active.length - 1) ? (state.lastFrameImage || null) : null,
                 refImages,
                 clipIndex: i,
                 saveLastFrame: true,
@@ -980,7 +1005,7 @@ app.registerExtension({
               saveMeta(vid.filename, vid.subfolder || "", metaForVideo(promptForClip(i), {
                 clip: curClip, clips: plan.count, seed: seedForClip(i), mode: modeForClip,
                 // the editable source text, so "reuse" restores the editor exactly
-                prompts: [state.prompts?.[i] || ""],
+                prompts: [promptText(state.prompts?.[i])],
               }));
               showResultVideo(`/view?filename=${encodeURIComponent(vid.filename)}&subfolder=${encodeURIComponent(vid.subfolder || "")}&type=${vid.type || "output"}&t=${Date.now()}`);
               badge.textContent = `CLIP ${curClip}/${totClip} done`;
@@ -1009,37 +1034,15 @@ app.registerExtension({
             state.avgMinutesPerClip = +(clipTimes.reduce((a, b) => a + b, 0) / clipTimes.length).toFixed(2);
             persist(); refreshPlan();
 
-            if (state.unloadBetweenClips && i < plan.count - 1) {
+            if (state.unloadBetweenClips && pos < active.length - 1) {
               setStatus(`Clip ${curClip}/${totClip} done · freeing VRAM…`);
               await freeMemory();
             }
           }
 
-          // ── stitch ──────────────────────────────────────────────────────────
-          if (clipRecords.length > 1 && state.stitchAtEnd && !stopRequested) {
-            setStatus(`Stitching ${clipRecords.length} clips…`);
-            try {
-              const folder = (state.saveSubfolder || SUBFOLDER).replace(/\\/g, "/");
-              // clips are whole by construction now, so there is nothing to trim
-              // unless the user explicitly asked for a hard cut at the planned length
-              const trim = state.trimLastClip ? currentPlan().actualSeconds : null;
-              const out = await stitchClips(clipRecords, `${folder}/${state.filenamePrefix || "MMH3"}_full`, trim);
-              const url = `/view?filename=${encodeURIComponent(out.filename)}&subfolder=${encodeURIComponent(out.subfolder || "")}&type=output&t=${Date.now()}`;
-              // the stitched file gets every clip's prompt, in order
-              saveMeta(out.filename, out.subfolder || "", metaForVideo(
-                Array.from({ length: plan.count }, (_, i) => promptForClip(i)).join("\n\n"),
-                { clips: clipRecords.length, stitched: true, prompts: (state.prompts || []).slice() },
-              ));
-              showResultVideo(url);
-              badge.textContent = `FULL · ${clipRecords.length} clips`;
-              await setLastResult(self.id, { videoPath: out.path });
-              setStatus(`Done — ${clipRecords.length} clips stitched → ${out.filename}`);
-              showPopup(`Stitched ${clipRecords.length} clips → ${out.filename}`, false);
-            } catch (e) {
-              setStatus(`Clips saved, stitch failed: ${e.message}`);
-              showPopup(`Stitch failed: ${e.message}`, true);
-            }
-          } else if (clipRecords.length) {
+          // Stitching moved to the Gallery's 🔗 스티치 mode (SPEC A6) — clips are always
+          // kept separate here so a stopped/resumed run never has a half-built combined file.
+          if (clipRecords.length) {
             setStatus(stopRequested ? `Stopped — ${clipRecords.length} clip(s) saved.`
                                     : `Done — ${clipRecords.length} clip(s) saved.`);
           }
@@ -1127,7 +1130,7 @@ app.registerExtension({
           ? meta.prompts.slice()
           : [String(meta.prompt || "")];
         if (!parts.some(p => String(p || "").trim())) return false;
-        state.prompts = parts;
+        state.prompts = parts.map(t => ({ text: String(t || ""), firstFrame: "", enabled: true }));
         if (Array.isArray(meta.prompts)) {
           state.promptHeader = meta.promptHeader || "";
           state.promptFooter = meta.promptFooter || "";

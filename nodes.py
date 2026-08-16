@@ -1784,6 +1784,103 @@ async def mmh3_save_config(request):
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 
 
+MMH3_PROMPT_SETS_DIR = os.path.join(NODE_DIR, 'prompt_sets')
+
+
+def _safe_prompt_set_name(name):
+    """Prompt-set names become filenames, so block path escapes and separators outright
+    rather than trying to normalize them — a rejected name is safer than a silently
+    reinterpreted one."""
+    name = (name or "").strip()
+    if not name or len(name) > 120:
+        raise ValueError("invalid name")
+    if any(c in name for c in ('/', '\\', '..', ':', '\0')):
+        raise ValueError("invalid name")
+    return name
+
+
+def _prompt_set_path(name):
+    safe = _safe_prompt_set_name(name)
+    os.makedirs(MMH3_PROMPT_SETS_DIR, exist_ok=True)
+    return _safe_resolve_path(MMH3_PROMPT_SETS_DIR, "", f"{safe}.json")
+
+
+@PromptServer.instance.routes.get("/minimax_h3_one/prompt_sets")
+async def mmh3_list_prompt_sets(request):
+    out = []
+    try:
+        os.makedirs(MMH3_PROMPT_SETS_DIR, exist_ok=True)
+        for fn in sorted(os.listdir(MMH3_PROMPT_SETS_DIR)):
+            if not fn.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(MMH3_PROMPT_SETS_DIR, fn), "r", encoding="utf-8") as f:
+                    d = json.load(f)
+                out.append({
+                    "name": d.get("name") or fn[:-5],
+                    "count": len(d.get("prompts") or []),
+                    "clipFrames": d.get("clipFrames"),
+                    "saved": d.get("saved"),
+                })
+            except Exception:
+                continue
+    except Exception:
+        pass
+    out.sort(key=lambda x: x.get("saved") or 0, reverse=True)
+    return web.json_response({"sets": out})
+
+
+@PromptServer.instance.routes.get("/minimax_h3_one/prompt_sets/get")
+async def mmh3_get_prompt_set(request):
+    name = request.query.get("name", "")
+    try:
+        path = _prompt_set_path(name)
+    except ValueError:
+        return web.json_response({"error": "invalid name"}, status=400)
+    if not os.path.isfile(path):
+        return web.json_response({"error": "not found"}, status=404)
+    with open(path, "r", encoding="utf-8") as f:
+        return web.json_response(json.load(f))
+
+
+@PromptServer.instance.routes.post("/minimax_h3_one/prompt_sets/save")
+async def mmh3_save_prompt_set(request):
+    try:
+        data = await request.json()
+        name = data.get("name", "")
+        path = _prompt_set_path(name)
+        payload = {
+            "v": 1,
+            "name": name.strip(),
+            "saved": int(time.time() * 1000),
+            "clipFrames": data.get("clipFrames"),
+            "promptHeader": data.get("promptHeader", ""),
+            "promptFooter": data.get("promptFooter", ""),
+            "prompts": data.get("prompts") or [],
+        }
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        return web.json_response({"ok": True})
+    except ValueError:
+        return web.json_response({"ok": False, "error": "invalid name"}, status=400)
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+
+@PromptServer.instance.routes.post("/minimax_h3_one/prompt_sets/delete")
+async def mmh3_delete_prompt_set(request):
+    try:
+        data = await request.json()
+        path = _prompt_set_path(data.get("name", ""))
+        if os.path.isfile(path):
+            os.remove(path)
+        return web.json_response({"ok": True})
+    except ValueError:
+        return web.json_response({"ok": False, "error": "invalid name"}, status=400)
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+
 @PromptServer.instance.routes.get("/minimax_h3_one/models")
 async def mmh3_get_models(request):
     def scan(key, ext=None):
@@ -1825,6 +1922,11 @@ MMH3_OPTIONAL_NODES = [
     "TrimAudioDuration",
     # Audio Lock — pins the real soundtrack into the AV latent (ships with TJ_NODE)
     "TJ_H3_AudioLock",
+    # Native Image -> Brief vision pipeline: batches images through the same
+    # CLIPLoader(type=minimax) family MiniMax H3 already uses for text, so a vision
+    # analysis pass costs no separate server or model file. TJ_MultiImageLoader ships
+    # with TJ_NODE; TextGenerate and TJStudioOneTextOutput are this package's own.
+    "TJ_MultiImageLoader", "TextGenerate", "TJStudioOneTextOutput",
 ]
 MMH3_CORE_NODES = [
     "MiniMaxH3ImageToVideo",
@@ -2405,6 +2507,28 @@ class MiniMaxH3OneTJNode:
         return float("nan")
 
 
+class TJStudioOneTextOutput:
+    """Bare STRING -> UI passthrough.
+
+    The native Image->Brief pipeline (MiniMax H3 ONE STUDIO) submits a small side graph
+    ending in TextGenerate, whose STRING output otherwise has nowhere to go — nothing in
+    that graph consumes it, and TextGenerate itself doesn't emit a UI result. Wiring it
+    through this node makes it terminal and gives it a `ui.text` payload, so the same
+    `executed` websocket event / queuePrompt() machinery the video graph already uses
+    picks it up: the frontend just reads byNode[thisNodeId].text[0].
+    """
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"text": ("STRING", {"forceInput": True})}}
+    RETURN_TYPES = ()
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = " ✨ TJ_Node/Generator"
+
+    def run(self, text):
+        return {"ui": {"text": [text]}}
+
+
 NODE_CLASS_MAPPINGS = {
     "Flux2KleinOneTJNode":         Flux2KleinOneTJNode,
     "ZImageTurboOneNode":          ZImageTurboOneNode,
@@ -2412,6 +2536,7 @@ NODE_CLASS_MAPPINGS = {
     "QwenImageEdit2511OneTJNode":  QwenImageEdit2511OneTJNode,
     "SDXLOneTJNode":               SDXLOneTJNode,
     "MiniMaxH3OneTJNode":          MiniMaxH3OneTJNode,
+    "TJStudioOneTextOutput":       TJStudioOneTextOutput,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "Flux2KleinOneTJNode":         "Flux.2 Klein ONE STUDIO (TJ)",
@@ -2420,4 +2545,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "QwenImageEdit2511OneTJNode":  "Qwen Image Edit 2511 ONE STUDIO (TJ)",
     "SDXLOneTJNode":               "SDXL ONE STUDIO (TJ)",
     "MiniMaxH3OneTJNode":          "MiniMax H3 ONE STUDIO (TJ)",
+    "TJStudioOneTextOutput":       "TJ Studio ONE — Text Output",
 }

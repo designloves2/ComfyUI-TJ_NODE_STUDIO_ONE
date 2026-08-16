@@ -6,9 +6,14 @@
 //
 // The brief-writing instruction is the same "Minimax H3 (Video)" system prompt TJ_NODE
 // ships, fetched from the backend (with a built-in fallback when TJ_NODE isn't present).
-import { C, BRAND, el, clear, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt } from "./core_minimax.js";
+import { C, BRAND, el, clear, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt, IMAGE_BRIEF_MODES, imageBriefMax, promptText, promptFirstFrame, promptEnabled } from "./core_minimax.js";
 import { panel, label, button, select, row, col } from "../klein/ui_common.js";
-import { getOllamaModels, getSystemPrompt, enhancePrompt, uploadImage } from "./api_minimax.js";
+import { getOllamaModels, getSystemPrompt, enhancePrompt, uploadImage, uploadMedia, analyzeImagesNative, writeBriefNative, listPromptSets, getPromptSet, savePromptSet, deletePromptSet } from "./api_minimax.js";
+
+// A prompt entry may still arrive as a plain string (mid-migration data); normalize once.
+function normPrompt(p) {
+  return typeof p === "string" ? { text: p, firstFrame: "", enabled: true } : p;
+}
 
 const MODES = [
   { key: "text",  label: "✨ Text → Brief",  hint: "rewrite the prompt into a shot-by-shot brief" },
@@ -38,7 +43,7 @@ export function createPromptEditOverlay(state, ctx, onApply) {
       what,
       header: state.promptHeader || "",
       footer: state.promptFooter || "",
-      prompts: (state.prompts || []).slice(),
+      prompts: (state.prompts || []).map(p => ({ ...normPrompt(p) })),
       selected,
     });
     if (undoStack.length > 20) undoStack.shift();
@@ -49,7 +54,7 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     if (!s) return;
     state.promptHeader = s.header;
     state.promptFooter = s.footer;
-    state.prompts = s.prompts.slice();
+    state.prompts = s.prompts.map(p => ({ ...p }));
     selected = Math.min(s.selected, state.prompts.length - 1);
     ctx.persist();
     renderAll();
@@ -76,8 +81,151 @@ export function createPromptEditOverlay(state, ctx, onApply) {
   }});
   undoBtn.addEventListener("click", undo);
   hdr.appendChild(undoBtn);
+  const resetBtn = el("button", { type: "button", text: "↺ 초기화", title: "Reset prompts, header and footer", style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 11px",
+    borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+  }});
+  resetBtn.addEventListener("click", () => resetConfirmOv.style.display = "flex");
+  hdr.appendChild(resetBtn);
   const closeBtn = button("✕ Close", () => hide(), "danger");
   hdr.appendChild(closeBtn);
+
+  // ── reset confirm (A4) — viewport-centered, unlike the node-relative overlays above:
+  // the node can be scrolled off-screen while this popup still needs to be seen. ────────
+  const resetConfirmOv = el("div", { style: {
+    display: "none", position: "fixed", inset: "0", zIndex: "99999",
+    background: "rgba(0,0,0,0.55)", alignItems: "center", justifyContent: "center",
+  }});
+  const resetConfirmBox = el("div", { style: {
+    background: C.bg1, border: `1px solid ${C.border}`, borderRadius: "10px",
+    padding: "18px 20px", width: "340px", boxSizing: "border-box",
+    display: "flex", flexDirection: "column", gap: "10px", boxShadow: "0 8px 30px rgba(0,0,0,0.5)",
+  }});
+  resetConfirmBox.appendChild(el("div", {
+    text: "프롬프트 설정을 초기화하시겠습니까?",
+    style: { color: "#fff", fontSize: "13px", fontWeight: "700" } }));
+  resetConfirmBox.appendChild(el("div", {
+    text: "프롬프트 1개만 남고 공통 머리말·꼬리말이 지워집니다.",
+    style: { color: C.muted, fontSize: "11.5px", lineHeight: "1.5" } }));
+  const resetBtnRow = el("div", { style: { display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "4px" } });
+  const resetCancelBtn = el("button", { type: "button", text: "취소", style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "11.5px", padding: "6px 14px",
+    borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+  }});
+  const resetConfirmBtn = button("초기화", () => {
+    snapshot("reset");
+    state.prompts = [{ text: "", firstFrame: "", enabled: true }];
+    state.promptHeader = "";
+    state.promptFooter = "";
+    selected = 0;
+    ctx.persist();
+    resetConfirmOv.style.display = "none";
+    renderAll();
+    ctx.showPopup?.("Prompts reset.", false);
+  }, "danger");
+  resetCancelBtn.addEventListener("click", () => resetConfirmOv.style.display = "none");
+  resetBtnRow.append(resetCancelBtn, resetConfirmBtn);
+  resetConfirmBox.appendChild(resetBtnRow);
+  resetConfirmOv.appendChild(resetConfirmBox);
+  resetConfirmOv.addEventListener("click", e => { if (e.target === resetConfirmOv) resetConfirmOv.style.display = "none"; });
+  // Appended to <body>, not `ov` — LiteGraph's canvas pans/zooms its DOM widgets with a CSS
+  // transform, which would hijack `position:fixed` if this lived inside that subtree.
+  document.body.appendChild(resetConfirmOv);
+
+  // ── prompt sets (A5) — named bundles kept as server files so they survive a cleared
+  // browser cache and can be reused across workflows ───────────────────────────────
+  const setsWrap = el("div", { style: { display: "flex", alignItems: "center", gap: "6px", flexShrink: "0" } });
+  const setsSel = el("select", { style: {
+    flex: "1", minWidth: "0", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+    borderRadius: "6px", padding: "5px 7px", fontSize: "11px", fontFamily: "inherit", outline: "none",
+  }});
+  function setBtn(text, title) {
+    return el("button", { type: "button", text, title, style: {
+      cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 10px",
+      borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`, flexShrink: "0",
+    }});
+  }
+  const setLoadBtn = setBtn("📂 불러오기", "Load this set — replaces all current prompts");
+  const setSaveBtn = setBtn("💾 저장", "Save current prompts as a named set");
+  const setDelBtn  = setBtn("🗑 삭제", "Delete this set");
+  setsWrap.append(setsSel, setLoadBtn, setSaveBtn, setDelBtn);
+
+  async function refreshSetsList(selectName) {
+    try {
+      const sets = await listPromptSets();
+      const cur = selectName || setsSel.value;
+      clear(setsSel);
+      if (!sets.length) {
+        setsSel.appendChild(el("option", { text: "(no saved sets)", value: "" }));
+      } else {
+        sets.forEach(s => setsSel.appendChild(el("option", {
+          text: `${s.name} · ${s.count}`, value: s.name,
+        })));
+      }
+      if (cur && sets.some(s => s.name === cur)) setsSel.value = cur;
+    } catch (e) {
+      clear(setsSel);
+      setsSel.appendChild(el("option", { text: "(failed to load)", value: "" }));
+    }
+  }
+
+  setLoadBtn.addEventListener("click", async () => {
+    const name = setsSel.value;
+    if (!name) return;
+    try {
+      const s = await getPromptSet(name);
+      snapshot(`load set: ${name}`);
+      state.prompts = (Array.isArray(s.prompts) && s.prompts.length ? s.prompts : [{ text: "", firstFrame: "", enabled: true }])
+        .map(p => (typeof p === "string" ? { text: p, firstFrame: "", enabled: true }
+                                          : { text: p?.text || "", firstFrame: p?.firstFrame || "", enabled: p?.enabled !== false }));
+      state.promptHeader = s.promptHeader || "";
+      state.promptFooter = s.promptFooter || "";
+      selected = 0;
+      ctx.persist();
+      renderAll();
+      const framesNote = (s.clipFrames && s.clipFrames !== state.clipFrames)
+        ? ` — saved at a different clip length (${s.clipFrames} frames vs current ${state.clipFrames})` : "";
+      ctx.showPopup?.(`Loaded "${name}"${framesNote}`, false);
+    } catch (e) {
+      ctx.showPopup?.(`Load failed: ${e.message || e}`, true);
+    }
+  });
+
+  setSaveBtn.addEventListener("click", async () => {
+    const existing = setsSel.value && setsSel.options.length && setsSel.value !== "" ? setsSel.value : "";
+    const name = window.prompt("Save this prompt set as:", existing || "");
+    if (name == null) return;
+    const trimmed = name.trim();
+    if (!trimmed) { ctx.showPopup?.("Name can't be empty.", true); return; }
+    const willOverwrite = [...setsSel.options].some(o => o.value === trimmed);
+    if (willOverwrite && !confirm(`"${trimmed}" already exists — overwrite it?`)) return;
+    try {
+      await savePromptSet({
+        name: trimmed,
+        clipFrames: state.clipFrames,
+        promptHeader: state.promptHeader || "",
+        promptFooter: state.promptFooter || "",
+        prompts: (state.prompts || []).map(p => (typeof p === "string" ? { text: p, firstFrame: "", enabled: true } : p)),
+      });
+      await refreshSetsList(trimmed);
+      ctx.showPopup?.(`Saved "${trimmed}".`, false);
+    } catch (e) {
+      ctx.showPopup?.(`Save failed: ${e.message || e}`, true);
+    }
+  });
+
+  setDelBtn.addEventListener("click", async () => {
+    const name = setsSel.value;
+    if (!name) return;
+    if (!confirm(`Delete "${name}"? This can't be undone.`)) return;
+    try {
+      await deletePromptSet(name);
+      await refreshSetsList();
+      ctx.showPopup?.(`Deleted "${name}".`, false);
+    } catch (e) {
+      ctx.showPopup?.(`Delete failed: ${e.message || e}`, true);
+    }
+  });
 
   // ── shared header / footer ─────────────────────────────────────────────────
   // These go into every clip, so they're edited once and kept out of the split.
@@ -111,7 +259,12 @@ export function createPromptEditOverlay(state, ctx, onApply) {
   const body = el("div", { style: { flex: "1", display: "flex", gap: "10px", minHeight: "0" } });
   const listCol = el("div", { style: { width: "190px", flexShrink: "0", display: "flex", flexDirection: "column", gap: "5px" } });
   const listHdr = el("div", { style: { display: "flex", alignItems: "center", gap: "4px" } });
-  listHdr.appendChild(el("div", { text: "CLIPS", style: { color: C.muted, fontSize: "10px", letterSpacing: "0.06em", flex: "1" } }));
+  listHdr.appendChild(el("div", { text: "CLIPS", style: { color: C.muted, fontSize: "10px", letterSpacing: "0.06em" } }));
+  const onCountTag = el("div", { style: { color: C.muted, fontSize: "9.5px", flex: "1" } });
+  listHdr.appendChild(onCountTag);
+  function refreshOnCountTag(onCount, total) {
+    onCountTag.textContent = onCount < total ? `${onCount}/${total} on` : "";
+  }
   const addBtn = el("button", { type: "button", text: "+", title: "Add clip prompt", style: {
     cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "2px 8px",
     borderRadius: "5px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
@@ -132,32 +285,107 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     fontSize: "13px", lineHeight: "1.6", fontFamily: "inherit", outline: "none", resize: "none",
   }});
   editor.addEventListener("input", () => {
-    state.prompts[selected] = editor.value;
+    state.prompts[selected] = normPrompt(state.prompts[selected]);
+    state.prompts[selected].text = editor.value;
     ctx.persist(); updateCount(); renderList();
   });
+
+  // ── per-prompt first-image override (A3) — thumbnail + upload + remove ──────
+  const fiRow = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" } });
+  const fiThumb = el("img", { style: {
+    width: "34px", height: "34px", objectFit: "cover", borderRadius: "5px",
+    border: `1px solid ${C.border}`, display: "none", cursor: "pointer",
+  }});
+  const fiLabel = el("div", { text: "First-frame override: none — uses this mode's default", style: {
+    fontSize: "10.5px", color: C.muted, flex: "1",
+  }});
+  const fiUploadBtn = el("button", { type: "button", text: "⬆ Upload override", style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "4px 9px",
+    borderRadius: "5px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+  }});
+  const fiRemoveBtn = el("button", { type: "button", text: "✕", title: "Remove override", style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "4px 8px",
+    borderRadius: "5px", background: "transparent", color: C.muted, border: `1px solid ${C.border}`,
+    display: "none",
+  }});
+  const fiFileInput = el("input", { type: "file", accept: "image/*", style: { display: "none" } });
+  fiUploadBtn.addEventListener("click", () => fiFileInput.click());
+  fiFileInput.addEventListener("change", async () => {
+    const file = fiFileInput.files?.[0];
+    fiFileInput.value = "";
+    if (!file) return;
+    try {
+      const filename = await uploadMedia(file);
+      state.prompts[selected] = normPrompt(state.prompts[selected]);
+      state.prompts[selected].firstFrame = filename;
+      ctx.persist(); renderFirstFrameRow();
+    } catch (e) {
+      ctx.showPopup?.(`Upload failed: ${e.message || e}`, true);
+    }
+  });
+  fiRemoveBtn.addEventListener("click", () => {
+    state.prompts[selected] = normPrompt(state.prompts[selected]);
+    state.prompts[selected].firstFrame = "";
+    ctx.persist(); renderFirstFrameRow();
+  });
+  fiRow.append(fiThumb, fiLabel, fiUploadBtn, fiRemoveBtn, fiFileInput);
+  const fiHint = el("div", {
+    text: "Only FL2VA can take a first frame — a clip with an override renders as First/Last "
+        + "even in Reference mode (its reference images drop for that clip). To resume a stopped "
+        + "run, upload output/one_minimax_h3/frames/MMH3_clip0NN_last_*.png from the last clip you kept.",
+    style: { fontSize: "9.5px", color: C.muted, lineHeight: "1.5", flexShrink: "0" },
+  });
+  function renderFirstFrameRow() {
+    const p = normPrompt(state.prompts[selected] || {});
+    const ff = p.firstFrame || "";
+    if (ff) {
+      fiThumb.src = `/view?filename=${encodeURIComponent(ff)}&type=input`;
+      fiThumb.style.display = "block";
+      fiLabel.textContent = `First-frame override: ${ff}`;
+      fiRemoveBtn.style.display = "inline-block";
+    } else {
+      fiThumb.style.display = "none";
+      fiLabel.textContent = "First-frame override: none — uses this mode's default";
+      fiRemoveBtn.style.display = "none";
+    }
+  }
   editor.addEventListener("focus", () => editor.style.borderColor = BRAND);
   editor.addEventListener("blur",  () => editor.style.borderColor = C.border);
-  editCol.append(editHdr, editor);
+  editCol.append(editHdr, editor, fiRow, fiHint);
   body.append(listCol, editCol);
 
   function updateCount() { refreshPreviewTag(); }
 
   function renderList() {
     clear(listBox);
-    (state.prompts || []).forEach((p, i) => {
+    let onCount = 0;
+    (state.prompts || []).forEach((raw, i) => {
+      const p = normPrompt(raw);
+      if (promptEnabled(p)) onCount++;
       const active = i === selected;
+      const on = promptEnabled(p);
       const item = el("div", { style: {
         display: "flex", gap: "4px", alignItems: "center", cursor: "pointer",
         background: active ? C.bg3 : C.bg1, border: `1px solid ${active ? BRAND : C.border}`,
-        borderRadius: "6px", padding: "6px 7px",
+        borderRadius: "6px", padding: "6px 7px", opacity: on ? "1" : "0.5",
       }});
+      const cb = el("input", { type: "checkbox" });
+      cb.checked = on;
+      cb.title = on ? "On — included in the run" : "Off — skipped when running";
+      cb.style.cursor = "pointer";
+      cb.addEventListener("click", e => e.stopPropagation());
+      cb.addEventListener("change", () => {
+        state.prompts[i] = normPrompt(state.prompts[i]);
+        state.prompts[i].enabled = cb.checked;
+        ctx.persist(); renderList();
+      });
       const num = el("div", { text: String(i + 1), style: {
         width: "16px", flexShrink: "0", textAlign: "center", fontSize: "10px",
         fontWeight: "700", color: active ? BRAND : C.muted,
       }});
       const prev = el("div", {
-        text: (p || "").trim().slice(0, 42) || "(empty — reuses previous)",
-        style: { flex: "1", fontSize: "10.5px", color: (p || "").trim() ? C.text : C.muted,
+        text: promptText(p).trim().slice(0, 42) || "(empty — reuses previous)",
+        style: { flex: "1", fontSize: "10.5px", color: promptText(p).trim() ? C.text : C.muted,
                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
       });
       const del = el("button", { type: "button", text: "✕", title: "Remove", style: {
@@ -166,27 +394,30 @@ export function createPromptEditOverlay(state, ctx, onApply) {
       }});
       del.addEventListener("click", e => {
         e.stopPropagation();
-        if ((state.prompts || []).length <= 1) state.prompts = [""];
+        if ((state.prompts || []).length <= 1) state.prompts = [{ text: "", firstFrame: "", enabled: true }];
         else state.prompts.splice(i, 1);
         if (selected >= state.prompts.length) selected = state.prompts.length - 1;
         ctx.persist(); renderList(); loadSelected();
       });
       item.addEventListener("click", () => { selected = i; renderList(); loadSelected(); });
-      item.append(num, prev, del);
+      item.append(cb, num, prev, del);
       listBox.appendChild(item);
     });
+    refreshOnCountTag(onCount, (state.prompts || []).length);
   }
 
   function loadSelected() {
-    const list = state.prompts || [""];
+    const list = state.prompts || [{ text: "", firstFrame: "", enabled: true }];
     if (selected >= list.length) selected = 0;
-    editor.value = list[selected] || "";
+    const p = normPrompt(list[selected]);
+    editor.value = promptText(p);
     editTitle.textContent = `Clip ${selected + 1}`;
     updateCount();
+    renderFirstFrameRow();
   }
 
   addBtn.addEventListener("click", () => {
-    (state.prompts = state.prompts || []).push("");
+    (state.prompts = state.prompts || []).push({ text: "", firstFrame: "", enabled: true });
     selected = state.prompts.length - 1;
     ctx.persist(); renderList(); loadSelected(); editor.focus();
   });
@@ -224,10 +455,16 @@ export function createPromptEditOverlay(state, ctx, onApply) {
   const targetSel = select(
     [{ value: "one", label: "→ this clip" }, { value: "all", label: "→ split into all clips" }],
     "one", () => {});
-  const enhBtn = el("button", { type: "button", text: "✨ Enhance", style: {
+  const enhBtn = el("button", { type: "button", style: {
     cursor: "pointer", fontFamily: "inherit", fontSize: "12px", padding: "7px 16px",
     borderRadius: "6px", background: BRAND, color: "#fff", border: "none", fontWeight: "700",
+    display: "inline-flex", alignItems: "center", gap: "6px",
   }});
+  const enhSpin = el("span", { text: "⟳", style: {
+    display: "none", animation: "mmh3-spin 0.8s linear infinite", fontSize: "13px",
+  }});
+  const enhBtnLabel = el("span", { text: "✨ Enhance" });
+  enhBtn.append(enhSpin, enhBtnLabel);
 
   // How long the finished piece should be. Only the LLM briefing uses it: it decides how
   // many shots to ask for. The run's real length still comes from the prompts that come
@@ -257,43 +494,86 @@ export function createPromptEditOverlay(state, ctx, onApply) {
   renderLenTag();
 
   const imgRow = el("div", { style: { display: "none", alignItems: "center", gap: "8px" } });
+  // Image → Brief source mode: which slot count applies and how the brief writer is
+  // told to use the images. Kept separate from state.generationMode so writing a brief
+  // never depends on — or silently changes — which mode the node is currently in.
   function renderImageRow() {
     clear(imgRow);
+    imgRow.style.flexDirection = "column"; imgRow.style.alignItems = "stretch"; imgRow.style.gap = "6px";
     imgRow.style.display = enhMode === "image" ? "flex" : "none";
     if (enhMode !== "image") return;
-    const thumb = el("div", { style: {
-      width: "54px", height: "54px", flexShrink: "0", background: "#000", borderRadius: "6px",
-      border: `1px solid ${C.border}`, cursor: "pointer", overflow: "hidden",
-      display: "flex", alignItems: "center", justifyContent: "center",
-    }});
-    const hint = el("div", { text: "+img", style: { color: C.muted, fontSize: "10px", pointerEvents: "none" } });
-    const im = el("img", { style: { width: "100%", height: "100%", objectFit: "cover", display: "none", pointerEvents: "none" } });
-    if (state.ollamaImage) {
-      im.src = `/view?filename=${encodeURIComponent(state.ollamaImage)}&type=input&t=${Date.now()}`;
-      im.style.display = "block"; hint.style.display = "none";
-    }
-    thumb.append(hint, im);
-    const inp = el("input", { type: "file", accept: "image/*", style: { display: "none" } });
-    async function take(f) {
-      if (!f) return;
-      const name = await uploadImage(f);
-      state.ollamaImage = name; ctx.persist(); renderImageRow();
-    }
-    thumb.addEventListener("click", () => inp.click());
-    inp.addEventListener("change", async () => { await take(inp.files[0]); inp.value = ""; });
-    thumb.addEventListener("dragover",  e => { e.preventDefault(); thumb.style.borderColor = BRAND; });
-    thumb.addEventListener("dragleave", () => { thumb.style.borderColor = C.border; });
-    thumb.addEventListener("drop", async e => { e.preventDefault(); thumb.style.borderColor = C.border; await take(e.dataTransfer.files[0]); });
 
-    const note = el("div", { style: { fontSize: "10px", color: C.muted, lineHeight: "1.5", flex: "1" } });
-    note.innerHTML = state.ollamaImage
-      ? "The model sees this image and writes the brief from it. Anything in the editor is used as extra direction.<br>Pick a <b>vision-capable</b> Ollama model (llava / qwen-vl / gemma-vision …)."
-      : "Drop or click to add an image. Needs a <b>vision-capable</b> Ollama model.";
-    const clr = el("button", { type: "button", text: "✕", title: "Clear image", style: {
-      cursor: "pointer", background: "transparent", color: C.muted, border: "none", fontSize: "11px",
-    }});
-    clr.addEventListener("click", () => { state.ollamaImage = null; ctx.persist(); renderImageRow(); });
-    imgRow.append(thumb, note, ...(state.ollamaImage ? [clr] : []), inp);
+    if (!state.ollamaImages) state.ollamaImages = [];
+    const max = imageBriefMax(state.ollamaImageMode);
+    if (state.ollamaImages.length > max) { state.ollamaImages.length = max; ctx.persist(); }
+
+    const modeRow = el("div", { style: { display: "flex", gap: "4px" } });
+    IMAGE_BRIEF_MODES.forEach(m => {
+      const active = state.ollamaImageMode === m.key;
+      const b = el("button", { type: "button", text: m.label, title: m.hint, style: {
+        cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "3px 8px",
+        borderRadius: "5px", fontWeight: active ? "700" : "400",
+        background: active ? BRAND : C.bg2, color: "#fff",
+        border: `1px solid ${active ? BRAND : C.border}`,
+      }});
+      b.addEventListener("click", () => {
+        state.ollamaImageMode = m.key;
+        const cap = imageBriefMax(m.key);
+        if (state.ollamaImages.length > cap) state.ollamaImages.length = cap;
+        ctx.persist(); renderImageRow();
+      });
+      modeRow.appendChild(b);
+    });
+
+    const grid = el("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } });
+    function slot(i) {
+      const name = state.ollamaImages[i];
+      const box = el("div", { style: {
+        position: "relative", width: "54px", height: "54px", flexShrink: "0",
+        background: "#000", borderRadius: "6px", border: `1px solid ${C.border}`,
+        cursor: name ? "default" : "pointer", overflow: "hidden",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }});
+      if (name) {
+        box.appendChild(el("img", { src: `/view?filename=${encodeURIComponent(name)}&type=input&t=${Date.now()}`,
+          style: { width: "100%", height: "100%", objectFit: "cover" } }));
+        box.appendChild(el("div", { text: String(i + 1), style: {
+          position: "absolute", top: "1px", left: "3px", fontSize: "9px", fontWeight: "700",
+          color: "#fff", textShadow: "0 0 3px #000" } }));
+        const x = el("button", { type: "button", text: "✕", title: "Remove", style: {
+          position: "absolute", top: "0", right: "0", cursor: "pointer", fontSize: "10px",
+          background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", padding: "1px 4px",
+        }});
+        x.addEventListener("click", e => { e.stopPropagation(); state.ollamaImages.splice(i, 1); ctx.persist(); renderImageRow(); });
+        box.appendChild(x);
+      } else {
+        box.appendChild(el("div", { text: "+img", style: { color: C.muted, fontSize: "10px", pointerEvents: "none" } }));
+        const inp = el("input", { type: "file", accept: "image/*", style: { display: "none" } });
+        async function take(f) {
+          if (!f) return;
+          const uploaded = await uploadImage(f);
+          state.ollamaImages[i] = uploaded; ctx.persist(); renderImageRow();
+        }
+        box.addEventListener("click", () => inp.click());
+        inp.addEventListener("change", async () => { await take(inp.files[0]); inp.value = ""; });
+        box.addEventListener("dragover",  e => { e.preventDefault(); box.style.borderColor = BRAND; });
+        box.addEventListener("dragleave", () => { box.style.borderColor = C.border; });
+        box.addEventListener("drop", async e => { e.preventDefault(); box.style.borderColor = C.border; await take(e.dataTransfer.files[0]); });
+        box.appendChild(inp);
+      }
+      return box;
+    }
+    // one slot per filled image, plus one empty slot to add the next — up to the cap
+    const filled = state.ollamaImages.length;
+    for (let i = 0; i < filled; i++) grid.appendChild(slot(i));
+    if (filled < max) grid.appendChild(slot(filled));
+
+    const note = el("div", { style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } });
+    note.innerHTML = filled
+      ? `${filled}/${max} image${max > 1 ? "s" : ""} — analyzed one at a time by the <b>vision model</b>, then written into a brief by the <b>brief model</b> (both set in ⚙ Settings).`
+      : `Add up to ${max} image${max > 1 ? "s" : ""}. Needs a <b>vision model</b> set in ⚙ Settings.`;
+
+    imgRow.append(modeRow, grid, note);
   }
 
   const enhBottom = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } });
@@ -344,7 +624,9 @@ export function createPromptEditOverlay(state, ctx, onApply) {
   }
 
   // Give the model the run's actual shape so the brief fits the clips we'll render.
-  function buildUserPrompt(baseText) {
+  // `imageSummary` is the merged vision-analysis text for Image → Brief (§C2's pipeline);
+  // it's just another paragraph of context by the time the brief model sees it.
+  function buildUserPrompt(baseText, imageSummary) {
     const t = targetPlan();
     const lines = [
       `Target duration: ${t.seconds.toFixed(2)} seconds total, split into ${t.shots} shot(s) of ~${t.clipSec.toFixed(2)}s each.`,
@@ -355,44 +637,135 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     if (state.generationMode === "reference" && (state.refImages || []).length) {
       lines.push(`${state.refImages.length} reference image(s) are supplied; refer to them as <Picture 1>…<Picture ${state.refImages.length}>.`);
     }
-    lines.push("", "USER REQUEST:", baseText || "(no text supplied — base the brief on the image)");
+    if (imageSummary) {
+      if (state.ollamaImageMode === "fl") {
+        lines.push("", "The following images were analyzed in order: image 1 is the STARTING frame, "
+          + "the last one is the ENDING frame. Write the brief as a first/last-frame shot that moves "
+          + "from the starting description to the ending one.", "", imageSummary);
+      } else {
+        lines.push("", "The following images were analyzed in order and are the <Picture 1>…"
+          + `<Picture ${imageSummary.split("\n").length}> references for this brief.`, "", imageSummary);
+      }
+    }
+    lines.push("", "USER REQUEST:", baseText || "(no text supplied — base the brief on the image analysis above)");
     return lines.join("\n");
+  }
+
+  // Vision calls stay factual and format-free on purpose — Shot structure, <Picture N>
+  // tags and duration all belong to the brief model, which never has to fight a vision
+  // model's idea of "brief" formatting.
+  const VISION_SYSTEM_PROMPT = "Describe this image factually and concisely for a video "
+    + "director: subject appearance, pose, expression, setting, lighting. Plain prose, "
+    + "no formatting, no preamble, 2-4 sentences.";
+
+  // ── progress display ──────────────────────────────────────────────────────
+  // Nothing here before this: the button just said "Enhancing…" once and sat still
+  // until the response landed, indistinguishable from a hang. A cold vision-model load
+  // alone can take well past 30s.
+  let progTimer = null, progStart = 0, progStage = "";
+  function progressStart() {
+    progStart = Date.now();
+    progTimer = setInterval(progressTick, 1000);
+    progressTick();
+  }
+  function progressStage(text) { progStage = text; progressTick(); }
+  function progressTick() {
+    const s = Math.round((Date.now() - progStart) / 1000);
+    enhSpin.style.display = "inline-block"; enhBtnLabel.textContent = `${progStage} (${s}s)`;
+    statusTag.textContent = s > 30
+      ? `${progStage} — a cold Ollama model load can take a while past this point`
+      : progStage;
+    statusTag.style.color = BRAND;
+  }
+  function progressStop() {
+    if (progTimer) clearInterval(progTimer);
+    progTimer = null;
+  }
+
+  async function imageToB64(filename) {
+    const resp = await fetch(`/view?filename=${encodeURIComponent(filename)}&type=input`);
+    const blob = await resp.blob();
+    return new Promise(res => {
+      const fr = new FileReader();
+      fr.onload = () => res(String(fr.result).split(",")[1] || "");
+      fr.readAsDataURL(blob);
+    });
   }
 
   enhBtn.addEventListener("click", async () => {
     if (busy) return;
-    if (!state.ollamaModel) { ctx.showPopup?.("No Ollama model available.", true); return; }
+    const native = (state.visionSource || "ollama") === "native";
+    const images = enhMode === "image" ? (state.ollamaImages || []).filter(Boolean) : [];
+
+    if (native) {
+      if (!state.nativeBriefClip) { ctx.showPopup?.("No brief CLIP set — pick one in ⚙ Settings.", true); return; }
+      if (images.length && !state.nativeVisionClip) { ctx.showPopup?.("No vision CLIP set — pick one in ⚙ Settings.", true); return; }
+    } else {
+      if (!state.ollamaModel) { ctx.showPopup?.("No brief model set — pick one in ⚙ Settings.", true); return; }
+      if (images.length && !state.ollamaVisionModel) { ctx.showPopup?.("No vision model set — pick one in ⚙ Settings.", true); return; }
+    }
+
     const target = targetSel.value;
     const base = (editor.value || "").trim();
-    if (!base && !(enhMode === "image" && state.ollamaImage)) {
+    if (!base && !images.length) {
       ctx.showPopup?.("Write something first (or add an image).", true); return;
     }
     busy = true;
-    const oldLabel = enhBtn.textContent;
-    enhBtn.textContent = "⏳ Enhancing…"; enhBtn.disabled = true;
-    statusTag.textContent = "generating…"; statusTag.style.color = BRAND;
+    enhBtn.disabled = true;
+    progressStart();
     try {
-      let imageB64 = null;
-      if (enhMode === "image" && state.ollamaImage) {
-        const resp = await fetch(`/view?filename=${encodeURIComponent(state.ollamaImage)}&type=input`);
-        const blob = await resp.blob();
-        imageB64 = await new Promise(res => {
-          const fr = new FileReader();
-          fr.onload = () => res(String(fr.result).split(",")[1] || "");
-          fr.readAsDataURL(blob);
-        });
+      let imageSummary = "";
+      if (images.length) {
+        if (native) {
+          // One call, whole batch — this is the path that actually attends to every
+          // image at once (verified: SPEC_MINIMAX_H3_NEXT_ROUND.md §C5). The instruction
+          // asks for the images to stay separated in the answer since nothing downstream
+          // re-splits them the way the per-image Ollama loop naturally does.
+          progressStage(`Analyzing ${images.length} image${images.length > 1 ? "s" : ""} (native, one batch)…`);
+          const prompt = `${VISION_SYSTEM_PROMPT} There are ${images.length} images, in order. `
+            + `Describe each one separately, each on its own line starting with "Image N: ".`;
+          imageSummary = (await analyzeImagesNative(state.nativeVisionClip, images, prompt)).trim();
+        } else {
+          // One call per image, strictly sequential. A single Ollama call with several
+          // images attached was tested against the model actually in use and it only
+          // ever attended to one of them (§C0) — this loop is the workaround, not an
+          // optimization left undone.
+          const parts = [];
+          for (let i = 0; i < images.length; i++) {
+            progressStage(`Analyzing image ${i + 1}/${images.length}…`);
+            const b64 = await imageToB64(images[i]);
+            const d = await enhancePrompt({
+              server_url: state.ollamaUrl,
+              model: state.ollamaVisionModel,
+              system_prompt: VISION_SYSTEM_PROMPT,
+              user_prompt: "Describe this image.",
+              image_b64: b64,
+              temperature: state.ollamaTemperature ?? 0.7,
+              top_p: state.ollamaTopP ?? 0.9,
+              think: false,
+            });
+            parts.push(`Image ${i + 1}: ${(d.response || "").trim()}`);
+          }
+          imageSummary = parts.join("\n");
+        }
       }
-      const d = await enhancePrompt({
-        server_url: state.ollamaUrl,
-        model: state.ollamaModel,
-        system_prompt: systemPrompt,
-        user_prompt: buildUserPrompt(base),
-        image_b64: imageB64,
-        temperature: state.ollamaTemperature ?? 0.7,
-        top_p: state.ollamaTopP ?? 0.9,
-        think: false,
-      });
-      const text = (d.response || "").trim();
+
+      progressStage("Writing brief…");
+      let text;
+      if (native) {
+        text = (await writeBriefNative(state.nativeBriefClip, systemPrompt, buildUserPrompt(base, imageSummary))).trim();
+      } else {
+        const d = await enhancePrompt({
+          server_url: state.ollamaUrl,
+          model: state.ollamaModel,
+          system_prompt: systemPrompt,
+          user_prompt: buildUserPrompt(base, imageSummary),
+          temperature: state.ollamaTemperature ?? 0.7,
+          top_p: state.ollamaTopP ?? 0.9,
+          think: false,
+        });
+        text = (d.response || "").trim();
+      }
       if (!text) throw new Error("empty response");
       // Never write straight in — show what came back and let the user decide.
       openReview(text, target);
@@ -403,7 +776,8 @@ export function createPromptEditOverlay(state, ctx, onApply) {
       statusTag.style.color = C.err;
       ctx.showPopup?.(`Enhance failed: ${e.message}`, true);
     } finally {
-      busy = false; enhBtn.disabled = false; enhBtn.textContent = oldLabel;
+      progressStop();
+      busy = false; enhBtn.disabled = false; enhSpin.style.display = "none"; enhBtnLabel.textContent = "✨ Enhance";
     }
   });
 
@@ -490,10 +864,13 @@ export function createPromptEditOverlay(state, ctx, onApply) {
       // One shot becomes one clip. Regrouping the shots down to however many prompts
       // happened to be in the editor was why asking for a long piece still produced a
       // single clip — the model wrote the shots and they were merged straight back.
-      state.prompts = parsed.shots.length ? parsed.shots.slice() : [reviewText];
+      state.prompts = parsed.shots.length
+        ? parsed.shots.map(s => ({ text: s, firstFrame: "", enabled: true }))
+        : [{ text: reviewText, firstFrame: "", enabled: true }];
       selected = 0;
     } else {
-      state.prompts[selected] = parsed.shots.join("\n\n") || reviewText;
+      state.prompts[selected] = normPrompt(state.prompts[selected]);
+      state.prompts[selected].text = parsed.shots.join("\n\n") || reviewText;
     }
     ctx.persist();
     reviewOv.style.display = "none";
@@ -625,7 +1002,7 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     const groups = groupShots(splitShots, splitBreaks.size + 1, [...splitBreaks]);
     if (splitHeader) state.promptHeader = splitHeader;
     if (splitFooter) state.promptFooter = splitFooter;
-    state.prompts = groups;
+    state.prompts = groups.map(g => ({ text: g, firstFrame: "", enabled: true }));
     selected = 0;
     ctx.persist();
     splitOv.style.display = "none";
@@ -661,7 +1038,7 @@ export function createPromptEditOverlay(state, ctx, onApply) {
   });
   footer.append(splitBtn, previewBtn, planTag, button("✓ Done", () => hide(), "primary"));
 
-  ov.append(hdr, commonWrap, body, enhWrap, footer, splitOv, reviewOv);
+  ov.append(hdr, setsWrap, commonWrap, body, enhWrap, footer, splitOv, reviewOv);
 
   function refreshPlanTag() {
     const p = ctx.currentPlan?.();
@@ -687,11 +1064,12 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     el: ov,
     show() {
       ov.style.display = "flex";
-      if (!state.prompts || !state.prompts.length) state.prompts = [""];
+      if (!state.prompts || !state.prompts.length) state.prompts = [{ text: "", firstFrame: "", enabled: true }];
       if (selected >= state.prompts.length) selected = 0;
       renderModes(); renderImageRow(); renderAll();
       if (!systemPrompt) loadSystemPrompt();
       refreshOllama();
+      refreshSetsList();
       setTimeout(() => editor.focus(), 60);
     },
     hide,

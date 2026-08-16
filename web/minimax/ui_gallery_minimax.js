@@ -3,9 +3,11 @@
 // The node's results are videos, so the shared PNG gallery doesn't apply: this lists the
 // mp4s written into the output subfolder and plays them full screen with the keyboard
 // shortcuts you'd expect from a review pass.
-import { C, BRAND, el, clear, SUBFOLDER } from "./core_minimax.js";
+import { C, BRAND, el, clear, SUBFOLDER, framesToSeconds } from "./core_minimax.js";
 import { button } from "../klein/ui_common.js";
-import { listVideos, revealOutputFolder } from "./api_minimax.js";
+import { listVideos, revealOutputFolder, stitchClips, saveMeta } from "./api_minimax.js";
+
+const STITCH_MAX = 10;
 
 function viewURL(v) {
   return `/view?filename=${encodeURIComponent(v.filename)}`
@@ -60,7 +62,76 @@ export function createGalleryOverlay(state, ctx) {
     const r = await revealOutputFolder(state.saveSubfolder || SUBFOLDER);
     if (!r.ok) ctx.showPopup?.(`Could not open the folder: ${r.error || "unknown"}`, true);
   });
-  hdr.append(fullBtn, refreshBtn, folderBtn, button("✕ Close", () => hide(), "danger"));
+  // ── stitch mode (A6) — pick clips in click order, then concat server-side ──────────
+  let stitchMode = false;
+  let stitchOrder = [];   // array of video keys (filename|subfolder), in pick order
+  const vKey = v => `${v.subfolder || ""}|${v.filename}`;
+
+  const stitchBtn = el("button", { type: "button", text: "🔗 스티치", title: "Pick clips in order, then combine into one file", style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "5px 11px",
+    borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+  }});
+  stitchBtn.addEventListener("click", () => {
+    stitchMode = !stitchMode;
+    stitchOrder = [];
+    stitchBtn.style.background = stitchMode ? BRAND : C.bg2;
+    stitchBtn.style.borderColor = stitchMode ? BRAND : C.border;
+    stitchBar.style.display = stitchMode ? "flex" : "none";
+    renderGrid();
+  });
+  hdr.append(fullBtn, stitchBtn, refreshBtn, folderBtn, button("✕ Close", () => hide(), "danger"));
+
+  const stitchBar = el("div", { style: {
+    display: "none", flexShrink: "0", alignItems: "center", gap: "8px",
+    background: C.bg1, border: `1px solid ${BRAND}`, borderRadius: "8px", padding: "7px 10px",
+  }});
+  const stitchInfo = el("div", { style: { flex: "1", fontSize: "10.5px", color: C.text } });
+  const stitchClearBtn = el("button", { type: "button", text: "✕ Clear", style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "5px 10px",
+    borderRadius: "6px", background: C.bg2, color: C.muted, border: `1px solid ${C.border}`,
+  }});
+  stitchClearBtn.addEventListener("click", () => { stitchOrder = []; renderGrid(); });
+  const stitchGoBtn = button("🔗 Combine", () => runStitch(), "primary");
+  stitchBar.append(stitchInfo, stitchClearBtn, stitchGoBtn);
+
+  function refreshStitchBar() {
+    const picked = stitchOrder.map(k => videos.find(v => vKey(v) === k)).filter(Boolean);
+    const known = picked.map(v => v.meta?.frames ? framesToSeconds(v.meta.frames) : null);
+    const total = known.every(s => s != null) ? known.reduce((a, b) => a + b, 0) : null;
+    const sizes = new Set(picked.map(v => `${v.meta?.w || "?"}x${v.meta?.h || "?"}`));
+    let text = `${picked.length} / ${STITCH_MAX} selected`;
+    if (picked.length >= STITCH_MAX) text += " · 더 긴 편집은 영상 편집기를 쓰세요";
+    if (total != null) text += ` · ≈${total.toFixed(2)}s`;
+    if (sizes.size > 1) text += ` · ⚠ mixed resolution (${[...sizes].join(", ")}) — stitch may fail or look off`;
+    stitchInfo.textContent = text;
+    stitchGoBtn.disabled = picked.length < 2;
+    stitchGoBtn.style.opacity = picked.length < 2 ? "0.5" : "1";
+  }
+
+  async function runStitch() {
+    const picked = stitchOrder.map(k => videos.find(v => vKey(v) === k)).filter(Boolean);
+    if (picked.length < 2) return;
+    stitchGoBtn.disabled = true;
+    stitchInfo.textContent = `Stitching ${picked.length} clips…`;
+    try {
+      const folder = (state.saveSubfolder || SUBFOLDER).replace(/\\/g, "/");
+      const out = await stitchClips(
+        picked.map(v => ({ filename: v.filename, subfolder: v.subfolder || "" })),
+        `${folder}/${state.filenamePrefix || "MMH3"}_full`, null,
+      );
+      await saveMeta(out.filename, out.subfolder || "", {
+        v: 1, prompt: picked.map(v => v.prompt || "").filter(Boolean).join("\n\n"),
+        clips: picked.length, stitched: true, node: "minimax_h3", created: Date.now(),
+        prompts: picked.map(v => v.prompt || ""),
+      });
+      ctx.showPopup?.(`Stitched ${picked.length} clips → ${out.filename}`, false);
+      stitchOrder = [];
+      await refresh();
+    } catch (e) {
+      ctx.showPopup?.(`Stitch failed: ${e.message || e}`, true);
+      refreshStitchBar();
+    }
+  }
 
   const grid = el("div", { style: {
     flex: "1", overflowY: "auto", display: "grid", gap: "8px",
@@ -72,7 +143,7 @@ export function createGalleryOverlay(state, ctx) {
   hint.innerHTML = "double-click a clip to play it full screen · "
     + "<b>space</b> play/pause · <b>← →</b> seek · <b>[ ]</b> previous / next · <b>Esc</b> close";
 
-  ov.append(hdr, grid, hint);
+  ov.append(hdr, stitchBar, grid, hint);
 
   // ── fullscreen player ──────────────────────────────────────────────────────
   const player = el("div", { style: {
@@ -172,10 +243,14 @@ export function createGalleryOverlay(state, ctx) {
       return;
     }
     list.forEach((v, i) => {
+      const pickIdx = stitchMode ? stitchOrder.indexOf(vKey(v)) : -1;
+      const picked = pickIdx !== -1;
       const card = el("div", { style: {
-        background: C.bg1, border: `1px solid ${v.is_full ? BRAND : C.border}`,
+        position: "relative",
+        background: C.bg1, border: `1px solid ${picked ? BRAND : (v.is_full ? BRAND : C.border)}`,
         borderRadius: "8px", overflow: "hidden", cursor: "pointer",
         display: "flex", flexDirection: "column",
+        opacity: (stitchMode && !picked && stitchOrder.length >= STITCH_MAX) ? "0.4" : "1",
       }});
       // A muted <video> is its own thumbnail — hovering scrubs a short preview.
       const vid = el("video", { src: viewURL(v), muted: "", playsinline: "", preload: "metadata", style: {
@@ -187,7 +262,25 @@ export function createGalleryOverlay(state, ctx) {
         vid.currentTime = 0; vid.play?.().catch(() => {});
       });
       card.addEventListener("mouseleave", () => { try { vid.pause(); vid.currentTime = 0; } catch {} });
-      card.addEventListener("dblclick", () => openPlayer(i));
+      if (stitchMode) {
+        card.addEventListener("click", () => {
+          const key = vKey(v);
+          const idx = stitchOrder.indexOf(key);
+          if (idx !== -1) stitchOrder.splice(idx, 1);
+          else if (stitchOrder.length < STITCH_MAX) stitchOrder.push(key);
+          else { ctx.showPopup?.(`${STITCH_MAX} / ${STITCH_MAX} · 더 긴 편집은 영상 편집기를 쓰세요`, true); return; }
+          renderGrid();
+        });
+        if (picked) {
+          card.appendChild(el("div", { text: String(pickIdx + 1), style: {
+            position: "absolute", top: "5px", left: "5px", zIndex: "2",
+            width: "20px", height: "20px", borderRadius: "50%", background: BRAND, color: "#fff",
+            fontSize: "11px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center",
+          }}));
+        }
+      } else {
+        card.addEventListener("dblclick", () => openPlayer(i));
+      }
 
       const meta = el("div", { style: { padding: "5px 7px", display: "flex", flexDirection: "column", gap: "1px" } });
       meta.append(
@@ -237,6 +330,7 @@ export function createGalleryOverlay(state, ctx) {
       card.append(vid, meta);
       grid.appendChild(card);
     });
+    if (stitchMode) refreshStitchBar();
   }
 
   async function refresh() {
@@ -248,7 +342,12 @@ export function createGalleryOverlay(state, ctx) {
     renderGrid();
   }
 
-  function hide() { closePlayer(); stopGridVideos(); ov.style.display = "none"; }
+  function hide() {
+    closePlayer(); stopGridVideos(); ov.style.display = "none";
+    stitchMode = false; stitchOrder = [];
+    stitchBtn.style.background = C.bg2; stitchBtn.style.borderColor = C.border;
+    stitchBar.style.display = "none";
+  }
 
   return {
     el: ov,

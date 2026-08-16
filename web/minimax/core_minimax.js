@@ -95,16 +95,34 @@ export function parseTargetSeconds(text) {
   return plain ? +plain[1] : 0;
 }
 
+/** Image → Brief source modes: how many images, and what the brief writer does with them. */
+export const IMAGE_BRIEF_MODES = [
+  { key: "fl",  label: "First/Last (max 2)", max: 2,
+    hint: "image 1 = the starting frame, image 2 = the ending frame — write the brief as a first/last-frame shot" },
+  { key: "ref", label: "Reference (max 8)",  max: 8,
+    hint: "each image is a <Picture N> reference, in upload order" },
+];
+export function imageBriefMax(mode) {
+  return (IMAGE_BRIEF_MODES.find(m => m.key === mode) || IMAGE_BRIEF_MODES[1]).max;
+}
+
+/** { p, i } for every switched-on prompt, `i` = its original position (never renumbered). */
+export function activePrompts(state) {
+  const list = state.prompts || [{ text: "", firstFrame: "", enabled: true }];
+  return list.map((p, i) => ({ p, i })).filter(({ p }) => promptEnabled(p));
+}
+
 export function clipPlan(state, clipFramesOverride, avgMinutesPerClip) {
   const frames  = clipFramesOverride ?? state.clipFrames ?? 192;
   const clipSec = framesToSeconds(frames);
-  const count   = Math.max(1, (state.prompts || [""]).length);
+  const total   = Math.max(1, (state.prompts || [""]).length);
+  const count   = Math.max(0, activePrompts(state).length);
   const avg     = avgMinutesPerClip ?? state.avgMinutesPerClip ?? 13;
   return {
     count, clipSec,
     actualSeconds: count * clipSec,
     estimateMinutes: count * avg,
-    promptCount: count,
+    promptCount: total,
   };
 }
 
@@ -338,7 +356,12 @@ export function defaultState(saved) {
     // prompts — one entry per clip (blank entries reuse the last non-blank one).
     // header/footer are the parts every clip shares (style preamble, ambient/music tail);
     // they are stored apart so splitting into clips never throws them away.
-    prompts: Array.isArray(saved.prompts) && saved.prompts.length ? saved.prompts.slice() : [""],
+    // Each entry is { text, firstFrame, enabled } — pre-v1.11 saves/workflows stored plain
+    // strings, so a string entry is wrapped here on load (this is the one place that happens).
+    prompts: (Array.isArray(saved.prompts) && saved.prompts.length ? saved.prompts : [""])
+      .map(p => (typeof p === "string"
+        ? { text: p, firstFrame: "", enabled: true }
+        : { text: p?.text || "", firstFrame: p?.firstFrame || "", enabled: p?.enabled !== false })),
     // clips rendered per prompt (>1 continues the same description across chained clips)
     promptHeader: saved.promptHeader || "",
     promptFooter: saved.promptFooter || "",
@@ -415,12 +438,33 @@ export function defaultState(saved) {
     previewQuality:  saved.previewQuality  ?? 85,
     previewTinyVae:  saved.previewTinyVae  || "none",
 
-    // Ollama prompt enhance
+    // Ollama prompt enhance — ollamaModel writes the brief (text only, never sees an
+    // image); ollamaVisionModel is the separate model that looks at uploaded images.
+    // A vision-capable brief writer would work fine too, but keeping the roles apart
+    // means any text model can write the brief, and a multi-image request never has to
+    // rely on a model attending to more than one image at once (see PART C0 — tested,
+    // that fails; images are analyzed one at a time and merged as text instead).
     ollamaUrl:         saved.ollamaUrl         || "http://127.0.0.1:11434",
     ollamaModel:       saved.ollamaModel       || "",
+    ollamaVisionModel: saved.ollamaVisionModel || "",
     ollamaTemperature: saved.ollamaTemperature ?? 0.7,
     ollamaTopP:        saved.ollamaTopP        ?? 0.9,
-    ollamaImage:       saved.ollamaImage       || null,
+    // Image → Brief source images. "fl" caps at 2 (first/last frame), "ref" at 8
+    // (<Picture N> tags). Order is upload order and becomes the Image N numbering.
+    ollamaImageMode:   saved.ollamaImageMode   || "ref",
+    ollamaImages:      Array.isArray(saved.ollamaImages) ? saved.ollamaImages.slice()
+                      : (saved.ollamaImage ? [saved.ollamaImage] : []),   // migrate the old single-image field
+
+    // Where Image → Brief's two calls (vision analysis, brief writing) actually run.
+    // "ollama" hits the external server, same as it always has. "native" batches the
+    // images through TextGenerate on a CLIP already loaded in ComfyUI — proven to
+    // attend to every image in the batch correctly, unlike Ollama's images[] array
+    // (see SPEC_MINIMAX_H3_NEXT_ROUND.md §C0 vs §C5) — and needs no separate server.
+    // Each role still gets its own model, same shape as the Ollama pair: a vision
+    // checkpoint and a brief-writing checkpoint, picked independently.
+    visionSource:    saved.visionSource    || "ollama",   // "ollama" | "native"
+    nativeVisionClip: saved.nativeVisionClip || "Qwen3\\qwen_3vl_8b_nvfp4.safetensors",
+    nativeBriefClip:  saved.nativeBriefClip  || "LTX\\gemma4_e2b_it_bf16.safetensors",
 
     // output
     saveSubfolder: saved.saveSubfolder || "",
@@ -520,12 +564,20 @@ export function evenBreaks(count, groups) {
   return b;
 }
 
+/** Text of a prompt entry — entries may still be plain strings (pre-migration data in flight). */
+export const promptText = (p) => (typeof p === "string" ? p : (p?.text || ""));
+/** Per-clip first-frame override of a prompt entry, or "" if none set. */
+export const promptFirstFrame = (p) => (typeof p === "string" ? "" : (p?.firstFrame || ""));
+/** Whether a prompt entry is switched on (default true — plain-string/legacy entries are always on). */
+export const promptEnabled = (p) => (typeof p === "string" ? true : p?.enabled !== false);
+
 /** What actually gets sent for clip `i`: common header + that clip's shots + common tail. */
 export function composeClipPrompt(state, i) {
   const list = state.prompts || [];
   let body = "";
   for (let k = Math.min(i, list.length - 1); k >= 0; k--) {
-    if (list[k] && list[k].trim()) { body = list[k].trim(); break; }
+    const t = promptText(list[k]).trim();
+    if (t) { body = t; break; }
   }
   return [state.promptHeader, body, state.promptFooter, loraTriggers(state), state.promptSuffix]
     .map(s => (s || "").trim()).filter(Boolean).join("\n\n");

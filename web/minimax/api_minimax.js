@@ -7,6 +7,34 @@ export async function getModels() {
   return r.json();
 }
 
+// ── prompt sets ──────────────────────────────────────────────────────────────
+export async function listPromptSets() {
+  const r = await api.fetchApi(`${API}/prompt_sets`);
+  const d = await r.json();
+  return d.sets || [];
+}
+export async function getPromptSet(name) {
+  const r = await api.fetchApi(`${API}/prompt_sets/get?name=${encodeURIComponent(name)}`);
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+  return r.json();
+}
+export async function savePromptSet(payload) {
+  const r = await api.fetchApi(`${API}/prompt_sets/save`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "save failed");
+  return d;
+}
+export async function deletePromptSet(name) {
+  const r = await api.fetchApi(`${API}/prompt_sets/delete`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "delete failed");
+  return d;
+}
+
 export const MMH3_CORE_NODES = [
   "MiniMaxH3ImageToVideo", "MiniMaxH3ReferenceToVideo", "MiniMaxH3SigmaShift",
   "SamplerCustomAdvanced", "CreateVideo", "SaveVideo",
@@ -20,6 +48,8 @@ export const MMH3_OPTIONAL_NODES = [
   "VHS_LoadVideo", "LoadAudio", "TrimAudioDuration",
   // Audio Lock — pins the real soundtrack into the AV latent (ships with TJ_NODE)
   "TJ_H3_AudioLock",
+  // Native Image -> Brief vision pipeline (no Ollama needed)
+  "TJ_MultiImageLoader", "TextGenerate", "TJStudioOneTextOutput",
 ];
 
 /**
@@ -364,4 +394,86 @@ export function queuePrompt(promptGraph, { onProgress, onNode } = {}) {
       promptId = data.prompt_id;
     } catch (e) { cleanup(); reject(e); }
   });
+}
+
+/**
+ * Native Image → Brief analysis — no Ollama, no HTTP proxy. Batches the given images
+ * through TJ_MultiImageLoader and hands the batch to TextGenerate on the given CLIP
+ * checkpoint in one call, which was verified to attend to every image in the batch
+ * correctly (SPEC_MINIMAX_H3_NEXT_ROUND.md §C5) — unlike Ollama's `images` array, which
+ * was tested and only ever looked at one of them (§C0).
+ *
+ * `images` are filenames already in ComfyUI's input folder (as uploadImage() returns).
+ * Runs as a small side graph through the normal /prompt queue, same as a generation —
+ * it costs a real queue turn and whatever the CLIP takes to load, not an instant HTTP
+ * round trip.
+ */
+export async function analyzeImagesNative(clipName, images, promptText) {
+  const g = {
+    clip:   { class_type: "CLIPLoader", inputs: { clip_name: clipName, type: "minimax", device: "default" } },
+    batch:  { class_type: "TJ_MultiImageLoader", inputs: {
+      image_paths_json: JSON.stringify(images),
+      auto_set: true,
+      match_mode: "Megapixel",
+      resize_input: "none",
+      edge_size: 1024,
+      custom_width: 1024,
+      custom_height: 1536,
+      megapixel: 1.0,
+      interpolation: "lanczos",
+      scale_method: "Center Crop",
+      batch_select: "",
+    }},
+    gen:    { class_type: "TextGenerate", inputs: {
+      clip: ["clip", 0],
+      prompt: promptText,
+      image: ["batch", 0],
+      max_length: 1024,
+      sampling_mode: "on",
+      "sampling_mode.temperature": 0.7,
+      "sampling_mode.top_k": 64,
+      "sampling_mode.top_p": 0.95,
+      "sampling_mode.min_p": 0.05,
+      "sampling_mode.repetition_penalty": 1.05,
+      "sampling_mode.seed": 0,
+      thinking: false,
+      use_default_template: true,
+    }},
+    out:    { class_type: "TJStudioOneTextOutput", inputs: { text: ["gen", 0] } },
+  };
+  const res = await queuePrompt(g);
+  const text = res.byNode?.out?.text?.[0];
+  if (!text) throw new Error("native analysis produced no text");
+  return text;
+}
+
+/**
+ * Native brief writing — the text-only counterpart to analyzeImagesNative(), used when
+ * visionSource is "native" so the whole Image → Brief pass stays off Ollama. Same
+ * TextGenerate node, just no image input; the system + user prompt are concatenated
+ * into TextGenerate's single `prompt` field since it has no separate system role.
+ */
+export async function writeBriefNative(clipName, systemPrompt, userPrompt) {
+  const g = {
+    clip: { class_type: "CLIPLoader", inputs: { clip_name: clipName, type: "minimax", device: "default" } },
+    gen:  { class_type: "TextGenerate", inputs: {
+      clip: ["clip", 0],
+      prompt: `${systemPrompt}\n\n${userPrompt}`,
+      max_length: 2048,
+      sampling_mode: "on",
+      "sampling_mode.temperature": 0.7,
+      "sampling_mode.top_k": 64,
+      "sampling_mode.top_p": 0.95,
+      "sampling_mode.min_p": 0.05,
+      "sampling_mode.repetition_penalty": 1.05,
+      "sampling_mode.seed": 0,
+      thinking: false,
+      use_default_template: true,
+    }},
+    out:  { class_type: "TJStudioOneTextOutput", inputs: { text: ["gen", 0] } },
+  };
+  const res = await queuePrompt(g);
+  const text = res.byNode?.out?.text?.[0];
+  if (!text) throw new Error("native brief writer produced no text");
+  return text;
 }
