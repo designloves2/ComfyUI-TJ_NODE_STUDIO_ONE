@@ -261,10 +261,15 @@ export function createGalleryOverlay(state, ctx) {
     list.forEach((v, i) => {
       const pickIdx = stitchMode ? stitchOrder.indexOf(vKey(v)) : -1;
       const picked = pickIdx !== -1;
+      // No `overflow` other than visible here — a grid item's automatic minimum size
+      // collapses to 0 instead of its content's natural height whenever overflow isn't
+      // "visible", which is what was actually squashing every row into ~27px tracks and
+      // making every card overlap the next, through every earlier pass at this bug (it was
+      // never the video/img choice or preload — always this).
       const card = el("div", { style: {
         position: "relative",
         background: C.bg1, border: `1px solid ${picked ? BRAND : (v.is_full ? BRAND : C.border)}`,
-        borderRadius: "8px", overflow: "hidden", cursor: "pointer",
+        borderRadius: "8px", cursor: "pointer",
         display: "flex", flexDirection: "column",
         opacity: (stitchMode && !picked && stitchOrder.length >= STITCH_MAX) ? "0.4" : "1",
       }});
@@ -272,6 +277,7 @@ export function createGalleryOverlay(state, ctx) {
       // without cropping either one. A real <img>, not a <video> — see the note above.
       const thumb = el("img", { loading: "lazy", src: thumbURL(v), style: {
         width: "100%", aspectRatio: "1 / 1", objectFit: "contain", background: "#000", display: "block",
+        borderRadius: "7px 7px 0 0",
       }});
       card.addEventListener("mouseenter", () => {
         stopGridVideos();               // only ever one card previewing at a time
