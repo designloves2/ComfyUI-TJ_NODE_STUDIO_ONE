@@ -491,12 +491,17 @@ app.registerExtension({
         return row([col([sel]), col([up, inp])]);
       }
 
-      function checkboxRow(text, checked, onChange) {
+      function checkboxRow(text, checked, onChange, opts) {
+        const { disabled = false, title = "" } = opts || {};
         const chk = el("input", { type: "checkbox" });
         chk.checked = !!checked;
+        chk.disabled = disabled;
         chk.addEventListener("change", () => onChange(chk.checked));
-        return el("label", { style: { display: "flex", alignItems: "center", gap: "6px",
-          fontSize: "11px", color: C.text, cursor: "pointer" } }, [chk, el("span", { text })]);
+        const label = el("label", { style: { display: "flex", alignItems: "center", gap: "6px",
+          fontSize: "11px", color: disabled ? C.muted : C.text, cursor: disabled ? "default" : "pointer" } },
+          [chk, el("span", { text })]);
+        if (title) label.title = title;
+        return label;
       }
 
       function renderLeft() {
@@ -514,6 +519,16 @@ app.registerExtension({
         // reloaded node can never sit on an option that isn't in its own dropdown.
         if (!accelModesFor(state.generationMode).some(m => m.key === state.accelMode)) {
           state.accelMode = "solattn";
+          persist();
+        }
+
+        // Turbo's whole point is a 4-step schedule; H3 Cache reuses steps across a
+        // threshold that a run this short never reaches, and stacking the two on a test
+        // run gives a false read on how fast/good turbo actually is. Force it off with
+        // turbo rather than just warning, since a stray leftover checkbox is exactly the
+        // kind of thing that quietly skews a "how fast is turbo" comparison.
+        if (state.accelMode === "turbo" && state.useCache) {
+          state.useCache = false;
           persist();
         }
 
@@ -599,7 +614,12 @@ app.registerExtension({
 
           // Worth flipping per run alongside continuity, so it sits here rather than in
           // Settings — its tuning fields stay there.
-          checkboxRow("H3 Cache (step reuse)", !!state.useCache, v => { state.useCache = v; persist(); }),
+          checkboxRow("H3 Cache (step reuse)", !!state.useCache, v => { state.useCache = v; persist(); }, {
+            disabled: state.accelMode === "turbo",
+            title: state.accelMode === "turbo"
+              ? "Off with Turbo — turbo's 4-step schedule never reaches the threshold H3 Cache reuses steps at"
+              : "",
+          }),
 
           // ── Audio Lock ────────────────────────────────────────────────────
           // H3 treats a reference track as a reference and writes new audio over it.
