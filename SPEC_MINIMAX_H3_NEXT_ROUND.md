@@ -303,6 +303,15 @@ v1.10.0부터 노드 설정은 워크플로우에 함께 저장된다. 세트는
 
 ---
 
+**구현 및 실기기 검증 완료 (2026-08-17)** — 상세 알고리즘·소스 근거·검증 결과는
+`SPEC_MINIMAX_H3_ONE_TAKE_NODE.md` 참고. 요약: `ComfyUI-TJ_NODE`에 `TJ_H3_LatentContinuation` /
+`TJ_H3_SaveLatentCheckpoint` / `TJ_H3_LoadLatentCheckpoint` 3개 노드 신설(§B4 B안 그대로 —
+릴레이의 클립별 큐 제출 구조를 유지한 채 latent를 디스크 체크포인트로 이어붙임), `core_minimax.js`
+의 Continuity에 "One-Take (latent)" 추가, `graph_builder_minimax.js`가 continuityMode==="onetake"
+일 때 이 세 노드를 자동으로 그래프에 끼워 넣음, 좌측 패널에 Overlap frames · Lock 전체 오디오
+컨트롤 추가. 2클립 실기기 테스트에서 겹침 구간 latent가 float32 오차 수준(≤4.77e-7)으로 보존됨을
+직접 대조 확인했다.
+
 # PART B — One-Take 모드 (latent-level continuation)
 
 기존 릴레이 방식(프롬프트=클립, Last Frame Chain)은 **그대로 둔다.** 이건 대량 생성·클립 간

@@ -564,6 +564,27 @@ app.registerExtension({
             style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
           el("div", { text: "One prompt renders one clip. To make a longer piece that holds together, split the brief into shots — each shot becomes a clip and continuity carries the look forward.",
             style: { fontSize: "10px", color: C.muted, lineHeight: "1.5", marginTop: "2px" } }),
+
+          // ── One-Take (latent continuation) ───────────────────────────────
+          ...(state.continuityMode === "onetake" ? (() => {
+            const onetakeAvailable = !!ctx.availability?.TJ_H3_LatentContinuation;
+            return [
+              ...(onetakeAvailable ? [] : [el("div", {
+                html: "⚠ <code>TJ_H3_LatentContinuation</code> not installed — update the TJ_NODE pack, or switch Continuity to something else.",
+                style: { fontSize: "10px", color: C.warn, lineHeight: "1.5", marginTop: "4px" } })]),
+              row([
+                col([label("Overlap frames"), numberField(state.oneTakeOverlap ?? 39,
+                  v => { state.oneTakeOverlap = Math.max(5, Math.round(v)); persist(); }, 1)]),
+              ]),
+              checkboxRow("Lock the whole audio stream (with Latent Continuation)", !!state.oneTakeLockAudio, v => {
+                state.oneTakeLockAudio = v; persist();
+              }),
+              el("div", { text: "Decode only shows the last clip properly — intermediate clips never round-trip "
+                  + "through VAE, so their saved video is a byproduct, not the final look.",
+                style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+            ];
+          })() : []),
+
           // Worth flipping per run alongside continuity, so it sits here rather than in
           // Settings — its tuning fields stay there.
           checkboxRow("H3 Cache (step reuse)", !!state.useCache, v => { state.useCache = v; persist(); }),
@@ -930,6 +951,7 @@ app.registerExtension({
           totClip = active.length;
           const clipRecords = [];
           let chainFrame = state.generationMode === "reference" ? null : (state.firstFrameImage || null);
+          let prevCheckpointName = null;   // One-Take: previous clip's saved latent, loaded fresh each queue submission
           const clipTimes = [];
 
           for (let pos = 0; pos < active.length; pos++) {
@@ -977,6 +999,11 @@ app.registerExtension({
 
             const clipState = { ...state, generationMode: modeForClip };
             const restore = pipeOv ? applyOverridesTemp(clipState, pipeOv.overrides) : null;
+            // One-Take: a checkpoint name unique to this node instance + prompt index, so
+            // two MiniMax H3 nodes on the same canvas (or a re-run over old prompt indices)
+            // never collide on the same checkpoint file.
+            const isOneTake = state.continuityMode === "onetake";
+            const checkpointName = isOneTake ? `${self.id}_${i}` : null;
             let built;
             try {
               built = buildClipGraph(clipState, ctx.availability, {
@@ -988,6 +1015,8 @@ app.registerExtension({
                 refImages,
                 clipIndex: i,
                 saveLastFrame: true,
+                prevCheckpointName: isOneTake ? prevCheckpointName : null,
+                checkpointName,
               });
             } finally { restore?.(); }
 
@@ -995,6 +1024,7 @@ app.registerExtension({
             const res = await queuePrompt(built.graph, {
               onProgress: (v, m) => setStepProgress(v, m),
             });
+            if (isOneTake) prevCheckpointName = checkpointName;
 
             const vid = firstOutput(res.byNode, NODE_IDS.save);
             const lastImg = firstOutput(res.byNode, NODE_IDS.saveLF);

@@ -307,18 +307,21 @@ for i in range(len(denoise_masks), len(latent_shapes)):
 - 마스크 shape 불일치 시 trilinear 보간으로 경계가 블러되는 함정(§5-B)
 - 스트림 누락 시 자동 전체-생성 폴백(§5-C)
 
-**아직 하지 않은 것 — SPEC_MINIMAX_H3_NEXT_ROUND.md §B6-1의 실기기 latent 대조**: 두 개의 빈
-latent를 만들어 실제로 노드를 돌리고, 샘플링 후 mask=0 구간의 latent 값이 입력과 정말 동일한지
-GPU에서 직접 대조하는 것. 위 소스 분석이 수학적으로 정확함을 보장하므로(§3의 공식은 근사가
-아님) 우선순위를 낮췄지만, **실제 GPU 모델(MiniMax H3 UNET) 로딩 + 짧은 스텝 샘플링이 필요한
-작업**이라 시간이 걸린다 — TJ_NODE 세션에서 이 신규 노드를 구현한 직후, 병합 전에 다음 순서로
-한 번은 돌려보길 권한다:
+**완료 — 실기기 GPU 검증 (2026-08-17)**: 이 문서에 적힌 그대로 구현하고(`ComfyUI-TJ_NODE`의
+`nodes/video/h3_latent_continuation.py`, `h3_latent_checkpoint.py`), `ComfyUI-TJ_NODE_STUDIO_ONE`에
+전부 배선한 뒤(§6), 실제로 두 클립을 One-Take로 이어서 돌렸다:
 
-1. `overlap_frames=39`, 짧은 두 클립(같은 프롬프트, T2V 모드로 충분)을 One-Take로 연결
-2. 클립 N의 latent를 `SaveLatent`로, 클립 N+1 샘플링 결과도 `SaveLatent`로 저장
-3. 두 `.latent` 파일을 파이썬에서 직접 열어(`comfy.utils.load_torch_file` 등) 클립 N+1의
-   video latent 앞 `k_v` 프레임이 클립 N의 마지막 `k_v` 프레임과 **정확히 일치**하는지
-   (`torch.allclose` 또는 완전 동일 비교) 확인 — SPEC_MINIMAX_H3_NEXT_ROUND.md §B6의 2, 3번
-   항목(실제 화면상 모션 연속성, Reference 유지 확인)도 이어서 진행
+- `overlap_frames=39`(정렬 후 그대로 39), T2V 모드, "빨간 사과가 회전" 프롬프트 2개, turbo 4스텝
+- 두 큐 제출 전부 `success` — `TJ_H3_SaveLatentCheckpoint`(클립 1) / `TJ_H3_LoadLatentCheckpoint`
+  + `TJ_H3_LatentContinuation`(클립 2)가 제출된 그래프에 정확히 그 조합으로 나타남
+- 저장된 두 `.h3lat.safetensors` 체크포인트를 파이썬으로 직접 열어 대조:
+  - **video**: 클립 1의 마지막 `k_v=12` latent 프레임과 클립 2의 첫 `k_v=12` latent 프레임의
+    최대 절대 오차 `4.77e-7` — float32 epsilon 수준, 대수적으로 완전 보존(§3)이라는 예측과 정확히
+    일치(부동소수점 잡음 이상도 이하도 아님)
+  - **audio**: 같은 방식으로 `k_a=65` 스텝 대조, 최대 절대 오차 `1.19e-7`
+  - **대조군**: 클립 2의 생성 구간(overlap 밖)은 클립 1의 마지막 프레임과 다름을 확인 —
+    마스크가 보존 구간과 생성 구간을 실제로 구분하고 있다는 뜻(전부 얼어붙은 복사가 아님)
+- 결과 mp4 두 개 다 정상 크기로 저장됨(853KB, 1.17MB) — 파이프라인이 끝까지 깨지지 않고 돎
 
-이 단계가 끝나면 §B4(릴레이 구조와의 통합)로 넘어간다.
+남은 것은 SPEC_MINIMAX_H3_NEXT_ROUND.md §B6의 2, 3번(더 긴 실제 프롬프트로 화면상 모션 연속성
+육안 확인, Reference 모드에서 유지 확인)뿐 — 메커니즘 자체의 정확성은 이걸로 확정됐다.

@@ -1968,6 +1968,10 @@ MMH3_OPTIONAL_NODES = [
     "TrimAudioDuration",
     # Audio Lock — pins the real soundtrack into the AV latent (ships with TJ_NODE)
     "TJ_H3_AudioLock",
+    # One-Take — latent-level continuation between clips (Continuity: One-Take).
+    # Checkpoint save/load carries the sampled latent across the relay's per-clip
+    # queue submissions, since ComfyUI keeps no tensor state between them.
+    "TJ_H3_LatentContinuation", "TJ_H3_SaveLatentCheckpoint", "TJ_H3_LoadLatentCheckpoint",
     # Native Image -> Brief vision pipeline: batches images through the same
     # CLIPLoader(type=minimax) family MiniMax H3 already uses for text, so a vision
     # analysis pass costs no separate server or model file. TJ_MultiImageLoader ships

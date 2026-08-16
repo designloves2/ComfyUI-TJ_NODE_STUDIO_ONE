@@ -49,6 +49,9 @@ const N = {
   audioLock:  "MM:audio_lock",
   lockAud:    "MM:lock_audio",
   lockAudTrim:"MM:lock_audio_trim",
+  chkLoad:    "MM:h3_chk_load",
+  continuation: "MM:h3_continuation",
+  chkSave:    "MM:h3_chk_save",
 };
 
 // How many trailing frames to keep as chain candidates. Enough to step over a short
@@ -103,6 +106,49 @@ function buildAudioLock(g, state, avail, clipIndex, frames) {
     auto_set: false,
   }};
   return true;
+}
+
+/**
+ * One-Take (latent continuation, TJ_NODE): the sampled latent from the previous clip's
+ * SamplerCustomAdvanced feeds straight into this clip's head, no VAE round trip. The
+ * relay submits one queue per clip (so the model can be unloaded between them), which
+ * means ComfyUI holds no tensor state across submissions — the previous clip's latent
+ * has to round-trip through a disk checkpoint (TJ_H3_SaveLatentCheckpoint /
+ * TJ_H3_LoadLatentCheckpoint) rather than being wired directly.
+ *
+ * Returns the latent link the sampler should read from — either the continuation node's
+ * output (clip 2+) or `defaultLatent` unchanged (clip 1, nothing to continue from yet).
+ */
+function buildOneTake(g, state, avail, clipIndex, prevCheckpointName, defaultLatent) {
+  if (state.continuityMode !== "onetake") return defaultLatent;
+  if (!has(avail, "TJ_H3_LatentContinuation"))
+    throw new Error("One-Take needs the TJ_H3_LatentContinuation node — install/update the TJ_NODE pack, or switch Continuity to something else.");
+  if (clipIndex === 0 || !prevCheckpointName) return defaultLatent;   // nothing to continue from yet
+  if (!has(avail, "TJ_H3_LoadLatentCheckpoint"))
+    throw new Error("One-Take needs the TJ_H3_LoadLatentCheckpoint node — install/update the TJ_NODE pack.");
+
+  g[N.chkLoad] = { class_type: "TJ_H3_LoadLatentCheckpoint", inputs: {
+    checkpoint_name: prevCheckpointName,
+  }};
+  g[N.continuation] = { class_type: "TJ_H3_LatentContinuation", inputs: {
+    overlap_frames: state.oneTakeOverlap ?? 39,
+    lock_audio: !!state.oneTakeLockAudio,
+    prev_latent: [N.chkLoad, 0],
+    target_latent: defaultLatent,
+  }};
+  return [N.continuation, 0];
+}
+
+/** Persist this clip's sampled (undecoded) latent so the next clip's queue submission
+ * can load it back for One-Take — see buildOneTake above for why this round-trips
+ * through disk instead of an in-memory link. */
+function saveOneTakeCheckpoint(g, state, avail, checkpointName) {
+  if (state.continuityMode !== "onetake" || !checkpointName) return;
+  if (!has(avail, "TJ_H3_SaveLatentCheckpoint")) return;   // buildOneTake already threw if this run needed loading; saving is best-effort for the *next* clip
+  g[N.chkSave] = { class_type: "TJ_H3_SaveLatentCheckpoint", inputs: {
+    latent: [N.sampler, 0],
+    checkpoint_name: checkpointName,
+  }};
 }
 
 function requireModels(state) {
@@ -343,13 +389,15 @@ function buildConditioning(g, state, promptText, width, height, frames, opts, av
  * @param state      UI state
  * @param avail      node availability map
  * @param opts       { nodeId, promptText, seed, firstFrame, lastFrame, refImages,
- *                     clipIndex, filenamePrefix, saveLastFrame }
+ *                     clipIndex, filenamePrefix, saveLastFrame,
+ *                     prevCheckpointName, checkpointName }
  */
 export function buildClipGraph(state, avail, opts = {}) {
   const {
     nodeId, promptText, seed,
     firstFrame = null, lastFrame = null, refImages = null,
     clipIndex = 0, saveLastFrame = true,
+    prevCheckpointName = null, checkpointName = null,
   } = opts;
 
   const frames = state.clipFrames || 192;
@@ -402,12 +450,17 @@ export function buildClipGraph(state, avail, opts = {}) {
   // and hands the sampler a nested denoise mask of video=1 / audio=0, so every step
   // restores the audio untouched while the video still generates.
   const lockAudio = buildAudioLock(g, state, avail, clipIndex, frames);
+  const preOneTakeLatent = lockAudio ? [N.audioLock, 0] : [N.cond, 1];
+  // One-Take (latent continuation): the previous clip's sampled latent tail becomes this
+  // clip's head, so it goes on top of whatever Audio Lock already produced.
+  const latentImage = buildOneTake(g, state, avail, clipIndex, prevCheckpointName, preOneTakeLatent);
 
   g[N.sampler] = { class_type: "SamplerCustomAdvanced", inputs: {
     noise: [N.noise, 0], guider: [N.guider, 0],
     sampler: [N.sampSel, 0], sigmas: [N.sched, 0],
-    latent_image: lockAudio ? [N.audioLock, 0] : [N.cond, 1],
+    latent_image: latentImage,
   }};
+  saveOneTakeCheckpoint(g, state, avail, checkpointName);
 
   // ── decode ─────────────────────────────────────────────────────────────────
   g[N.decode]  = { class_type: "VAEDecode",      inputs: { samples: [N.sampler, 0], vae: [N.vaeV, 0] } };

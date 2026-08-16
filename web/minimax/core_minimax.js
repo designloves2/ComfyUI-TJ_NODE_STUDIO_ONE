@@ -230,6 +230,12 @@ export const CONTINUITY_MODES = [
     hint: "every clip re-uses the same reference images — the mode carries on unchanged" },
   { key: "none", label: "None",
     hint: "nothing is handed between clips — each one is made from its prompt, on the run's own model; only the common prompt keeps them consistent" },
+  // Unlike Last Frame Chain this never forces FL2VA — the run's own mode (Reference
+  // included) keeps going. Needs TJ_H3_LatentContinuation + the checkpoint save/load
+  // pair from TJ_NODE; gated separately by node availability, not modelAvailability.
+  { key: "onetake", label: "One-Take (latent)",
+    hint: "each clip's sampled latent tail feeds straight into the next clip's head — no VAE round trip, and the run's own mode (including Reference) carries on unchanged",
+    refHint: "each clip's sampled latent tail feeds straight into the next clip's head — reference images keep conditioning every clip, unlike Last Frame Chain which drops them after the first" },
 ];
 
 const isSet = (v) => !!v && v !== "none";
@@ -343,6 +349,8 @@ export function defaultState(saved) {
     accelMode:      saved.accelMode      || "solattn",   // safe in all three modes
     upscaleMode:    saved.upscaleMode    || "none",
     continuityMode: saved.continuityMode || "lastframe",
+    oneTakeOverlap: saved.oneTakeOverlap ?? 39,
+    oneTakeLockAudio: saved.oneTakeLockAudio ?? false,
 
     // canvas / length
     aspect:      saved.aspect      || "9:16 Portrait",
