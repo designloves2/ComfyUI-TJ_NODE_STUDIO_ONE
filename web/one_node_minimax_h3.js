@@ -19,7 +19,7 @@ import {
   el, clear, loadState, saveState, defaultState, randomSeed,
   CLIP_LENGTHS, ASPECTS, ACCEL_MODES, accelModesFor, UPSCALE_MODES,
   continuityModesFor, generationModesFor, configIssues,
-  clipPlan, formatDuration, formatClock, framesToSeconds, resolveResolution,
+  clipPlan, formatDuration, formatClock, framesToSeconds, alignFrameCount, ONE_TAKE_OVERLAP_FRAMES, resolveResolution,
   parseBrief, groupShots, composeClipPrompt,
   effectiveAccel, turboLoraForMode, explainGenerationError,
   promptText, promptFirstFrame, promptEnabled, activePrompts,
@@ -27,7 +27,7 @@ import {
 import { panel, label, button, select, loraSelect, numberField, slider, row, col, modeBar, iconBtn, openFullscreen }
   from "./klein/ui_common.js";
 import {
-  queuePrompt, interrupt, freeMemory, setLastResult,
+  queuePrompt, interrupt, freeMemory, setLastResult, stitchClips,
   copyOutputToInput, getNodeAvailability, getModels, saveMeta, pickChainFrame, getLoraTriggers,
   getMediaFiles, uploadMedia,
 } from "./minimax/api_minimax.js";
@@ -262,7 +262,10 @@ app.registerExtension({
         placeholder.style.display = "block";
         previewImg.style.display = "none";
         previewVid.style.display = "none";
-        // hiding a playing <video> does not stop it
+        // Hiding a playing <video> does not stop it — previewVid has autoplay+loop for the
+        // live KJ preview stream, so a run left mid-preview (or a stray click on it) kept
+        // looping silently in the background even after this box moved on to something else.
+        try { previewVid.pause(); previewVid.removeAttribute("src"); previewVid.load(); } catch {}
         try { resultVid.pause(); } catch {}
         resultVid.style.display = "none";
         badge.style.display = "none";
@@ -572,15 +575,17 @@ app.registerExtension({
               ...(onetakeAvailable ? [] : [el("div", {
                 html: "⚠ <code>TJ_H3_LatentContinuation</code> not installed — update the TJ_NODE pack, or switch Continuity to something else.",
                 style: { fontSize: "10px", color: C.warn, lineHeight: "1.5", marginTop: "4px" } })]),
-              row([
-                col([label("Overlap frames"), numberField(state.oneTakeOverlap ?? 39,
-                  v => { state.oneTakeOverlap = Math.max(5, Math.round(v)); persist(); }, 1)]),
-              ]),
               checkboxRow("Lock the whole audio stream (with Latent Continuation)", !!state.oneTakeLockAudio, v => {
                 state.oneTakeLockAudio = v; persist();
               }),
-              el("div", { text: "Decode only shows the last clip properly — intermediate clips never round-trip "
-                  + "through VAE, so their saved video is a byproduct, not the final look.",
+              checkboxRow("Auto-stitch into one clip when the run finishes (overlap trimmed)",
+                state.oneTakeAutoStitch !== false, v => {
+                state.oneTakeAutoStitch = v; persist(); renderLeft();
+              }),
+              el("div", { text: state.oneTakeAutoStitch !== false
+                  ? "The stitched result (overlap trimmed) is what lands in the Gallery. Per-clip files and "
+                    + "checkpoints stay on disk too, for resuming a stopped run."
+                  : "Off — clips stay separate, same as any other run; nothing gets auto-combined.",
                 style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
             ];
           })() : []),
@@ -1072,7 +1077,37 @@ app.registerExtension({
 
           // Stitching moved to the Gallery's 🔗 스티치 mode (SPEC A6) — clips are always
           // kept separate here so a stopped/resumed run never has a half-built combined file.
-          if (clipRecords.length) {
+          // One-Take is the one exception: the whole point of the mode is a single
+          // continuous take, and consecutive clips share `overlap` seconds by construction
+          // (TJ_H3_LatentContinuation handed each clip's head the previous clip's tail), so
+          // a plain concat would visibly repeat that stretch. Auto-stitch with that overlap
+          // trimmed on a completed run — a stopped run still leaves the per-clip files and
+          // checkpoints alone so resuming from A3's override still works.
+          if (state.continuityMode === "onetake" && state.oneTakeAutoStitch !== false
+              && !stopRequested && clipRecords.length > 1) {
+            const overlapSec = framesToSeconds(alignFrameCount(ONE_TAKE_OVERLAP_FRAMES));
+            setStatus(`Stitching ${clipRecords.length} clips (One-Take, ${overlapSec.toFixed(3)}s overlap trimmed)…`);
+            try {
+              const folder = (state.saveSubfolder || SUBFOLDER).replace(/\\/g, "/");
+              const out = await stitchClips(
+                clipRecords, `${folder}/${state.filenamePrefix || "MMH3"}_full`, null, overlapSec,
+              );
+              const url = `/view?filename=${encodeURIComponent(out.filename)}&subfolder=${encodeURIComponent(out.subfolder || "")}&type=output&t=${Date.now()}`;
+              saveMeta(out.filename, out.subfolder || "", metaForVideo(
+                active.map(({ i }) => promptForClip(i)).join("\n\n"),
+                { clips: clipRecords.length, stitched: true, onetake: true, overlapSeconds: overlapSec,
+                  prompts: (state.prompts || []).map(promptText) },
+              ));
+              showResultVideo(url);
+              badge.textContent = `FULL · ${clipRecords.length} clips (One-Take)`;
+              await setLastResult(self.id, { videoPath: out.path });
+              setStatus(`Done — ${clipRecords.length} clips stitched (One-Take) → ${out.filename}`);
+              showPopup(`One-Take stitched: ${out.filename}`, false);
+            } catch (e) {
+              setStatus(`Clips saved, One-Take stitch failed: ${e.message}`);
+              showPopup(`One-Take stitch failed: ${e.message} — per-clip files are still on disk.`, true);
+            }
+          } else if (clipRecords.length) {
             setStatus(stopRequested ? `Stopped — ${clipRecords.length} clip(s) saved.`
                                     : `Done — ${clipRecords.length} clip(s) saved.`);
           }

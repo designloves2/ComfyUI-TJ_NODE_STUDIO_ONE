@@ -32,6 +32,25 @@ export const DEFAULT_FRAMES = 192;   // 8.000s — the only exact-second option 
 
 export function framesToSeconds(frames) { return frames / FPS; }
 
+// Mirrors comfy_extras/nodes_minimax_h3.py's align_frame_count — the video latent grid
+// only accepts 17k+5 frame counts, always rounding up. Used to compute the *actual*
+// overlap TJ_H3_LatentContinuation applied, so a One-Take auto-stitch trims exactly
+// that much.
+export function alignFrameCount(n) {
+  let f = Math.max(5, Math.round(n));
+  while (f % 17 !== 5) f++;
+  return f;
+}
+
+// One-Take's overlap window, in real (24fps) frames — fixed, not user-configurable.
+// The stitch trim has to match exactly what TJ_H3_LatentContinuation used, and letting
+// the two drift apart (e.g. changed mid-run) would silently mis-stitch a finished run,
+// so this is one constant both the graph builder and the auto-stitch trim read from.
+// 39 already sits on the video grid (align_frame_count is a no-op on it) and converts to
+// an exact audio-latent step count (39/24*40 = 65, no rounding) — see
+// SPEC_MINIMAX_H3_NEXT_ROUND.md §B2.
+export const ONE_TAKE_OVERLAP_FRAMES = 39;
+
 /** The turbo LoRA for the current mode — Reference has none, by design. */
 export function turboLoraForMode(state) {
   if ((state.generationMode || "t2v") === "reference") return "";
@@ -349,8 +368,8 @@ export function defaultState(saved) {
     accelMode:      saved.accelMode      || "solattn",   // safe in all three modes
     upscaleMode:    saved.upscaleMode    || "none",
     continuityMode: saved.continuityMode || "lastframe",
-    oneTakeOverlap: saved.oneTakeOverlap ?? 39,
     oneTakeLockAudio: saved.oneTakeLockAudio ?? false,
+    oneTakeAutoStitch: saved.oneTakeAutoStitch ?? true,
 
     // canvas / length
     aspect:      saved.aspect      || "9:16 Portrait",

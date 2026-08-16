@@ -2022,7 +2022,16 @@ def _ffmpeg_exe():
 async def mmh3_stitch(request):
     """Concatenate the per-clip video files into one file (stream copy, no re-encode).
 
-    Body: {clips: [{filename, subfolder}], filename_prefix, trim_seconds (optional)}
+    Body: {clips: [{filename, subfolder}], filename_prefix, trim_seconds (optional),
+           overlap_seconds (optional)}
+
+    overlap_seconds is for One-Take: consecutive clips share that many seconds at the
+    boundary by design (the model was handed the previous clip's tail as its own head,
+    see TJ_H3_LatentContinuation), so a plain concat would show that stretch twice. This
+    trims the head of every clip except the first by that amount before concatenating.
+    Frame-accurate trimming needs a re-encode either way (concat demuxer's inpoint/outpoint
+    only cuts cleanly on a keyframe, which a freshly-generated clip has no guarantee of),
+    so this path always re-encodes via filter_complex rather than stream copy.
     """
     try:
         data = await request.json()
@@ -2056,6 +2065,37 @@ async def mmh3_stitch(request):
         ts = time.strftime("%Y%m%d-%H%M%S")
         out_name = f"{stem}_{ts}.mp4"
         out_path = os.path.join(dest_dir, out_name)
+
+        try:
+            overlap = float(data.get("overlap_seconds") or 0)
+        except (TypeError, ValueError):
+            overlap = 0.0
+
+        if overlap > 0 and len(paths) > 1:
+            filt = []
+            labels = []
+            for i, p in enumerate(paths):
+                if i == 0:
+                    filt.append(f"[{i}:v]setpts=PTS-STARTPTS[v{i}]")
+                    filt.append(f"[{i}:a]asetpts=PTS-STARTPTS[a{i}]")
+                else:
+                    filt.append(f"[{i}:v]trim=start={overlap:.3f},setpts=PTS-STARTPTS[v{i}]")
+                    filt.append(f"[{i}:a]atrim=start={overlap:.3f},asetpts=PTS-STARTPTS[a{i}]")
+                labels.append(f"[v{i}][a{i}]")
+            filt.append(f"{''.join(labels)}concat=n={len(paths)}:v=1:a=1[outv][outa]")
+            cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y"]
+            for p in paths:
+                cmd += ["-i", p]
+            cmd += ["-filter_complex", ";".join(filt), "-map", "[outv]", "-map", "[outa]",
+                    "-c:v", "libx264", "-crf", "18", "-preset", "medium", "-c:a", "aac", out_path]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+            if proc.returncode != 0 or not os.path.isfile(out_path):
+                return web.json_response(
+                    {"ok": False, "error": (proc.stderr or "ffmpeg failed")[:800]}, status=500)
+            return web.json_response({
+                "ok": True, "filename": out_name, "subfolder": sub,
+                "path": out_path, "clip_count": len(paths),
+            })
 
         # concat demuxer needs a list file; quote-escape per ffmpeg's rules
         list_path = os.path.join(dest_dir, f".concat_{ts}.txt")

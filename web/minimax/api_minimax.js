@@ -226,11 +226,14 @@ export async function setLastResult(nodeId, { image, videoPath } = {}) {
 }
 
 // Concatenate the per-clip videos server-side (ffmpeg).
-export async function stitchClips(clips, filenamePrefix, trimSeconds) {
+export async function stitchClips(clips, filenamePrefix, trimSeconds, overlapSeconds) {
   const r = await api.fetchApi(`${API}/stitch`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ clips, filename_prefix: filenamePrefix, trim_seconds: trimSeconds ?? null }),
+    body: JSON.stringify({
+      clips, filename_prefix: filenamePrefix, trim_seconds: trimSeconds ?? null,
+      overlap_seconds: overlapSeconds ?? null,
+    }),
   });
   const d = await r.json();
   if (!d.ok) throw new Error(d.error || "stitch failed");

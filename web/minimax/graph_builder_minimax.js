@@ -7,7 +7,7 @@
 //
 // Optional third-party nodes are gated on `avail` (from /minimax_h3_one/node_availability):
 // a missing pack disables that one feature rather than failing the whole prompt.
-import { SUBFOLDER, FPS, resolveResolution, effectiveAccel, turboLoraForMode, framesToSeconds } from "./core_minimax.js";
+import { SUBFOLDER, FPS, resolveResolution, effectiveAccel, turboLoraForMode, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES } from "./core_minimax.js";
 
 const N = {
   unet:   "MM:unet",
@@ -131,7 +131,7 @@ function buildOneTake(g, state, avail, clipIndex, prevCheckpointName, defaultLat
     checkpoint_name: prevCheckpointName,
   }};
   g[N.continuation] = { class_type: "TJ_H3_LatentContinuation", inputs: {
-    overlap_frames: state.oneTakeOverlap ?? 39,
+    overlap_frames: ONE_TAKE_OVERLAP_FRAMES,
     lock_audio: !!state.oneTakeLockAudio,
     prev_latent: [N.chkLoad, 0],
     target_latent: defaultLatent,
