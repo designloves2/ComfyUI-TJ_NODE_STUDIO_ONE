@@ -150,10 +150,13 @@ export function createGalleryOverlay(state, ctx) {
         picked.map(v => ({ filename: v.filename, subfolder: v.subfolder || "" })),
         `${folder}/${state.filenamePrefix || "MMH3"}_full`, null, overlapSec,
       );
+      const known = picked.map(v => v.meta?.frames ? framesToSeconds(v.meta.frames) : null);
+      const rawTotal = known.every(s => s != null) ? known.reduce((a, b) => a + b, 0) : null;
+      const durationSeconds = rawTotal != null && overlapSec ? rawTotal - (picked.length - 1) * overlapSec : rawTotal;
       await saveMeta(out.filename, out.subfolder || "", {
         v: 1, prompt: picked.map(v => v.prompt || "").filter(Boolean).join("\n\n"),
         clips: picked.length, stitched: true, onetake: !!overlapSec,
-        node: "minimax_h3", created: Date.now(),
+        node: "minimax_h3", created: Date.now(), durationSeconds,
         prompts: picked.map(v => v.prompt || ""),
       });
       ctx.showPopup?.(`Stitched ${picked.length} clips → ${out.filename}`, false);
@@ -303,17 +306,23 @@ export function createGalleryOverlay(state, ctx) {
       }});
       // Square card, long edge fit (contain) — works for portrait and landscape clips alike
       // without cropping either one. A real <img>, not a <video> — see the note above.
+      // Wrapped so the hover-preview video below only covers the thumbnail, not the whole
+      // card — it used to sit at inset:0 on `card` itself and blocked the Reuse/Copy
+      // buttons underneath (pointer-events:none stops it from eating clicks, but it still
+      // hid the buttons from view, which is just as unusable).
+      const thumbWrap = el("div", { style: { position: "relative", width: "100%" } });
       const thumb = el("img", { loading: "lazy", src: thumbURL(v), style: {
         width: "100%", aspectRatio: "1 / 1", objectFit: "contain", background: "#000", display: "block",
         borderRadius: "7px 7px 0 0",
       }});
-      card.addEventListener("mouseenter", () => {
+      thumbWrap.appendChild(thumb);
+      thumbWrap.addEventListener("mouseenter", () => {
         stopGridVideos();               // only ever one card previewing at a time
         hoverVideo.src = viewURL(v);
-        card.appendChild(hoverVideo);
+        thumbWrap.appendChild(hoverVideo);
         hoverVideo.currentTime = 0; hoverVideo.play?.().catch(() => {});
       });
-      card.addEventListener("mouseleave", stopGridVideos);
+      thumbWrap.addEventListener("mouseleave", stopGridVideos);
       if (stitchMode) {
         card.addEventListener("click", () => {
           const key = vKey(v);
@@ -334,11 +343,16 @@ export function createGalleryOverlay(state, ctx) {
         card.addEventListener("dblclick", () => openPlayer(i));
       }
 
+      // Individual clips carry their frame count; stitched files carry an explicit
+      // durationSeconds instead (their real length isn't one clip's frame count — see
+      // the auto-stitch and manual-stitch saveMeta calls).
+      const durationSec = v.meta?.durationSeconds ?? (v.meta?.frames ? framesToSeconds(v.meta.frames) : null);
+      const durationText = durationSec != null ? `${durationSec.toFixed(2)}s · ` : "";
       const meta = el("div", { style: { padding: "5px 7px", display: "flex", flexDirection: "column", gap: "1px" } });
       meta.append(
         el("div", { text: v.filename, style: {
           fontSize: "10px", color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }),
-        el("div", { text: `${fmtSize(v.size)} · ${fmtWhen(v.mtime)}`, style: { fontSize: "9px", color: C.muted } }),
+        el("div", { text: `${durationText}${fmtSize(v.size)} · ${fmtWhen(v.mtime)}`, style: { fontSize: "9px", color: C.muted } }),
       );
       if (v.is_full) {
         meta.appendChild(el("div", { text: "★ stitched", style: { fontSize: "9px", color: BRAND, fontWeight: "700" } }));
@@ -379,7 +393,7 @@ export function createGalleryOverlay(state, ctx) {
         );
         meta.appendChild(bar);
       }
-      card.append(thumb, meta);
+      card.append(thumbWrap, meta);
       grid.appendChild(card);
     });
     if (stitchMode) refreshStitchBar();

@@ -1123,9 +1123,16 @@ app.registerExtension({
                 clipRecords, `${folder}/${state.filenamePrefix || "MMH3"}_full`, null, overlapSec,
               );
               const url = `/view?filename=${encodeURIComponent(out.filename)}&subfolder=${encodeURIComponent(out.subfolder || "")}&type=output&t=${Date.now()}`;
+              // metaForVideo's `frames` is per-clip (state.clipFrames) — left as-is here it
+              // would make the Gallery show this combined file's length as one clip's
+              // length. durationSeconds carries the real total; frames:null stops the
+              // per-clip value from being misread as this file's own.
+              const totalSeconds = clipRecords.length * framesToSeconds(state.clipFrames || 192)
+                - (clipRecords.length - 1) * overlapSec;
               saveMeta(out.filename, out.subfolder || "", metaForVideo(
                 active.map(({ i }) => promptForClip(i)).join("\n\n"),
                 { clips: clipRecords.length, stitched: true, onetake: true, overlapSeconds: overlapSec,
+                  frames: null, durationSeconds: totalSeconds,
                   prompts: (state.prompts || []).map(promptText) },
               ));
               showResultVideo(url);
