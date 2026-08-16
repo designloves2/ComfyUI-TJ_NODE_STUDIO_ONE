@@ -231,7 +231,7 @@ export function createPromptEditOverlay(state, ctx, onApply) {
   // These go into every clip, so they're edited once and kept out of the split.
   function commonField(placeholder, get, set) {
     const ta = el("textarea", { placeholder, style: {
-      width: "100%", boxSizing: "border-box", minHeight: "90px", maxHeight: "90px",
+      width: "100%", boxSizing: "border-box", minHeight: "90px", maxHeight: "150px",
       background: C.bg2, color: C.text, border: `1px solid ${C.border}`, borderRadius: "6px",
       padding: "6px 8px", fontSize: "11.5px", lineHeight: "1.5", fontFamily: "inherit",
       outline: "none", resize: "vertical",
