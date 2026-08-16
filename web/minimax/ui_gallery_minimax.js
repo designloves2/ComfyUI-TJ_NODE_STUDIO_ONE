@@ -14,6 +14,11 @@ function viewURL(v) {
     + `&subfolder=${encodeURIComponent(v.subfolder || "")}&type=output`;
 }
 
+function thumbURL(v) {
+  return `/minimax_h3_one/thumb?filename=${encodeURIComponent(v.filename)}`
+    + `&subfolder=${encodeURIComponent(v.subfolder || "")}`;
+}
+
 function fmtSize(bytes) {
   if (!bytes) return "";
   const mb = bytes / 1048576;
@@ -220,59 +225,29 @@ export function createGalleryOverlay(state, ctx) {
   };
   document.addEventListener("keydown", onKey, true);
 
-  // A <video> that gets detached from the document keeps playing — it just stops
-  // being visible, and it never sees another mouseleave. Every path that hides or
-  // rebuilds the grid has to stop the cards itself.
+  // Thumbnails are plain <img> (server-extracted first frame, see /minimax_h3_one/thumb) —
+  // a hundred-plus <video> elements, even paused, even preload=none, are that many decoder
+  // instances and were enough to crash the tab. An <img loading="lazy"> is what a browser
+  // actually handles cheaply at this scale; the browser's own lazy-loading covers scrolling
+  // through a large gallery, no manual viewport bookkeeping needed.
+  //
+  // Hover-to-preview reuses a single shared <video>, moved into whichever card is currently
+  // hovered — so there is at most one live decoder for the whole grid, ever.
+  const hoverVideo = el("video", { muted: "", playsinline: "", preload: "none", style: {
+    position: "absolute", inset: "0", width: "100%", height: "100%",
+    objectFit: "contain", background: "#000", pointerEvents: "none",
+  }});
+  hoverVideo.muted = true;
   function stopGridVideos() {
-    for (const v of grid.querySelectorAll("video")) {
-      try { v.pause(); v.currentTime = 0; } catch {}
-    }
+    try { hoverVideo.pause(); } catch {}
+    hoverVideo.removeAttribute("src");
+    hoverVideo.load();
+    hoverVideo.parentElement?.removeChild(hoverVideo);
   }
 
   // ── grid ───────────────────────────────────────────────────────────────────
-  // A live <video src> per card is expensive — a gallery of 100+ clips mounting them all
-  // at once was enough to exhaust the renderer's video-decoder memory and crash the tab
-  // (blank/black cards right before the crash were the same symptom, not a sizing bug).
-  // Only cards actually near the viewport get a real src; scrolling past unloads it again.
-  //
-  // IntersectionObserver was tried first but never fired here — ComfyUI's DOM widgets sit
-  // inside a CSS-transformed ancestor (the canvas' zoom/pan transform), which is a known
-  // source of IO false-negatives in Chromium. A manual rect check on scroll is what
-  // actually works regardless of that transform. requestAnimationFrame was tried for the
-  // throttle too, but rAF is paused for backgrounded/inactive tabs — setTimeout isn't, so
-  // that's what schedules the check.
-  let lazyVideos = [];
-  let lazyTimer = 0;
-  function updateLazyVideos() {
-    lazyTimer = 0;
-    const gr = grid.getBoundingClientRect();
-    const margin = 400;
-    const top = gr.top - margin, bottom = gr.bottom + margin;
-    for (const v of lazyVideos) {
-      if (!v.isConnected) continue;
-      const r = v.getBoundingClientRect();
-      const visible = r.bottom >= top && r.top <= bottom && r.height > 0;
-      if (visible) {
-        // "none" (the resting state) never paints a frame at all, even once src is set —
-        // it has to flip to "metadata" for the browser to actually decode and show one.
-        if (!v.src && v.dataset.src) { v.preload = "metadata"; v.src = v.dataset.src; }
-      } else if (v.src) {
-        try { v.pause(); } catch {}
-        v.removeAttribute("src");
-        v.preload = "none";
-        v.load();
-      }
-    }
-  }
-  function scheduleLazyUpdate() {
-    if (lazyTimer) return;
-    lazyTimer = setTimeout(updateLazyVideos, 50);
-  }
-  grid.addEventListener("scroll", scheduleLazyUpdate);
-
   function renderGrid() {
     stopGridVideos();
-    lazyVideos = [];
     clear(grid);
     const list = shown();
     countTag.textContent = `${list.length} clip${list.length === 1 ? "" : "s"}`
@@ -293,22 +268,18 @@ export function createGalleryOverlay(state, ctx) {
         display: "flex", flexDirection: "column",
         opacity: (stitchMode && !picked && stitchOrder.length >= STITCH_MAX) ? "0.4" : "1",
       }});
-      // A muted <video> is its own thumbnail — hovering scrubs a short preview. `src` is
-      // only attached once the card is actually near the viewport (see ensureGridObserver).
       // Square card, long edge fit (contain) — works for portrait and landscape clips alike
-      // without cropping either one.
-      const vid = el("video", { muted: "", playsinline: "", preload: "none", style: {
+      // without cropping either one. A real <img>, not a <video> — see the note above.
+      const thumb = el("img", { loading: "lazy", src: thumbURL(v), style: {
         width: "100%", aspectRatio: "1 / 1", objectFit: "contain", background: "#000", display: "block",
       }});
-      vid.muted = true;
-      vid.dataset.src = viewURL(v);
-      lazyVideos.push(vid);
       card.addEventListener("mouseenter", () => {
         stopGridVideos();               // only ever one card previewing at a time
-        if (!vid.src && vid.dataset.src) vid.src = vid.dataset.src;
-        vid.currentTime = 0; vid.play?.().catch(() => {});
+        hoverVideo.src = viewURL(v);
+        card.appendChild(hoverVideo);
+        hoverVideo.currentTime = 0; hoverVideo.play?.().catch(() => {});
       });
-      card.addEventListener("mouseleave", () => { try { vid.pause(); vid.currentTime = 0; } catch {} });
+      card.addEventListener("mouseleave", stopGridVideos);
       if (stitchMode) {
         card.addEventListener("click", () => {
           const key = vKey(v);
@@ -374,11 +345,10 @@ export function createGalleryOverlay(state, ctx) {
         );
         meta.appendChild(bar);
       }
-      card.append(vid, meta);
+      card.append(thumb, meta);
       grid.appendChild(card);
     });
     if (stitchMode) refreshStitchBar();
-    scheduleLazyUpdate();
   }
 
   async function refresh() {
@@ -392,9 +362,7 @@ export function createGalleryOverlay(state, ctx) {
 
   function hide() {
     closePlayer(); stopGridVideos(); ov.style.display = "none";
-    if (lazyTimer) { clearTimeout(lazyTimer); lazyTimer = 0; }
-    lazyVideos = [];
-    clear(grid);   // drop every card's <video> so a closed gallery holds no decoder memory
+    clear(grid);
     stitchMode = false; stitchOrder = [];
     stitchBtn.style.background = C.bg2; stitchBtn.style.borderColor = C.border;
     stitchBar.style.display = "none";
@@ -407,10 +375,6 @@ export function createGalleryOverlay(state, ctx) {
     hide,
     isOpen: () => ov.style.display !== "none",
     isPlaying: () => player.style.display !== "none",
-    destroy() {
-      document.removeEventListener("keydown", onKey, true);
-      grid.removeEventListener("scroll", scheduleLazyUpdate);
-      if (lazyTimer) clearTimeout(lazyTimer);
-    },
+    destroy() { document.removeEventListener("keydown", onKey, true); },
   };
 }

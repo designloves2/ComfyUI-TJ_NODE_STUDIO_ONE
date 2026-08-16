@@ -1600,6 +1600,52 @@ async def mmh3_list_videos(request):
     return web.json_response({"videos": videos, "total": len(found), "offset": offset, "limit": limit})
 
 
+MMH3_THUMB_DIR_NAME = "_thumbs"
+
+
+@PromptServer.instance.routes.get("/minimax_h3_one/thumb")
+async def mmh3_get_thumb(request):
+    """First-frame JPEG for a clip, extracted once with ffmpeg and cached on disk next to
+    the video. A gallery of a hundred+ clips as real <img> thumbnails is what a browser is
+    actually built to handle cheaply — a live <video> per card (even paused, even
+    preload=none) is a decoder instance, and enough of those at once was crashing the tab.
+    """
+    filename = request.query.get("filename", "")
+    subfolder = request.query.get("subfolder", "")
+    if not filename:
+        return web.Response(status=400, text="no filename")
+    output_dir = _get_output_dir()
+    try:
+        vpath = _safe_resolve_output_path(output_dir, subfolder, filename)
+    except ValueError:
+        return web.Response(status=400, text="invalid path")
+    if not vpath or not os.path.isfile(vpath):
+        return web.Response(status=404, text="not found")
+
+    thumbs_dir = os.path.join(os.path.dirname(vpath), MMH3_THUMB_DIR_NAME)
+    thumb_path = os.path.join(thumbs_dir, filename + ".jpg")
+    try:
+        fresh = os.path.isfile(thumb_path) and os.path.getmtime(thumb_path) >= os.path.getmtime(vpath)
+    except Exception:
+        fresh = False
+
+    if not fresh:
+        ffmpeg = _ffmpeg_exe()
+        if not ffmpeg:
+            return web.Response(status=500, text="ffmpeg not found (install imageio-ffmpeg)")
+        os.makedirs(thumbs_dir, exist_ok=True)
+        cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+               "-i", vpath, "-frames:v", "1", "-vf", "scale=320:-2", thumb_path]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, timeout=30)
+        except Exception as e:
+            return web.Response(status=500, text=str(e))
+        if proc.returncode != 0 or not os.path.isfile(thumb_path):
+            return web.Response(status=500, text="thumbnail extraction failed")
+
+    return web.FileResponse(thumb_path, headers={"Cache-Control": "public, max-age=604800"})
+
+
 @PromptServer.instance.routes.post("/minimax_h3_one/pick_chain_frame")
 async def mmh3_pick_chain_frame(request):
     """Pick the last of a clip's trailing frames that still has a picture in it.
