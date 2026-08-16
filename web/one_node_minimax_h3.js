@@ -233,6 +233,11 @@ app.registerExtension({
 
       function showPreviewFrame(dataURL, mime) {
         placeholder.style.display = "none";
+        // Same bug as resetPreview originally had, other direction: hiding resultVid
+        // here doesn't stop it. If the user pressed play on clip N's finished result and
+        // the next clip's live preview then takes over this box, clip N kept playing in
+        // the background underneath it.
+        try { resultVid.pause(); } catch {}
         resultVid.style.display = "none";
         if (mime === "video/mp4") {
           previewImg.style.display = "none";
