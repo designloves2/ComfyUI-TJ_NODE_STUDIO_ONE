@@ -253,10 +253,13 @@ export function createGalleryOverlay(state, ctx) {
       const r = v.getBoundingClientRect();
       const visible = r.bottom >= top && r.top <= bottom && r.height > 0;
       if (visible) {
-        if (!v.src && v.dataset.src) v.src = v.dataset.src;
+        // "none" (the resting state) never paints a frame at all, even once src is set —
+        // it has to flip to "metadata" for the browser to actually decode and show one.
+        if (!v.src && v.dataset.src) { v.preload = "metadata"; v.src = v.dataset.src; }
       } else if (v.src) {
         try { v.pause(); } catch {}
         v.removeAttribute("src");
+        v.preload = "none";
         v.load();
       }
     }
