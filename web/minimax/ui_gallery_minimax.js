@@ -65,14 +65,23 @@ export function createGalleryOverlay(state, ctx) {
     borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
   }});
   const deleteConfirmBtn = button("Delete", () => runDelete(), "danger");
-  deleteCancelBtn.addEventListener("click", () => { deleteConfirmOv.style.display = "none"; pendingDelete = null; });
+  function cancelDelete() { deleteConfirmOv.style.display = "none"; pendingDelete = null; }
+  deleteCancelBtn.addEventListener("click", cancelDelete);
   deleteBtnRow.append(deleteCancelBtn, deleteConfirmBtn);
   deleteConfirmBox.appendChild(deleteBtnRow);
   deleteConfirmOv.appendChild(deleteConfirmBox);
-  deleteConfirmOv.addEventListener("click", e => {
-    if (e.target === deleteConfirmOv) { deleteConfirmOv.style.display = "none"; pendingDelete = null; }
-  });
+  deleteConfirmOv.addEventListener("click", e => { if (e.target === deleteConfirmOv) cancelDelete(); });
   document.body.appendChild(deleteConfirmOv);
+
+  // Enter = Delete, Esc = Cancel, only while this popup is actually showing — captured
+  // at the document level (same pattern as the fullscreen player's onKey below) so it
+  // fires regardless of what currently has focus.
+  const onDeleteConfirmKey = (e) => {
+    if (deleteConfirmOv.style.display === "none") return;
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancelDelete(); }
+    else if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); runDelete(); }
+  };
+  document.addEventListener("keydown", onDeleteConfirmKey, true);
 
   let pendingDelete = null;   // { filename, subfolder }
   function askDelete(v) {
@@ -492,6 +501,9 @@ export function createGalleryOverlay(state, ctx) {
     hide,
     isOpen: () => ov.style.display !== "none",
     isPlaying: () => player.style.display !== "none",
-    destroy() { document.removeEventListener("keydown", onKey, true); },
+    destroy() {
+      document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("keydown", onDeleteConfirmKey, true);
+    },
   };
 }
