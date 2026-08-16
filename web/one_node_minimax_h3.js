@@ -1041,6 +1041,9 @@ app.registerExtension({
                 clip: curClip, clips: plan.count, seed: seedForClip(i), mode: modeForClip,
                 // the editable source text, so "reuse" restores the editor exactly
                 prompts: [promptText(state.prompts?.[i])],
+                // lets the Gallery's manual stitch auto-detect that adjacent clips share
+                // an overlap and offer to trim it, instead of the user having to remember
+                onetake: isOneTake,
               }));
               showResultVideo(`/view?filename=${encodeURIComponent(vid.filename)}&subfolder=${encodeURIComponent(vid.subfolder || "")}&type=${vid.type || "output"}&t=${Date.now()}`);
               badge.textContent = `CLIP ${curClip}/${totClip} done`;

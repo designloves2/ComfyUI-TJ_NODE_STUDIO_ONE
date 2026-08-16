@@ -157,16 +157,18 @@ export function formatClock(ms) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
+// Portrait (tallest first) → Square → Landscape (widest last), sorted by w/h within
+// each group rather than however they were added.
 export const ASPECTS = [
   { label: "9:16 Portrait",  w: 9,  h: 16 },
-  { label: "16:9 Landscape", w: 16, h: 9  },
-  { label: "1:1 Square",     w: 1,  h: 1  },
-  { label: "4:5 Portrait",   w: 4,  h: 5  },
-  { label: "3:4 Portrait",   w: 3,  h: 4  },
-  { label: "4:3 Landscape",  w: 4,  h: 3  },
-  { label: "5:4 Landscape",  w: 5,  h: 4  },
   { label: "2:3 Portrait",   w: 2,  h: 3  },
+  { label: "3:4 Portrait",   w: 3,  h: 4  },
+  { label: "4:5 Portrait",   w: 4,  h: 5  },
+  { label: "1:1 Square",     w: 1,  h: 1  },
+  { label: "5:4 Landscape",  w: 5,  h: 4  },
+  { label: "4:3 Landscape",  w: 4,  h: 3  },
   { label: "3:2 Landscape",  w: 3,  h: 2  },
+  { label: "16:9 Landscape", w: 16, h: 9  },
   { label: "21:9 Cinema",    w: 21, h: 9  },
 ];
 

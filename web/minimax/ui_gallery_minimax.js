@@ -3,7 +3,7 @@
 // The node's results are videos, so the shared PNG gallery doesn't apply: this lists the
 // mp4s written into the output subfolder and plays them full screen with the keyboard
 // shortcuts you'd expect from a review pass.
-import { C, BRAND, el, clear, SUBFOLDER, framesToSeconds } from "./core_minimax.js";
+import { C, BRAND, el, clear, SUBFOLDER, framesToSeconds, alignFrameCount, ONE_TAKE_OVERLAP_FRAMES } from "./core_minimax.js";
 import { button } from "../klein/ui_common.js";
 import { listVideos, revealOutputFolder, stitchClips, saveMeta } from "./api_minimax.js";
 
@@ -79,6 +79,7 @@ export function createGalleryOverlay(state, ctx) {
   stitchBtn.addEventListener("click", () => {
     stitchMode = !stitchMode;
     stitchOrder = [];
+    oneTakeUserSet = false;
     stitchBtn.style.background = stitchMode ? BRAND : C.bg2;
     stitchBtn.style.borderColor = stitchMode ? BRAND : C.border;
     stitchBar.style.display = stitchMode ? "flex" : "none";
@@ -95,18 +96,42 @@ export function createGalleryOverlay(state, ctx) {
     cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "5px 10px",
     borderRadius: "6px", background: C.bg2, color: C.muted, border: `1px solid ${C.border}`,
   }});
-  stitchClearBtn.addEventListener("click", () => { stitchOrder = []; renderGrid(); });
+  stitchClearBtn.addEventListener("click", () => { stitchOrder = []; oneTakeUserSet = false; renderGrid(); });
+
+  // Clips rendered by Continuity: One-Take share `overlap` seconds at every boundary by
+  // construction (each clip's head is the previous clip's tail — see
+  // TJ_H3_LatentContinuation), so a plain concat would show that stretch twice. Each such
+  // clip carries meta.onetake from the run that made it, so this auto-checks when every
+  // picked clip agrees — but stays a manual override either way, since a user might mix
+  // clips from a run made before this flag existed.
+  const oneTakeLabel = el("label", { style: {
+    display: "flex", alignItems: "center", gap: "5px", fontSize: "10.5px", color: C.text, cursor: "pointer",
+  }});
+  const oneTakeCb = el("input", { type: "checkbox" });
+  oneTakeCb.style.cursor = "pointer";
+  let oneTakeUserSet = false;
+  oneTakeCb.addEventListener("change", () => { oneTakeUserSet = true; });
+  oneTakeLabel.append(oneTakeCb, el("span", { text: "One-Take (trim overlap)" }));
+
   const stitchGoBtn = button("🔗 Combine", () => runStitch(), "primary");
-  stitchBar.append(stitchInfo, stitchClearBtn, stitchGoBtn);
+  stitchBar.append(stitchInfo, oneTakeLabel, stitchClearBtn, stitchGoBtn);
 
   function refreshStitchBar() {
     const picked = stitchOrder.map(k => videos.find(v => vKey(v) === k)).filter(Boolean);
     const known = picked.map(v => v.meta?.frames ? framesToSeconds(v.meta.frames) : null);
     const total = known.every(s => s != null) ? known.reduce((a, b) => a + b, 0) : null;
     const sizes = new Set(picked.map(v => `${v.meta?.w || "?"}x${v.meta?.h || "?"}`));
+
+    if (!oneTakeUserSet) oneTakeCb.checked = picked.length > 0 && picked.every(v => v.meta?.onetake === true);
+
     let text = `${picked.length} / ${STITCH_MAX} selected`;
     if (picked.length >= STITCH_MAX) text += " · longer edits need a real video editor";
-    if (total != null) text += ` · ≈${total.toFixed(2)}s`;
+    if (total != null) {
+      const trimmed = oneTakeCb.checked && picked.length > 1
+        ? total - (picked.length - 1) * framesToSeconds(alignFrameCount(ONE_TAKE_OVERLAP_FRAMES))
+        : total;
+      text += ` · ≈${trimmed.toFixed(2)}s`;
+    }
     if (sizes.size > 1) text += ` · ⚠ mixed resolution (${[...sizes].join(", ")}) — stitch may fail or look off`;
     stitchInfo.textContent = text;
     stitchGoBtn.disabled = picked.length < 2;
@@ -117,20 +142,23 @@ export function createGalleryOverlay(state, ctx) {
     const picked = stitchOrder.map(k => videos.find(v => vKey(v) === k)).filter(Boolean);
     if (picked.length < 2) return;
     stitchGoBtn.disabled = true;
-    stitchInfo.textContent = `Stitching ${picked.length} clips…`;
+    const overlapSec = oneTakeCb.checked ? framesToSeconds(alignFrameCount(ONE_TAKE_OVERLAP_FRAMES)) : null;
+    stitchInfo.textContent = `Stitching ${picked.length} clips${overlapSec ? ` (One-Take, ${overlapSec.toFixed(3)}s overlap trimmed)` : ""}…`;
     try {
       const folder = (state.saveSubfolder || SUBFOLDER).replace(/\\/g, "/");
       const out = await stitchClips(
         picked.map(v => ({ filename: v.filename, subfolder: v.subfolder || "" })),
-        `${folder}/${state.filenamePrefix || "MMH3"}_full`, null,
+        `${folder}/${state.filenamePrefix || "MMH3"}_full`, null, overlapSec,
       );
       await saveMeta(out.filename, out.subfolder || "", {
         v: 1, prompt: picked.map(v => v.prompt || "").filter(Boolean).join("\n\n"),
-        clips: picked.length, stitched: true, node: "minimax_h3", created: Date.now(),
+        clips: picked.length, stitched: true, onetake: !!overlapSec,
+        node: "minimax_h3", created: Date.now(),
         prompts: picked.map(v => v.prompt || ""),
       });
       ctx.showPopup?.(`Stitched ${picked.length} clips → ${out.filename}`, false);
       stitchOrder = [];
+      oneTakeUserSet = false;
       await refresh();
     } catch (e) {
       ctx.showPopup?.(`Stitch failed: ${e.message || e}`, true);
@@ -369,7 +397,7 @@ export function createGalleryOverlay(state, ctx) {
   function hide() {
     closePlayer(); stopGridVideos(); ov.style.display = "none";
     clear(grid);
-    stitchMode = false; stitchOrder = [];
+    stitchMode = false; stitchOrder = []; oneTakeUserSet = false;
     stitchBtn.style.background = C.bg2; stitchBtn.style.borderColor = C.border;
     stitchBar.style.display = "none";
   }
