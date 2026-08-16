@@ -230,8 +230,46 @@ export function createGalleryOverlay(state, ctx) {
   }
 
   // ── grid ───────────────────────────────────────────────────────────────────
+  // A live <video src> per card is expensive — a gallery of 100+ clips mounting them all
+  // at once was enough to exhaust the renderer's video-decoder memory and crash the tab
+  // (blank/black cards right before the crash were the same symptom, not a sizing bug).
+  // Only cards actually near the viewport get a real src; scrolling past unloads it again.
+  //
+  // IntersectionObserver was tried first but never fired here — ComfyUI's DOM widgets sit
+  // inside a CSS-transformed ancestor (the canvas' zoom/pan transform), which is a known
+  // source of IO false-negatives in Chromium. A manual rect check on scroll is what
+  // actually works regardless of that transform. requestAnimationFrame was tried for the
+  // throttle too, but rAF is paused for backgrounded/inactive tabs — setTimeout isn't, so
+  // that's what schedules the check.
+  let lazyVideos = [];
+  let lazyTimer = 0;
+  function updateLazyVideos() {
+    lazyTimer = 0;
+    const gr = grid.getBoundingClientRect();
+    const margin = 400;
+    const top = gr.top - margin, bottom = gr.bottom + margin;
+    for (const v of lazyVideos) {
+      if (!v.isConnected) continue;
+      const r = v.getBoundingClientRect();
+      const visible = r.bottom >= top && r.top <= bottom && r.height > 0;
+      if (visible) {
+        if (!v.src && v.dataset.src) v.src = v.dataset.src;
+      } else if (v.src) {
+        try { v.pause(); } catch {}
+        v.removeAttribute("src");
+        v.load();
+      }
+    }
+  }
+  function scheduleLazyUpdate() {
+    if (lazyTimer) return;
+    lazyTimer = setTimeout(updateLazyVideos, 50);
+  }
+  grid.addEventListener("scroll", scheduleLazyUpdate);
+
   function renderGrid() {
     stopGridVideos();
+    lazyVideos = [];
     clear(grid);
     const list = shown();
     countTag.textContent = `${list.length} clip${list.length === 1 ? "" : "s"}`
@@ -252,13 +290,17 @@ export function createGalleryOverlay(state, ctx) {
         display: "flex", flexDirection: "column",
         opacity: (stitchMode && !picked && stitchOrder.length >= STITCH_MAX) ? "0.4" : "1",
       }});
-      // A muted <video> is its own thumbnail — hovering scrubs a short preview.
-      const vid = el("video", { src: viewURL(v), muted: "", playsinline: "", preload: "metadata", style: {
+      // A muted <video> is its own thumbnail — hovering scrubs a short preview. `src` is
+      // only attached once the card is actually near the viewport (see ensureGridObserver).
+      const vid = el("video", { muted: "", playsinline: "", preload: "none", style: {
         width: "100%", height: "112px", objectFit: "cover", background: "#000", display: "block",
       }});
       vid.muted = true;
+      vid.dataset.src = viewURL(v);
+      lazyVideos.push(vid);
       card.addEventListener("mouseenter", () => {
         stopGridVideos();               // only ever one card previewing at a time
+        if (!vid.src && vid.dataset.src) vid.src = vid.dataset.src;
         vid.currentTime = 0; vid.play?.().catch(() => {});
       });
       card.addEventListener("mouseleave", () => { try { vid.pause(); vid.currentTime = 0; } catch {} });
@@ -331,6 +373,7 @@ export function createGalleryOverlay(state, ctx) {
       grid.appendChild(card);
     });
     if (stitchMode) refreshStitchBar();
+    scheduleLazyUpdate();
   }
 
   async function refresh() {
@@ -344,6 +387,9 @@ export function createGalleryOverlay(state, ctx) {
 
   function hide() {
     closePlayer(); stopGridVideos(); ov.style.display = "none";
+    if (lazyTimer) { clearTimeout(lazyTimer); lazyTimer = 0; }
+    lazyVideos = [];
+    clear(grid);   // drop every card's <video> so a closed gallery holds no decoder memory
     stitchMode = false; stitchOrder = [];
     stitchBtn.style.background = C.bg2; stitchBtn.style.borderColor = C.border;
     stitchBar.style.display = "none";
@@ -356,6 +402,10 @@ export function createGalleryOverlay(state, ctx) {
     hide,
     isOpen: () => ov.style.display !== "none",
     isPlaying: () => player.style.display !== "none",
-    destroy() { document.removeEventListener("keydown", onKey, true); },
+    destroy() {
+      document.removeEventListener("keydown", onKey, true);
+      grid.removeEventListener("scroll", scheduleLazyUpdate);
+      if (lazyTimer) clearTimeout(lazyTimer);
+    },
   };
 }
