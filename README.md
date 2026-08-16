@@ -456,12 +456,14 @@ MiniMax H3 only accepts frame counts on a **17k+5 grid** and a single pass is VR
 |---|---|
 | **라이브 프리뷰**<br><sub>Live preview</sub>| 샘플링 중 디코딩된 프레임이 노드에 실시간 표시 (`ModelPreviewOverrideKJ`). 스피너가 아니라 실제 영상이 만들어지는 걸 봅니다<br><sub>decoded frames stream into the node while sampling — not a spinner</sub>|
 | **클립 릴레이**<br><sub>Clip relay</sub>| 클립 수 · 실제 총 길이 · 예상 소요시간을 설정 즉시 표시. 실측 시간으로 예상치 자동 보정<br><sub>clip count / actual length / ETA shown live, ETA self-corrects from measured clip times</sub>|
-| **연속성**<br><sub>Continuity</sub>| **Last Frame Chain** — 이전 클립의 마지막 프레임이 다음 클립의 첫 프레임이 됩니다. first frame을 받는 모델은 FL2VA뿐이라, 이어지는 클립은 어떤 모드로 시작했든 FL2VA로 렌더됩니다 · **Reference**(Reference 모드 전용) — 모든 클립이 같은 레퍼런스 이미지를 사용 · **None** — 클립 간에 아무것도 넘기지 않되 해당 모드의 모델은 그대로<br>세 경우 모두 프롬프트의 **공통 부분(스타일 머리말 · 사운드 꼬리말)은 모든 클립에 전달**됩니다<br><sub>Last Frame Chain hands the previous ending over as a real first frame (rendered by FL2VA, the only model that takes one); Reference (Reference mode only) re-uses the same reference images on every clip; None hands nothing across but stays on the run's own model. In all three the shared part of the prompt reaches every clip.</sub>|
+| **연속성**<br><sub>Continuity</sub>| 메뉴 순서 **None → One-Take (latent) → Reference → Last Frame Chain**, 기본값은 **One-Take**. **One-Take**(기본값) — 클립의 샘플링된 latent 꼬리를 다음 클립의 머리에 그대로 이어붙입니다(TJ_NODE의 `TJ_H3_LatentContinuation`). VAE 왕복이 없고 원래 모드(Reference 포함)가 그대로 유지됩니다. 클립마다 새 큐를 제출하는 릴레이 구조상, latent는 디스크 체크포인트(`TJ_H3_SaveLatentCheckpoint`/`LoadLatentCheckpoint`)로 클립 사이를 이동합니다 · **Last Frame Chain** — 이전 클립의 마지막 프레임이 다음 클립의 첫 프레임이 됩니다(FL2VA로 강제 전환) · **Reference**(Reference 모드 전용) — 모든 클립이 같은 레퍼런스 이미지를 사용 · **None** — 아무것도 넘기지 않되 해당 모드의 모델은 그대로<br>모든 경우에 프롬프트의 **공통 부분(스타일 머리말 · 사운드 꼬리말)은 모든 클립에 전달**됩니다<br><sub>Menu order is **None → One-Take (latent) → Reference → Last Frame Chain**, default is **One-Take**. One-Take (default) feeds the previous clip's sampled latent tail straight into the next clip's head (TJ_NODE's `TJ_H3_LatentContinuation`) — no VAE round trip, and the run's own mode (Reference included) keeps going. Since the relay submits a fresh queue per clip, the latent crosses that boundary through a disk checkpoint (`TJ_H3_SaveLatentCheckpoint`/`LoadLatentCheckpoint`). Last Frame Chain hands the previous ending over as a real first frame (forces FL2VA); Reference (Reference mode only) re-uses the same reference images; None hands nothing across but stays on the run's own model. In every case the shared part of the prompt reaches every clip.</sub>|
+| **원테이크 세부 설정**<br><sub>One-Take controls</sub>| 겹침은 **39프레임(1.625초)로 고정**(latent에 실제로 구운 값과 어긋나면 잘못 합쳐지므로 조절 불가) · 오디오 전체 고정 옵션 · 실행 완료 시 **자동으로 겹침을 잘라내고 하나로 합쳐 갤러리에 등록**(끌 수 있음) — 개별 클립 파일 · 체크포인트도 재개용으로 그대로 남습니다<br><sub>overlap is fixed at **39 frames (1.625s)** — not user-adjustable, since it has to match what's actually baked into the sampled latents or the stitch would be wrong · optional whole-audio lock · on a finished run, auto-stitches the overlap out and registers the combined file in the Gallery (toggle-able) — per-clip files and checkpoints stay on disk for resuming</sub>|
+| **프롬프트 워크벤치**<br><sub>Prompt workbench</sub>| 프롬프트마다 **켜기/끄기** 체크박스(끈 프롬프트는 건너뛰되 시드·파일명·오디오락 구간은 원래 번호 그대로 유지 — 중단 후 재개에 사용) · 클립별 **첫 프레임 오버라이드**(FL2VA로 전환) · **초기화** 버튼(중앙 팝업 확인) · 이름 붙여 서버에 저장하는 **프롬프트 세트**(불러오기/저장/삭제)<br><sub>per-prompt **on/off** checkbox (an off prompt is skipped but keeps its own seed/filename/audio-lock offset — resume a stopped run by turning 1-10 off and 11+ on) · per-clip **first-frame override** (forces FL2VA) · **Reset** button (centered confirm) · named **prompt sets** saved server-side (load/save/delete)</sub>|
 | **프롬프트 자동 분할**<br><sub>Prompt auto-split</sub>| `[Shot N]` 타임코드 · `---` · 빈 줄 기준으로 긴 브리프를 클립별 프롬프트로 분할. 스타일 머리말과 사운드 꼬리말은 **공통 영역으로 올려서 모든 클립이 함께 받습니다** — 길이를 늘려도 룩이 유지되는 이유입니다<br><sub>splits a long brief on `[Shot N]`, `---`, or blank lines, and lifts the style preamble and sound tail into the common header/footer so every clip carries them</sub>|
-| **합본 + 트림**<br><sub>Stitch + trim</sub>| 완료 후 ffmpeg로 자동 결합, 요청 길이에 맞춰 자르기 선택 가능<br><sub>ffmpeg concat when the run ends, optional trim to the requested length</sub>|
-| **가속 / 업스케일**<br><sub>Accel / Upscale</sub>| Turbo LoRA(FL2VA 전용) · SolAttn · Spectrum · None / Upscale Model · RTX VSR · None<br><sub>selectable acceleration and upscaling</sub>|
-| **설정 누락 차단**<br><sub>Missing-model guard</sub>| UNET이 지정되지 않은 모드는 **진입 자체가 막히고**, 상단에 무엇이 빠졌는지 경고가 뜹니다. 해당 모델이 필요한 연속성 옵션도 함께 비활성화됩니다<br><sub>a mode whose UNET is unset cannot be entered — the top bar says what Settings still needs, and continuity options needing that model are disabled too</sub>|
-| **갤러리**<br><sub>Gallery</sub>| 클립·합본을 한 곳에서. 카드마다 **생성에 쓰인 프롬프트**가 함께 저장되어 다시 불러오거나 복사할 수 있습니다. 전체화면 플레이어(스페이스=재생, ←→=이동, `[`/`]`=이전/다음, Esc=닫기)<br><sub>clips and stitched files, each card keeping the prompt it was rendered from (reuse or copy), plus a fullscreen player</sub>|
+| **이미지 → 브리프**<br><sub>Image → Brief</sub>| 이미지 1~8장(First/Last=최대 2, Reference=최대 8)을 브리프로 변환. 비전 소스로 **Ollama**(순차 분석 + 병합) 또는 **네이티브**(ComfyUI 자체 CLIP, `TextGenerate`로 이미지 전체를 한 번에 배치 분석 — 진짜 멀티이미지) 중 선택. 브리프 작성 모델과 비전 분석 모델은 각각 따로 지정<br><sub>turns 1-8 images (First/Last: max 2, Reference: max 8) into a brief. Vision source is either **Ollama** (sequential per-image analysis, merged) or **native** (ComfyUI's own CLIP via `TextGenerate` — batches every image in one call, genuine multi-image). Brief-writing and vision-analysis models are set separately</sub>|
+| **가속 / 업스케일**<br><sub>Accel / Upscale</sub>| Turbo LoRA(FL2VA 전용) · SolAttn · Spectrum · None / Upscale Model · RTX VSR · None. **Turbo를 켜면 H3 Cache는 자동으로 꺼집니다**(4스텝 스케줄은 캐시 재사용 임계값에 도달하지 않아 같이 켜면 속도/품질 비교가 왜곡됨)<br><sub>selectable acceleration and upscaling. **Turbo forces H3 Cache off** — its 4-step schedule never reaches the threshold H3 Cache reuses steps at, so leaving both on skews any speed/quality comparison</sub>|
+| **설정 누락 차단**<br><sub>Missing-model guard</sub>| UNET이 지정되지 않은 모드는 **진입 자체가 막히고**, 상단에 무엇이 빠졌는지 경고가 뜹니다. 해당 모델이 필요한 연속성 옵션도 사라지지 않고 **회색으로 비활성화되어 이유가 표시**됩니다<br><sub>a mode whose UNET is unset cannot be entered — the top bar says what Settings still needs, and a continuity option needing that model stays in the menu, greyed out with a reason, instead of disappearing</sub>|
+| **갤러리**<br><sub>Gallery</sub>| 클립·합본을 한 곳에서, 실제 첫 프레임 썸네일(서버에서 ffmpeg로 추출·캐시) + 길이 표시. **🔗 스티치** 모드로 순서대로 골라 합치기(최대 10개, One-Take 클립이면 겹침 자동 트림 옵션 자동 체크) · 카드마다 **✕ 삭제**(중앙 팝업 확인, Enter=삭제/Esc=취소) · 카드마다 **생성에 쓰인 프롬프트**로 다시 불러오거나 복사 · 전체화면 플레이어(스페이스=재생, ←→=이동, `[`/`]`=이전/다음, Esc=닫기)<br><sub>real first-frame thumbnails (ffmpeg-extracted and cached server-side) plus each clip's length. **🔗 Stitch** mode picks clips in order (max 10, auto-checks overlap-trim for One-Take clips) · **✕ delete** on every card (centered confirm, Enter=Delete/Esc=Cancel) · each card keeps the prompt it was rendered from (reuse or copy) · fullscreen player</sub>|
 | **설정 저장**<br><sub>Settings persistence</sub>| 노드 설정이 **워크플로우에 함께 저장**됩니다. 다른 PC에서 열거나 남에게 파일을 넘겨도 그대로 재현되고, 한 그래프에 노드를 여러 개 둬도 각자 값을 유지합니다<br><sub>settings are saved inside the workflow, so the file reproduces on another machine and multiple nodes keep separate values</sub>|
 
 ### 필수 모델 / Required Models
@@ -488,6 +490,7 @@ MiniMax H3 only accepts frame counts on a **17k+5 grid** and a single pass is VR
 | [Nvidia RTX Nodes](https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI) | RTX Video Super Resolution | RTX 업스케일만 비활성<br><sub>RTX upscale disabled</sub>|
 | [ComfyUI-Spectrum-MiniMax-H3](https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3) | Spectrum 가속<br><sub>Spectrum acceleration</sub>| Accel=Spectrum 비활성<br><sub>Spectrum disabled</sub>|
 | [ComfyUI-VideoHelperSuite](https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite) | Reference 모드의 **레퍼런스 비디오** 입력<br><sub>reference video inputs</sub>| 레퍼런스 비디오만 비활성 (이미지·오디오는 정상)<br><sub>reference videos disabled</sub>|
+| ComfyUI-TJ_NODE (같은 제작자, 필요)<br><sub>ComfyUI-TJ_NODE (same author, required for some features)</sub>| `TJ_H3_AudioLock`(오디오 락) · `TJ_H3_LatentContinuation` + `TJ_H3_Save/LoadLatentCheckpoint`(Continuity: One-Take)<br><sub>`TJ_H3_AudioLock` (audio lock) · `TJ_H3_LatentContinuation` + `TJ_H3_Save/LoadLatentCheckpoint` (Continuity: One-Take)</sub>| 해당 기능만 비활성 — Continuity 메뉴에서 One-Take가 회색으로 비활성화되고 이유가 표시됨<br><sub>that feature disabled — One-Take stays in the Continuity menu, greyed out with a reason</sub>|
 
 > 선택 노드는 설치 안 돼 있으면 **해당 기능만 꺼지고 나머지는 정상 동작**합니다 (설정 화면에 상태 표시).
 > Optional packs degrade gracefully — the matching feature switches off and everything else still runs (status is shown in Settings).
@@ -497,7 +500,52 @@ MiniMax H3 only accepts frame counts on a **17k+5 grid** and a single pass is VR
 ## 버그 수정 이력
 ## Bug Fix History
 
-### v1.5.0 (현재)
+### v1.11.0 (현재) — MiniMax H3: 프롬프트 워크벤치 + One-Take
+### v1.11.0 (Current) — MiniMax H3: prompt workbench + One-Take
+
+- **[MiniMax H3] One-Take (latent continuation) 신규** — TJ_NODE에 `TJ_H3_LatentContinuation` /
+  `TJ_H3_SaveLatentCheckpoint` / `TJ_H3_LoadLatentCheckpoint` 3개 노드 신설. 클립의 샘플링된
+  latent 꼬리를 다음 클립의 머리에 그대로 이어붙여 VAE 왕복 없이, 원래 모드(Reference 포함)를
+  유지한 채 연속성을 만듭니다. Continuity 메뉴 신규 항목이자 **기본값**. 실기기 2·3·4클립 체인을
+  FL2VA·REF2VA 양쪽에서 실행해 겹침 구간 latent가 float32 오차 수준(≤4.77e-7)으로 보존됨을
+  직접 대조 확인
+- **[MiniMax H3] One-Take** new (latent continuation)** — three new TJ_NODE nodes
+  (`TJ_H3_LatentContinuation` / `TJ_H3_SaveLatentCheckpoint` / `TJ_H3_LoadLatentCheckpoint`).
+  Feeds a clip's sampled latent tail straight into the next clip's head — no VAE round trip,
+  and the run's own mode (Reference included) keeps going. New Continuity menu entry and now
+  the **default**. Live-verified 2/3/4-clip chains on both FL2VA and REF2VA, diffing the raw
+  latent checkpoints directly — overlap region matches to float32 noise (≤4.77e-7)
+- **[MiniMax H3] 갤러리 스티치에 One-Take 겹침 트림 옵션** — 🔗 스티치에서 고른 클립이 전부
+  One-Take 클립이면 자동 체크. 실행 완료 시에도 자동으로 겹침을 잘라내고 합쳐서 갤러리에 등록
+  (끌 수 있음)
+- **[MiniMax H3] gallery stitch gained a One-Take overlap-trim toggle** — auto-checks when
+  every picked clip is from a One-Take run. A finished One-Take run also auto-stitches with
+  the overlap trimmed and registers the result in the Gallery (toggle-able)
+- **[MiniMax H3] 프롬프트 워크벤치** — 프롬프트별 켜기/끄기(원래 번호로 재개), 클립별 첫 프레임
+  오버라이드, 초기화 버튼, 서버에 저장하는 이름 붙인 프롬프트 세트
+- **[MiniMax H3] prompt workbench** — per-prompt on/off (resume by original number), per-clip
+  first-frame override, reset button, named prompt sets saved server-side
+- **[MiniMax H3] 갤러리 개선** — 실제 첫 프레임 썸네일(video 태그 대신 서버 추출 이미지라 클립이
+  많아도 크래시 없음), 카드마다 길이 표시, 삭제 버튼(중앙 팝업, Enter/Esc 단축키)
+- **[MiniMax H3] gallery improvements** — real first-frame thumbnails (server-extracted images
+  instead of a `<video>` per card, so large galleries no longer crash the tab), per-card
+  duration, delete button (centered confirm, Enter/Esc shortcuts)
+- **[MiniMax H3] Image → Brief 네이티브 비전 경로 추가** — Ollama 외에 ComfyUI 자체 CLIP
+  (`TextGenerate`)으로 이미지 전체를 한 번에 배치 분석하는 경로 선택 가능. 실기기 검증 완료
+- **[MiniMax H3] Image → Brief gained a native vision path** — alongside Ollama, ComfyUI's own
+  CLIP (`TextGenerate`) can batch-analyze every image in one call. Live-verified
+- **[MiniMax H3] Turbo + H3 Cache 상호배제** — Turbo 켜면 H3 Cache 자동으로 꺼짐(체크박스도
+  비활성화) — 4스텝 스케줄에서는 캐시가 아무 역할도 못 하면서 결과만 왜곡시킴
+- **[MiniMax H3] Turbo/H3 Cache mutual exclusion** — Turbo now forces H3 Cache off (checkbox
+  disabled too) — the cache never reuses anything on a 4-step schedule, just skews results
+- **[MiniMax H3] Canvas Aspect 5:4/2:3/3:2 추가, 비율순 정렬**
+- **[MiniMax H3] added 5:4/2:3/3:2 aspect ratios, sorted by ratio**
+- **[MiniMax H3] 프리뷰 영상 백그라운드 재생 버그 수정** — 재생 중인 클립을 숨기기만 하고 멈추지
+  않아서 다음 클립 넘어가도 뒤에서 계속 재생되던 문제 3곳 수정
+- **[MiniMax H3] fixed preview videos playing in the background** — three spots hid a playing
+  `<video>` without pausing it, so a clip kept playing behind whatever came next
+
+### v1.5.0
 
 - **[Krea2] I2I ControlNet 추가** — comfyui-krea2-controlnet 통합. I2I 탭 하단에 ControlNet 패널 추가. Control LoRA 선택 + 강도 + Channel Mode(RGB/Grayscale) + Normalize + Invert + 컨트롤 이미지 업로드. ON/OFF 토글로 기존 I2I와 동일하게 사용 가능. Depth Control LoRA: [Patil/Krea-2-depth-controlnet](https://huggingface.co/Patil/Krea-2-depth-controlnet)
 

@@ -1,16 +1,28 @@
-# SPEC — `MiniMaxH3LatentContinuation` (TJ_NODE 단일 커스텀 노드)
+# SPEC — One-Take Latent Continuation (구현 완료, 실기기 검증됨)
 
-**대상**: 이 스펙 하나만 보고 TJ_NODE 세션에서 새 커스텀 노드를 구현할 수 있도록 작성했다.
-바로 앞 세션(`ComfyUI-TJ_NODE_STUDIO_ONE`)의 컨텍스트를 몰라도 되게, 필요한 배경과 정확한
-소스 근거(파일:줄번호)를 전부 이 문서 안에 담았다.
+**상태: 완료.** 이 문서는 더 이상 "앞으로 만들 계획"이 아니라 **이미 구현되어 커밋되고, 실제
+GPU에서 2·3·4클립 체인으로 검증까지 끝난 기능**을 그대로 기록한 것이다. 처음에는 구현 전
+설계 문서로 썼다가, 실제로 완료한 뒤 이 문서를 코드에 맞춰 다시 정리했다 — 실제 클래스 이름
+· 파일 위치 · 시그니처는 §2를 그대로 보면 된다. §3~§5의 소스 근거·함정 분석은 설계 당시
+그대로 유효하다(실제 구현이 그 분석을 따라 만들어졌다).
+
+**실제 코드 위치**:
+- `ComfyUI-TJ_NODE/nodes/video/h3_latent_continuation.py` — `TJ_H3_LatentContinuation`
+- `ComfyUI-TJ_NODE/nodes/video/h3_latent_checkpoint.py` — `TJ_H3_SaveLatentCheckpoint` / `TJ_H3_LoadLatentCheckpoint`
+- `ComfyUI-TJ_NODE/nodes/video/__init__.py`, `ComfyUI-TJ_NODE/__init__.py` — 등록
+- `ComfyUI-TJ_NODE_STUDIO_ONE/web/minimax/core_minimax.js` — `CONTINUITY_MODES`의 `onetake` 항목,
+  `ONE_TAKE_OVERLAP_FRAMES` 상수
+- `ComfyUI-TJ_NODE_STUDIO_ONE/web/minimax/graph_builder_minimax.js` — `buildOneTake()` /
+  `saveOneTakeCheckpoint()`가 그래프에 세 노드를 배선
+- `ComfyUI-TJ_NODE_STUDIO_ONE/web/one_node_minimax_h3.js` — 릴레이 루프의 체크포인트 이름 추적,
+  실행 완료 시 자동 스티치, 좌측 패널 UI
+- `ComfyUI-TJ_NODE_STUDIO_ONE/nodes.py` — `/minimax_h3_one/stitch`의 `overlap_seconds` 파라미터
+  (filter_complex trim+concat 재인코드 경로)
 
 **출처**: `SPEC_MINIMAX_H3_NEXT_ROUND.md`의 PART B("One-Take 모드")를 구현 가능한 수준까지
-구체화한 문서다. 메커니즘 자체는 저 문서에서 이미 ComfyUI 코어 공식 소스로 확인해 놓았고,
-이번에 **정확한 줄번호와 함정(pitfall)까지 다시 한번 소스를 직접 열어 재검증**했다. GPU로
-실제 샘플링을 돌려보는 대조 검증(SPEC_MINIMAX_H3_NEXT_ROUND.md §B6-1)은 **아직 하지 않았다** —
-이유와 대안은 §7에 적었다. 코드는 새로 작성하는 것이며, GPL-3.0 참고 저장소
-(`comfyui-h3-motion-context-multiref`)의 코드는 이번에도 보지 않았다 — 아래 근거는 전부
-ComfyUI 자체 공식 소스(`comfy/`, `comfy_extras/`)에서 나왔다.
+구체화했던 문서다. 메커니즘은 ComfyUI 코어 공식 소스(`comfy/`, `comfy_extras/`)로 직접 확인했고,
+GPL-3.0 참고 저장소(`comfyui-h3-motion-context-multiref`)의 코드는 보지 않았다 — 개념만 그
+저장소의 공개 문서에서 참고하고, 구현은 전부 ComfyUI 자체 소스 근거로 새로 작성했다.
 
 ---
 
@@ -41,47 +53,74 @@ One-Take는 **latent 자체를 자르지 않고 그대로 이어붙인다**. 클
 
 ---
 
-## 2. 새 노드 스키마
+## 2. 실제 노드 스키마 (구현된 그대로)
 
-`comfy_extras/nodes_minimax_h3.py`의 기존 노드들과 같은 `io.ComfyNode` 스타일로 작성한다
-(TJ_NODE 쪽에 두려면 `comfy_api.latest.io` 를 그대로 import해서 동일한 패턴을 쓰면 된다 — 이미
-Audio Lock 노드(`TJ_H3_AudioLock`)가 TJ_NODE에서 이 스타일로 구현돼 있으니 그 파일을 템플릿으로
-삼아도 된다).
+`io.ComfyNode`(신형 스키마) 대신 **`TJ_H3_AudioLock`과 같은 구형 `INPUT_TYPES`/`RETURN_TYPES`
+클래스 스타일**로 작성했다 — TJ_NODE의 다른 노드 전부가 이 스타일이라 일관성을 맞췄고, 신형
+`io.*` 스키마를 쓸 이유가 따로 없었다.
+
+**`TJ_H3_LatentContinuation`** (`nodes/video/h3_latent_continuation.py`):
 
 ```python
-class MiniMaxH3LatentContinuation(io.ComfyNode):
-    """직전 클립의 latent 꼬리를 이번 클립의 빈 latent 머리에 복사하고,
-    복사된 구간은 재생성하지 않도록 noise_mask를 씌운다."""
-
+class TJ_H3_LatentContinuation:
     @classmethod
-    def define_schema(cls):
-        return io.Schema(
-            node_id="MiniMaxH3LatentContinuation",
-            display_name="MiniMax H3 Latent Continuation (One-Take)",
-            category="model/latent/minimax",
-            inputs=[
-                io.Latent.Input("prev_latent",
-                    tooltip="직전 클립을 샘플링한 결과 LATENT (디코드하지 않은 것, "
-                            "SamplerCustomAdvanced의 출력 그대로)"),
-                io.Latent.Input("target_latent",
-                    tooltip="이번 클립의 빈 AV latent (EmptyMiniMaxH3LatentAV 등, "
-                            "_empty_av_latent 규격과 동일해야 함)"),
-                io.Int.Input("overlap_frames", default=39, min=5, max=362, step=1,
-                    tooltip="비디오 쪽 겹침 프레임 수(24fps 기준 실제 프레임 카운트, 레이턴트 "
-                            "프레임 수 아님). 기본 39프레임(1.625초) — align_frame_count 그리드에서 "
-                            "안전하게 떨어지는 값."),
-                io.Boolean.Input("lock_audio", default=False,
-                    tooltip="true면 오디오 latent 전체를 mask=0으로 — Audio Lock과 같이 쓸 때 "
-                            "오디오는 통째로 고정하고 비디오만 이어붙이는 용도."),
-            ],
-            outputs=[io.Latent.Output(
-                tooltip="noise_mask가 포함된 latent — SamplerCustomAdvanced에 그대로 연결")],
-        )
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "overlap_frames": ("INT", {"default": 39, "min": 5, "max": 362, "step": 1}),
+                "lock_audio": ("BOOLEAN", {"default": False}),
+            },
+            "optional": {
+                "prev_latent": ("LATENT", {}),      # 직전 클립의 SamplerCustomAdvanced 출력
+                "target_latent": ("LATENT", {}),    # 이번 클립의 빈 AV latent
+            },
+        }
 
-    @classmethod
-    def execute(cls, prev_latent, target_latent, overlap_frames, lock_audio) -> io.NodeOutput:
-        ...  # §4 알고리즘
+    RETURN_TYPES = ("LATENT", "STRING")
+    RETURN_NAMES = ("latent", "report")
+    FUNCTION = "continue_latent"
+    CATEGORY = " ✨ TJ_Node/Video"
+
+    def continue_latent(self, overlap_frames=39, lock_audio=False,
+                         prev_latent=None, target_latent=None):
+        ...  # §4
 ```
+
+**`TJ_H3_SaveLatentCheckpoint`** / **`TJ_H3_LoadLatentCheckpoint`** (`nodes/video/h3_latent_checkpoint.py`)
+— §2-B에서 이유를 설명하는 B4 B안 그대로, `safetensors`로 `{video, audio}` 두 텐서를
+`output/one_minimax_h3/_latent_checkpoints/<name>.h3lat.safetensors`에 저장/로드한다:
+
+```python
+class TJ_H3_SaveLatentCheckpoint:
+    # required: latent (LATENT), checkpoint_name (STRING)
+    # returns: (checkpoint_name,)  — OUTPUT_NODE=True, 항상 실행됨
+    ...
+
+class TJ_H3_LoadLatentCheckpoint:
+    # required: checkpoint_name (STRING)
+    # returns: (latent,) — 없으면 ValueError
+    ...
+```
+
+### 2-A. `overlap_frames`가 STUDIO_ONE 쪽에서 노출되지 않는 이유
+
+노드 자체는 `overlap_frames`를 입력으로 받지만, STUDIO_ONE의 그래프 빌더는 이 값을
+**`core_minimax.js`의 상수 `ONE_TAKE_OVERLAP_FRAMES = 39`로 고정해서 넘긴다** — 사용자가
+UI에서 조절할 수 없다. 이유: 스티치 시 잘라내는 겹침 길이(`overlap_seconds`)가 latent에
+실제로 구운 값과 반드시 일치해야 하는데, 실행 도중 값이 바뀌면 이미 만든 클립과 스티치 트림이
+어긋나 조용히 잘못된 결과가 나온다. 노드 자체의 입력은 유연하게 남겨뒀지만(TJ_NODE 단에서
+직접 그래프를 짜는 다른 워크플로우는 자유롭게 값을 바꿀 수 있음), STUDIO_ONE은 안전하게 고정값
+하나만 쓴다.
+
+### 2-B. 왜 체크포인트 저장/로드가 따로 필요한가 (SPEC_MINIMAX_H3_NEXT_ROUND.md §B4 B안)
+
+STUDIO_ONE의 릴레이는 **클립마다 새 큐를 제출**한다(모델을 언로드해서 VRAM을 비우기 위해).
+ComfyUI는 서로 다른 큐 제출 사이에 텐서를 들고 있지 않으므로, 클립 N의 `prev_latent`를
+클립 N+1 그래프에 직접 링크로 연결할 방법이 없다. 그래서 클립마다: 샘플링 결과를
+`TJ_H3_SaveLatentCheckpoint`로 저장 → 다음 클립 제출 때 `TJ_H3_LoadLatentCheckpoint`로 다시
+읽어서 `TJ_H3_LatentContinuation`에 넘긴다. 체크포인트 이름은
+`<STUDIO_ONE 노드 id>_<원래 프롬프트 인덱스>`로 지어서(`web/one_node_minimax_h3.js`), 같은
+캔버스에 여러 MiniMax H3 노드가 있어도 충돌하지 않는다.
 
 ---
 
@@ -153,15 +192,18 @@ latent_image` — **부동소수점 상 완전히 그대로 보존**된다(근�
 
 ---
 
-## 4. 알고리즘 — `execute()` 구현
+## 4. 알고리즘 — 실제 구현 (`continue_latent()`, 그대로 쓰인 코드)
 
 ```python
 import torch
 import comfy.nested_tensor
-from comfy_extras.nodes_minimax_h3 import align_frame_count, video_latent_t, AUDIO_LATENT_FPS, FPS
+from comfy_extras.nodes_minimax_h3 import align_frame_count, video_latent_t
 
-@classmethod
-def execute(cls, prev_latent, target_latent, overlap_frames, lock_audio) -> io.NodeOutput:
+FPS = 24
+AUDIO_LATENT_FPS = 40
+
+def continue_latent(self, overlap_frames=39, lock_audio=False,
+                     prev_latent=None, target_latent=None):
     prev = prev_latent["samples"]      # NestedTensor((video, audio))
     target = target_latent["samples"]  # NestedTensor((video, audio)) — 전부 0으로 채워진 빈 latent
 
