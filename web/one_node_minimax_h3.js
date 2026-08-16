@@ -245,6 +245,7 @@ app.registerExtension({
           previewVid.style.display = "block";
           previewVid.play?.().catch(() => {});
         } else {
+          try { previewVid.pause(); } catch {}
           previewVid.style.display = "none";
           previewImg.src = dataURL;
           previewImg.style.display = "block";
@@ -255,6 +256,7 @@ app.registerExtension({
         lastResultURL = url;
         placeholder.style.display = "none";
         previewImg.style.display = "none";
+        try { previewVid.pause(); } catch {}
         previewVid.style.display = "none";
         resultVid.src = url;
         resultVid.style.display = "block";
