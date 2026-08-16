@@ -243,15 +243,16 @@ export const UPSCALE_MODES = [
  * of the prompt goes to all clips, which is what holds the look together.
  */
 export const CONTINUITY_MODES = [
+  { key: "none", label: "None",
+    hint: "nothing is handed between clips — each one is made from its prompt, on the run's own model; only the common prompt keeps them consistent" },
   { key: "lastframe", label: "Last Frame Chain",
     hint: "each clip starts from the previous clip's final frame",
     refHint: "clips after the first start from the previous clip's final frame (rendered by FL2VA, so the reference images shape the first clip only — the common prompt carries the rest)" },
-  // Only offered in Reference mode: it means "keep referencing", and a text-only run
-  // has nothing to reference.
+  // Only meaningful in Reference mode — a text-only run has nothing to reference — so
+  // it stays in the list (not filtered out) but disabled with a reason otherwise, same
+  // treatment as a continuity option whose UNET isn't set.
   { key: "reference", label: "Reference", refOnly: true,
     hint: "every clip re-uses the same reference images — the mode carries on unchanged" },
-  { key: "none", label: "None",
-    hint: "nothing is handed between clips — each one is made from its prompt, on the run's own model; only the common prompt keeps them consistent" },
   // Unlike Last Frame Chain this never forces FL2VA — the run's own mode (Reference
   // included) keeps going. Needs TJ_H3_LatentContinuation + the checkpoint save/load
   // pair from TJ_NODE; gated separately by node availability, not modelAvailability.
@@ -301,28 +302,33 @@ export function generationModesFor(state) {
 }
 
 /**
- * Continuity choices that make sense for the mode in play. Reference-only options are
- * dropped outside Reference mode, and an option that would switch to a model the
- * settings do not name is left visible but disabled, so the reason is legible. None
- * never switches models, so it is always available — the safe fallback.
+ * Continuity choices that make sense for the mode in play. Every option stays in the
+ * list — one that doesn't apply right now (Reference-only outside Reference mode, or a
+ * model the settings don't name) is shown disabled with a reason instead of vanishing,
+ * so the menu order never shifts under the user and a greyed-out option still explains
+ * itself. None never switches models, so it is always available — the safe fallback.
  */
 export function continuityModesFor(generationMode, state) {
   const isRef = (generationMode || "t2v") === "reference";
   const a = state ? modelAvailability(state) : { fl: true, ref: true };
-  const need = { lastframe: "fl", reference: "ref", none: null };
-  return CONTINUITY_MODES
-    .filter(m => !m.refOnly || isRef)
-    .map(m => {
-      const k = need[m.key];
-      const ok = !k || a[k];
+  const need = { lastframe: "fl", reference: "ref", none: null, onetake: null };
+  return CONTINUITY_MODES.map(m => {
+    if (m.refOnly && !isRef) {
       return {
-        key: m.key,
-        label: m.label,
-        hint: (isRef && m.refHint) ? m.refHint : m.hint,
-        disabled: !ok,
-        reason: ok ? "" : `Needs the ${k === "ref" ? "Reference" : "First/Last"} UNET — set it in ⚙ Settings → Models`,
+        key: m.key, label: m.label, hint: m.hint,
+        disabled: true, reason: "Only available in Reference mode",
       };
-    });
+    }
+    const k = need[m.key];
+    const ok = !k || a[k];
+    return {
+      key: m.key,
+      label: m.label,
+      hint: (isRef && m.refHint) ? m.refHint : m.hint,
+      disabled: !ok,
+      reason: ok ? "" : `Needs the ${k === "ref" ? "Reference" : "First/Last"} UNET — set it in ⚙ Settings → Models`,
+    };
+  });
 }
 
 export function loadState() {

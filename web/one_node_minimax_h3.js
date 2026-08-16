@@ -561,7 +561,7 @@ app.registerExtension({
           ])] : []),
           col([label("Continuity between clips"), select(
             contModes.map(m => ({ value: m.key, disabled: m.disabled,
-              label: m.disabled ? `${m.label} — UNET not set` : m.label })),
+              label: m.disabled ? `${m.label} — ${m.reason}` : m.label })),
             state.continuityMode, v => { state.continuityMode = v; persist(); renderLeft(); })]),
           el("div", { text: (contModes.find(m => m.key === state.continuityMode) || {}).hint || "",
             style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
