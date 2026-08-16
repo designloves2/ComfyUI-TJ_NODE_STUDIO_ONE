@@ -245,20 +245,21 @@ export const UPSCALE_MODES = [
 export const CONTINUITY_MODES = [
   { key: "none", label: "None",
     hint: "nothing is handed between clips — each one is made from its prompt, on the run's own model; only the common prompt keeps them consistent" },
-  { key: "lastframe", label: "Last Frame Chain",
-    hint: "each clip starts from the previous clip's final frame",
-    refHint: "clips after the first start from the previous clip's final frame (rendered by FL2VA, so the reference images shape the first clip only — the common prompt carries the rest)" },
+  // Default (see defaultState) — unlike Last Frame Chain this never forces FL2VA, the
+  // run's own mode (Reference included) keeps going. Needs TJ_H3_LatentContinuation +
+  // the checkpoint save/load pair from TJ_NODE; gated separately by node availability,
+  // not modelAvailability.
+  { key: "onetake", label: "One-Take (latent)",
+    hint: "each clip's sampled latent tail feeds straight into the next clip's head — no VAE round trip, and the run's own mode (including Reference) carries on unchanged",
+    refHint: "each clip's sampled latent tail feeds straight into the next clip's head — reference images keep conditioning every clip, unlike Last Frame Chain which drops them after the first" },
   // Only meaningful in Reference mode — a text-only run has nothing to reference — so
   // it stays in the list (not filtered out) but disabled with a reason otherwise, same
   // treatment as a continuity option whose UNET isn't set.
   { key: "reference", label: "Reference", refOnly: true,
     hint: "every clip re-uses the same reference images — the mode carries on unchanged" },
-  // Unlike Last Frame Chain this never forces FL2VA — the run's own mode (Reference
-  // included) keeps going. Needs TJ_H3_LatentContinuation + the checkpoint save/load
-  // pair from TJ_NODE; gated separately by node availability, not modelAvailability.
-  { key: "onetake", label: "One-Take (latent)",
-    hint: "each clip's sampled latent tail feeds straight into the next clip's head — no VAE round trip, and the run's own mode (including Reference) carries on unchanged",
-    refHint: "each clip's sampled latent tail feeds straight into the next clip's head — reference images keep conditioning every clip, unlike Last Frame Chain which drops them after the first" },
+  { key: "lastframe", label: "Last Frame Chain",
+    hint: "each clip starts from the previous clip's final frame",
+    refHint: "clips after the first start from the previous clip's final frame (rendered by FL2VA, so the reference images shape the first clip only — the common prompt carries the rest)" },
 ];
 
 const isSet = (v) => !!v && v !== "none";
@@ -376,7 +377,7 @@ export function defaultState(saved) {
     generationMode: saved.generationMode || "t2v",
     accelMode:      saved.accelMode      || "solattn",   // safe in all three modes
     upscaleMode:    saved.upscaleMode    || "none",
-    continuityMode: saved.continuityMode || "lastframe",
+    continuityMode: saved.continuityMode || "onetake",
     oneTakeLockAudio: saved.oneTakeLockAudio ?? false,
     oneTakeAutoStitch: saved.oneTakeAutoStitch ?? true,
 
