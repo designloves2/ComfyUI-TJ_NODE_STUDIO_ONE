@@ -295,8 +295,10 @@ export function createGalleryOverlay(state, ctx) {
       }});
       // A muted <video> is its own thumbnail — hovering scrubs a short preview. `src` is
       // only attached once the card is actually near the viewport (see ensureGridObserver).
+      // Square card, long edge fit (contain) — works for portrait and landscape clips alike
+      // without cropping either one.
       const vid = el("video", { muted: "", playsinline: "", preload: "none", style: {
-        width: "100%", height: "112px", objectFit: "cover", background: "#000", display: "block",
+        width: "100%", aspectRatio: "1 / 1", objectFit: "contain", background: "#000", display: "block",
       }});
       vid.muted = true;
       vid.dataset.src = viewURL(v);
