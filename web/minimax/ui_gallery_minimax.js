@@ -5,7 +5,7 @@
 // shortcuts you'd expect from a review pass.
 import { C, BRAND, el, clear, SUBFOLDER, framesToSeconds, alignFrameCount, ONE_TAKE_OVERLAP_FRAMES } from "./core_minimax.js";
 import { button } from "../klein/ui_common.js";
-import { listVideos, revealOutputFolder, stitchClips, saveMeta } from "./api_minimax.js";
+import { listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage } from "./api_minimax.js";
 
 const STITCH_MAX = 10;
 
@@ -38,6 +38,64 @@ export function createGalleryOverlay(state, ctx) {
 
   let videos = [];
   let filterFull = false;
+
+  // ── delete confirm — viewport-centered, like Prompt Edit's reset confirm, so it's
+  // visible even if the node is scrolled off-screen ──────────────────────────────────
+  const deleteConfirmOv = el("div", { style: {
+    display: "none", position: "fixed", inset: "0", zIndex: "99999",
+    background: "rgba(0,0,0,0.55)", alignItems: "center", justifyContent: "center",
+  }});
+  const deleteConfirmBox = el("div", { style: {
+    background: C.bg1, border: `1px solid ${C.border}`, borderRadius: "10px",
+    padding: "18px 20px", width: "320px", boxSizing: "border-box",
+    display: "flex", flexDirection: "column", gap: "10px", boxShadow: "0 8px 30px rgba(0,0,0,0.5)",
+  }});
+  const deleteConfirmTitle = el("div", {
+    text: "Delete this clip?",
+    style: { color: "#fff", fontSize: "13px", fontWeight: "700" } });
+  const deleteConfirmName = el("div", {
+    style: { color: C.muted, fontSize: "11px", lineHeight: "1.5", wordBreak: "break-all" } });
+  const deleteConfirmWarn = el("div", {
+    text: "This can't be undone.",
+    style: { color: C.muted, fontSize: "11.5px", lineHeight: "1.5" } });
+  deleteConfirmBox.append(deleteConfirmTitle, deleteConfirmName, deleteConfirmWarn);
+  const deleteBtnRow = el("div", { style: { display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "4px" } });
+  const deleteCancelBtn = el("button", { type: "button", text: "Cancel", style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "11.5px", padding: "6px 14px",
+    borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+  }});
+  const deleteConfirmBtn = button("Delete", () => runDelete(), "danger");
+  deleteCancelBtn.addEventListener("click", () => { deleteConfirmOv.style.display = "none"; pendingDelete = null; });
+  deleteBtnRow.append(deleteCancelBtn, deleteConfirmBtn);
+  deleteConfirmBox.appendChild(deleteBtnRow);
+  deleteConfirmOv.appendChild(deleteConfirmBox);
+  deleteConfirmOv.addEventListener("click", e => {
+    if (e.target === deleteConfirmOv) { deleteConfirmOv.style.display = "none"; pendingDelete = null; }
+  });
+  document.body.appendChild(deleteConfirmOv);
+
+  let pendingDelete = null;   // { filename, subfolder }
+  function askDelete(v) {
+    pendingDelete = { filename: v.filename, subfolder: v.subfolder || "" };
+    deleteConfirmName.textContent = v.filename;
+    deleteConfirmOv.style.display = "flex";
+  }
+  async function runDelete() {
+    if (!pendingDelete) return;
+    const { filename, subfolder } = pendingDelete;
+    deleteConfirmBtn.disabled = true;
+    try {
+      const d = await deleteImage(filename, subfolder);
+      if (!d.ok) throw new Error(d.error || "delete failed");
+      deleteConfirmOv.style.display = "none";
+      pendingDelete = null;
+      await refresh();
+    } catch (e) {
+      ctx.showPopup?.(`Delete failed: ${e.message || e}`, true);
+    } finally {
+      deleteConfirmBtn.disabled = false;
+    }
+  }
 
   const hdr = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" } });
   hdr.appendChild(el("div", { text: "🖼 Gallery", style: { color: "#fff", fontSize: "14px", fontWeight: "700" } }));
@@ -316,6 +374,16 @@ export function createGalleryOverlay(state, ctx) {
         borderRadius: "7px 7px 0 0",
       }});
       thumbWrap.appendChild(thumb);
+
+      const deleteBtn = el("button", { type: "button", text: "✕", title: "Delete this clip", style: {
+        position: "absolute", top: "4px", right: "4px", zIndex: "3",
+        width: "18px", height: "18px", lineHeight: "16px", padding: "0",
+        cursor: "pointer", fontSize: "11px", fontFamily: "inherit",
+        background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "4px",
+      }});
+      deleteBtn.addEventListener("click", e => { e.stopPropagation(); askDelete(v); });
+      thumbWrap.appendChild(deleteBtn);
+
       thumbWrap.addEventListener("mouseenter", () => {
         stopGridVideos();               // only ever one card previewing at a time
         hoverVideo.src = viewURL(v);
@@ -414,6 +482,7 @@ export function createGalleryOverlay(state, ctx) {
     stitchMode = false; stitchOrder = []; oneTakeUserSet = false;
     stitchBtn.style.background = C.bg2; stitchBtn.style.borderColor = C.border;
     stitchBar.style.display = "none";
+    deleteConfirmOv.style.display = "none"; pendingDelete = null;
   }
 
   return {
