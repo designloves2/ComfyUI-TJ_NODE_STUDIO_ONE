@@ -429,7 +429,8 @@ export function createPromptEditOverlay(state, ctx, onApply) {
   }});
 
   const enhTop = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } });
-  enhTop.appendChild(el("div", { text: "OLLAMA ENHANCE", style: { color: BRAND, fontSize: "10px", fontWeight: "700", letterSpacing: "0.06em" } }));
+  const enhTitle = el("div", { text: "OLLAMA ENHANCE", style: { color: BRAND, fontSize: "10px", fontWeight: "700", letterSpacing: "0.06em" } });
+  enhTop.appendChild(enhTitle);
   const statusTag = el("div", { text: "", style: { fontSize: "10px", color: C.muted, flex: "1" } });
   enhTop.appendChild(statusTag);
 
@@ -445,7 +446,7 @@ export function createPromptEditOverlay(state, ctx, onApply) {
         background: active ? BRAND : C.bg2, color: "#fff",
         border: `1px solid ${active ? BRAND : C.border}`,
       }});
-      b.addEventListener("click", () => { enhMode = m.key; renderModes(); renderImageRow(); });
+      b.addEventListener("click", () => { enhMode = m.key; renderModes(); renderImageRow(); renderModelSel(); });
       modeWrap.appendChild(b);
     });
   }
@@ -582,8 +583,32 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     enhBtn);
   enhWrap.append(enhTop, imgRow, enhBottom);
 
+  function isNativeSource() { return (state.visionSource || "ollama") === "native"; }
+
   function renderModelSel() {
     clear(modelSelWrap);
+    if (isNativeSource()) {
+      const needImage = enhMode === "image";
+      const briefOk = !!state.nativeBriefClip;
+      const visionOk = !needImage || !!state.nativeVisionClip;
+      if (!briefOk || !visionOk) {
+        modelSelWrap.appendChild(el("div", {
+          text: !briefOk ? "No brief CLIP set — pick one in ⚙ Settings → Sampling."
+                         : "No vision CLIP set — pick one in ⚙ Settings → Sampling.",
+          style: { fontSize: "10.5px", color: C.warn },
+        }));
+        return;
+      }
+      const line = needImage
+        ? `Brief: ${state.nativeBriefClip}  ·  Vision: ${state.nativeVisionClip}`
+        : `Brief: ${state.nativeBriefClip}`;
+      modelSelWrap.appendChild(el("div", {
+        text: line,
+        title: "Change these in ⚙ Settings → Sampling → Image → Brief — vision source",
+        style: { fontSize: "10px", color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+      }));
+      return;
+    }
     if (!ollamaModels.length) {
       modelSelWrap.appendChild(el("div", {
         text: needsRestart ? "restart ComfyUI to enable Enhance"
@@ -596,6 +621,21 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     modelSelWrap.appendChild(select(
       ollamaModels.map(m => ({ value: m, label: m })),
       state.ollamaModel, v => { state.ollamaModel = v; ctx.persist(); }));
+  }
+
+  // Prompt Edit must reflect whichever source Settings currently has picked — it used to
+  // always show the Ollama bar and model dropdown even with Native selected, which left no
+  // way to tell (or change) which pipeline Enhance would actually run.
+  function refreshSourceUI() {
+    const native = isNativeSource();
+    enhTitle.textContent = native ? "LOCAL ENHANCE (native CLIP)" : "OLLAMA ENHANCE";
+    if (native) {
+      statusTag.textContent = "runs through ComfyUI's own model loading — no external server";
+      statusTag.style.color = C.muted;
+      renderModelSel();
+    } else {
+      refreshOllama();
+    }
   }
 
   async function refreshOllama() {
@@ -1068,7 +1108,7 @@ export function createPromptEditOverlay(state, ctx, onApply) {
       if (selected >= state.prompts.length) selected = 0;
       renderModes(); renderImageRow(); renderAll();
       if (!systemPrompt) loadSystemPrompt();
-      refreshOllama();
+      refreshSourceUI();
       refreshSetsList();
       setTimeout(() => editor.focus(), 60);
     },
