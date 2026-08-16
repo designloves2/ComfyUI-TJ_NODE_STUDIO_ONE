@@ -72,7 +72,7 @@ export function createGalleryOverlay(state, ctx) {
   let stitchOrder = [];   // array of video keys (filename|subfolder), in pick order
   const vKey = v => `${v.subfolder || ""}|${v.filename}`;
 
-  const stitchBtn = el("button", { type: "button", text: "🔗 스티치", title: "Pick clips in order, then combine into one file", style: {
+  const stitchBtn = el("button", { type: "button", text: "🔗 Stitch", title: "Pick clips in order, then combine into one file", style: {
     cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "5px 11px",
     borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
   }});
@@ -105,7 +105,7 @@ export function createGalleryOverlay(state, ctx) {
     const total = known.every(s => s != null) ? known.reduce((a, b) => a + b, 0) : null;
     const sizes = new Set(picked.map(v => `${v.meta?.w || "?"}x${v.meta?.h || "?"}`));
     let text = `${picked.length} / ${STITCH_MAX} selected`;
-    if (picked.length >= STITCH_MAX) text += " · 더 긴 편집은 영상 편집기를 쓰세요";
+    if (picked.length >= STITCH_MAX) text += " · longer edits need a real video editor";
     if (total != null) text += ` · ≈${total.toFixed(2)}s`;
     if (sizes.size > 1) text += ` · ⚠ mixed resolution (${[...sizes].join(", ")}) — stitch may fail or look off`;
     stitchInfo.textContent = text;
@@ -292,7 +292,7 @@ export function createGalleryOverlay(state, ctx) {
           const idx = stitchOrder.indexOf(key);
           if (idx !== -1) stitchOrder.splice(idx, 1);
           else if (stitchOrder.length < STITCH_MAX) stitchOrder.push(key);
-          else { ctx.showPopup?.(`${STITCH_MAX} / ${STITCH_MAX} · 더 긴 편집은 영상 편집기를 쓰세요`, true); return; }
+          else { ctx.showPopup?.(`${STITCH_MAX} / ${STITCH_MAX} · longer edits need a real video editor`, true); return; }
           renderGrid();
         });
         if (picked) {

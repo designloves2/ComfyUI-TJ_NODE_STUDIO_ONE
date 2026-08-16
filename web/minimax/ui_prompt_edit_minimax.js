@@ -81,7 +81,7 @@ export function createPromptEditOverlay(state, ctx, onApply) {
   }});
   undoBtn.addEventListener("click", undo);
   hdr.appendChild(undoBtn);
-  const resetBtn = el("button", { type: "button", text: "↺ 초기화", title: "Reset prompts, header and footer", style: {
+  const resetBtn = el("button", { type: "button", text: "↺ Reset", title: "Reset prompts, header and footer", style: {
     cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 11px",
     borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
   }});
@@ -102,17 +102,17 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     display: "flex", flexDirection: "column", gap: "10px", boxShadow: "0 8px 30px rgba(0,0,0,0.5)",
   }});
   resetConfirmBox.appendChild(el("div", {
-    text: "프롬프트 설정을 초기화하시겠습니까?",
+    text: "Reset prompt settings?",
     style: { color: "#fff", fontSize: "13px", fontWeight: "700" } }));
   resetConfirmBox.appendChild(el("div", {
-    text: "프롬프트 1개만 남고 공통 머리말·꼬리말이 지워집니다.",
+    text: "This clears every prompt down to one, plus the common header/footer.",
     style: { color: C.muted, fontSize: "11.5px", lineHeight: "1.5" } }));
   const resetBtnRow = el("div", { style: { display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "4px" } });
-  const resetCancelBtn = el("button", { type: "button", text: "취소", style: {
+  const resetCancelBtn = el("button", { type: "button", text: "Cancel", style: {
     cursor: "pointer", fontFamily: "inherit", fontSize: "11.5px", padding: "6px 14px",
     borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
   }});
-  const resetConfirmBtn = button("초기화", () => {
+  const resetConfirmBtn = button("Reset", () => {
     snapshot("reset");
     state.prompts = [{ text: "", firstFrame: "", enabled: true }];
     state.promptHeader = "";
@@ -145,9 +145,9 @@ export function createPromptEditOverlay(state, ctx, onApply) {
       borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`, flexShrink: "0",
     }});
   }
-  const setLoadBtn = setBtn("📂 불러오기", "Load this set — replaces all current prompts");
-  const setSaveBtn = setBtn("💾 저장", "Save current prompts as a named set");
-  const setDelBtn  = setBtn("🗑 삭제", "Delete this set");
+  const setLoadBtn = setBtn("📂 Load", "Load this set — replaces all current prompts");
+  const setSaveBtn = setBtn("💾 Save", "Save current prompts as a named set");
+  const setDelBtn  = setBtn("🗑 Delete", "Delete this set");
   setsWrap.append(setsSel, setLoadBtn, setSaveBtn, setDelBtn);
 
   async function refreshSetsList(selectName) {
