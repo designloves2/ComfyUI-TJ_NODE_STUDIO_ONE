@@ -2,6 +2,41 @@
 
 ---
 
+## v1.12.0 (2026-08-18)
+
+### Anima ONE STUDIO (신규 노드 / new node)
+
+ComfyUI 네이티브 애니메이션풍 이미지 모델 **Anima**를 위한 7번째 ONE STUDIO 노드.
+
+- 모드 4종: T2I · Inpainting · Any Control to Image · Depth Control to Image
+- Turbo LoRA 토글 — Base 1.0 체크포인트에 터보 LoRA를 얹고 30→8 steps / CFG 4→1로 자동 전환
+  (공식 ComfyUI Anima 템플릿의 `ComfySwitchNode` 동작을 그대로 재현)
+- T2I는 Preview3-base 체크포인트로도 전환 가능
+- Inpainting / Any Control은 별도 마스크 파일 업로드 대신 **인라인 마스크 페인터**(브러시·
+  지우개·줌/팬·반전) 사용 — Z-Image의 INPAINT 모드와 동일한 컴포넌트
+- Depth Control은 소스 이미지에서 DepthAnythingV2로 뎁스맵 자동 추출
+- Settings / Gallery(Send to 포함) / 프롬프트 템플릿 / LLM 프롬프트 강화 패널 전부 다른
+  ONE STUDIO 노드와 동일한 구조로 제공
+- LLM 강화 패널의 Model Format에 **"Anima (anime illustration prose)"** 프리셋 추가
+  (ComfyUI-TJ_NODE 쪽 `model_formats.json`)
+- 모델/LoRA 요구사항 상세는 `SPEC_ANIMA_ONE_STUDIO.md` 참고
+
+### 마스크 에디터 — 공용 모듈로 통합 + 버그 수정
+
+Z-Image INPAINT 모드의 인라인 마스크 에디터(브러시/지우개/줌/팬 + "크게 편집" 팝업)를
+`web/shared/mask_paint.js`로 추출해 Anima를 포함한 모든 노드가 같은 구현을 공유하도록 변경.
+
+- **버그 수정**: 저장된 마스크를 다시 불러올 때 B&W PNG → 알파 변환 루프가
+  `imgData.data[3] = imgData.data[i]`로 되어 있어 항상 0번 픽셀의 알파만 갱신하고 있었음
+  (`data[i + 3]`이어야 함). 저장된 마스크는 전체가 불투명이라, 이 버그로 인해 이미지를
+  다시 불러오면 화면 전체가 마스크로 덮여 보이는 문제가 있었음 — Klein / Qwen2511 / SDXL /
+  공용 모듈(Z-Image·Anima) 총 4곳에서 동일하게 수정
+- **브러시 커서**: OS 십자 커서 대신 실제 브러시 반경 크기의 원을 캔버스에 직접 그려서
+  칠해질 영역이 정확히 보이게 함(줌 배율에 맞춰 크기도 같이 변함), 지우개는 점선으로 구분
+- **Invert 버튼** 추가 — 칠한 영역과 비워둔 영역을 반전(신규 요청 기능)
+
+---
+
 ## v1.11.0 (2026-08-17)
 
 ### MiniMax H3 — One-Take (latent continuation)

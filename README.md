@@ -1,11 +1,15 @@
 # TJ NODE STUDIO ONE (통합 패키지)
 # TJ NODE STUDIO ONE (Integrated Package)
 
-> **ComfyUI 올인원 이미지 생성 UI 패키지** — Z-Image ONE STUDIO, Flux.2 Klein ONE STUDIO, Qwen Image Edit 2511 ONE STUDIO, Krea 2 ONE STUDIO, **SDXL ONE STUDIO**, Minimax H3 ONE STUDIO 여섯 가지 노드를 단일 패키지로 제공합니다.  
-> **ComfyUI all-in-one image generation UI package** — Z-Image ONE STUDIO, Flux.2 Klein ONE STUDIO, Qwen Image Edit 2511 ONE STUDIO, Krea 2 ONE STUDIO, **SDXL ONE STUDIO**, Minimax H3 ONE STUDIO provides six nodes in a single package.
+> **ComfyUI 올인원 이미지 생성 UI 패키지** — Z-Image ONE STUDIO, Flux.2 Klein ONE STUDIO, Qwen Image Edit 2511 ONE STUDIO, Krea 2 ONE STUDIO, **SDXL ONE STUDIO**, Minimax H3 ONE STUDIO, **Anima ONE STUDIO** 일곱 가지 노드를 단일 패키지로 제공합니다.  
+> **ComfyUI all-in-one image generation UI package** — Z-Image ONE STUDIO, Flux.2 Klein ONE STUDIO, Qwen Image Edit 2511 ONE STUDIO, Krea 2 ONE STUDIO, **SDXL ONE STUDIO**, Minimax H3 ONE STUDIO, **Anima ONE STUDIO** — seven nodes in a single package.
 >
 > 워크플로우 배선 없이 노드 하나에서 T2I · I2I · Inpaint · Outpaint · ControlNet · Edit · Faceswap · ANGLE · Upscale(SeedVR2) 등 다양한 모드를 전환합니다.
 > switch between modes in a single node without workflow wiring T2I · I2I · Inpaint · Outpaint · ControlNet · Edit · Faceswap · ANGLE · Upscale(SeedVR2) etc. switch between various modes.
+>
+> 🆕 **Anima ONE STUDIO가 새롭게 추가되었습니다.** ComfyUI 네이티브 애니메이션풍 이미지 모델 Anima를 위한 노드로, T2I · Inpainting · Any Control to Image · Depth Control to Image 4가지 모드와 Turbo LoRA 토글, 브러시로 직접 칠하는 인라인 마스크 에디터(반전 포함)를 제공합니다.
+>
+> 🆕 **Anima ONE STUDIO has been added.** A node for ComfyUI's native anime-style image model Anima, with T2I · Inpainting · Any Control to Image · Depth Control to Image modes, a Turbo LoRA toggle, and an inline brush-paint mask editor (with invert).
 >
 > 미니맥스 H3 노드가 새롭게 추가 되었습니다. FL2VA / REF2VA / Turbo Lora / Cache와 멀티 프롬포트로 동시에 여러개의 클립을 생성하거나 이전 클립의 라스트 프레임을 다음 클립의 퍼스트 프레임으로 받아서 연속적인 영상을 만들수 있습니다. 여러개 클립의 생성시 최종 클립이 완료되면 모든 영상을 스티치하여 하나의 영상으로 생성도 가능합니다.
 >
@@ -16,6 +20,15 @@
 >
 > ⚠️ **생성 방식**: 모든 노드의 생성은 ComfyUI 상단 **RUN**이 아닌 노드 내부의 **▶ Generate** 버튼으로 실행합니다. RUN 실행 시 마지막으로 생성된 이미지가 OUTPUT image 슬롯으로 출력됩니다.
 > ⚠️ **Generation Method**: generation for all nodes is executed using at the top of ComfyUI **RUN**instead of, use the button inside the node **▶ Generate** button. When RUN is executed, the most recently generated image is output through the OUTPUT image slot..
+
+---
+
+## 🌐 웹 버전 — AI ONE STUDIO
+## 🌐 Web Version — AI ONE STUDIO
+
+**[designloves2/AI-ONE-STUDIO](https://github.com/designloves2/AI-ONE-STUDIO)** — 이 커스텀 노드 패키지의 UI를 그대로 재현한 독립 웹 애플리케이션입니다. ComfyUI를 백엔드로 그대로 사용하며(Manager/노드 설치 불필요, ComfyUI 서버만 켜져 있으면 됨), 브라우저에서 ComfyUI 캔버스 없이 풀스크린 메뉴형 UI로 각 ONE STUDIO 툴을 바로 사용할 수 있습니다.
+
+**[designloves2/AI-ONE-STUDIO](https://github.com/designloves2/AI-ONE-STUDIO)** — a standalone web app that reproduces this custom-node package's UI as-is. It runs against a plain ComfyUI server as its backend (no Manager or node install needed on the client side — just keep ComfyUI running), and lets you use every ONE STUDIO tool in a fullscreen, menu-driven UI in the browser, without the ComfyUI graph canvas.
 
 ---
 
@@ -65,6 +78,7 @@
 | **Krea 2 ONE STUDIO (TJ)** | Krea.ai 이미지 생성 모델<br><sub>Krea.ai image generation model</sub>| T2I · I2I · **ControlNet(depth/canny 🧪)** · **IDENTITY 🧪** · **Upscale** |
 | **SDXL ONE STUDIO (TJ)** 🧪 | SDXL Checkpoint / Separate UNET 모델<br><sub>SDXL Checkpoint / Separate UNET model</sub>| T2I · I2I · Inpaint · Outpaint · Upscale *(테스트 버전 / Test Version)* |
 | **MiniMax H3 ONE STUDIO (TJ)** 🧪 | MiniMax H3 영상+오디오 생성 모델<br><sub>MiniMax H3 video + audio model</sub>| Text / First-Last / Reference · **클립 릴레이 + 자동 합본** · 라이브 프리뷰 *(실험적 / Experimental)* |
+| **Anima ONE STUDIO (TJ)** 🆕 | Anima (ComfyUI 네이티브 애니메이션풍 이미지 모델)<br><sub>Anima (ComfyUI-native anime-style image model)</sub>| T2I · Inpainting · Any Control to Image · Depth Control to Image · **Turbo LoRA** · **인라인 마스크 페인터**<br><sub>T2I · Inpainting · Any Control to Image · Depth Control to Image · **Turbo LoRA** · **inline mask painter**</sub>|
 
 > **언어 지원**: 모든 노드의 Settings에서 한국어 / English 전환 가능
 > **Language Support**: Korean / English can be selected in Settings for every node
@@ -506,8 +520,28 @@ MiniMax H3 only accepts frame counts on a **17k+5 grid** and a single pass is VR
 ## 버그 수정 이력
 ## Bug Fix History
 
-### v1.11.0 (현재) — MiniMax H3: 프롬프트 워크벤치 + One-Take
-### v1.11.0 (Current) — MiniMax H3: prompt workbench + One-Take
+### v1.12.0 (현재) — Anima ONE STUDIO 신규 + 마스크 에디터 공용화
+### v1.12.0 (Current) — new Anima ONE STUDIO + shared mask editor
+
+- **[신규] Anima ONE STUDIO** — T2I · Inpainting · Any Control to Image · Depth Control to
+  Image, Turbo LoRA 토글, 인라인 마스크 페인터(반전 포함), 다른 노드와 동일한 Settings/
+  Gallery(Send to)/템플릿/LLM 강화 패널 구조
+- **[new] Anima ONE STUDIO** — T2I · Inpainting · Any Control to Image · Depth Control to
+  Image, a Turbo LoRA toggle, an inline mask painter (with invert), and the same
+  Settings/Gallery(Send to)/template/LLM-enhance structure as every other node
+- **마스크 에디터를 `web/shared/mask_paint.js`로 통합** — Z-Image INPAINT 모드의 인라인
+  브러시/지우개/줌팬 에디터를 모든 노드가 공유
+- **shared mask editor** — Z-Image's INPAINT inline brush/eraser/zoom-pan editor is now
+  one module every node reuses
+- **마스크 재로드 버그 수정** — 저장된 마스크를 다시 불러올 때 알파 채널 변환이 첫 픽셀에만
+  적용되어 이미지 전체가 마스크로 덮여 보이던 문제 (Klein/Qwen2511/SDXL/공용 모듈 4곳)
+- **fixed mask-reload bug** — reloading a saved mask only rebuilt alpha on pixel 0, so the
+  whole image read as masked (fixed in Klein/Qwen2511/SDXL/the shared module — 4 spots)
+- **브러시 커서를 실제 반경 원으로 표시**, **Invert 버튼** 추가
+- **brush cursor now shows the true-radius ring**, added an **Invert** button
+
+### v1.11.0 — MiniMax H3: 프롬프트 워크벤치 + One-Take
+### v1.11.0 — MiniMax H3: prompt workbench + One-Take
 
 - **[MiniMax H3] One-Take (latent continuation) 신규** — TJ_NODE에 `TJ_H3_LatentContinuation` /
   `TJ_H3_SaveLatentCheckpoint` / `TJ_H3_LoadLatentCheckpoint` 3개 노드 신설. 클립의 샘플링된

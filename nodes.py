@@ -25,6 +25,7 @@ K2_CONFIG_PATH  = os.path.join(NODE_DIR, 'config_krea2.json')
 QE_CONFIG_PATH  = os.path.join(NODE_DIR, 'config_qwen2511.json')
 SDXL_CONFIG_PATH = os.path.join(NODE_DIR, 'config_sdxl_one.json')
 MMH3_CONFIG_PATH = os.path.join(NODE_DIR, 'config_minimax_h3.json')
+ANIMA_CONFIG_PATH = os.path.join(NODE_DIR, 'config_anima.json')
 
 FK_SUBFOLDER  = "one_flux2-klein"
 ZIT_SUBFOLDER = "one_z-image"
@@ -32,6 +33,7 @@ K2_SUBFOLDER  = "one_krea2"
 QE_SUBFOLDER  = "one_qwen2511"
 SDXL_SUBFOLDER = "one_sdxl"
 MMH3_SUBFOLDER = "one_minimax_h3"
+ANIMA_SUBFOLDER = "one_anima"
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -2316,6 +2318,83 @@ async def mmh3_set_last_image(request):
 
 
 # ════════════════════════════════════════════════════════════════════════════════
+# Route registration — anima_one
+# ════════════════════════════════════════════════════════════════════════════════
+
+PromptServer.instance.routes.get("/anima_one/gallery")(_make_gallery_handler(ANIMA_SUBFOLDER, "anima"))
+PromptServer.instance.routes.post("/anima_one/save_meta")(_make_save_meta_handler("anima"))
+PromptServer.instance.routes.post("/anima_one/update_meta")(_make_update_meta_handler("anima"))
+PromptServer.instance.routes.get("/anima_one/meta")(_make_meta_get_handler())
+PromptServer.instance.routes.post("/anima_one/open_folder")(_make_open_folder_handler())
+PromptServer.instance.routes.post("/anima_one/delete")(_make_delete_handler("anima"))
+PromptServer.instance.routes.post("/anima_one/copy_to_input")(_make_copy_to_input_handler("anima"))
+
+
+@PromptServer.instance.routes.get("/anima_one/config")
+async def anima_get_config(request):
+    cfg = _load_config(ANIMA_CONFIG_PATH)
+    return web.json_response({
+        "selected_model":         cfg.get("selected_model",         "anima-base-v1.0.safetensors"),
+        "selected_preview_model": cfg.get("selected_preview_model", "anima-preview3-base.safetensors"),
+        "selected_text_encoder":  cfg.get("selected_text_encoder",  "qwen_3_06b_base.safetensors"),
+        "selected_vae":           cfg.get("selected_vae",           "qwen_image_vae.safetensors"),
+        "selected_turbo_lora":    cfg.get("selected_turbo_lora",    "anima-turbo-lora-v0.2.safetensors"),
+        "save_subfolder":         cfg.get("save_subfolder")         or ANIMA_SUBFOLDER,
+        "negative_prompt":        cfg.get("negative_prompt",        ""),
+        "output_mode_visible":    cfg.get("output_mode_visible",    True),
+    })
+
+
+@PromptServer.instance.routes.post("/anima_one/config")
+async def anima_save_config(request):
+    try:
+        patch = await request.json()
+        if not isinstance(patch, dict):
+            return web.json_response({"ok": False, "error": "invalid payload"}, status=400)
+        cfg = _load_config(ANIMA_CONFIG_PATH)
+        cfg.update(patch)
+        _save_config(ANIMA_CONFIG_PATH, cfg)
+        return web.json_response({"ok": True})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+
+@PromptServer.instance.routes.get("/anima_one/models")
+async def anima_get_models(request):
+    try:
+        diff = _scan("diffusion_models")
+    except Exception:
+        diff = ["none"]
+    try:
+        te = _scan("text_encoders")
+    except Exception:
+        te = ["none"]
+    try:
+        vaes = _scan("vae")
+    except Exception:
+        vaes = ["none"]
+    loras = _scan("loras")
+    return web.json_response({
+        "diffusion_models": diff,
+        "text_encoders":    te,
+        "vaes":              vaes,
+        "loras":             loras,
+    })
+
+
+_anima_last_images: dict = {}
+
+
+@PromptServer.instance.routes.post("/anima_one/set_last_image")
+async def anima_set_last_image(request):
+    data = await request.json()
+    uid = str(data.get("unique_id", ""))
+    if uid:
+        _anima_last_images[uid] = data.get("image", {})
+    return web.json_response({"ok": True})
+
+
+# ════════════════════════════════════════════════════════════════════════════════
 # Node classes
 # ════════════════════════════════════════════════════════════════════════════════
 
@@ -2619,6 +2698,52 @@ class TJStudioOneTextOutput:
         return {"ui": {"text": [text]}}
 
 
+class AnimaOneTJNode:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {},
+            "optional": {
+                "prompt_override": ("STRING", {
+                    "default": "",
+                    "multiline": True,
+                    "forceInput": True,
+                    "tooltip": "External prompt override — prepended before the internal prompt.",
+                }),
+                "pipe": ("TJ_PROMPT_PIPE", {
+                    "tooltip": "PromptDB pipe (TJ_NODE). At generation, fields present in the pipe override this node's settings; missing fields keep the node's own values. The node's UI is never changed.",
+                }),
+            },
+            "hidden": {"unique_id": "UNIQUE_ID"},
+        }
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("image",)
+    FUNCTION = "get_output_image"
+    CATEGORY = " ✨ TJ_Node/Generator"
+    OUTPUT_NODE = True
+
+    def get_output_image(self, unique_id=None, prompt_override="", **kwargs):
+        uid = str(unique_id) if unique_id else ""
+        info = _anima_last_images.get(uid, {})
+        try:
+            filename = info.get("filename")
+            if filename:
+                img_type = info.get("type", "output")
+                subfolder = info.get("subfolder", "") or ""
+                base = folder_paths.get_output_directory() if img_type == "output" else folder_paths.get_input_directory()
+                path = os.path.join(base, subfolder, filename) if subfolder else os.path.join(base, filename)
+                img = Image.open(path).convert("RGB")
+                arr = np.array(img).astype(np.float32) / 255.0
+                return (torch.from_numpy(arr)[None,],)
+        except Exception as e:
+            print(f"[Anima] output slot error: {e}")
+        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32),)
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return float("nan")
+
+
 NODE_CLASS_MAPPINGS = {
     "Flux2KleinOneTJNode":         Flux2KleinOneTJNode,
     "ZImageTurboOneNode":          ZImageTurboOneNode,
@@ -2627,6 +2752,7 @@ NODE_CLASS_MAPPINGS = {
     "SDXLOneTJNode":               SDXLOneTJNode,
     "MiniMaxH3OneTJNode":          MiniMaxH3OneTJNode,
     "TJStudioOneTextOutput":       TJStudioOneTextOutput,
+    "AnimaOneTJNode":              AnimaOneTJNode,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "Flux2KleinOneTJNode":         "Flux.2 Klein ONE STUDIO (TJ)",
@@ -2636,4 +2762,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "SDXLOneTJNode":               "SDXL ONE STUDIO (TJ)",
     "MiniMaxH3OneTJNode":          "MiniMax H3 ONE STUDIO (TJ)",
     "TJStudioOneTextOutput":       "TJ Studio ONE — Text Output",
+    "AnimaOneTJNode":              "Anima ONE STUDIO (TJ)",
 }

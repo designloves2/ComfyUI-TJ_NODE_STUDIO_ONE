@@ -1,0 +1,10 @@
+{
+  "save_subfolder": "",
+  "output_mode_visible": true,
+  "selected_model": "Anima\\anima-base-v1.0.safetensors",
+  "selected_preview_model": "Anima\\anima-base-v1.0.safetensors",
+  "selected_text_encoder": "Anima\\qwen_3_06b_base.safetensors",
+  "selected_vae": "qwen_image_vae.safetensors",
+  "selected_turbo_lora": "Anima\\anima-turbo-lora-v0.2.safetensors",
+  "negative_prompt": "worst quality, low quality, score_1, score_2, score_3, blurry, jpeg artifacts, sepia"
+}

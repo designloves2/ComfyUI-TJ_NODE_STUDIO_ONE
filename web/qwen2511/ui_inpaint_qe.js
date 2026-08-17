@@ -162,7 +162,7 @@ export function mountInpaintLeft(leftEl, state, ctx) {
           const tmp=document.createElement("canvas"); tmp.width=maskRef.origW; tmp.height=maskRef.origH;
           const tctx=tmp.getContext("2d"); tctx.drawImage(mImg,0,0,maskRef.origW,maskRef.origH);
           const imgData=tctx.getImageData(0,0,maskRef.origW,maskRef.origH);
-          for (let i=0;i<imgData.data.length;i+=4) imgData.data[3]=imgData.data[i];
+          for (let i=0;i<imgData.data.length;i+=4) imgData.data[i+3]=imgData.data[i];
           tctx.putImageData(imgData,0,0);
           maskRef.canvas.getContext("2d").drawImage(tmp,0,0);
           engine.schedRender();

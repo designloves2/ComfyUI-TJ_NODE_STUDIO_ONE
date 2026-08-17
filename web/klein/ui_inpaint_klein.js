@@ -342,7 +342,7 @@ function createMaskEditor(state, ctx, showPopupFn) {
           tctx.drawImage(mImg, 0, 0, maskRef.origW, maskRef.origH);
           const imgData = tctx.getImageData(0, 0, maskRef.origW, maskRef.origH);
           for (let i = 0; i < imgData.data.length; i += 4) {
-            imgData.data[3] = imgData.data[i]; // alpha = red channel (white=255, black=0)
+            imgData.data[i + 3] = imgData.data[i]; // alpha = red channel (white=255, black=0)
           }
           tctx.putImageData(imgData, 0, 0);
           const mctx = maskRef.canvas.getContext("2d");
