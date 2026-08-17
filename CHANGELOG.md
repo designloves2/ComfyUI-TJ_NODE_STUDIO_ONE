@@ -2,6 +2,13 @@
 
 ---
 
+## v1.12.1 (2026-08-18)
+
+- 패키지 설명(`pyproject.toml`)에 Anima 반영 / package description now includes Anima
+- GitHub 저장소 About 설명 업데이트 / updated GitHub repo About description
+
+---
+
 ## v1.12.0 (2026-08-18)
 
 ### Anima ONE STUDIO (신규 노드 / new node)
