@@ -63,9 +63,18 @@ function baseGraph(state, promptText) {
   const { graph: lg, modelOut } = withLoraChain(["K2:unet", 0], state.loras || []);
   Object.assign(g, lg);
 
-  // Krea2 negative = ConditioningZeroOut (zero out the positive)
   g["K2:positive"] = { class_type: "CLIPTextEncode", inputs: { clip: ["K2:clip", 0], text: promptText || "" } };
-  g["K2:negative"] = { class_type: "ConditioningZeroOut", inputs: { conditioning: ["K2:positive", 0] } };
+
+  // Negative prompt from ⚙ Settings, actually encoded — a real negative only does
+  // anything under classic CFG (the raw/non-distilled model, cfg > 1), but it's wired
+  // the same way regardless of which model is selected: this was previously hard-coded
+  // to ConditioningZeroOut unconditionally, so Settings' negative-prompt field was
+  // silently ignored no matter what model was in use. Falls back to zero-out only when
+  // the field is actually empty, which keeps the old (correct) default for that case.
+  const negativeText = (state.negativePrompt || "").trim();
+  g["K2:negative"] = negativeText
+    ? { class_type: "CLIPTextEncode", inputs: { clip: ["K2:clip", 0], text: negativeText } }
+    : { class_type: "ConditioningZeroOut", inputs: { conditioning: ["K2:positive", 0] } };
 
   return { g, modelOut };
 }
