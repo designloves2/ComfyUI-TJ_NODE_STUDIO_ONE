@@ -520,8 +520,17 @@ MiniMax H3 only accepts frame counts on a **17k+5 grid** and a single pass is VR
 ## 버그 수정 이력
 ## Bug Fix History
 
-### v1.12.0 (현재) — Anima ONE STUDIO 신규 + 마스크 에디터 공용화
-### v1.12.0 (Current) — new Anima ONE STUDIO + shared mask editor
+### v1.13.0 (현재) — 프롬프트 템플릿 저장소 독립화
+### v1.13.0 (Current) — prompt-template storage decoupled
+
+- **사용자 템플릿을 Klein config에서 완전히 독립** — nl 풀(Klein·Krea2·Z-Image·Qwen2511·
+  Anima 공유) / tag 풀(SDXL 전용) 두 개로 분리. 기존 템플릿은 중복 제거 후 자동 병합
+- **decoupled custom templates from Klein's config** — split into an nl pool (shared by
+  Klein/Krea2/Z-Image/Qwen2511/Anima) and a tag pool (SDXL only); existing templates
+  auto-merged (deduped) on first boot
+
+### v1.12.0 — Anima ONE STUDIO 신규 + 마스크 에디터 공용화
+### v1.12.0 — new Anima ONE STUDIO + shared mask editor
 
 - **[신규] Anima ONE STUDIO** — T2I · Inpainting · Any Control to Image · Depth Control to
   Image, Turbo LoRA 토글, 인라인 마스크 페인터(반전 포함), 다른 노드와 동일한 Settings/

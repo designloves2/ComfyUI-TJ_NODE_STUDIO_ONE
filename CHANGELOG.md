@@ -2,6 +2,34 @@
 
 ---
 
+## v1.13.0 (2026-08-18)
+
+### 프롬프트 템플릿 저장소 독립화 / prompt-template storage decoupled
+
+사용자 지정("MY TEMPLATES") 프롬프트 템플릿을 더 이상 Klein의 `config_klein.json`에
+얹혀사는 방식이 아니라, 독립된 공용 저장소 두 개로 분리했다. 프롬프트가 자연어냐
+태그/가중치 방식이냐로 나눔:
+
+- **nl 풀** (자연어) — Klein · Krea2 · Z-Image · Qwen2511 · Anima 5개 도구가 공유
+- **tag 풀** (태그/가중치) — SDXL 전용, nl 풀과 완전히 분리
+
+신규 백엔드 라우트 `/shared/prompt_templates?pool=nl|tag` (`templates_prompt_nl.json` /
+`templates_prompt_tag.json`), 신규 프론트엔드 `web/shared/api_templates.js`. 최초 기동 시
+nl 풀은 기존에 흩어져 있던 Klein·Z-Image의 저장 템플릿을 이름+내용 기준 중복 제거해
+자동 병합 — 기존 사용자 템플릿 유실 없음. Z-Image 전용 사본이던
+`web/zimage/ui_prompt_templates.js`는 삭제, 이제 Klein과 같은 파일을 pool="nl"로 공유.
+
+The custom "MY TEMPLATES" pool no longer piggybacks on Klein's own config file — it's
+now two independent shared stores split by prompt style: an **nl** pool (natural
+language: Klein, Krea2, Z-Image, Qwen2511, Anima) and a **tag** pool (tag/weight
+syntax: SDXL only). New backend route `/shared/prompt_templates?pool=nl|tag`, new
+frontend `web/shared/api_templates.js`. On first boot the nl pool auto-seeds from the
+union of Klein's and Z-Image's previously-separate saved templates (deduped by
+name+prompt) so nothing is lost. Z-Image's old standalone copy of the template-editor
+module is removed — it now shares Klein's file with pool="nl".
+
+---
+
 ## v1.12.1 (2026-08-18)
 
 - 패키지 설명(`pyproject.toml`)에 Anima 반영 / package description now includes Anima

@@ -941,7 +941,7 @@ app.registerExtension({
         if (!mod.createTemplateOverlay) return;
         const tOv = mod.createTemplateOverlay(state, ctx, txt => {
           setModePrompt(state.mode, txt); promptTA.value = txt; persist(); updateCount();
-        });
+        }, "nl");
         root.appendChild(tOv.el);
         tplBtn.onclick = () => tOv.show();
       }).catch(() => {});

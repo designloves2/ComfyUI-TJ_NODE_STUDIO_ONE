@@ -1,7 +1,13 @@
 // ui_prompt_templates.js — built-in categorized + custom prompt templates
+//
+// Custom templates live in a shared pool independent of any one tool's own config
+// file (web/shared/api_templates.js) — NOT Klein's config, despite this file's
+// location. See SPEC_ZIMAGE_TEMPLATE_SHARING.md. `pool` picks which one:
+//   "nl"  (default) — Klein, Krea2, Z-Image, Qwen2511, Anima
+//   "tag"            — SDXL
 import { C, el, clear } from "./core_klein.js";
 import { panel, label, button, row } from "./ui_common.js";
-import { getConfig, saveConfig } from "./api_klein.js";
+import { getTemplates, saveTemplates } from "../shared/api_templates.js";
 
 // ── Built-in templates keyed by mode ─────────────────────────────────────────
 const BUILT_IN = {
@@ -100,7 +106,7 @@ export function createTemplateBtn(onSelect) {
 }
 
 // ── Full template overlay ─────────────────────────────────────────────────────
-export function createTemplateOverlay(state, ctx, onApply) {
+export function createTemplateOverlay(state, ctx, onApply, pool = "nl") {
   const ov = el("div", { style: {
     position: "absolute", inset: "0", zIndex: "9996",
     background: "rgba(11,11,11,0.97)", borderRadius: "inherit",
@@ -227,7 +233,7 @@ export function createTemplateOverlay(state, ctx, onApply) {
   }
 
   function saveCustom() {
-    saveConfig({ t2i_templates: customTemplates }).catch(() => {});
+    saveTemplates(pool, customTemplates).catch(() => {});
   }
 
   let loaded = false;
@@ -238,8 +244,8 @@ export function createTemplateOverlay(state, ctx, onApply) {
       renderBuiltIn();
       if (!loaded) {
         loaded = true;
-        getConfig().then(cfg => {
-          customTemplates = Array.isArray(cfg.t2i_templates) ? cfg.t2i_templates : [];
+        getTemplates(pool).then(d => {
+          customTemplates = Array.isArray(d.templates) ? d.templates : [];
           renderCustom();
         }).catch(() => renderCustom());
       }

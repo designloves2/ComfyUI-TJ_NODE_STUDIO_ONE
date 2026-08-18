@@ -17,7 +17,7 @@ import { mountFaceRedrawLeft } from "./ui_face_redraw.js";
 import { mountUpscaleLeft }   from "./ui_upscale.js";
 import { createSettingsOverlay }  from "./ui_app_settings.js";
 import { createGalleryOverlay }   from "./ui_gallery.js";
-import { createTemplateOverlay }  from "./ui_prompt_templates.js";
+import { createTemplateOverlay }  from "../klein/ui_prompt_templates.js";
 import { attachNodeState, restoreNodeState } from "../shared/node_state.js";
 
 // ── Layout ────────────────────────────────────────────────────────────────
@@ -697,7 +697,7 @@ app.registerExtension({
 
       templateOv=createTemplateOverlay(state,ctx,(prompt)=>{
         setModePrompt(state.mode,prompt); promptTA.value=prompt; persist(); updateCount();
-      });
+      },"nl");
 
       // Prompt expand overlay
       const promptExpandEl=el("div",{style:{

@@ -486,7 +486,7 @@ app.registerExtension({
       // Template overlay (Klein과 공유)
       import("./klein/ui_prompt_templates.js").then(mod=>{
         if(!mod.createTemplateOverlay)return;
-        const tOv=mod.createTemplateOverlay(state,ctx,txt=>{setModePrompt(state.mode,txt);promptTA.value=txt;persist();updateCount();});
+        const tOv=mod.createTemplateOverlay(state,ctx,txt=>{setModePrompt(state.mode,txt);promptTA.value=txt;persist();updateCount();},"nl");
         root.appendChild(tOv.el);
         tplBtn.onclick=()=>tOv.show();
       }).catch(()=>{});

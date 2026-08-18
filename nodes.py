@@ -27,6 +27,15 @@ SDXL_CONFIG_PATH = os.path.join(NODE_DIR, 'config_sdxl_one.json')
 MMH3_CONFIG_PATH = os.path.join(NODE_DIR, 'config_minimax_h3.json')
 ANIMA_CONFIG_PATH = os.path.join(NODE_DIR, 'config_anima.json')
 
+# Custom prompt templates, decoupled from any one tool's own config file — see
+# SPEC_ZIMAGE_TEMPLATE_SHARING.md. Two independent pools, split by prompt style:
+#   nl  — natural-language prompts: Klein, Krea2, Z-Image, Qwen2511, Anima
+#   tag — tag/weight-syntax prompts: SDXL
+PROMPT_TEMPLATE_POOLS = {
+    "nl":  os.path.join(NODE_DIR, 'templates_prompt_nl.json'),
+    "tag": os.path.join(NODE_DIR, 'templates_prompt_tag.json'),
+}
+
 FK_SUBFOLDER  = "one_flux2-klein"
 ZIT_SUBFOLDER = "one_z-image"
 K2_SUBFOLDER  = "one_krea2"
@@ -2392,6 +2401,60 @@ async def anima_set_last_image(request):
     if uid:
         _anima_last_images[uid] = data.get("image", {})
     return web.json_response({"ok": True})
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# Route registration — shared prompt template pools
+# ════════════════════════════════════════════════════════════════════════════════
+# Decoupled from any single tool's own config file. Two pools split by prompt
+# style — see SPEC_ZIMAGE_TEMPLATE_SHARING.md:
+#   nl  (natural-language): Klein, Krea2, Z-Image, Qwen2511, Anima
+#   tag (tag/weight syntax): SDXL
+# On first read, the "nl" pool is seeded once from the union of the two legacy
+# lists (config_klein.json + config_zimage.json's old, tool-local "t2i_templates")
+# so nobody's existing custom templates are silently dropped by the switch.
+
+def _seed_nl_pool_from_legacy():
+    seen = set()
+    merged = []
+    for path in (FK_CONFIG_PATH, ZIT_CONFIG_PATH):
+        cfg = _load_config(path)
+        for t in cfg.get("t2i_templates", []) or []:
+            key = (t.get("name", ""), t.get("prompt", ""))
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(t)
+    return merged
+
+
+@PromptServer.instance.routes.get("/shared/prompt_templates")
+async def shared_get_prompt_templates(request):
+    pool = request.query.get("pool", "nl")
+    path = PROMPT_TEMPLATE_POOLS.get(pool)
+    if not path:
+        return web.json_response({"ok": False, "error": f"unknown pool '{pool}'"}, status=400)
+    if not os.path.exists(path) and pool == "nl":
+        _save_config(path, {"templates": _seed_nl_pool_from_legacy()})
+    cfg = _load_config(path)
+    return web.json_response({"templates": cfg.get("templates", [])})
+
+
+@PromptServer.instance.routes.post("/shared/prompt_templates")
+async def shared_save_prompt_templates(request):
+    pool = request.query.get("pool", "nl")
+    path = PROMPT_TEMPLATE_POOLS.get(pool)
+    if not path:
+        return web.json_response({"ok": False, "error": f"unknown pool '{pool}'"}, status=400)
+    try:
+        data = await request.json()
+        templates = data.get("templates", [])
+        if not isinstance(templates, list):
+            return web.json_response({"ok": False, "error": "templates must be a list"}, status=400)
+        _save_config(path, {"templates": templates})
+        return web.json_response({"ok": True})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
 
 
 # ════════════════════════════════════════════════════════════════════════════════
