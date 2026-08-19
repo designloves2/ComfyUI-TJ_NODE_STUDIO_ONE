@@ -2,6 +2,36 @@
 
 ---
 
+## v1.13.1 (2026-08-20)
+
+### MiniMax H3 — 버그 수정 3건
+
+- **One-Take 생성 실패 수정** — TJ_NODE의 `TJ_H3_LoadLatentCheckpoint`에 나중에 필수(required)
+  로 추가된 `strict` 입력을 이 저장소의 그래프 빌더가 채우지 않아, One-Take 두 번째 클립부터
+  프롬프트 검증에서 튕기던 문제. `strict: true`를 명시해서 수정
+- **fixed One-Take generation failure** — TJ_NODE's `TJ_H3_LoadLatentCheckpoint` later gained a
+  required `strict` input that this repo's graph builder never supplied, failing prompt
+  validation from the second One-Take clip onward. Fixed by explicitly sending `strict: true`
+- **One-Take + Auto-stitch 예상 총 길이 표시 수정** — 원테이크로 스티치하면 클립마다 겹침
+  구간(39프레임/1.625초)이 트림되는데, 좌측 패널의 "총 길이" 표시는 이걸 반영 안 하고 단순
+  합산만 보여주고 있었음. 이제 One-Take + Auto-stitch가 켜져 있으면 "single: Xs / onetake: Ys
+  total"로 (실제 스티치와 동일한 공식으로 계산한) 트림된 총 길이를 같이 보여줌
+- **fixed the estimated total-length display for One-Take + Auto-stitch** — the left-panel total
+  was a naive sum that ignored the per-clip overlap trim the actual stitch applies. Now shows
+  "single: Xs / onetake: Ys total" using the exact same trim formula as the real stitch, when
+  One-Take + Auto-stitch is active
+- **프리뷰의 ⛶ 전체화면 버튼 수정** — 이미지 전용 오버레이 헬퍼(`<img>` 태그)를 영상 URL에
+  그대로 써서 아무것도 안 보이던 버그. 영상용 오버레이(`openVideoFullscreen`, 재생 위치 유지,
+  ✕/ESC/바깥클릭으로 닫힘)를 새로 만들어 교체 — 더블클릭의 브라우저 네이티브 전체화면과는
+  다른 동작(주소창 유지)이 되도록 설계
+- **fixed the preview's ⛶ fullscreen button** — it rendered the video URL inside an image-only
+  overlay helper (`<img>` tag), showing nothing. Replaced with a new video-specific overlay
+  (`openVideoFullscreen`, resumes at current playback position, closes via ✕/ESC/outside-click)
+  — deliberately different from double-click's native browser fullscreen (keeps tab chrome
+  visible)
+
+---
+
 ## v1.13.0 (2026-08-18)
 
 ### 프롬프트 템플릿 저장소 독립화 / prompt-template storage decoupled

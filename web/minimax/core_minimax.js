@@ -137,9 +137,22 @@ export function clipPlan(state, clipFramesOverride, avgMinutesPerClip) {
   const total   = Math.max(1, (state.prompts || [""]).length);
   const count   = Math.max(0, activePrompts(state).length);
   const avg     = avgMinutesPerClip ?? state.avgMinutesPerClip ?? 13;
+  const actualSeconds = count * clipSec;
+
+  // One-Take + auto-stitch: the finished result isn't `count` clips end-to-end — each
+  // clip after the first shares `overlap` seconds with the previous one (that's the whole
+  // mechanism), and the auto-stitch step trims that overlap out. Same formula as the real
+  // stitch in one_node_minimax_h3.js (`totalSeconds = ... - (n-1) * overlapSec`), kept here
+  // too so the estimate shown before a run matches what actually gets saved.
+  const isOneTakeStitched = state.continuityMode === "onetake" && state.oneTakeAutoStitch !== false;
+  const overlapSec = framesToSeconds(alignFrameCount(ONE_TAKE_OVERLAP_FRAMES));
+  const stitchedSeconds = count > 1 ? actualSeconds - (count - 1) * overlapSec : actualSeconds;
+
   return {
     count, clipSec,
-    actualSeconds: count * clipSec,
+    actualSeconds,
+    isOneTakeStitched,
+    stitchedSeconds,
     estimateMinutes: count * avg,
     promptCount: total,
   };

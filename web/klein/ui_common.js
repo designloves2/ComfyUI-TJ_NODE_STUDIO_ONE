@@ -222,3 +222,38 @@ export function openFullscreen(url) {
   ov.appendChild(closeBtn);
   document.body.appendChild(ov);
 }
+
+// 결과 영상 전체화면 뷰어 — openFullscreen()의 영상판. In-page overlay (not the browser's
+// real Fullscreen API), so it does something double-click on the <video> doesn't already
+// do for free: keeps the tab chrome/address bar visible and closes with ✕/ESC/outside-click
+// instead of the OS fullscreen toggle.
+export function openVideoFullscreen(url, { startAt = 0 } = {}) {
+  let kh = null;
+  const ov = el("div", { style: {
+    position: "fixed", inset: "0", background: "rgba(0,0,0,0.95)", zIndex: "99999",
+    display: "flex", alignItems: "center", justifyContent: "center",
+  }});
+  const vid = el("video", { src: url, controls: "", autoplay: "", style: {
+    maxWidth: "95vw", maxHeight: "95vh", objectFit: "contain",
+    borderRadius: "6px",
+  }});
+  if (startAt > 0) vid.addEventListener("loadedmetadata", () => { vid.currentTime = startAt; }, { once: true });
+  const closeBtn = el("button", { text: "✕", type: "button", style: {
+    position: "fixed", top: "16px", right: "16px",
+    background: "rgba(40,40,40,0.9)", color: "#fff", border: "none",
+    borderRadius: "50%", width: "40px", height: "40px",
+    fontSize: "18px", cursor: "pointer", zIndex: "1",
+  }});
+  function close() {
+    document.removeEventListener("keydown", kh);
+    try { vid.pause(); } catch {}
+    document.body.removeChild(ov);
+  }
+  kh = e => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", kh);
+  ov.addEventListener("click", e => { if (e.target === ov) close(); });
+  closeBtn.addEventListener("click", close);
+  ov.appendChild(vid);
+  ov.appendChild(closeBtn);
+  document.body.appendChild(ov);
+}

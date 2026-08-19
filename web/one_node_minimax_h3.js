@@ -24,7 +24,7 @@ import {
   effectiveAccel, turboLoraForMode, explainGenerationError,
   promptText, promptFirstFrame, promptEnabled, activePrompts,
 } from "./minimax/core_minimax.js";
-import { panel, label, button, select, loraSelect, numberField, slider, row, col, modeBar, iconBtn, openFullscreen }
+import { panel, label, button, select, loraSelect, numberField, slider, row, col, modeBar, iconBtn, openVideoFullscreen }
   from "./klein/ui_common.js";
 import {
   queuePrompt, interrupt, freeMemory, setLastResult, stitchClips,
@@ -229,7 +229,14 @@ app.registerExtension({
       previewBox.append(placeholder, previewImg, previewVid, resultVid, badge, fsBtn);
 
       let lastResultURL = null;
-      fsBtn.addEventListener("click", () => { if (lastResultURL) openFullscreen(lastResultURL); });
+      // openFullscreen() (shared/klein/ui_common.js) renders the target inside an <img> —
+      // fine for the image tools it was written for, but a no-op here since lastResultURL
+      // is a video file: an <img src="*.mp4"> shows nothing. Double-click on resultVid
+      // already triggers the browser's own native Fullscreen API (it's a <video controls>
+      // element) — using that same API here would make this button do nothing double-click
+      // doesn't already do. openVideoFullscreen() is the in-page overlay instead: tab
+      // chrome/address bar stay visible, closes with ✕/ESC/outside-click.
+      fsBtn.addEventListener("click", () => { if (lastResultURL) openVideoFullscreen(lastResultURL, { startAt: resultVid.currentTime || 0 }); });
 
       function showPreviewFrame(dataURL, mime) {
         placeholder.style.display = "none";
@@ -451,9 +458,22 @@ app.registerExtension({
         const { width, height } = resolveResolution(state.aspect, state.megapixels);
         if (totalLine) {
           // Total length is derived, never typed: prompts x their repeat x clip length.
-          totalLine.innerHTML =
-            `<span style="font-size:20px;font-weight:700;color:${BRAND}">${p.actualSeconds.toFixed(2)}s</span>`
-            + `<span style="font-size:11px;color:${C.muted}"> total</span>`;
+          // One-Take + auto-stitch trims `overlap` seconds off every clip after the first,
+          // so the naive sum ("single") and what actually gets saved ("onetake") diverge —
+          // show both rather than silently picking one.
+          if (p.isOneTakeStitched && p.count > 1) {
+            totalLine.innerHTML =
+              `<span style="font-size:13px;color:${C.muted}">single: </span>`
+              + `<span style="font-size:15px;font-weight:700;color:${C.muted}">${p.actualSeconds.toFixed(2)}s</span>`
+              + `<span style="font-size:13px;color:${C.muted}"> / </span>`
+              + `<span style="font-size:13px;color:${C.muted}">onetake: </span>`
+              + `<span style="font-size:20px;font-weight:700;color:${BRAND}">${p.stitchedSeconds.toFixed(2)}s</span>`
+              + `<span style="font-size:11px;color:${C.muted}"> total</span>`;
+          } else {
+            totalLine.innerHTML =
+              `<span style="font-size:20px;font-weight:700;color:${BRAND}">${p.actualSeconds.toFixed(2)}s</span>`
+              + `<span style="font-size:11px;color:${C.muted}"> total</span>`;
+          }
         }
         if (planLine) {
           planLine.innerHTML =

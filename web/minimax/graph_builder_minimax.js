@@ -129,6 +129,10 @@ function buildOneTake(g, state, avail, clipIndex, prevCheckpointName, defaultLat
 
   g[N.chkLoad] = { class_type: "TJ_H3_LoadLatentCheckpoint", inputs: {
     checkpoint_name: prevCheckpointName,
+    // Required by TJ_NODE's node def even though it has a widget default — API-submitted
+    // graphs must always spell out required inputs explicitly. We're past clipIndex 0 here,
+    // so a missing checkpoint IS a real error and strict=true is the right value.
+    strict: true,
   }};
   g[N.continuation] = { class_type: "TJ_H3_LatentContinuation", inputs: {
     overlap_frames: ONE_TAKE_OVERLAP_FRAMES,
