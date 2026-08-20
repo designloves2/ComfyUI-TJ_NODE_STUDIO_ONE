@@ -97,7 +97,7 @@ export function createSettingsOverlay(state, ctx) {
   }
 
   // ── model dropdown state ───────────────────────────────────────────────────
-  let modelData = { diffusion_models: [], text_encoders: [], vaes: [], loras: [], upscale_models: [] };
+  let modelData = { diffusion_models: [], text_encoders: [], vaes: [], loras: [], upscale_models: [], vae_approx: [] };
   let availability = { available: {}, missing_optional: [] };
 
   function modelsTab() {
@@ -352,6 +352,16 @@ export function createSettingsOverlay(state, ctx) {
         col([label("Max resolution"), numField(state.previewMaxRes ?? 512, v => { state.previewMaxRes = Math.round(v); ctx.persist(); }, { step: "64" })]),
         col([label("JPEG quality"),   numField(state.previewQuality ?? 85, v => { state.previewQuality = Math.round(v); ctx.persist(); }, { step: "1" })]),
       ]),
+      (() => {
+        // Optional fast approx-decode VAE for the preview only (models/vae_approx/) — the
+        // real render always uses the full VAEs in the Models tab. Left unset,
+        // ModelPreviewOverrideKJ falls back to its own built-in approximation, not to any
+        // file in vae_approx: this dropdown was previously wired into the graph builder but
+        // never exposed here, so it always stayed unset.
+        const vx = ["none", ...(modelData.vae_approx || []).filter(x => x !== "none")];
+        const sel = searchableSelect(vx, state.previewTinyVae || "none", v => { state.previewTinyVae = v; ctx.persist(); });
+        return col([label("Preview VAE (tiny/approx, optional — models/vae_approx/)"), sel.el]);
+      })(),
       note,
     ]));
     return wrap;
@@ -421,6 +431,38 @@ export function createSettingsOverlay(state, ctx) {
       save_subfolder:  state.saveSubfolder || "",
       prompt_suffix:   state.promptSuffix  || "",
       avg_minutes_per_clip: state.avgMinutesPerClip ?? 13,
+      preview_tiny_vae: state.previewTinyVae || "",
+      preview_enabled:  state.previewEnabled !== false,
+      preview_frames:   state.previewFrames  ?? 8,
+      preview_fps:      state.previewFps     ?? 12,
+      preview_max_res:  state.previewMaxRes  ?? 512,
+      preview_quality:  state.previewQuality ?? 85,
+      turbo_lora_low_vram: state.turboLoraLowVram ?? false,
+      sampler:          state.sampler     || "res_multistep",
+      scheduler:        state.scheduler   || "simple",
+      denoise:          state.denoise     ?? 1.0,
+      shift_video:      state.shiftVideo  ?? 12,
+      shift_audio:      state.shiftAudio  ?? 3,
+      use_sage_attn:    state.useSageAttn   ?? true,
+      sage_attn_mode:   state.sageAttnMode  || "auto",
+      use_mem_eff_sage: state.useMemEffSage ?? true,
+      use_torch_patch:  state.useTorchPatch ?? true,
+      fp16_accum:       state.fp16Accum     ?? true,
+      cache_threshold:  state.cacheThreshold ?? 0.3,
+      cache_start:      state.cacheStart     ?? 0.15,
+      cache_end:        state.cacheEnd       ?? 0.9,
+      cache_max_steps:  state.cacheMaxSteps  ?? 2,
+      ollama_url:            state.ollamaUrl         || "http://127.0.0.1:11434",
+      ollama_model:          state.ollamaModel       || "",
+      ollama_vision_model:   state.ollamaVisionModel || "",
+      ollama_temperature:    state.ollamaTemperature ?? 0.7,
+      ollama_top_p:          state.ollamaTopP        ?? 0.9,
+      vision_source:         state.visionSource      || "ollama",
+      native_vision_clip:    state.nativeVisionClip  || "",
+      filename_prefix:       state.filenamePrefix    || "MMH3",
+      stitch_at_end:         state.stitchAtEnd       ?? true,
+      trim_last_clip:        state.trimLastClip      ?? false,
+      unload_between_clips:  state.unloadBetweenClips ?? true,
     });
     saveAllBtn.textContent = "✓ Saved!";
     setTimeout(() => { saveAllBtn.textContent = "💾 Save All"; }, 1500);
@@ -450,6 +492,43 @@ export function createSettingsOverlay(state, ctx) {
     take("vaeAudio",      cfg.vae_audio);
     take("turboLora",     cfg.turbo_lora);
     take("upscaleModel",  cfg.upscale_model);
+    take("previewTinyVae", cfg.preview_tiny_vae);
+    // These always have a value already (defaultState()'s `?? 8`/`?? true`/etc. fallback),
+    // so the `take()`/`== null` guard used above can never fire for them — same situation
+    // avg_minutes_per_clip already had, handled the same way: unconditional overwrite here
+    // is safe because this whole block only runs once, before the user can have made a live
+    // choice for THIS session.
+    if (cfg.preview_enabled != null) state.previewEnabled = cfg.preview_enabled;
+    if (cfg.preview_frames  != null) state.previewFrames  = cfg.preview_frames;
+    if (cfg.preview_fps     != null) state.previewFps     = cfg.preview_fps;
+    if (cfg.preview_max_res != null) state.previewMaxRes  = cfg.preview_max_res;
+    if (cfg.preview_quality != null) state.previewQuality = cfg.preview_quality;
+    if (cfg.turbo_lora_low_vram != null) state.turboLoraLowVram = cfg.turbo_lora_low_vram;
+    if (cfg.sampler)             state.sampler        = cfg.sampler;
+    if (cfg.scheduler)           state.scheduler      = cfg.scheduler;
+    if (cfg.denoise != null)     state.denoise        = cfg.denoise;
+    if (cfg.shift_video != null) state.shiftVideo     = cfg.shift_video;
+    if (cfg.shift_audio != null) state.shiftAudio     = cfg.shift_audio;
+    if (cfg.use_sage_attn != null)    state.useSageAttn   = cfg.use_sage_attn;
+    if (cfg.sage_attn_mode)           state.sageAttnMode  = cfg.sage_attn_mode;
+    if (cfg.use_mem_eff_sage != null) state.useMemEffSage = cfg.use_mem_eff_sage;
+    if (cfg.use_torch_patch != null)  state.useTorchPatch = cfg.use_torch_patch;
+    if (cfg.fp16_accum != null)       state.fp16Accum     = cfg.fp16_accum;
+    if (cfg.cache_threshold != null)  state.cacheThreshold = cfg.cache_threshold;
+    if (cfg.cache_start != null)      state.cacheStart     = cfg.cache_start;
+    if (cfg.cache_end != null)        state.cacheEnd       = cfg.cache_end;
+    if (cfg.cache_max_steps != null)  state.cacheMaxSteps  = cfg.cache_max_steps;
+    if (cfg.ollama_url)               state.ollamaUrl         = cfg.ollama_url;
+    if (cfg.ollama_model)             state.ollamaModel       = cfg.ollama_model;
+    if (cfg.ollama_vision_model)      state.ollamaVisionModel = cfg.ollama_vision_model;
+    if (cfg.ollama_temperature != null) state.ollamaTemperature = cfg.ollama_temperature;
+    if (cfg.ollama_top_p != null)       state.ollamaTopP        = cfg.ollama_top_p;
+    if (cfg.vision_source)            state.visionSource     = cfg.vision_source;
+    if (cfg.native_vision_clip)       state.nativeVisionClip = cfg.native_vision_clip;
+    if (cfg.filename_prefix)          state.filenamePrefix   = cfg.filename_prefix;
+    if (cfg.stitch_at_end != null)          state.stitchAtEnd        = cfg.stitch_at_end;
+    if (cfg.trim_last_clip != null)         state.trimLastClip       = cfg.trim_last_clip;
+    if (cfg.unload_between_clips != null)   state.unloadBetweenClips = cfg.unload_between_clips;
     if (cfg.turbo_lora_strength != null && state.turboLoraStrength == null) state.turboLoraStrength = cfg.turbo_lora_strength;
     if (cfg.prompt_suffix && !state.promptSuffix) state.promptSuffix = cfg.prompt_suffix;
     if (cfg.avg_minutes_per_clip != null) state.avgMinutesPerClip = cfg.avg_minutes_per_clip;

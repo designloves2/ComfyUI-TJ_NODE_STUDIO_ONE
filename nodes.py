@@ -1824,6 +1824,38 @@ async def mmh3_get_config(request):
         "prompt_suffix":    cfg.get("prompt_suffix",    ""),
         "avg_minutes_per_clip": cfg.get("avg_minutes_per_clip", 13.0),
         "output_mode_visible": cfg.get("output_mode_visible", True),
+        "preview_tiny_vae": cfg.get("preview_tiny_vae", ""),
+        "preview_enabled":  cfg.get("preview_enabled",  True),
+        "preview_frames":   cfg.get("preview_frames",   8),
+        "preview_fps":      cfg.get("preview_fps",      12),
+        "preview_max_res":  cfg.get("preview_max_res",  512),
+        "preview_quality":  cfg.get("preview_quality",  85),
+        "turbo_lora_low_vram": cfg.get("turbo_lora_low_vram", False),
+        "sampler":          cfg.get("sampler",          "res_multistep"),
+        "scheduler":        cfg.get("scheduler",        "simple"),
+        "denoise":          cfg.get("denoise",          1.0),
+        "shift_video":      cfg.get("shift_video",      12),
+        "shift_audio":      cfg.get("shift_audio",      3),
+        "use_sage_attn":    cfg.get("use_sage_attn",    True),
+        "sage_attn_mode":   cfg.get("sage_attn_mode",   "auto"),
+        "use_mem_eff_sage": cfg.get("use_mem_eff_sage", True),
+        "use_torch_patch":  cfg.get("use_torch_patch",  True),
+        "fp16_accum":       cfg.get("fp16_accum",       True),
+        "cache_threshold":  cfg.get("cache_threshold",  0.3),
+        "cache_start":      cfg.get("cache_start",      0.15),
+        "cache_end":        cfg.get("cache_end",        0.9),
+        "cache_max_steps":  cfg.get("cache_max_steps",  2),
+        "ollama_url":            cfg.get("ollama_url",            "http://127.0.0.1:11434"),
+        "ollama_model":          cfg.get("ollama_model",          ""),
+        "ollama_vision_model":   cfg.get("ollama_vision_model",   ""),
+        "ollama_temperature":    cfg.get("ollama_temperature",    0.7),
+        "ollama_top_p":          cfg.get("ollama_top_p",          0.9),
+        "vision_source":         cfg.get("vision_source",         "ollama"),
+        "native_vision_clip":    cfg.get("native_vision_clip",    "Qwen3\\qwen_3vl_8b_nvfp4.safetensors"),
+        "filename_prefix":       cfg.get("filename_prefix",       "MMH3"),
+        "stitch_at_end":         cfg.get("stitch_at_end",         True),
+        "trim_last_clip":        cfg.get("trim_last_clip",        False),
+        "unload_between_clips":  cfg.get("unload_between_clips",  True),
     })
 
 
@@ -1957,6 +1989,9 @@ async def mmh3_get_models(request):
         "vaes":             scan("vae"),
         "loras":            scan("loras"),
         "upscale_models":   scan("upscale_models"),
+        # ModelPreviewOverrideKJ's optional tiny_vae — a fast approx decoder for the live
+        # preview only (not used for the real render). Folder is models/vae_approx/.
+        "vae_approx":       scan("vae_approx", [".pth", ".safetensors"]),
     })
 
 

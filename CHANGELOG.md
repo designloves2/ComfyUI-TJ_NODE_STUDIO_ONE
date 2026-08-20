@@ -2,6 +2,25 @@
 
 ---
 
+## v1.13.2 (2026-08-20)
+
+### MiniMax H3 — Settings 전 항목 Save All 반영
+
+- **라이브 프리뷰에 tiny/approx VAE 선택 추가** — `ModelPreviewOverrideKJ`의 `tiny_vae` 배선은
+  이미 있었지만 고를 UI가 없어서 항상 비어 있었음. Settings → Preview에 `models/vae_approx/`
+  스캔한 드롭다운 추가
+- **Save All이 실제로 "전 항목"을 저장하게 수정** — Preview 5개 필드는 물론, Sampling/
+  SageAttention/H3 Cache/Ollama/Output 탭의 값 26개가 지금까지 Save All 대상에서 빠져
+  있었음(모델 선택 몇 개만 저장되고 나머지는 새 노드에 안 물려받아짐). 41개 필드 전부
+  `/minimax_h3_one/config` GET/POST 왕복에 포함되도록 수정
+- **fully wired Save All across all Settings fields** — added a Preview VAE (tiny/approx)
+  picker for the live preview (the graph-side wiring already existed, just had no UI), and
+  fixed Save All to actually persist every Settings field — 26 fields across
+  Sampling/SageAttention/H3 Cache/Ollama/Output were silently excluded before, so new nodes
+  never inherited them. All 41 fields now round-trip through `/minimax_h3_one/config`
+
+---
+
 ## v1.13.1 (2026-08-20)
 
 ### MiniMax H3 — 버그 수정 3건
