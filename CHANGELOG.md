@@ -2,6 +2,17 @@
 
 ---
 
+## v1.13.3 (2026-08-20)
+
+- **MiniMax H3 — Spectrum과 H3 Cache 상호배제** — Turbo LoRA와 동일하게, Accel을 Spectrum으로
+  선택하면 H3 Cache(step reuse) 체크박스가 강제로 꺼지고 비활성화됨(둘 다 자체 스텝 스케줄
+  가속기라 같이 쓰면 충돌)
+- **MiniMax H3 — Spectrum/H3 Cache mutual exclusion** — same treatment as Turbo LoRA: selecting
+  Spectrum as the accelerator now forces H3 Cache (step reuse) off and disables the checkbox
+  (both are their own step-schedule accelerators and conflict when stacked)
+
+---
+
 ## v1.13.2 (2026-08-20)
 
 ### MiniMax H3 — Settings 전 항목 Save All 반영

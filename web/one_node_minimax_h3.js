@@ -546,8 +546,10 @@ app.registerExtension({
         // threshold that a run this short never reaches, and stacking the two on a test
         // run gives a false read on how fast/good turbo actually is. Force it off with
         // turbo rather than just warning, since a stray leftover checkbox is exactly the
-        // kind of thing that quietly skews a "how fast is turbo" comparison.
-        if (state.accelMode === "turbo" && state.useCache) {
+        // kind of thing that quietly skews a "how fast is turbo" comparison. Spectrum gets
+        // the same treatment — it's its own step-schedule accelerator, so it conflicts with
+        // H3 Cache's step-reuse the same way Turbo does.
+        if ((state.accelMode === "turbo" || state.accelMode === "spectrum") && state.useCache) {
           state.useCache = false;
           persist();
         }
@@ -635,9 +637,11 @@ app.registerExtension({
           // Worth flipping per run alongside continuity, so it sits here rather than in
           // Settings — its tuning fields stay there.
           checkboxRow("H3 Cache (step reuse)", !!state.useCache, v => { state.useCache = v; persist(); }, {
-            disabled: state.accelMode === "turbo",
+            disabled: state.accelMode === "turbo" || state.accelMode === "spectrum",
             title: state.accelMode === "turbo"
               ? "Off with Turbo — turbo's 4-step schedule never reaches the threshold H3 Cache reuses steps at"
+              : state.accelMode === "spectrum"
+              ? "Off with Spectrum — Spectrum is its own step-schedule accelerator and conflicts with H3 Cache's step reuse"
               : "",
           }),
 
