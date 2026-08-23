@@ -722,14 +722,24 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     progTimer = null;
   }
 
+  // The native path (analyzeImagesNative → TJ_MultiImageLoader) already fixes this at
+  // megapixel: 1.0 server-side; the Ollama path sent the raw upload with no cap at all,
+  // so a big reference image meant a much bigger request than the native path ever sent
+  // for the same picture. Match it here, client-side, since there's no server hop for
+  // the Ollama call to do it in.
   async function imageToB64(filename) {
     const resp = await fetch(`/view?filename=${encodeURIComponent(filename)}&type=input`);
     const blob = await resp.blob();
-    return new Promise(res => {
-      const fr = new FileReader();
-      fr.onload = () => res(String(fr.result).split(",")[1] || "");
-      fr.readAsDataURL(blob);
-    });
+    const bitmap = await createImageBitmap(blob);
+    const targetPixels = 1024 * 1024;
+    const scale = Math.min(1, Math.sqrt(targetPixels / (bitmap.width * bitmap.height)));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    canvas.getContext("2d").drawImage(bitmap, 0, 0, w, h);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+    return dataUrl.split(",")[1] || "";
   }
 
   enhBtn.addEventListener("click", async () => {

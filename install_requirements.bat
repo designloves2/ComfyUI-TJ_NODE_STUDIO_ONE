@@ -53,8 +53,10 @@ set REPOS[14]=https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI
 :: MiniMax H3 reference videos (VHS_LoadVideo) and the Spectrum accelerator
 set REPOS[15]=https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite
 set REPOS[16]=https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3
+set REPOS[17]=https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache
+set REPOS[18]=https://github.com/PlagueKind/ComfyUI-PlagueKind-Nodes
 
-set COUNT=17
+set COUNT=19
 
 :: ── 설치 루프 ──────────────────────────────────────────────────────────────────
 for /L %%i in (0,1,16) do (

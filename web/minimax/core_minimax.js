@@ -51,9 +51,8 @@ export function alignFrameCount(n) {
 // SPEC_MINIMAX_H3_NEXT_ROUND.md §B2.
 export const ONE_TAKE_OVERLAP_FRAMES = 39;
 
-/** The turbo LoRA for the current mode — Reference has none, by design. */
+/** The turbo LoRA for the current mode. */
 export function turboLoraForMode(state) {
-  if ((state.generationMode || "t2v") === "reference") return "";
   const name = state.turboLora;
   return (name && name !== "none") ? name : "";
 }
@@ -66,12 +65,6 @@ export function turboLoraForMode(state) {
 export function effectiveAccel(state, avail) {
   const want = state.accelMode || "turbo";
   if (want !== "turbo") return { mode: want, fellBack: false };
-  // Reference mode never runs turbo — the only turbo LoRAs that exist are fl2v, and one
-  // of those on the Ref2VA model throws inside the turbo pack.
-  if ((state.generationMode || "t2v") === "reference") {
-    return { mode: "none", fellBack: true,
-             reason: "Turbo is not available in Reference mode (turbo LoRAs are fl2v-only)." };
-  }
   if (!turboLoraForMode(state)) {
     return { mode: "none", fellBack: true, reason: "No turbo LoRA set — turbo skipped." };
   }
@@ -232,9 +225,7 @@ export function explainGenerationError(message) {
   return null;
 }
 export const ACCEL_MODES  = [
-  // Turbo LoRAs are trained against a specific base model and only the fl2v ones exist,
-  // so turbo is not offered in Reference mode at all (see accelModesFor).
-  { key: "turbo",    label: "Turbo LoRA", node: "MiniMaxH3TurboLoRA", modes: ["t2v", "firstlast"] },
+  { key: "turbo",    label: "Turbo LoRA(larryvrh)", node: "MiniMaxH3TurboLoRA", modes: ["t2v", "firstlast", "reference"] },
   { key: "solattn",  label: "SolAttn",    node: "SolAttnPatch" },
   { key: "spectrum", label: "Spectrum",   node: "SpectrumApplyMiniMaxH3" },
   { key: "none",     label: "None",       node: null },
@@ -382,6 +373,9 @@ export function defaultState(saved) {
     audioLockMode:     saved.audioLockMode     || "lock",
     audioLockStrength: saved.audioLockStrength ?? 0.5,
     audioLockFit:      saved.audioLockFit      || "pad_silence",
+    audioLockTrimStart: saved.audioLockTrimStart ?? 0,
+    audioLockTrimEnd:   saved.audioLockTrimEnd   ?? 0,   // 0 = to the end of the file
+    oneTakeAudioOverride: !!saved.oneTakeAudioOverride,
 
     loras: Array.isArray(saved.loras) ? saved.loras.map(l => ({
       name: l.name || "none", strength: l.strength ?? 1.0,
@@ -400,6 +394,8 @@ export function defaultState(saved) {
     aspect:      saved.aspect      || "9:16 Portrait",
     megapixels:  saved.megapixels  ?? 1.0,
     clipFrames:  saved.clipFrames  ?? DEFAULT_FRAMES,
+    clipLengthCustom:    !!saved.clipLengthCustom,
+    clipLengthCustomSec: saved.clipLengthCustomSec ?? framesToSeconds(DEFAULT_FRAMES),
     totalSeconds: saved.totalSeconds ?? 8,
     trimLastClip: saved.trimLastClip ?? false,
     avgMinutesPerClip: saved.avgMinutesPerClip ?? 13,
@@ -422,7 +418,11 @@ export function defaultState(saved) {
     // images
     firstFrameImage: saved.firstFrameImage || null,
     lastFrameImage:  saved.lastFrameImage  || null,
+    // 0 = send as uploaded (no resize). Per-card override for the size sent to the model.
+    firstFrameMp: saved.firstFrameMp ?? 1.0,
+    lastFrameMp:  saved.lastFrameMp  ?? 1.0,
     refImages: Array.isArray(saved.refImages) ? saved.refImages.slice(0, 9) : [],
+    refImagesMp: Array.isArray(saved.refImagesMp) ? saved.refImagesMp.slice(0, 9) : [],
     refImageSize: saved.refImageSize || "match",
     // Reference videos / audios (REF2VA). The model takes up to 3 of each; videos are
     // fed as 24fps frames plus, optionally, their own soundtrack. start/end are seconds
@@ -455,10 +455,20 @@ export function defaultState(saved) {
     // model patches (defaults lifted from the reference workflow)
     useSageAttn:   saved.useSageAttn   ?? true,
     sageAttnMode:  saved.sageAttnMode  || "auto",
+    useCkAttention:    saved.useCkAttention    ?? false,
+    ckAttentionBackend: saved.ckAttentionBackend || "comfy_kitchen",
+    useSlaAttention:   saved.useSlaAttention   ?? false,
+    slaSparsity:       saved.slaSparsity       ?? 0.90,
+    slaBlockSize:      saved.slaBlockSize      || "64",
+    slaMinSeqLen:      saved.slaMinSeqLen      ?? 8192,
+    slaDenseLastSteps: saved.slaDenseLastSteps ?? 0,
+    slaProtectAudio:   saved.slaProtectAudio   ?? true,
+    slaRunEnabled:     saved.slaRunEnabled     ?? true,
     useMemEffSage: saved.useMemEffSage ?? true,
     useTorchPatch: saved.useTorchPatch ?? true,
     fp16Accum:     saved.fp16Accum     ?? true,
-    useCache:      saved.useCache      ?? true,
+    useCache:            saved.useCache            ?? true,
+    useFirstBlockCache:  saved.useFirstBlockCache   ?? false,
     cacheThreshold: saved.cacheThreshold ?? 0.3,
     cacheStart:     saved.cacheStart     ?? 0.15,
     cacheEnd:       saved.cacheEnd       ?? 0.9,

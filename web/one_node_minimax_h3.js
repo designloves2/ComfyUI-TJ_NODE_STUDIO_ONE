@@ -19,7 +19,7 @@ import {
   el, clear, loadState, saveState, defaultState, randomSeed,
   CLIP_LENGTHS, ASPECTS, ACCEL_MODES, accelModesFor, UPSCALE_MODES,
   continuityModesFor, generationModesFor, configIssues,
-  clipPlan, formatDuration, formatClock, framesToSeconds, alignFrameCount, ONE_TAKE_OVERLAP_FRAMES, resolveResolution,
+  clipPlan, formatDuration, formatClock, framesToSeconds, alignFrameCount, FPS, ONE_TAKE_OVERLAP_FRAMES, resolveResolution,
   parseBrief, groupShots, composeClipPrompt,
   effectiveAccel, turboLoraForMode, explainGenerationError,
   promptText, promptFirstFrame, promptEnabled, activePrompts,
@@ -92,7 +92,13 @@ app.registerExtension({
         const s = document.createElement("style"); s.id = "mmh3-styles";
         s.textContent = `@keyframes mmh3-spin{to{transform:rotate(360deg)}}`
           + `.mmh3-lp::-webkit-scrollbar{width:5px}.mmh3-lp::-webkit-scrollbar-track{background:transparent}`
-          + `.mmh3-lp::-webkit-scrollbar-thumb{background:${C.border};border-radius:3px}`;
+          + `.mmh3-lp::-webkit-scrollbar-thumb{background:${C.border};border-radius:3px}`
+          // Plain accent-color on a range input renders a large native thumb in this
+          // Chromium build — fine at web-app width, but it swallows the whole track in the
+          // node's ~276px panel. Pin it to a small circle instead.
+          + `.mmh3-seek{-webkit-appearance:none;appearance:none;height:4px;background:${C.border};border-radius:2px;}`
+          + `.mmh3-seek::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:${BRAND};cursor:pointer;}`
+          + `.mmh3-seek::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:${BRAND};border:none;cursor:pointer;}`;
         document.head.appendChild(s);
       }
 
@@ -492,9 +498,9 @@ app.registerExtension({
         const files = ctx.audioFiles || [];
         const opts = ['', ...files].map(f => ({ value: f, label: f || (ctx.audioFiles ? '— pick a file —' : 'loading…') }));
         const sel = select(opts, state.lockAudioFile || '', v => { state.lockAudioFile = v; persist(); renderLeft(); });
-        const up = el('button', { type: 'button', text: '⬆ upload', style: {
-          cursor: 'pointer', fontFamily: 'inherit', fontSize: '10px', padding: '4px 8px',
-          borderRadius: '5px', background: C.bg3, color: C.text, border: `1px solid ${C.border}`,
+        const up = el('button', { type: 'button', text: '⬆', title: 'Upload', style: {
+          cursor: 'pointer', fontFamily: 'inherit', fontSize: '10px', padding: '4px', width: '26px',
+          borderRadius: '5px', background: C.bg3, color: C.text, border: `1px solid ${C.border}`, flexShrink: '0',
         }});
         const inp = el('input', { type: 'file', accept: 'audio/*', style: { display: 'none' } });
         up.addEventListener('click', () => inp.click());
@@ -506,9 +512,130 @@ app.registerExtension({
             state.lockAudioFile = await uploadMedia(f);
             ctx.audioFiles = null;                 // force a refetch so it lists
             persist(); loadAudioFiles(); renderLeft();
-          } catch (e) { showPopup(e.message, true); up.textContent = '⬆ upload'; }
+          } catch (e) { showPopup(e.message, true); up.textContent = '⬆'; }
         });
-        return row([col([sel]), col([up, inp])]);
+        return col([row([col([sel]), up, inp]), state.lockAudioFile ? audioPreviewPlayer(state.lockAudioFile) : null]);
+      }
+
+      // Playback + trim controls for the locked audio file. Playback/seek stay confined to
+      // the trimmed range ([effStart, effEnd]) — content outside it never reaches Audio Lock
+      // either, so previewing it would be misleading.
+      function audioPreviewPlayer(filename) {
+        const audio = el("audio", { preload: "metadata", src: `/view?filename=${encodeURIComponent(filename)}&type=input`, style: { display: "none" } });
+        const playBtn = el("button", { type: "button", text: "▶", style: {
+          cursor: "pointer", fontFamily: "inherit", fontSize: "11px", width: "26px", height: "26px",
+          borderRadius: "5px", background: C.bg3, color: C.text, border: `1px solid ${C.border}`, flexShrink: "0",
+        }});
+        const timeLbl = el("span", { text: "0:00 / 0:00", style: { fontSize: "10px", color: C.muted, minWidth: "72px", textAlign: "center", flexShrink: "0" } });
+        const seek = el("input", { type: "range", min: "0", max: "1000", value: "0", class: "mmh3-seek", style: { flex: "1", minWidth: "0" } });
+        let seeking = false, loopOn = false;
+        const loopBtn = el("button", { type: "button", text: "🔁", title: "Loop the trimmed range", style: {
+          cursor: "pointer", fontFamily: "inherit", fontSize: "11px", width: "26px", height: "26px",
+          borderRadius: "5px", background: C.bg3, color: C.muted, border: `1px solid ${C.border}`, flexShrink: "0",
+        }});
+        loopBtn.addEventListener("click", () => {
+          loopOn = !loopOn;
+          loopBtn.style.background = loopOn ? BRAND : C.bg3;
+          loopBtn.style.color = loopOn ? "#fff" : C.muted;
+        });
+
+        const fmt = s => {
+          if (!isFinite(s) || s < 0) return "0:00";
+          const m = Math.floor(s / 60), ss = Math.floor(s % 60).toString().padStart(2, "0");
+          return `${m}:${ss}`;
+        };
+        const effStart = () => Math.max(0, state.audioLockTrimStart || 0);
+        const effEnd = () => {
+          const dur = audio.duration || 0;
+          const e = state.audioLockTrimEnd || 0;
+          return e > 0 ? Math.min(e, dur || e) : dur;
+        };
+
+        playBtn.addEventListener("click", () => {
+          if (audio.paused) {
+            const s = effStart(), e = effEnd();
+            if (audio.currentTime < s || (e > s && audio.currentTime >= e)) audio.currentTime = s;
+            audio.play().catch(() => {});
+          } else audio.pause();
+        });
+        audio.addEventListener("play",  () => { playBtn.textContent = "⏸"; });
+        audio.addEventListener("pause", () => { playBtn.textContent = "▶"; });
+        audio.addEventListener("ended", () => { playBtn.textContent = "▶"; });
+        audio.addEventListener("timeupdate", () => {
+          if (seeking) return;
+          const s = effStart(), e = effEnd();
+          if (e > s && audio.currentTime >= e) {
+            if (loopOn) { audio.currentTime = s; audio.play().catch(() => {}); }
+            else { audio.pause(); audio.currentTime = e; }
+          }
+          const span = Math.max(0.001, e - s);
+          const pos = Math.min(1, Math.max(0, (audio.currentTime - s) / span));
+          seek.value = String(pos * 1000);
+          timeLbl.textContent = `${fmt(Math.max(0, audio.currentTime - s))} / ${fmt(span)}`;
+        });
+        audio.addEventListener("loadedmetadata", () => {
+          audio.currentTime = effStart();
+          timeLbl.textContent = `0:00 / ${fmt(effEnd() - effStart())}`;
+          updateTrimHint();
+        });
+        seek.addEventListener("input", () => {
+          seeking = true;
+          const s = effStart(), e = effEnd(), span = Math.max(0.001, e - s);
+          audio.currentTime = s + (parseFloat(seek.value) / 1000) * span;
+          timeLbl.textContent = `${fmt(audio.currentTime - s)} / ${fmt(span)}`;
+        });
+        seek.addEventListener("change", () => { seeking = false; });
+
+        const trimHint = el("div", { text: "", style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } });
+        function updateTrimHint() {
+          const dur = audio.duration || 0;
+          const s = effStart(), e = effEnd(), len = Math.max(0, e - s);
+          trimHint.textContent = dur
+            ? `Usable range: ${fmt(s)} – ${fmt(e)} (${len.toFixed(1)}s) — preview is confined to this range too`
+            : "";
+          if (audio.currentTime < s || (e > s && audio.currentTime > e)) audio.currentTime = s;
+          const span = Math.max(0.001, e - s);
+          const pos = Math.min(1, Math.max(0, (audio.currentTime - s) / span));
+          seek.value = String(pos * 1000);
+          timeLbl.textContent = `${fmt(Math.max(0, audio.currentTime - s))} / ${fmt(span)}`;
+        }
+        // Fixed width, not flex-grow — the buttons next to these fields already claim a
+        // known amount of space in the node's ~276px panel, and a plain flex-item with
+        // width:100% (numberField's own style) collapsed to 0 here instead of filling the
+        // remainder, so give it something concrete to size against instead.
+        const startField = numberField(state.audioLockTrimStart || 0, v => { state.audioLockTrimStart = Math.max(0, v); persist(); updateTrimHint(); }, 0.1);
+        const endField   = numberField(state.audioLockTrimEnd   || 0, v => { state.audioLockTrimEnd   = Math.max(0, v); persist(); updateTrimHint(); }, 0.1);
+        startField.style.width = "64px"; startField.style.flexShrink = "0";
+        endField.style.width   = "64px"; endField.style.flexShrink   = "0";
+        // Short labels on purpose — the node's ~276px panel is much narrower than the web
+        // app's, and "At playhead"/"Full length" alongside a number field wouldn't fit
+        // (the field would get crushed to a sliver, which is exactly what happened before).
+        const setBtnStyle = { cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "4px 6px", borderRadius: "5px", background: C.bg3, color: C.text, border: `1px solid ${C.border}`, flexShrink: "0" };
+        const setStartBtn   = el("button", { type: "button", text: "Now",  title: "Set to current playhead position", style: setBtnStyle });
+        const setEndBtn      = el("button", { type: "button", text: "Now",  title: "Set to current playhead position", style: setBtnStyle });
+        const setEndFullBtn = el("button", { type: "button", text: "Full", title: "Set to the full length of the file", style: setBtnStyle });
+        setStartBtn.addEventListener("click", () => {
+          state.audioLockTrimStart = Math.round((audio.currentTime || 0) * 100) / 100;
+          startField.value = String(state.audioLockTrimStart); persist(); updateTrimHint();
+        });
+        setEndBtn.addEventListener("click", () => {
+          state.audioLockTrimEnd = Math.round((audio.currentTime || 0) * 100) / 100;
+          endField.value = String(state.audioLockTrimEnd); persist(); updateTrimHint();
+        });
+        setEndFullBtn.addEventListener("click", () => {
+          state.audioLockTrimEnd = Math.round((audio.duration || 0) * 100) / 100;
+          endField.value = String(state.audioLockTrimEnd); persist(); updateTrimHint();
+        });
+        updateTrimHint();
+
+        // Stacked full-width, not side-by-side — at half the ~276px panel width there's no
+        // room left for a usable number field once a couple of buttons sit next to it.
+        const trimRow = row([
+          col([label("Trim start (s)"), row([startField, setStartBtn])]),
+          col([label("Trim End (s)"), row([col([endField]), setEndBtn, setEndFullBtn])]),
+        ]);
+
+        return col([row([playBtn, loopBtn, seek, timeLbl, audio], "6px"), trimRow, trimHint]);
       }
 
       function checkboxRow(text, checked, onChange, opts) {
@@ -553,6 +680,10 @@ app.registerExtension({
           state.useCache = false;
           persist();
         }
+        if (state.accelMode === "turbo" && state.useFirstBlockCache) {
+          state.useFirstBlockCache = false;
+          persist();
+        }
 
         // resolution
         leftPanel.appendChild(panel([
@@ -573,8 +704,26 @@ app.registerExtension({
         }});
         leftPanel.appendChild(panel([
           label("Clip length"),
-          select(CLIP_LENGTHS.map(c => ({ value: String(c.frames), label: c.label })),
-            String(state.clipFrames), v => { state.clipFrames = parseInt(v, 10); persist(); refreshPlan(); }),
+          select(
+            [...CLIP_LENGTHS.map(c => ({ value: String(c.frames), label: c.label })), { value: "custom", label: "Custom (seconds)…" }],
+            state.clipLengthCustom ? "custom" : String(state.clipFrames),
+            v => {
+              if (v === "custom") {
+                state.clipLengthCustom = true;
+                state.clipFrames = alignFrameCount(state.clipLengthCustomSec * FPS);
+              } else {
+                state.clipLengthCustom = false;
+                state.clipFrames = parseInt(v, 10);
+              }
+              persist(); renderLeft();
+            }),
+          ...(state.clipLengthCustom ? [row([
+            numberField(state.clipLengthCustomSec, v => {
+              state.clipLengthCustomSec = Math.max(0.1, v);
+              state.clipFrames = alignFrameCount(state.clipLengthCustomSec * FPS);
+              persist(); refreshPlan();
+            }, 0.1),
+          ])] : []),
           totalLine,
           planLine,
           el("div", { text: "Length follows the prompts: one prompt is one clip. Add a prompt "
@@ -596,6 +745,40 @@ app.registerExtension({
             html: `⚠ <code>${accelNode}</code> not installed — this run will fall back to no acceleration.`,
             style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } })] : []),
           ...accelSettings(),
+
+          // Worth flipping per run alongside continuity, so it sits here rather than in
+          // Settings — its tuning fields stay there.
+          checkboxRow("H3 Cache (step reuse)", !!state.useCache, v => {
+            state.useCache = v;
+            if (v) state.useFirstBlockCache = false;
+            persist(); renderLeft();
+          }, {
+            disabled: state.accelMode === "turbo" || state.accelMode === "spectrum",
+            title: state.accelMode === "turbo"
+              ? "Off with Turbo — turbo's 4-step schedule never reaches the threshold H3 Cache reuses steps at"
+              : state.accelMode === "spectrum"
+              ? "Off with Spectrum — Spectrum is its own step-schedule accelerator and conflicts with H3 Cache's step reuse"
+              : "",
+          }),
+          checkboxRow("H3 FirstBlockCache (step reuse)", !!state.useFirstBlockCache, v => {
+            state.useFirstBlockCache = v;
+            if (v) state.useCache = false;
+            persist(); renderLeft();
+          }, {
+            disabled: state.accelMode === "turbo",
+            title: state.accelMode === "turbo"
+              ? "Off with Turbo — turbo's 4-step schedule never reaches the threshold step-reuse caches trigger at"
+              : "Same idea as H3 Cache above, different implementation — only one can be on at a time. Compatible with Spectrum.",
+          }),
+          checkboxRow("H3 SLA Attention Enabled", state.slaRunEnabled !== false, v => {
+            state.slaRunEnabled = v; persist();
+          }, {
+            disabled: !state.useSlaAttention,
+            title: state.useSlaAttention
+              ? "Toggles the node's own bypass — off runs dense attention without removing the node."
+              : "Enable H3 SLA Attention in ⚙ Settings → Models first.",
+          }),
+
           col([label("Upscale"), select(UPSCALE_MODES.map(m => ({ value: m.key, label: m.label })),
             state.upscaleMode, v => { state.upscaleMode = v; persist(); renderLeft(); })]),
           ...(state.upscaleMode === "rtx" ? [row([
@@ -631,19 +814,18 @@ app.registerExtension({
                     + "checkpoints stay on disk too, for resuming a stopped run."
                   : "Off — clips stay separate, same as any other run; nothing gets auto-combined.",
                 style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+              ...(state.oneTakeAutoStitch !== false ? [
+                checkboxRow("Replace with Audio Lock source (skip generated audio)",
+                  !!state.oneTakeAudioOverride, v => { state.oneTakeAudioOverride = v; persist(); },
+                  { disabled: !state.audioLock || !state.lockAudioFile }),
+                el("div", { text: state.audioLock && state.lockAudioFile
+                    ? "The stitched result's audio track is swapped for the locked source file itself "
+                      + "(trimmed to match), instead of the model's generated audio."
+                    : "Needs Audio Lock on with a file selected.",
+                  style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+              ] : []),
             ];
           })() : []),
-
-          // Worth flipping per run alongside continuity, so it sits here rather than in
-          // Settings — its tuning fields stay there.
-          checkboxRow("H3 Cache (step reuse)", !!state.useCache, v => { state.useCache = v; persist(); }, {
-            disabled: state.accelMode === "turbo" || state.accelMode === "spectrum",
-            title: state.accelMode === "turbo"
-              ? "Off with Turbo — turbo's 4-step schedule never reaches the threshold H3 Cache reuses steps at"
-              : state.accelMode === "spectrum"
-              ? "Off with Spectrum — Spectrum is its own step-schedule accelerator and conflicts with H3 Cache's step reuse"
-              : "",
-          }),
 
           // ── Audio Lock ────────────────────────────────────────────────────
           // H3 treats a reference track as a reference and writes new audio over it.
@@ -707,7 +889,7 @@ app.registerExtension({
             col([label(turbo ? "Normal steps" : "Normal steps ●"),
               numberField(state.steps ?? 20, v => { state.steps = Math.max(1, Math.round(v)); persist(); }, 1)]),
           ]),
-          el("div", { text: turbo ? "● Turbo steps are in use (Accel = Turbo LoRA)."
+          el("div", { text: turbo ? "● Turbo steps are in use (Accel = Turbo LoRA(larryvrh))."
                                   : "● Normal steps are in use.",
             style: { fontSize: "10px", color: C.muted } }),
         ]));
@@ -1143,8 +1325,11 @@ app.registerExtension({
             setStatus(`Stitching ${clipRecords.length} clips (One-Take, ${overlapSec.toFixed(3)}s overlap trimmed)…`);
             try {
               const folder = (state.saveSubfolder || SUBFOLDER).replace(/\\/g, "/");
+              const audioOverride = state.oneTakeAudioOverride && state.audioLock && state.lockAudioFile
+                ? { filename: state.lockAudioFile, start: Math.max(0, state.audioLockTrimStart || 0) }
+                : null;
               const out = await stitchClips(
-                clipRecords, `${folder}/${state.filenamePrefix || "MMH3"}_full`, null, overlapSec,
+                clipRecords, `${folder}/${state.filenamePrefix || "MMH3"}_full`, null, overlapSec, audioOverride,
               );
               const url = `/view?filename=${encodeURIComponent(out.filename)}&subfolder=${encodeURIComponent(out.subfolder || "")}&type=output&t=${Date.now()}`;
               // metaForVideo's `frames` is per-clip (state.clipFrames) — left as-is here it

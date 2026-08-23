@@ -16,9 +16,12 @@ const N = {
   vaeA:   "MM:vae_audio",
   sage:   "MM:sage",
   memSage:"MM:mem_sage",
+  ckAttn: "MM:ck_attn",
+  sla:    "MM:sla",
   torch:  "MM:torch",
   shift:  "MM:sigma_shift",
   cache:  "MM:cache",
+  fbcache:"MM:fbcache",
   sol:     "MM:solattn",
   spectrum:"MM:spectrum",
   turbo:   "MM:turbo_lora",
@@ -43,6 +46,9 @@ const N = {
   loadFirst: "MM:load_first",
   loadLast:  "MM:load_last",
   ref:      (i) => `MM:ref_${i}`,
+  refResize:(i) => `MM:ref_resize_${i}`,
+  loadFirstResize: "MM:load_first_resize",
+  loadLastResize:  "MM:load_last_resize",
   refVid:   (i) => `MM:refvid_${i}`,
   refAud:   (i) => `MM:refaud_${i}`,
   refAudTrim: (i) => `MM:refaud_trim_${i}`,
@@ -181,15 +187,25 @@ function buildModelChain(g, state, avail) {
   g[N.unet] = unetNode(unet);
   let m = [N.unet, 0];
 
-  if (state.useSageAttn && has(avail, "PathchSageAttentionKJ")) {
-    g[N.sage] = { class_type: "PathchSageAttentionKJ", inputs: {
-      model: m, sage_attention: state.sageAttnMode || "auto",
+  // SageAttention and CK-Attention are alternative attention backends — the Settings UI
+  // enforces only one group being on, so these never stack.
+  if (state.useCkAttention && has(avail, "ModelAttentionBackend")) {
+    g[N.ckAttn] = { class_type: "ModelAttentionBackend", inputs: {
+      model: m,
+      attention: state.ckAttentionBackend === "pytorch" ? "pytorch attention" : "comfy kitchen attention",
     }};
-    m = [N.sage, 0];
-  }
-  if (state.useMemEffSage && has(avail, "MiniMaxH3MemoryEfficientSageAttentionPatch")) {
-    g[N.memSage] = { class_type: "MiniMaxH3MemoryEfficientSageAttentionPatch", inputs: { model: m } };
-    m = [N.memSage, 0];
+    m = [N.ckAttn, 0];
+  } else {
+    if (state.useSageAttn && has(avail, "PathchSageAttentionKJ")) {
+      g[N.sage] = { class_type: "PathchSageAttentionKJ", inputs: {
+        model: m, sage_attention: state.sageAttnMode || "auto",
+      }};
+      m = [N.sage, 0];
+    }
+    if (state.useMemEffSage && has(avail, "MiniMaxH3MemoryEfficientSageAttentionPatch")) {
+      g[N.memSage] = { class_type: "MiniMaxH3MemoryEfficientSageAttentionPatch", inputs: { model: m } };
+      m = [N.memSage, 0];
+    }
   }
   if (state.useTorchPatch && has(avail, "ModelPatchTorchSettings")) {
     g[N.torch] = { class_type: "ModelPatchTorchSettings", inputs: {
@@ -228,6 +244,18 @@ function buildModelChain(g, state, avail) {
       device: "auto", verbose: false,
     }};
     m = [N.cache, 0];
+  }
+
+  // Same reuse-cache idea as MiniMaxH3Cache above, just a different implementation — the
+  // UI enforces only one of the two being on at once, so this never stacks with N.cache.
+  if (state.useFirstBlockCache && has(avail, "ApplyMiniMaxH3FirstBlockCache")) {
+    g[N.fbcache] = { class_type: "ApplyMiniMaxH3FirstBlockCache", inputs: {
+      model: m,
+      mode: "H3 Fast — 0.10 / max 2",
+      threshold: 0.10, start_percent: 0.10, end_percent: 0.95,
+      max_consecutive_hits: 2, temporal_guard: false,
+    }};
+    m = [N.fbcache, 0];
   }
 
   // Turbo only when a LoRA exists for THIS mode's base model — see effectiveAccel.
@@ -303,6 +331,36 @@ function applyPreview(g, state, avail, modelLink, nodeId) {
   return [key, 0];
 }
 
+// H3 SLA Attention wants to be last before the sampler (its own README: "place it after
+// your LoRA loader, last before the sampler"), so it goes after preview, not inside
+// buildModelChain. Enabling it lives in Settings; the node's own `enabled` bypass is the
+// left-panel per-run checkbox, so the node stays in the graph either way once turned on
+// in Settings — flipping the left-panel box just toggles sparse vs dense passthrough.
+function applySla(g, state, avail, modelLink) {
+  if (!state.useSlaAttention || !has(avail, "H3SLAAttention")) return modelLink;
+  g[N.sla] = { class_type: "H3SLAAttention", inputs: {
+    model: modelLink,
+    sparsity_ratio: state.slaSparsity ?? 0.90,
+    block_size: state.slaBlockSize || "64",
+    min_seq_len: state.slaMinSeqLen ?? 8192,
+    dense_last_steps: state.slaDenseLastSteps ?? 0,
+    protect_audio: state.slaProtectAudio !== false,
+    enabled: state.slaRunEnabled !== false,
+  }};
+  return [N.sla, 0];
+}
+
+// Per-card megapixel override for a keyframe/reference image — 0 (or unset) means "send
+// as uploaded, no resize". ImageScaleToTotalPixels is a ComfyUI core node, so this needs
+// no availability gate.
+function resizeToMp(g, key, imageLink, mp) {
+  if (!(mp > 0)) return imageLink;
+  g[key] = { class_type: "ImageScaleToTotalPixels", inputs: {
+    image: imageLink, upscale_method: "lanczos", megapixels: mp, resolution_steps: 1,
+  }};
+  return [key, 0];
+}
+
 function buildConditioning(g, state, promptText, width, height, frames, opts, avail) {
   const mode = state.generationMode || "t2v";
   const { firstFrame, lastFrame, refImages } = opts || {};
@@ -319,8 +377,9 @@ function buildConditioning(g, state, promptText, width, height, frames, opts, av
     (refImages || []).slice(0, 9).forEach((name, i) => {
       if (!name) return;
       g[N.ref(i)] = { class_type: "LoadImage", inputs: { image: name } };
+      let link = resizeToMp(g, N.refResize(i), [N.ref(i), 0], (state.refImagesMp || [])[i]);
       // Autogrow inputs are addressed with the dotted path the schema expands to.
-      inputs[`ref_images.ref_image_${i}`] = [N.ref(i), 0];
+      inputs[`ref_images.ref_image_${i}`] = link;
     });
 
     // Reference videos. VHS_LoadVideo does the whole job in one node: force_rate pins
@@ -377,11 +436,11 @@ function buildConditioning(g, state, promptText, width, height, frames, opts, av
   if (mode === "firstlast") {
     if (firstFrame) {
       g[N.loadFirst] = { class_type: "LoadImage", inputs: { image: firstFrame } };
-      inputs.first_frame = [N.loadFirst, 0];
+      inputs.first_frame = resizeToMp(g, N.loadFirstResize, [N.loadFirst, 0], state.firstFrameMp);
     }
     if (lastFrame) {
       g[N.loadLast] = { class_type: "LoadImage", inputs: { image: lastFrame } };
-      inputs.last_frame = [N.loadLast, 0];
+      inputs.last_frame = resizeToMp(g, N.loadLastResize, [N.loadLast, 0], state.lastFrameMp);
     }
   }
   g[N.cond] = { class_type: "MiniMaxH3ImageToVideo", inputs };
@@ -419,7 +478,8 @@ export function buildClipGraph(state, avail, opts = {}) {
   g[N.vaeV] = { class_type: "VAELoader", inputs: { vae_name: state.vaeVideo } };
   g[N.vaeA] = { class_type: "VAELoader", inputs: { vae_name: state.vaeAudio } };
 
-  const modelLink = applyPreview(g, state, avail, modelLink0, nodeId);
+  const modelLink1 = applyPreview(g, state, avail, modelLink0, nodeId);
+  const modelLink = applySla(g, state, avail, modelLink1);
 
   // ── conditioning ───────────────────────────────────────────────────────────
   // `promptText` arrives fully composed (header + shots + footer + suffix) from

@@ -41,7 +41,8 @@ export const MMH3_CORE_NODES = [
 ];
 export const MMH3_OPTIONAL_NODES = [
   "PathchSageAttentionKJ", "ModelPreviewOverrideKJ", "ModelPatchTorchSettings",
-  "MiniMaxH3MemoryEfficientSageAttentionPatch", "MiniMaxH3Cache",
+  "MiniMaxH3MemoryEfficientSageAttentionPatch", "MiniMaxH3Cache", "ApplyMiniMaxH3FirstBlockCache",
+  "ModelAttentionBackend", "H3SLAAttention",
   "MiniMaxH3TurboSampler", "MiniMaxH3TurboLoRA", "SolAttnPatch",
   "SpectrumApplyMiniMaxH3", "RTXVideoSuperResolution",
   // reference video / audio inputs
@@ -226,13 +227,13 @@ export async function setLastResult(nodeId, { image, videoPath } = {}) {
 }
 
 // Concatenate the per-clip videos server-side (ffmpeg).
-export async function stitchClips(clips, filenamePrefix, trimSeconds, overlapSeconds) {
+export async function stitchClips(clips, filenamePrefix, trimSeconds, overlapSeconds, overrideAudio) {
   const r = await api.fetchApi(`${API}/stitch`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       clips, filename_prefix: filenamePrefix, trim_seconds: trimSeconds ?? null,
-      overlap_seconds: overlapSeconds ?? null,
+      overlap_seconds: overlapSeconds ?? null, override_audio: overrideAudio || null,
     }),
   });
   const d = await r.json();

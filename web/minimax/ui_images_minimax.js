@@ -6,6 +6,7 @@
 import { C, BRAND, el, clear } from "./core_minimax.js";
 import { panel, label, select, numberField, row, col } from "../klein/ui_common.js";
 import { uploadImage, getMediaFiles, uploadMedia, getMediaInfo } from "./api_minimax.js";
+import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
 
 export function imageSlot(labelText, initialFile, onSet, { box = 132 } = {}) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "3px", alignItems: "center" } });
@@ -27,6 +28,17 @@ export function imageSlot(labelText, initialFile, onSet, { box = 132 } = {}) {
     background: "rgba(0,0,0,0.7)", color: "#fff", border: "none", borderRadius: "4px",
     width: "18px", height: "18px", cursor: "pointer", fontSize: "10px", padding: "0", display: "none",
   }});
+  // Local upload (click/drag the box) isn't the only way in — this also picks straight from
+  // any of the 5 image tools' own galleries (copies into ComfyUI's input folder first).
+  const galleryBtn = el("button", { type: "button", text: "🖼", title: "Pick from a gallery", style: {
+    position: "absolute", bottom: "3px", left: "3px", zIndex: "3",
+    background: "rgba(0,0,0,0.7)", color: "#fff", border: "none", borderRadius: "4px",
+    width: "20px", height: "20px", cursor: "pointer", fontSize: "11px", padding: "0",
+  }});
+  galleryBtn.addEventListener("click", e => {
+    e.stopPropagation();
+    openImageGalleryPicker(filename => { setFilename(filename); onSet(filename); });
+  });
   let current = null;
   function setFilename(name) {
     current = name || null;
@@ -37,7 +49,7 @@ export function imageSlot(labelText, initialFile, onSet, { box = 132 } = {}) {
       img.style.display = "none"; hint.style.display = ""; clearBtn.style.display = "none";
     }
   }
-  frame.append(hint, img, clearBtn);
+  frame.append(hint, img, clearBtn, galleryBtn);
   wrap.appendChild(frame);
 
   const inp = el("input", { type: "file", accept: "image/*", style: { display: "none" } });
@@ -256,9 +268,17 @@ export function mountImagePanel(state, ctx) {
         n => { state.firstFrameImage = n; ctx.persist(); });
       const last = imageSlot("② Last frame\n(optional)", state.lastFrameImage,
         n => { state.lastFrameImage = n; ctx.persist(); });
+      const firstMp = numberField(state.firstFrameMp ?? 1.0, v => { state.firstFrameMp = Math.max(0, v); ctx.persist(); }, 0.1);
+      const lastMp  = numberField(state.lastFrameMp  ?? 1.0, v => { state.lastFrameMp  = Math.max(0, v); ctx.persist(); }, 0.1);
+      firstMp.style.width = "60px"; lastMp.style.width = "60px";
+      const mpCol = (imgEl, mpEl) => el("div", { style: { display: "flex", flexDirection: "column", gap: "3px", alignItems: "center" } },
+        [imgEl, el("div", { text: "MP", style: { fontSize: "9px", color: C.muted } }), mpEl]);
       wrap.appendChild(panel([
         label("First / Last Keyframes"),
-        el("div", { style: { display: "flex", gap: "6px", justifyContent: "center" } }, [first.el, last.el]),
+        el("div", { style: { display: "flex", gap: "6px", justifyContent: "center" } },
+          [mpCol(first.el, firstMp), mpCol(last.el, lastMp)]),
+        el("div", { text: "MP = megapixels sent to the model for that image (0 = send as uploaded, no resize).",
+          style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
         el("div", { html: "Both are optional. With neither, this is the same as Text only. In a relay run the "
           + "<b>Last Frame Chain</b> continuity mode overwrites ① for every clip after the first.",
           style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
@@ -271,10 +291,7 @@ export function mountImagePanel(state, ctx) {
     const picker = refTypeDropdown(state, ctx, render);
     const kids = [
       label("Reference"),
-      // Reference runs on the Ref2VA model, which has no turbo LoRA — SolAttn, Spectrum
-      // or None at the normal step count is the working configuration.
-      el("div", { html: "Uses the <b>Ref2VA</b> model. Acceleration here is SolAttn / Spectrum / None at the "
-        + "normal step count — Turbo is fl2v-only and isn't offered in this mode.",
+      el("div", { html: "Uses the <b>Ref2VA</b> model.",
         style: { fontSize: "10px", color: C.muted, lineHeight: "1.55" } }),
       picker.el,
     ];
@@ -286,13 +303,28 @@ export function mountImagePanel(state, ctx) {
         const slot = imageSlot(refs[i] ? `<Picture ${i + 1}>` : "+ add\nreference", refs[i] || null,
           name => {
             const list = (state.refImages || []).slice();
-            if (name) list[i] = name; else list.splice(i, 1);
+            const mpList = (state.refImagesMp || []).slice();
+            if (name) { list[i] = name; } else { list.splice(i, 1); mpList.splice(i, 1); }
             state.refImages = list.filter(Boolean).slice(0, 9);
+            state.refImagesMp = mpList.slice(0, 9);
             ctx.persist(); render();
           }, { box: 92 });
-        grid.appendChild(slot.el);
+        const cell = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px", alignItems: "center" } }, [slot.el]);
+        if (refs[i]) {
+          const mpIn = numberField(state.refImagesMp?.[i] ?? 1.0, v => {
+            const mpList = (state.refImagesMp || []).slice();
+            mpList[i] = Math.max(0, v);
+            state.refImagesMp = mpList;
+            ctx.persist();
+          }, 0.1);
+          mpIn.style.width = "60px"; mpIn.title = "Megapixels sent to the model (0 = send as uploaded)";
+          cell.appendChild(mpIn);
+        }
+        grid.appendChild(cell);
       }
       kids.push(label(`Images (${refs.length}/9)`), grid);
+      kids.push(el("div", { text: "MP = megapixels sent to the model for that image (0 = send as uploaded, no resize).",
+        style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
       kids.push(row([col([label("Reference size"), select(
         [{ value: "match", label: "match — scale to output area (faster)" },
          { value: "max",   label: "max — 2048px short edge (best identity, slower)" }],

@@ -58,6 +58,8 @@ REPOS=(
     # MiniMax H3 reference videos (VHS_LoadVideo) and the Spectrum accelerator
     "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite"
     "https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3"
+    "https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache"
+    "https://github.com/PlagueKind/ComfyUI-PlagueKind-Nodes"
 )
 
 TOTAL=${#REPOS[@]}

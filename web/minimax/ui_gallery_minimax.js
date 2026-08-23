@@ -4,8 +4,8 @@
 // mp4s written into the output subfolder and plays them full screen with the keyboard
 // shortcuts you'd expect from a review pass.
 import { C, BRAND, el, clear, SUBFOLDER, framesToSeconds, alignFrameCount, ONE_TAKE_OVERLAP_FRAMES } from "./core_minimax.js";
-import { button } from "../klein/ui_common.js";
-import { listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage } from "./api_minimax.js";
+import { button, select, numberField } from "../klein/ui_common.js";
+import { listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage, getMediaFiles } from "./api_minimax.js";
 
 const STITCH_MAX = 10;
 
@@ -150,6 +150,7 @@ export function createGalleryOverlay(state, ctx) {
     stitchBtn.style.background = stitchMode ? BRAND : C.bg2;
     stitchBtn.style.borderColor = stitchMode ? BRAND : C.border;
     stitchBar.style.display = stitchMode ? "flex" : "none";
+    audioOverrideBar.style.display = stitchMode ? "flex" : "none";
     renderGrid();
   });
   hdr.append(fullBtn, stitchBtn, refreshBtn, folderBtn, button("✕ Close", () => hide(), "danger"));
@@ -183,6 +184,42 @@ export function createGalleryOverlay(state, ctx) {
   const stitchGoBtn = button("🔗 Combine", () => runStitch(), "primary");
   stitchBar.append(stitchInfo, oneTakeLabel, stitchClearBtn, stitchGoBtn);
 
+  // Optional: swap the combined result's audio for a separate source file entirely (e.g. a
+  // full backing track), instead of whatever the picked clips' own audio was. Independent of
+  // the node's own Audio Lock file — this is its own picker over models/input's audio files.
+  let audioOverrideOn = false, audioOverrideFile = "", audioOverrideStart = 0, audioFilesCache = null;
+  const audioOverrideBar = el("div", { style: {
+    display: "none", flexShrink: "0", alignItems: "center", gap: "8px", flexWrap: "wrap",
+    background: C.bg1, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "7px 10px",
+  }});
+  const audioOverrideCb = el("input", { type: "checkbox" });
+  audioOverrideCb.style.cursor = "pointer";
+  const audioOverrideLabel = el("label", { style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "10.5px", color: C.text, cursor: "pointer" } },
+    [audioOverrideCb, el("span", { text: "🎵 Replace audio with:" })]);
+  const audioSelectWrap = el("div", { style: { minWidth: "180px" } });
+  const startField = numberField(0, v => { audioOverrideStart = Math.max(0, v); }, 0.1);
+  const startFieldWrap = el("div", { style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "10.5px", color: C.muted } },
+    [el("span", { text: "start(s)" }), startField]);
+  audioOverrideBar.append(audioOverrideLabel, audioSelectWrap, startFieldWrap);
+
+  function renderAudioSelect() {
+    clear(audioSelectWrap);
+    const files = audioFilesCache || [];
+    const opts = ["", ...files].map(f => ({ value: f, label: f || (audioFilesCache ? "— pick a file —" : "loading…") }));
+    const sel = select(opts, audioOverrideFile, v => { audioOverrideFile = v; });
+    sel.style.fontSize = "10.5px";
+    audioSelectWrap.appendChild(sel);
+  }
+  renderAudioSelect();
+
+  audioOverrideCb.addEventListener("change", () => {
+    audioOverrideOn = audioOverrideCb.checked;
+    if (audioOverrideOn && audioFilesCache === null) {
+      getMediaFiles().then(d => { audioFilesCache = d.audios || []; renderAudioSelect(); })
+                     .catch(() => { audioFilesCache = []; renderAudioSelect(); });
+    }
+  });
+
   function refreshStitchBar() {
     const picked = stitchOrder.map(k => videos.find(v => vKey(v) === k)).filter(Boolean);
     const known = picked.map(v => v.meta?.frames ? framesToSeconds(v.meta.frames) : null);
@@ -213,9 +250,10 @@ export function createGalleryOverlay(state, ctx) {
     stitchInfo.textContent = `Stitching ${picked.length} clips${overlapSec ? ` (One-Take, ${overlapSec.toFixed(3)}s overlap trimmed)` : ""}…`;
     try {
       const folder = (state.saveSubfolder || SUBFOLDER).replace(/\\/g, "/");
+      const audioOverride = audioOverrideOn && audioOverrideFile ? { filename: audioOverrideFile, start: audioOverrideStart } : null;
       const out = await stitchClips(
         picked.map(v => ({ filename: v.filename, subfolder: v.subfolder || "" })),
-        `${folder}/${state.filenamePrefix || "MMH3"}_full`, null, overlapSec,
+        `${folder}/${state.filenamePrefix || "MMH3"}_full`, null, overlapSec, audioOverride,
       );
       const known = picked.map(v => v.meta?.frames ? framesToSeconds(v.meta.frames) : null);
       const rawTotal = known.every(s => s != null) ? known.reduce((a, b) => a + b, 0) : null;
@@ -246,7 +284,7 @@ export function createGalleryOverlay(state, ctx) {
   hint.innerHTML = "double-click a clip to play it full screen · "
     + "<b>space</b> play/pause · <b>← →</b> seek · <b>[ ]</b> previous / next · <b>Esc</b> close";
 
-  ov.append(hdr, stitchBar, grid, hint);
+  ov.append(hdr, stitchBar, audioOverrideBar, grid, hint);
 
   // ── fullscreen player ──────────────────────────────────────────────────────
   const player = el("div", { style: {

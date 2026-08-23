@@ -1841,6 +1841,14 @@ async def mmh3_get_config(request):
         "use_mem_eff_sage": cfg.get("use_mem_eff_sage", True),
         "use_torch_patch":  cfg.get("use_torch_patch",  True),
         "fp16_accum":       cfg.get("fp16_accum",       True),
+        "use_ck_attention":     cfg.get("use_ck_attention",     False),
+        "ck_attention_backend": cfg.get("ck_attention_backend", "comfy_kitchen"),
+        "use_sla_attention":    cfg.get("use_sla_attention",    False),
+        "sla_sparsity":         cfg.get("sla_sparsity",         0.90),
+        "sla_block_size":       cfg.get("sla_block_size",       "64"),
+        "sla_min_seq_len":      cfg.get("sla_min_seq_len",      8192),
+        "sla_dense_last_steps": cfg.get("sla_dense_last_steps", 0),
+        "sla_protect_audio":    cfg.get("sla_protect_audio",    True),
         "cache_threshold":  cfg.get("cache_threshold",  0.3),
         "cache_start":      cfg.get("cache_start",      0.15),
         "cache_end":        cfg.get("cache_end",        0.9),
@@ -2003,6 +2011,9 @@ MMH3_OPTIONAL_NODES = [
     "ModelPatchTorchSettings",
     "MiniMaxH3MemoryEfficientSageAttentionPatch",
     "MiniMaxH3Cache",
+    "ApplyMiniMaxH3FirstBlockCache",
+    "ModelAttentionBackend",
+    "H3SLAAttention",
     "MiniMaxH3TurboSampler",
     "MiniMaxH3TurboLoRA",
     "SolAttnPatch",
@@ -2100,6 +2111,26 @@ async def mmh3_stitch(request):
         if not paths:
             return web.json_response({"ok": False, "error": "none of the clip files were found"}, status=400)
 
+        # override_audio: {filename, subfolder, type ("input"|"output"), start} — replace every
+        # clip's own (generated) audio with a slice of a separate source file instead, e.g. the
+        # Audio Lock track. type defaults to "input" since that's where LoadAudio reads from.
+        override_audio_path = None
+        override_audio_start = 0.0
+        oa = data.get("override_audio")
+        if isinstance(oa, dict) and oa.get("filename"):
+            oa_base = folder_paths.get_output_directory() if oa.get("type") == "output" else folder_paths.get_input_directory()
+            try:
+                override_audio_path = _safe_resolve_path(oa_base, oa.get("subfolder", "") or "", oa.get("filename", "") or "")
+            except ValueError:
+                override_audio_path = None
+            if override_audio_path and not os.path.isfile(override_audio_path):
+                override_audio_path = None
+            if override_audio_path:
+                try:
+                    override_audio_start = max(0.0, float(oa.get("start") or 0))
+                except (TypeError, ValueError):
+                    override_audio_start = 0.0
+
         prefix = (data.get("filename_prefix") or f"{MMH3_SUBFOLDER}/MMH3_full").replace("\\", "/")
         sub = os.path.dirname(prefix) or MMH3_SUBFOLDER
         stem = os.path.basename(prefix) or "MMH3_full"
@@ -2118,22 +2149,39 @@ async def mmh3_stitch(request):
             overlap = 0.0
 
         if overlap > 0 and len(paths) > 1:
+            # When overriding audio, the per-clip audio never reaches the output, so the filter
+            # graph skips it entirely (video-only concat) — some ffmpeg builds (imageio-ffmpeg's
+            # bundled 7.1 included) crash outright when a -filter_complex output label is mixed
+            # with a raw N:a:0 stream -map in the same command, so keeping the graph audio-free
+            # avoids that combination rather than working around it.
             filt = []
             labels = []
             for i, p in enumerate(paths):
                 if i == 0:
                     filt.append(f"[{i}:v]setpts=PTS-STARTPTS[v{i}]")
-                    filt.append(f"[{i}:a]asetpts=PTS-STARTPTS[a{i}]")
+                    if not override_audio_path:
+                        filt.append(f"[{i}:a]asetpts=PTS-STARTPTS[a{i}]")
                 else:
                     filt.append(f"[{i}:v]trim=start={overlap:.3f},setpts=PTS-STARTPTS[v{i}]")
-                    filt.append(f"[{i}:a]atrim=start={overlap:.3f},asetpts=PTS-STARTPTS[a{i}]")
-                labels.append(f"[v{i}][a{i}]")
-            filt.append(f"{''.join(labels)}concat=n={len(paths)}:v=1:a=1[outv][outa]")
+                    if not override_audio_path:
+                        filt.append(f"[{i}:a]atrim=start={overlap:.3f},asetpts=PTS-STARTPTS[a{i}]")
+                labels.append(f"[v{i}]" if override_audio_path else f"[v{i}][a{i}]")
+            if override_audio_path:
+                filt.append(f"{''.join(labels)}concat=n={len(paths)}:v=1:a=0[outv]")
+            else:
+                filt.append(f"{''.join(labels)}concat=n={len(paths)}:v=1:a=1[outv][outa]")
             cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y"]
             for p in paths:
                 cmd += ["-i", p]
-            cmd += ["-filter_complex", ";".join(filt), "-map", "[outv]", "-map", "[outa]",
-                    "-c:v", "libx264", "-crf", "18", "-preset", "medium", "-c:a", "aac", out_path]
+            audio_input_idx = len(paths)
+            if override_audio_path:
+                cmd += ["-ss", f"{override_audio_start:.3f}", "-i", override_audio_path]
+            cmd += ["-filter_complex", ";".join(filt), "-map", "[outv]"]
+            if override_audio_path:
+                cmd += ["-map", f"{audio_input_idx}:a:0", "-shortest"]
+            else:
+                cmd += ["-map", "[outa]"]
+            cmd += ["-c:v", "libx264", "-crf", "18", "-preset", "medium", "-c:a", "aac", out_path]
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
             if proc.returncode != 0 or not os.path.isfile(out_path):
                 return web.json_response(
@@ -2151,12 +2199,21 @@ async def mmh3_stitch(request):
 
         cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
                "-f", "concat", "-safe", "0", "-i", list_path]
+        if override_audio_path:
+            cmd += ["-ss", f"{override_audio_start:.3f}", "-i", override_audio_path]
         trim = data.get("trim_seconds")
         try:
             trim = float(trim) if trim is not None else None
         except (TypeError, ValueError):
             trim = None
-        if trim and trim > 0:
+        if override_audio_path:
+            # swap in the separate audio source instead of each clip's own track; always
+            # re-encode since we're remapping streams across inputs, not just stream-copying.
+            cmd += ["-map", "0:v", "-map", "1:a:0", "-shortest",
+                    "-c:v", "libx264", "-crf", "18", "-preset", "medium", "-c:a", "aac"]
+            if trim and trim > 0:
+                cmd += ["-t", f"{trim:.3f}"]
+        elif trim and trim > 0:
             # re-encode when trimming so the cut lands on an exact timestamp
             cmd += ["-t", f"{trim:.3f}", "-c:v", "libx264", "-crf", "18", "-preset", "medium", "-c:a", "aac"]
         else:

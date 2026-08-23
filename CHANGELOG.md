@@ -2,6 +2,50 @@
 
 ---
 
+## v1.14.0 (2026-08-24)
+
+### MiniMax H3 — 웹 버전 기능 이식 + 가속/캐시/어텐션 옵션 확장
+
+- **갤러리에서 이미지 업로드** — 이미지 업로드 카드(첫/마지막 프레임, Reference)에 5개 이미지
+  툴의 갤러리에서 바로 고를 수 있는 🖼 버튼 추가
+- **Audio Lock 재생/트림 컨트롤** — 파일 업로드 시 재생 컨트롤러, start/end 트림 필드, 트림
+  구간만 재생 + 재생 시간 자동 갱신 추가 (웹 버전과 동일)
+- **One-Take: "Replace with Audio Lock source"** — 원테이크 자동 스티치, 갤러리 스티치 양쪽에
+  생성된 오디오 대신 Audio Lock 소스 파일을 트림해서 쓰는 옵션 추가
+- **클립 길이 커스텀(초 단위)** 옵션 추가
+- **Turbo LoRA를 Reference 모드에서도 사용 가능**하게 복원, 표기를 "Turbo LoRA(larryvrh)"로 변경
+- **H3 FirstBlockCache (step reuse) 추가** — 기존 H3 Cache와 상호배타적으로 선택(Spectrum과는
+  호환)
+- **CK-Attention / SageAttention 그룹 선택** — `ModelAttentionBackend`(comfy kitchen attention)
+  를 SageAttention(KJ) 그룹과 양자택일로 추가, Mem-eff SageAttention 패치는 독립 체크박스로 복원
+- **H3 SLA Attention 추가** — Settings → Models에서 활성화 + 세부 옵션(sparsity, block size 등)
+  조절, 노드 좌측 패널에 노드 자체 bypass 토글과 연결된 빠른 온/오프 체크박스 추가
+- **첫/마지막 프레임, Reference 이미지 카드별 MP(메가픽셀) 지정** — 지정한 크기로 리사이즈해서
+  큐로 전송 (`ImageScaleToTotalPixels`)
+- **LOCAL ENHANCE(Image → Brief)의 Ollama 비전 경로도 1MP로 고정** — native 경로는 이미 1MP
+  고정이었으나 Ollama 경로는 리사이즈 없이 원본을 보내고 있던 것을 통일
+- 새 의존 노드 3종 설치 스크립트/문서 추가: `ComfyUI-MiniMaxH3-FirstBlockCache`,
+  `ComfyUI-PlagueKind-Nodes`(H3 SLA Attention). `ModelAttentionBackend`는 ComfyUI 코어 노드
+
+- **ported 5 web-version features + expanded accel/cache/attention options**
+- gallery image picker on upload cards; Audio Lock playback/trim controls with live scrubbing;
+  One-Take & gallery-stitch "Replace with Audio Lock source"; custom clip length in seconds
+- Turbo LoRA restored for Reference mode, relabeled "Turbo LoRA(larryvrh)"
+- added H3 FirstBlockCache (step reuse), mutually exclusive with H3 Cache, compatible with
+  Spectrum
+- added CK-Attention (`ModelAttentionBackend`) as an alternative to the SageAttention group;
+  H3 mem-efficient SageAttention patch is an independent checkbox again
+- added H3 SLA Attention: Settings → Models toggle + tuning, left-panel checkbox wired to the
+  node's own bypass
+- per-card megapixel override for first/last/reference images, resized via
+  `ImageScaleToTotalPixels` before being queued
+- LOCAL ENHANCE (Image → Brief)'s Ollama vision path is now capped at 1MP too, matching the
+  native path
+- added install entries for `ComfyUI-MiniMaxH3-FirstBlockCache` and `ComfyUI-PlagueKind-Nodes`
+  (H3 SLA Attention); `ModelAttentionBackend` is a ComfyUI core node, no install needed
+
+---
+
 ## v1.13.3 (2026-08-20)
 
 - **MiniMax H3 — Spectrum과 H3 Cache 상호배제** — Turbo LoRA와 동일하게, Accel을 Spectrum으로
