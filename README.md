@@ -495,6 +495,70 @@ MiniMax H3 only accepts frame counts on a **17k+5 grid** and a single pass is VR
 | **설정 누락 차단**<br><sub>Missing-model guard</sub>| UNET이 지정되지 않은 모드는 **진입 자체가 막히고**, 상단에 무엇이 빠졌는지 경고가 뜹니다. 해당 모델이 필요한 연속성 옵션도 사라지지 않고 **회색으로 비활성화되어 이유가 표시**됩니다<br><sub>a mode whose UNET is unset cannot be entered — the top bar says what Settings still needs, and a continuity option needing that model stays in the menu, greyed out with a reason, instead of disappearing</sub>|
 | **갤러리**<br><sub>Gallery</sub>| 클립·합본을 한 곳에서, 실제 첫 프레임 썸네일(서버에서 ffmpeg로 추출·캐시) + 길이 표시. **🔗 스티치** 모드로 순서대로 골라 합치기(최대 10개, One-Take 클립이면 겹침 자동 트림 옵션 자동 체크) · 카드마다 **✕ 삭제**(중앙 팝업 확인, Enter=삭제/Esc=취소) · 카드마다 **생성에 쓰인 프롬프트**로 다시 불러오거나 복사 · 전체화면 플레이어(스페이스=재생, ←→=이동, `[`/`]`=이전/다음, Esc=닫기)<br><sub>real first-frame thumbnails (ffmpeg-extracted and cached server-side) plus each clip's length. **🔗 Stitch** mode picks clips in order (max 10, auto-checks overlap-trim for One-Take clips) · **✕ delete** on every card (centered confirm, Enter=Delete/Esc=Cancel) · each card keeps the prompt it was rendered from (reuse or copy) · fullscreen player</sub>|
 | **설정 저장**<br><sub>Settings persistence</sub>| 노드 설정이 **워크플로우에 함께 저장**됩니다. 다른 PC에서 열거나 남에게 파일을 넘겨도 그대로 재현되고, 한 그래프에 노드를 여러 개 둬도 각자 값을 유지합니다<br><sub>settings are saved inside the workflow, so the file reproduces on another machine and multiple nodes keep separate values</sub>|
+| **텍스트 인코더 VRAM 명시적 해제**<br><sub>Explicit text-encoder VRAM release</sub>| conditioning 계산이 끝난 직후, 샘플링 시작 직전에 텍스트 인코더를 강제로 언로드(`TJ_FreeTextEncoderVRAM`, 설치돼 있을 때만 자동 적용). 아래 "왜 이걸 만들었는가" 참고<br><sub>force-unloads the text encoder right after conditioning is built and before sampling starts (`TJ_FreeTextEncoderVRAM`, applied automatically only when installed). See "Why this exists" below</sub>|
+
+### 왜 텍스트 인코더를 명시적으로 내리는가 / Why explicit text-encoder unload
+
+MiniMax H3는 한 클립 안에서 텍스트 인코더 로드 → conditioning 계산 → 디퓨즈 모델 로드 →
+샘플링 → 디코드가 전부 한 큐 제출 안에서 순서대로 돕니다. 16GB급 카드에서 이 노드를 굴리며
+**VRAM이 빠듯해서 나온 최적화**입니다 — ComfyUI의 스마트 메모리 관리가 필요할 때 알아서
+모델을 내려주긴 하지만, 그 판단이 항상 100% 깔끔하게 텍스트 인코더를 전부 내려주는 건
+아니라서(일부가 VRAM에 남는 경우가 있음), 샘플링 동안 디퓨즈 모델과 나란히 자리를 차지하며
+여유 VRAM을 갉아먹었습니다. 샘플링 중엔 디퓨즈 모델만 올라와 있는 게 가장 효율적이라서,
+"conditioning이 다 나온 시점"에 명시적으로 강제 언로드 지점을 그래프에 박아뒀습니다.
+
+**구조**: [ComfyUI-TJ_NODE](https://github.com/designloves2/ComfyUI-TJ_NODE)의
+`TJ_FreeTextEncoderVRAM` 노드가 이 역할을 합니다. `clip`(내릴 텍스트 인코더)과
+`trigger`(CONDITIONING 등 아무 타입이나)를 입력받아 `trigger`를 그대로 통과시키기만
+하면서, 그 시점에 `comfy.model_management.unload_model_and_clones(clip.patcher,
+unload_additional_models=True)`를 호출합니다. 핵심은 `unload_all_models()`처럼 전부
+내리는 게 아니라 **그 CLIP 모델 하나만** 콕 집어 내린다는 것 — 그래야 이미 로드해둔
+디퓨즈 모델까지 같이 내려가서 최적화 의미가 없어지는 걸 피할 수 있습니다. 이 저장소에서는
+`MiniMaxH3ImageToVideo`/`MiniMaxH3ReferenceToVideo`(conditioning 계산)와 `BasicGuider`
+(샘플러 직전) 사이에 이 노드를 끼워 넣는 식으로 그래프를 구성합니다
+(`web/minimax/graph_builder_minimax.js`). 노드가 설치돼 있지 않으면 조용히 건너뛰고
+평소대로 동작합니다.
+
+**남들도 쓰거나 만들 수 있게 공개합니다.** 어떤 워크플로우든 "텍스트 인코더로 conditioning을
+다 뽑고 → 그 다음 디퓨즈 모델을 로드/샘플링"하는 순서라면 똑같이 적용 가능한 범용 기법입니다
+— `TJ_FreeTextEncoderVRAM`을 conditioning 출력 바로 뒤에 끼워 넣기만 하면 됩니다(CLIPTextEncode
+등 어떤 노드 조합이든 무방). 직접 만들고 싶다면 핵심은 이 세 줄뿐입니다:
+```python
+import comfy.model_management as mm
+mm.unload_model_and_clones(clip.patcher, unload_additional_models=True)
+mm.soft_empty_cache()
+```
+주의할 점: negative conditioning을 별도로 인코딩하는 모델(SD1.5/SDXL류, CFGGuider 사용)은
+positive만 트리거로 걸면 negative 인코딩이 이 노드보다 늦게 끝날 위험이 있어, 그런 모델을
+지원하려면 트리거를 두 개(positive/negative) 받게 확장하는 게 안전합니다. MiniMax H3처럼
+`BasicGuider`(positive만 있음)만 쓰는 모델은 이 문제가 없습니다.
+
+MiniMax H3 runs text-encoder load → conditioning → diffusion-model load → sampling →
+decode all inside one queue submission per clip. This optimization came out of running this
+node on a 16GB card and needing to squeeze out every bit of headroom — ComfyUI's smart memory
+management unloads models when needed, but that judgment doesn't always fully clean out the
+text encoder (a piece can linger in VRAM), quietly eating into the headroom sampling needs.
+The diffusion model alone is the most efficient thing to have resident during sampling, so an
+explicit forced-unload checkpoint is placed right at "conditioning is done."
+
+**How it works**: [ComfyUI-TJ_NODE](https://github.com/designloves2/ComfyUI-TJ_NODE)'s
+`TJ_FreeTextEncoderVRAM` node does this. It takes `clip` (the text encoder to unload) and
+`trigger` (any type — CONDITIONING, etc.), passes `trigger` straight through, and as a side
+effect calls `comfy.model_management.unload_model_and_clones(clip.patcher,
+unload_additional_models=True)` at that point. The key is that this targets **only that one
+CLIP model** — not `unload_all_models()`, which would also drop the already-loaded diffusion
+model and defeat the point. Here it's inserted between conditioning
+(`MiniMaxH3ImageToVideo`/`MiniMaxH3ReferenceToVideo`) and the sampler's `BasicGuider`
+(`web/minimax/graph_builder_minimax.js`), skipped silently if the node isn't installed.
+
+**Published so others can use or build it too** — this is a general technique for any
+workflow shaped "text encoder produces conditioning, then a diffusion model loads and
+samples": drop `TJ_FreeTextEncoderVRAM` right after the conditioning output (works with any
+node combination, not just CLIPTextEncode). To build your own, the core is just those three
+lines above. Caveat: models that encode negative conditioning separately (SD1.5/SDXL-style,
+CFGGuider) risk the negative encode finishing after this node if only positive is wired as
+the trigger — supporting those safely needs two triggers (positive/negative). Models using
+only `BasicGuider` (positive-only), like MiniMax H3, don't have this problem.
 
 ### 필수 모델 / Required Models
 
