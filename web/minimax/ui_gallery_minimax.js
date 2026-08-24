@@ -431,6 +431,50 @@ export function createGalleryOverlay(state, ctx) {
       deleteBtn.addEventListener("click", e => { e.stopPropagation(); askDelete(v); });
       thumbWrap.appendChild(deleteBtn);
 
+      // Full render settings this clip was actually made with, on hover — the meta already
+      // carries everything Reuse (below) restores, this is just a read-only look at it.
+      const infoBtn = el("button", { type: "button", text: "ⓘ", title: "Clip settings", style: {
+        position: "absolute", top: "4px", left: "4px", zIndex: "3",
+        width: "18px", height: "18px", lineHeight: "16px", padding: "0",
+        cursor: "default", fontSize: "11px", fontFamily: "inherit",
+        background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "4px",
+      }});
+      infoBtn.addEventListener("click", e => e.stopPropagation());
+      let infoPopup = null;
+      infoBtn.addEventListener("mouseenter", () => {
+        const m = v.meta || {};
+        const lines = [];
+        if (m.w && m.h) lines.push(`${m.w}×${m.h}`);
+        if (m.frames) lines.push(`${m.frames} frames`);
+        if (m.steps) lines.push(`${m.steps} steps`);
+        if (m.sampler) lines.push(String(m.sampler));
+        if (m.accel) lines.push(`accel: ${m.accel}`);
+        if (m.elapsedSec != null) {
+          const s = Math.round(m.elapsedSec);
+          lines.push(`took ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`);
+        }
+        if (m.turboLora) {
+          lines.push(`turbo LoRA: ${String(m.turboLora).split(/[\\/]/).pop()} (${m.turboLoraStrength ?? 1})`);
+        }
+        (m.loras || []).filter(l => l && l.name && l.name !== "none").forEach(l => {
+          lines.push(`${l.enabled === false ? "lora (off): " : "lora: "}${String(l.name).split(/[\\/]/).pop()} (${l.strength ?? 1})`);
+        });
+        if (m.seed != null) lines.push(`seed ${m.seed}`);
+        infoPopup = el("div", { style: {
+          position: "fixed", zIndex: "10001", background: "rgba(10,10,10,0.97)",
+          border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px 8px",
+          fontSize: "10px", color: C.text, lineHeight: "1.6", whiteSpace: "pre",
+          pointerEvents: "none", maxWidth: "220px", boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
+        }});
+        infoPopup.textContent = lines.length ? lines.join("\n") : "No settings saved for this clip.";
+        document.body.appendChild(infoPopup);
+        const r = infoBtn.getBoundingClientRect();
+        infoPopup.style.left = `${r.right + 6}px`;
+        infoPopup.style.top = `${r.top}px`;
+      });
+      infoBtn.addEventListener("mouseleave", () => { infoPopup?.remove(); infoPopup = null; });
+      thumbWrap.appendChild(infoBtn);
+
       thumbWrap.addEventListener("mouseenter", () => {
         stopGridVideos();               // only ever one card previewing at a time
         hoverVideo.src = viewURL(v);
@@ -495,9 +539,10 @@ export function createGalleryOverlay(state, ctx) {
           return b;
         };
         bar.append(
-          mini("↩ Reuse", "Load this prompt back into the editor", () => {
-            const ok = ctx.reusePrompt?.(v.meta || { prompt: promptText });
-            ctx.showPopup?.(ok ? "Prompt loaded into the editor." : "No prompt stored for this clip.", !ok);
+          mini("↩ Reuse", "Restore this clip's prompt AND its render settings (resolution, steps, sampler, acceleration, LoRAs, seed) into the panel", () => {
+            const m = v.meta || { prompt: promptText };
+            const ok = (ctx.reuseAll || ctx.reusePrompt)?.(m);
+            ctx.showPopup?.(ok ? "Clip settings loaded into the panel." : "No prompt stored for this clip.", !ok);
             if (ok) hide();
           }),
           mini("⧉ Copy", "Copy the prompt to the clipboard", () => {

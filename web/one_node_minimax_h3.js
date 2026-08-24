@@ -307,6 +307,7 @@ app.registerExtension({
       self.onRemoved = function () {
         api.removeEventListener("kj_preview_override", onKJPreview);
         stopWakeAudio();
+        stopQueueWatch();
         window.removeEventListener("beforeunload", onBeforeUnload);
         origOnRemoved?.apply(this, arguments);
       };
@@ -320,7 +321,39 @@ app.registerExtension({
       const barOuter = el("div", { style: { height: "6px", background: C.bg2, borderRadius: "3px", overflow: "hidden", border: `1px solid ${C.border}` } });
       const barInner = el("div", { style: { height: "100%", width: "0%", background: BRAND, transition: "width .15s linear" } });
       barOuter.appendChild(barInner);
-      statusWrap.append(statusLine, barOuter);
+      // Same warning the web version shows: something ELSE besides this screen's own
+      // in-flight clip is sitting in ComfyUI's queue, which usually means another node/tab
+      // is competing for the GPU and this run's steps will be slower/stalled than the ETA
+      // assumes.
+      const queueWarn = el("div", { style: {
+        display: "none", marginTop: "3px", fontSize: "10px", padding: "4px 8px",
+        borderRadius: "5px", background: "rgba(230,160,20,0.15)", color: "#e6a014",
+        border: "1px solid rgba(230,160,20,0.4)",
+      }});
+      statusWrap.append(statusLine, barOuter, queueWarn);
+
+      let queuePollTimer = null;
+      async function checkOtherQueue() {
+        try {
+          const r = await api.fetchApi("/queue");
+          const d = await r.json();
+          const total = (d.queue_running || []).length + (d.queue_pending || []).length;
+          const extra = Math.max(0, total - 1);   // 1 = this screen's own in-flight clip
+          queueWarn.style.display = extra > 0 ? "block" : "none";
+          queueWarn.textContent = extra > 0
+            ? `⚠ ComfyUI queue: ${extra} more pending besides this screen's generation.` : "";
+        } catch {}
+      }
+      function startQueueWatch() {
+        if (queuePollTimer) return;
+        checkOtherQueue();
+        queuePollTimer = setInterval(checkOtherQueue, 4000);
+      }
+      function stopQueueWatch() {
+        if (queuePollTimer) clearInterval(queuePollTimer);
+        queuePollTimer = null;
+        queueWarn.style.display = "none";
+      }
 
       let runStart = 0, clockTimer = null;
       let curClip = 0, totClip = 0;
@@ -1098,7 +1131,31 @@ app.registerExtension({
 
       const genBtn = button("▶ Generate", null, "primary");
       genBtn.style.cssText += "width:100%;padding:11px;font-size:13px;";
+      // /interrupt is global — it kills whatever ComfyUI is CURRENTLY executing, with no
+      // idea which session queued it. If something else cut in line (see the queue-watch
+      // warning above), this node's own clip might not even be the thing running yet, and
+      // Stop would silently interrupt someone else's generation instead. Check before
+      // firing it, and only bother the user with a confirm when it actually looks like
+      // that's about to happen.
+      async function isOurClipCurrentlyRunning() {
+        try {
+          const r = await api.fetchApi("/queue");
+          const d = await r.json();
+          const running = d.queue_running || [];
+          if (!running.length) return true;   // nothing running — Stop is a no-op either way
+          const key = previewNodeKey(self.id);
+          return running.some(item => item[2] && Object.prototype.hasOwnProperty.call(item[2], key));
+        } catch { return true; }   // couldn't check — don't block the user over that
+      }
       const stopBtn = button("■ Stop", async () => {
+        if (!(await isOurClipCurrentlyRunning())) {
+          const proceed = window.confirm(
+            "What's currently running on the ComfyUI server doesn't look like this node's own clip "
+            + "— it looks like something else got queued ahead of it.\n\n"
+            + "Stop will interrupt whatever IS running right now, which may belong to a different "
+            + "generation. Continue anyway?");
+          if (!proceed) return;
+        }
         stopRequested = true;
         await interrupt();
         setStatus("Stopping after the current clip…");
@@ -1299,6 +1356,7 @@ app.registerExtension({
         if (running) return;
         running = true; stopRequested = false;
         startWakeAudio();
+        startQueueWatch();
         genBtn.disabled = true; genBtn.textContent = "⏳ Preparing…";
         nextGenBtn.style.display = "none";
         resetPreview(); barInner.style.width = "0%"; startClock();
@@ -1345,7 +1403,7 @@ app.registerExtension({
           // disagree with it if prompts were toggled while nothing was watching, and that
           // would desync every saved index (clipRecords, pos, checkpoint names) from what
           // they actually mean.
-          const active = resume ? resume.activeIdx.map(i => ({ i })) : activePrompts(rs);
+          const active = resume ? (resume.activeIdx || []).map(i => ({ i })) : activePrompts(rs);
           if (!active.length) throw new Error("No prompts are switched on.");
           totClip = active.length;
           nextGenBtn.style.display = "";
@@ -1453,6 +1511,12 @@ app.registerExtension({
             }
             if (isOneTake) prevCheckpointName = checkpointName;
 
+            // Captured once, right after the clip actually finishes — reused for both the
+            // saved meta (so the Gallery can show/average real per-clip time) and the
+            // running ETA estimate below, instead of taking two slightly different
+            // Date.now() readings for the same clip.
+            const elapsedSec = (Date.now() - clipStart) / 1000;
+
             const vid = firstOutput(res.byNode, NODE_IDS.save);
             const lastImg = firstOutput(res.byNode, NODE_IDS.saveLF);
             if (vid) {
@@ -1466,6 +1530,15 @@ app.registerExtension({
                 // lets the Gallery's manual stitch auto-detect that adjacent clips share
                 // an overlap and offer to trim it, instead of the user having to remember
                 onetake: isOneTake,
+                // everything a full Reuse needs to reproduce this exact clip, plus the
+                // measured time it actually took (see refreshAvgFromHistory)
+                elapsedSec,
+                turboLora: rs.turboLora || "", turboLoraReference: rs.turboLoraReference || "",
+                turboLoraStrength: rs.turboLoraStrength ?? 1.0, turboLoraLowVram: !!rs.turboLoraLowVram,
+                loras: (rs.loras || []).map(l => ({
+                  name: l.name || "none", strength: l.strength ?? 1.0,
+                  triggerWord: l.triggerWord || "", enabled: l.enabled !== false,
+                })),
               }, rs));
               showResultVideo(`/view?filename=${encodeURIComponent(vid.filename)}&subfolder=${encodeURIComponent(vid.subfolder || "")}&type=${vid.type || "output"}&t=${Date.now()}`);
               badge.textContent = `CLIP ${curClip}/${totClip} done`;
@@ -1571,7 +1644,7 @@ app.registerExtension({
           // into whatever's queued, so Stop drops the whole queue, not just this run.
           const queued = (!stopRequested && nextQueue.length) ? nextQueue.shift() : null;
           if (stopRequested) nextQueue = [];
-          if (!queued) stopWakeAudio();   // truly idle now — anything queued keeps it playing across the handoff
+          if (!queued) { stopWakeAudio(); stopQueueWatch(); }   // truly idle now — anything queued keeps these going across the handoff
           running = false; stopRequested = false;
           genBtn.disabled = false; genBtn.textContent = "▶ Generate";
           renderNextQueue();
@@ -1584,7 +1657,11 @@ app.registerExtension({
           }
         }
       }
-      genBtn.onclick = runGeneration;
+      // Not `genBtn.onclick = runGeneration` — onclick hands the handler the click Event
+      // as its first argument, which would land in `resume` (any truthy value there is
+      // treated as a real resume descriptor, not the default `null`) and send every normal
+      // click down the resume path with none of the fields it needs.
+      genBtn.onclick = () => runGeneration();
 
       // ══ HELP ════════════════════════════════════════════════════════════════
       const helpEl = el("div", { style: {
@@ -1660,6 +1737,38 @@ app.registerExtension({
         return true;
       };
 
+      // Full "make this exact clip again" restore — everything reusePrompt does, plus
+      // every render setting saveMeta captured (resolution, sampling, acceleration, both
+      // LoRA slots). Same seed on purpose — reproducing the clip exactly is the point;
+      // switch Seed mode afterward if a variation is wanted instead. Missing fields (older
+      // clips saved before this existed) are skipped rather than clobbering the current
+      // panel value with something that was never actually recorded.
+      ctx.reuseAll = (meta) => {
+        if (!ctx.reusePrompt(meta)) return false;
+        if (meta.aspect) state.aspect = meta.aspect;
+        if (meta.megapixels != null) state.megapixels = meta.megapixels;
+        if (meta.frames) { state.clipFrames = meta.frames; state.clipLengthCustom = false; }
+        if (meta.steps != null) state.steps = meta.steps;
+        if (meta.sampler) state.sampler = meta.sampler;
+        if (meta.accel) state.accelMode = meta.accel;
+        if (meta.seed != null) {
+          state.seed = meta.seed; state.seedMode = "fixed";
+          seedInput.value = meta.seed; seedModeDD.value = "fixed";
+        }
+        if (meta.turboLora) state.turboLora = meta.turboLora;
+        if (meta.turboLoraReference) state.turboLoraReference = meta.turboLoraReference;
+        if (meta.turboLoraStrength != null) state.turboLoraStrength = meta.turboLoraStrength;
+        if (meta.turboLoraLowVram != null) state.turboLoraLowVram = meta.turboLoraLowVram;
+        if (Array.isArray(meta.loras)) state.loras = meta.loras.map(l => ({
+          name: l.name || "none", strength: l.strength ?? 1.0,
+          triggerWord: l.triggerWord || "", enabled: l.enabled !== false,
+        }));
+        persist();
+        refreshPlan();
+        renderLeft();
+        return true;
+      };
+
       galleryOv = createGalleryOverlay(state, ctx);
       root.appendChild(galleryOv.el);
       document.body.appendChild(galleryOv.playerEl);   // fullscreen player lives above everything
@@ -1726,7 +1835,13 @@ app.registerExtension({
       // loop just builds that clip fresh, same as any other clip.
       (async function checkResumeRunning() {
         const saved = state._relay;
-        if (!saved || !(saved.pos < saved.totClip)) return;
+        // Guards against a stale/older-shaped leftover (e.g. saved before activeIdx or
+        // runState existed) driving a broken resume instead of just being dropped.
+        if (!saved || !Array.isArray(saved.activeIdx) || !saved.activeIdx.length
+            || !(saved.pos < saved.totClip)) {
+          if (saved) { delete state._relay; persist(); }
+          return;
+        }
         let inFlightPromptId = null;
         try {
           const r = await api.fetchApi("/queue");

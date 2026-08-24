@@ -2,6 +2,45 @@
 
 ---
 
+## v1.16.0 (2026-08-25)
+
+### MiniMax H3 — 클립 메타데이터/완전 Reuse/실측 평균 + 새치기 큐 대응 + 버그 수정
+
+- **클립 메타데이터 확장 + 완전 Reuse** — 클립 저장 시 소요시간(`elapsedSec`), 터보
+  LoRA(이름/강도/저VRAM), 일반 LoRA 슬롯 스냅샷을 함께 기록. 갤러리 썸네일에 ⓘ
+  호버 팝업(해상도/스텝/샘플러/가속모드/소요시간/LoRA/시드)추가. "↩ Reuse"가
+  프롬프트뿐 아니라 해상도·프레임·스텝·샘플러·가속모드·터보/일반 LoRA·시드까지
+  전부 복원(같은 시드 고정)하도록 확장
+- **실측 평균 소요시간** — Settings → Output에서 저장 폴더의 과거 클립 중 현재
+  설정(해상도·megapixels·frames·가속모드·LoRA 사용여부)과 일치하는 것만 걸러서
+  실제 소요시간 평균을 "Avg minutes per clip"에 자동 반영, 표본 수 표시
+- **다른 큐 새치기 경고** — 이 화면의 클립 외에 ComfyUI 서버 큐에 다른 작업이 있으면
+  진행률 바 아래에 경고 배너 표시(4초 간격 폴링, 실행 중~Next Gen 연쇄 끝까지 유지)
+- **Stop 버튼 안전장치** — `/interrupt`는 전역이라 "지금 실행 중인 것"을 무조건
+  끊는데, 그게 이 노드 자신의 클립이 아닌 것 같으면(다른 세션이 새치기했을 때) 먼저
+  confirm으로 물어보고 진행하도록 변경 — 실수로 남의 생성 끊는 것 방지
+- **버그 수정**: 새로고침 복구 로직이 예전 형식의 leftover `_relay`를 만나면
+  `.map()` 크래시가 나던 문제 수정(방어적으로 정리 후 진행). `genBtn.onclick =
+  runGeneration` 직접 할당 시 클릭 Event가 `resume` 인자로 새어 들어가 정상 클릭도
+  "No prompts are switched on" 에러를 내던 버그 수정(래퍼 함수로 격리)
+
+- **added clip metadata / full Reuse / measured average + other-queue awareness + fixes**
+- clip meta now also records elapsed render time, turbo LoRA config, and a snapshot of
+  the regular LoRA slots; Gallery thumbnails gained an ⓘ hover popup; "↩ Reuse" now
+  restores the full render config (resolution/steps/sampler/accel/both LoRA slots/seed),
+  not just the prompt
+- Settings → Output now auto-computes "Avg minutes per clip" from past clips matching
+  the current config, showing the sample count
+- a warning banner appears when something besides this screen's own clip is sitting in
+  ComfyUI's server queue (polled every 4s, persists across Next Gen chaining)
+- Stop now checks whether the clip actually running server-side is this node's own
+  before interrupting, confirming first if it looks like someone else's job cut in line
+- fixed a crash where an older-shaped leftover `_relay` (from before this version) threw
+  on resume, and a bug where assigning `genBtn.onclick = runGeneration` directly let the
+  click Event leak into the `resume` parameter, breaking every normal Generate click
+
+---
+
 ## v1.15.1 (2026-08-25)
 
 ### MiniMax H3 — 절전/탭 종료 방지 + README 안내

@@ -3,7 +3,7 @@
 // by every clip; per-run choices live in the node's left panel instead.
 import { C, BRAND, el, clear, SUBFOLDER, SAMPLERS, SCHEDULERS } from "./core_minimax.js";
 import { panel, label, button, select, numberField, row, col } from "../klein/ui_common.js";
-import { getModels, getConfig, saveConfig, getNodeAvailability, getOllamaModels } from "./api_minimax.js";
+import { getModels, getConfig, saveConfig, getNodeAvailability, getOllamaModels, listVideos } from "./api_minimax.js";
 
 function searchableSelect(options, value, onChange) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } });
@@ -438,13 +438,37 @@ export function createSettingsOverlay(state, ctx) {
       el("div", { text: "Every clip is always written to disk as its own video; the stitched file is written alongside them.", style: { fontSize: "10px", color: C.muted } }),
     ]));
 
+    const avgIn = numField(state.avgMinutesPerClip ?? 13, v => { state.avgMinutesPerClip = v; ctx.persist(); ctx.refreshPlan?.(); }, { step: "0.5" });
+    const avgNote = el("div", { text: "Checking Gallery for past clips at the current settings…",
+      style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } });
+    // Past clips rendered at the exact same resolution/frames/acceleration/LoRA-usage as
+    // right now are a better ETA than the hand-typed fallback, so this overwrites it when
+    // there's a real sample — the field above stays editable either way.
+    listVideos(state.saveSubfolder || SUBFOLDER, { limit: 300 }).then(d => {
+      const wantLora = (state.loras || []).some(l => l.enabled !== false && l.name && l.name !== "none");
+      const matches = (d.videos || d.images || [])
+        .map(v => v.meta).filter(Boolean)
+        .filter(m => m.elapsedSec != null
+          && m.aspect === state.aspect
+          && Math.abs((m.megapixels ?? 1) - (state.megapixels ?? 1)) < 0.01
+          && m.frames === state.clipFrames
+          && (m.accel || "") === (state.accelMode || "")
+          && ((m.loras || []).some(l => l.enabled !== false && l.name && l.name !== "none")) === wantLora);
+      if (!matches.length) { avgNote.textContent = "No past clips at the current settings yet — using the manual value above."; return; }
+      const avgMin = matches.reduce((a, m) => a + m.elapsedSec, 0) / matches.length / 60;
+      state.avgMinutesPerClip = +avgMin.toFixed(2);
+      avgIn.value = state.avgMinutesPerClip;
+      ctx.persist(); ctx.refreshPlan?.();
+      avgNote.textContent = `Measured from ${matches.length} matching clip${matches.length === 1 ? "" : "s"} — value above updated automatically.`;
+    }).catch(() => { avgNote.textContent = "Couldn't check past clips — using the manual value above."; });
+
     wrap.appendChild(panel([
       label("Relay"),
       checkbox("Stitch all clips into one video when the run finishes", state.stitchAtEnd, v => { state.stitchAtEnd = v; ctx.persist(); }),
       checkbox("Trim the stitched video to the requested total length", state.trimLastClip, v => { state.trimLastClip = v; ctx.persist(); }),
       checkbox("Free VRAM between clips (slower reload, safer on 16GB)", state.unloadBetweenClips, v => { state.unloadBetweenClips = v; ctx.persist(); }),
-      col([label("Avg minutes per clip (used for the time estimate)"),
-        numField(state.avgMinutesPerClip ?? 13, v => { state.avgMinutesPerClip = v; ctx.persist(); ctx.refreshPlan?.(); }, { step: "0.5" })]),
+      col([label("Avg minutes per clip (used for the time estimate)"), avgIn]),
+      avgNote,
     ]));
 
     const suffixIn = el("input", { type: "text", placeholder: "e.g. cinematic lighting, film grain", style: {
