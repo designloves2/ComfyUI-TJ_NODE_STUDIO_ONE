@@ -21,6 +21,9 @@
 > ⚠️ **생성 방식**: 모든 노드의 생성은 ComfyUI 상단 **RUN**이 아닌 노드 내부의 **▶ Generate** 버튼으로 실행합니다. RUN 실행 시 마지막으로 생성된 이미지가 OUTPUT image 슬롯으로 출력됩니다.
 > ⚠️ **Generation Method**: generation for all nodes is executed using at the top of ComfyUI **RUN**instead of, use the button inside the node **▶ Generate** button. When RUN is executed, the most recently generated image is output through the OUTPUT image slot..
 
+<img width="988" height="984" alt="image" src="https://github.com/user-attachments/assets/5764b302-b95d-40e1-98aa-a1a63c135c51" />
+<img width="1201" height="816" alt="Screen Shot 2026-06-27 at 05 58 39 907 AM" src="https://github.com/user-attachments/assets/aaf0686e-e09b-43b4-8aff-c6d369e5f06c" />
+
 ---
 
 ## 🌐 웹 버전 — AI ONE STUDIO
@@ -30,12 +33,13 @@
 
 **[designloves2/AI-ONE-STUDIO](https://github.com/designloves2/AI-ONE-STUDIO)** — a standalone web app that reproduces this custom-node package's UI as-is. It runs against a plain ComfyUI server as its backend (no Manager or node install needed on the client side — just keep ComfyUI running), and lets you use every ONE STUDIO tool in a fullscreen, menu-driven UI in the browser, without the ComfyUI graph canvas.
 
+<img width="240" height="480" alt="m6" src="https://github.com/user-attachments/assets/1ba815a1-f980-4ee9-9f6c-595cb0bec63b" />
+<img width="240" height="480" alt="m3" src="https://github.com/user-attachments/assets/aaba6fa9-a61b-47b1-b1b6-5110d753aed6" />
+<img width="240" height="480" alt="m2" src="https://github.com/user-attachments/assets/53358f5c-d3ba-4544-93dd-448de6f28b00" />
+<img width="240" height="480" alt="m1" src="https://github.com/user-attachments/assets/12520cc6-150a-4102-849e-f44f59a4bef2" />
+<img width="1280" height="800" alt="w1" src="https://github.com/user-attachments/assets/79374177-b812-45f8-b2e3-e2ad30271a6f" />
+
 ---
-
-<img width="1201" height="816" alt="Screen Shot 2026-06-27 at 05 58 39 907 AM" src="https://github.com/user-attachments/assets/aaf0686e-e09b-43b4-8aff-c6d369e5f06c" />
-<img width="988" height="984" alt="image" src="https://github.com/user-attachments/assets/5764b302-b95d-40e1-98aa-a1a63c135c51" />
-
-
 
 ## 목차
 ## Table of Contents
