@@ -18,6 +18,7 @@ const N = {
   memSage:"MM:mem_sage",
   ckAttn: "MM:ck_attn",
   sla:    "MM:sla",
+  freeClipVram: "MM:free_clip_vram",
   torch:  "MM:torch",
   shift:  "MM:sigma_shift",
   cache:  "MM:cache",
@@ -505,8 +506,19 @@ export function buildClipGraph(state, avail, opts = {}) {
     model: modelLink, scheduler: state.scheduler || "simple",
     steps, denoise: state.denoise ?? 1.0,
   }};
+  // Conditioning is fully computed by now and nothing downstream needs the text encoder
+  // again this clip — free it before the diffusion model starts sampling instead of
+  // leaving it to ComfyUI's own (not always fully clean) smart unload. TJ_NODE's node
+  // just passes the conditioning straight through; freeing is its only side effect.
+  let condLink = [N.cond, 0];
+  if (has(avail, "TJ_FreeTextEncoderVRAM")) {
+    g[N.freeClipVram] = { class_type: "TJ_FreeTextEncoderVRAM", inputs: {
+      clip: [N.clip, 0], trigger: condLink,
+    }};
+    condLink = [N.freeClipVram, 0];
+  }
   g[N.guider] = { class_type: "BasicGuider", inputs: {
-    model: modelLink, conditioning: [N.cond, 0],
+    model: modelLink, conditioning: condLink,
   }};
   // ── audio lock ─────────────────────────────────────────────────────────────
   // H3 treats ref_audio as a reference and regenerates the sound, which is no good for

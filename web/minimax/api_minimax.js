@@ -42,7 +42,7 @@ export const MMH3_CORE_NODES = [
 export const MMH3_OPTIONAL_NODES = [
   "PathchSageAttentionKJ", "ModelPreviewOverrideKJ", "ModelPatchTorchSettings",
   "MiniMaxH3MemoryEfficientSageAttentionPatch", "MiniMaxH3Cache", "ApplyMiniMaxH3FirstBlockCache",
-  "ModelAttentionBackend", "H3SLAAttention",
+  "ModelAttentionBackend", "H3SLAAttention", "TJ_FreeTextEncoderVRAM",
   "MiniMaxH3TurboSampler", "MiniMaxH3TurboLoRA", "SolAttnPatch",
   "SpectrumApplyMiniMaxH3", "RTXVideoSuperResolution",
   // reference video / audio inputs

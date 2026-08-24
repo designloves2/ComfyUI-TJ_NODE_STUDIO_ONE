@@ -2014,6 +2014,9 @@ MMH3_OPTIONAL_NODES = [
     "ApplyMiniMaxH3FirstBlockCache",
     "ModelAttentionBackend",
     "H3SLAAttention",
+    # Frees the text encoder right after conditioning is built, before sampling starts
+    # (ships with TJ_NODE) — see SPEC_FREE_TEXT_ENCODER_VRAM_PORT.md
+    "TJ_FreeTextEncoderVRAM",
     "MiniMaxH3TurboSampler",
     "MiniMaxH3TurboLoRA",
     "SolAttnPatch",
@@ -2034,6 +2037,9 @@ MMH3_OPTIONAL_NODES = [
     # analysis pass costs no separate server or model file. TJ_MultiImageLoader ships
     # with TJ_NODE; TextGenerate and TJStudioOneTextOutput are this package's own.
     "TJ_MultiImageLoader", "TextGenerate", "TJStudioOneTextOutput",
+    # Frees the text encoder's VRAM right after conditioning is computed, before the
+    # diffuse model samples (ships with ComfyUI-TJ_NODE). See SPEC_FREE_TEXT_ENCODER_VRAM_PORT.md.
+    "TJ_FreeTextEncoderVRAM",
 ]
 MMH3_CORE_NODES = [
     "MiniMaxH3ImageToVideo",

@@ -2,6 +2,24 @@
 
 ---
 
+## v1.16.1 (2026-08-25)
+
+### MiniMax H3 — Free Text Encoder VRAM 이식
+
+- **텍스트 인코더 명시적 VRAM 언로드** — conditioning 계산이 끝난 직후, 샘플링(디퓨즈
+  모델 로드) 시작 직전에 TJ_NODE의 `TJ_FreeTextEncoderVRAM`을 그래프에 끼워 넣어
+  텍스트 인코더를 명시적으로 내림. ComfyUI의 스마트 메모리 관리가 항상 100% 깔끔하게
+  내려주지는 않아서 샘플링 중 여유 VRAM을 갉아먹던 문제를 완화. 노드가 설치돼 있을
+  때만 자동 적용(없으면 기존과 동일하게 동작)
+
+- **ported Free Text Encoder VRAM**
+- inserts TJ_NODE's `TJ_FreeTextEncoderVRAM` right after conditioning is built and
+  before sampling starts, explicitly freeing the text encoder instead of relying on
+  ComfyUI's own smart unload (which doesn't always fully clean up) — applies
+  automatically when the node is installed, no-op otherwise
+
+---
+
 ## v1.16.0 (2026-08-25)
 
 ### MiniMax H3 — 클립 메타데이터/완전 Reuse/실측 평균 + 새치기 큐 대응 + 버그 수정
