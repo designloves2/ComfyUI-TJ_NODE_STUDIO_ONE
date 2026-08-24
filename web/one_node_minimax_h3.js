@@ -306,6 +306,8 @@ app.registerExtension({
       const origOnRemoved = nodeType.prototype.onRemoved;
       self.onRemoved = function () {
         api.removeEventListener("kj_preview_override", onKJPreview);
+        stopWakeAudio();
+        window.removeEventListener("beforeunload", onBeforeUnload);
         origOnRemoved?.apply(this, arguments);
       };
 
@@ -1102,12 +1104,11 @@ app.registerExtension({
         setStatus("Stopping after the current clip…");
       });
       stopBtn.style.flexShrink = "0";
-      // Only offered for a single-prompt run: with one prompt, the whole clip's graph is
-      // already built and queued by the time this could be clicked, so editing the panel
-      // afterward (to prepare the next run) can never leak into the one in flight. A
-      // multi-clip run reads state.prompts live per clip on purpose (so a later clip's
-      // text can be tweaked while an earlier one renders), and that's exactly what this
-      // queue would corrupt if it were allowed there too.
+      // Offered for any run, any clip count: runGeneration() freezes the whole panel into
+      // its own snapshot (`rs`) the moment it starts, so editing the live panel afterward
+      // — to prep this queue entry, or just because a run takes a while — can never leak
+      // into a clip the running snapshot hasn't rendered yet, no matter how many clips are
+      // still ahead of it.
       //
       // Like ComfyUI's own queue: every click snapshots the whole panel as-is and appends
       // it as one more entry. When the current run finishes cleanly, entry #1 takes over
@@ -1197,36 +1198,80 @@ app.registerExtension({
       // ══ RELAY LOOP ══════════════════════════════════════════════════════════
       let running = false, stopRequested = false;
 
+      // Keeps a near-silent tone playing for the whole run (across Next Gen chaining too),
+      // same trick the web version uses. A backgrounded/minimized tab gets throttled by the
+      // browser and the OS is free to sleep, either of which stops the relay from queuing
+      // its next clip the same way closing the tab does — active audio playback is what
+      // most browsers/OSes treat as "still doing something," so it heads that off. The
+      // Screen Wake Lock API was considered instead, but it's released the moment the tab
+      // loses visibility (minimized or switched away from), which is exactly the case this
+      // needs to survive. Volume is near-zero but NOT muted — a muted/zero-gain element is
+      // exactly what a browser's power-saving heuristics look for to deprioritize a tab, so
+      // this defeats its own purpose if actually silent.
+      let wakeCtx = null, wakeSource = null;
+      function startWakeAudio() {
+        if (wakeCtx) return;
+        try {
+          wakeCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const buffer = wakeCtx.createBuffer(1, wakeCtx.sampleRate, wakeCtx.sampleRate);
+          wakeSource = wakeCtx.createBufferSource();
+          wakeSource.buffer = buffer;
+          wakeSource.loop = true;
+          const gain = wakeCtx.createGain();
+          gain.gain.value = 0.0005;
+          wakeSource.connect(gain).connect(wakeCtx.destination);
+          wakeSource.start(0);
+          wakeCtx.resume?.().catch(() => {});
+        } catch { wakeCtx = null; wakeSource = null; }   // autoplay policy on a non-gesture resume, or unsupported — best-effort only
+      }
+      function stopWakeAudio() {
+        try { wakeSource?.stop(); } catch {}
+        try { wakeCtx?.close(); } catch {}
+        wakeCtx = null; wakeSource = null;
+      }
+
+      // Warn before an accidental tab close only while THIS node's own relay/Next Gen
+      // queue is actually active — other tabs, other tools, and this node sitting idle
+      // never trigger it. Each MiniMax H3 node on the canvas registers its own listener
+      // scoped to its own `running`/`nextQueue`, so one busy node warns without implicating
+      // any other node or queue.
+      const onBeforeUnload = (e) => {
+        if (!running && !nextQueue.length) return;
+        e.preventDefault();
+        e.returnValue = "";
+      };
+      window.addEventListener("beforeunload", onBeforeUnload);
+
       // Header + this clip's shots + footer, assembled only now — the parts stay
       // separate in the editor so a split never eats the shared style/sound text.
       // A clip index maps back through the per-prompt repeat counts.
-      function promptForClip(clipIdx) {
-        return composeClipPrompt(state, clipIdx);
+      function promptForClip(clipIdx, st = state) {
+        return composeClipPrompt(st, clipIdx);
       }
 
-      function seedForClip(i) {
-        if (!state.seedPerClip) return state.seed ?? 0;
-        return ((state.seed ?? 0) + i) % Number.MAX_SAFE_INTEGER;
+      function seedForClip(i, st = state) {
+        if (!st.seedPerClip) return st.seed ?? 0;
+        return ((st.seed ?? 0) + i) % Number.MAX_SAFE_INTEGER;
       }
 
       // What the gallery needs to show a clip and to put its prompt back into the
       // editor. Kept flat and small — this is written next to every video file.
-      function metaForVideo(promptText, extra = {}) {
-        const { width, height } = resolveResolution(state.aspect, state.megapixels);
+      function metaForVideo(promptText, extra = {}, st = state) {
+        const { width, height } = resolveResolution(st.aspect, st.megapixels);
         return {
           v: 1,
           prompt: String(promptText || ""),
-          promptHeader: state.promptHeader || "",
-          promptFooter: state.promptFooter || "",
+          promptHeader: st.promptHeader || "",
+          promptFooter: st.promptFooter || "",
           w: width, h: height,
-          mode: state.generationMode || "t2v",
-          aspect: state.aspect,
-          megapixels: state.megapixels,
-          frames: state.clipFrames,
-          steps: state.steps,
-          sampler: state.sampler,
-          accel: state.accelMode,
-          seed: state.seed,
+          mode: st.generationMode || "t2v",
+          aspect: st.aspect,
+          megapixels: st.megapixels,
+          frames: st.clipFrames,
+          steps: st.steps,
+          sampler: st.sampler,
+          accel: st.accelMode,
+          seed: st.seed,
           node: "minimax_h3",
           created: Date.now(),
           ...extra,
@@ -1245,14 +1290,15 @@ app.registerExtension({
         return out?.images || out?.gifs || [];
       }
 
-      // resume: { pos, activeIdx, chainFrame, prevCheckpointName, clipRecords, inFlightPromptId }
-      // — set only by checkResumeRunning() below, after a page reload finds this node's
-      // own state._relay progress left over from a run that was still going when it
-      // refreshed. Everything else (a plain Generate click, or a queued Next Gen restart)
-      // calls this with no argument, same as before.
+      // resume: { pos, activeIdx, chainFrame, prevCheckpointName, clipRecords, runState,
+      // inFlightPromptId } — set only by checkResumeRunning() below, after a page reload
+      // finds this node's own state._relay progress left over from a run that was still
+      // going when it refreshed. Everything else (a plain Generate click, or a queued Next
+      // Gen restart) calls this with no argument, same as before.
       async function runGeneration(resume = null) {
         if (running) return;
         running = true; stopRequested = false;
+        startWakeAudio();
         genBtn.disabled = true; genBtn.textContent = "⏳ Preparing…";
         nextGenBtn.style.display = "none";
         resetPreview(); barInner.style.width = "0%"; startClock();
@@ -1283,18 +1329,29 @@ app.registerExtension({
             persist();
           }
 
+          // Same idea as ComfyUI's own queue: clicking Generate (or Next Gen) freezes the
+          // whole panel into one snapshot right here, and everything below reads only that
+          // snapshot (`rs`) — never live `state` — for the rest of the run. Editing the
+          // panel afterward (to prep a Next Gen entry, or just because a run takes a while)
+          // can never leak into clips this run hasn't rendered yet. Resuming after a reload
+          // reuses the exact snapshot the interrupted run was already using.
+          // Falls back to live state if resuming from a _relay saved before this node's
+          // last update (no runState field yet) — better than crashing on a stale resume.
+          const rs = resume ? (resume.runState || state) : JSON.parse(JSON.stringify(state));
+
           const plan = currentPlan();
-          // Resuming reconstructs the exact same clip list the interrupted run had —
-          // recomputing activePrompts(state) fresh here could disagree with it if prompts
-          // were toggled while nothing was watching, and that would desync every saved
-          // index (clipRecords, pos, checkpoint names) from what they actually mean.
-          const active = resume ? resume.activeIdx.map(i => ({ i })) : activePrompts(state);
+          // Resuming reconstructs the exact same clip list the interrupted run had, from
+          // the frozen snapshot — not a fresh activePrompts(state) read, which could
+          // disagree with it if prompts were toggled while nothing was watching, and that
+          // would desync every saved index (clipRecords, pos, checkpoint names) from what
+          // they actually mean.
+          const active = resume ? resume.activeIdx.map(i => ({ i })) : activePrompts(rs);
           if (!active.length) throw new Error("No prompts are switched on.");
           totClip = active.length;
-          nextGenBtn.style.display = (totClip === 1) ? "" : "none";
+          nextGenBtn.style.display = "";
           const clipRecords = resume ? resume.clipRecords.slice() : [];
           let chainFrame = resume ? resume.chainFrame
-            : (state.generationMode === "reference" ? null : (state.firstFrameImage || null));
+            : (rs.generationMode === "reference" ? null : (rs.firstFrameImage || null));
           let prevCheckpointName = resume ? resume.prevCheckpointName : null;   // One-Take: previous clip's saved latent, loaded fresh each queue submission
           const clipTimes = [];
           const startPos = resume ? resume.pos : 0;
@@ -1306,7 +1363,7 @@ app.registerExtension({
           function saveRelay(pos) {
             state._relay = {
               pos, totClip, activeIdx: active.map(a => a.i),
-              chainFrame, prevCheckpointName, clipRecords: clipRecords.slice(),
+              chainFrame, prevCheckpointName, clipRecords: clipRecords.slice(), runState: rs,
             };
             persist();
           }
@@ -1338,10 +1395,10 @@ app.registerExtension({
             //
             // Across all three the shared part of the prompt still reaches every clip,
             // which is what keeps a run looking like one piece.
-            const isRef = state.generationMode === "reference";
-            let firstFrame = isRef ? null : (state.firstFrameImage || null);
-            let refImages  = state.refImages || [];
-            const continued = pos > 0 && state.continuityMode === "lastframe" && !!chainFrame;
+            const isRef = rs.generationMode === "reference";
+            let firstFrame = isRef ? null : (rs.firstFrameImage || null);
+            let refImages  = rs.refImages || [];
+            const continued = pos > 0 && rs.continuityMode === "lastframe" && !!chainFrame;
             if (pos > 0) firstFrame = continued ? chainFrame : null;
             if (continued) refImages = [];   // FL2VA takes no reference images
 
@@ -1349,18 +1406,18 @@ app.registerExtension({
             // Like Last Frame Chain, only FL2VA accepts a first frame, so a clip with an
             // override is forced to FL2VA even in Reference mode — the reference images
             // drop out for that clip, same rule as the chained case above.
-            const override = promptFirstFrame(state.prompts[i]);
+            const override = promptFirstFrame(rs.prompts[i]);
             let overridden = false;
             if (override) { firstFrame = override; refImages = []; overridden = true; }
 
-            const modeForClip = (continued || overridden) ? "firstlast" : state.generationMode;
+            const modeForClip = (continued || overridden) ? "firstlast" : rs.generationMode;
 
-            const clipState = { ...state, generationMode: modeForClip };
+            const clipState = { ...rs, generationMode: modeForClip };
             const restore = pipeOv ? applyOverridesTemp(clipState, pipeOv.overrides) : null;
             // One-Take: a checkpoint name unique to this node instance + prompt index, so
             // two MiniMax H3 nodes on the same canvas (or a re-run over old prompt indices)
             // never collide on the same checkpoint file.
-            const isOneTake = state.continuityMode === "onetake";
+            const isOneTake = rs.continuityMode === "onetake";
             const checkpointName = isOneTake ? `${self.id}_${i}` : null;
 
             let res;
@@ -1377,10 +1434,10 @@ app.registerExtension({
               try {
                 built = buildClipGraph(clipState, ctx.availability, {
                   nodeId: self.id,
-                  promptText: promptForClip(i),
-                  seed: seedForClip(i),
+                  promptText: promptForClip(i, rs),
+                  seed: seedForClip(i, rs),
                   firstFrame,
-                  lastFrame: (pos === active.length - 1) ? (state.lastFrameImage || null) : null,
+                  lastFrame: (pos === active.length - 1) ? (rs.lastFrameImage || null) : null,
                   refImages,
                   clipIndex: i,
                   saveLastFrame: true,
@@ -1402,14 +1459,14 @@ app.registerExtension({
               clipRecords.push(vid);
               // every clip carries the prompt it was actually rendered from, so the
               // gallery can put that exact text back into the editor
-              saveMeta(vid.filename, vid.subfolder || "", metaForVideo(promptForClip(i), {
-                clip: curClip, clips: plan.count, seed: seedForClip(i), mode: modeForClip,
+              saveMeta(vid.filename, vid.subfolder || "", metaForVideo(promptForClip(i, rs), {
+                clip: curClip, clips: plan.count, seed: seedForClip(i, rs), mode: modeForClip,
                 // the editable source text, so "reuse" restores the editor exactly
-                prompts: [promptText(state.prompts?.[i])],
+                prompts: [promptText(rs.prompts?.[i])],
                 // lets the Gallery's manual stitch auto-detect that adjacent clips share
                 // an overlap and offer to trim it, instead of the user having to remember
                 onetake: isOneTake,
-              }));
+              }, rs));
               showResultVideo(`/view?filename=${encodeURIComponent(vid.filename)}&subfolder=${encodeURIComponent(vid.subfolder || "")}&type=${vid.type || "output"}&t=${Date.now()}`);
               badge.textContent = `CLIP ${curClip}/${totClip} done`;
             }
@@ -1437,7 +1494,7 @@ app.registerExtension({
             state.avgMinutesPerClip = +(clipTimes.reduce((a, b) => a + b, 0) / clipTimes.length).toFixed(2);
             saveRelay(pos + 1); refreshPlan();
 
-            if (state.unloadBetweenClips && pos < active.length - 1) {
+            if (rs.unloadBetweenClips && pos < active.length - 1) {
               setStatus(`Clip ${curClip}/${totClip} done · freeing VRAM…`);
               await freeMemory();
             }
@@ -1451,30 +1508,31 @@ app.registerExtension({
           // a plain concat would visibly repeat that stretch. Auto-stitch with that overlap
           // trimmed on a completed run — a stopped run still leaves the per-clip files and
           // checkpoints alone so resuming from A3's override still works.
-          if (state.continuityMode === "onetake" && state.oneTakeAutoStitch !== false
+          if (rs.continuityMode === "onetake" && rs.oneTakeAutoStitch !== false
               && !stopRequested && clipRecords.length > 1) {
             const overlapSec = framesToSeconds(alignFrameCount(ONE_TAKE_OVERLAP_FRAMES));
             setStatus(`Stitching ${clipRecords.length} clips (One-Take, ${overlapSec.toFixed(3)}s overlap trimmed)…`);
             try {
-              const folder = (state.saveSubfolder || SUBFOLDER).replace(/\\/g, "/");
-              const audioOverride = state.oneTakeAudioOverride && state.audioLock && state.lockAudioFile
-                ? { filename: state.lockAudioFile, start: Math.max(0, state.audioLockTrimStart || 0) }
+              const folder = (rs.saveSubfolder || SUBFOLDER).replace(/\\/g, "/");
+              const audioOverride = rs.oneTakeAudioOverride && rs.audioLock && rs.lockAudioFile
+                ? { filename: rs.lockAudioFile, start: Math.max(0, rs.audioLockTrimStart || 0) }
                 : null;
               const out = await stitchClips(
-                clipRecords, `${folder}/${state.filenamePrefix || "MMH3"}_full`, null, overlapSec, audioOverride,
+                clipRecords, `${folder}/${rs.filenamePrefix || "MMH3"}_full`, null, overlapSec, audioOverride,
               );
               const url = `/view?filename=${encodeURIComponent(out.filename)}&subfolder=${encodeURIComponent(out.subfolder || "")}&type=output&t=${Date.now()}`;
-              // metaForVideo's `frames` is per-clip (state.clipFrames) — left as-is here it
+              // metaForVideo's `frames` is per-clip (rs.clipFrames) — left as-is here it
               // would make the Gallery show this combined file's length as one clip's
               // length. durationSeconds carries the real total; frames:null stops the
               // per-clip value from being misread as this file's own.
-              const totalSeconds = clipRecords.length * framesToSeconds(state.clipFrames || 192)
+              const totalSeconds = clipRecords.length * framesToSeconds(rs.clipFrames || 192)
                 - (clipRecords.length - 1) * overlapSec;
               saveMeta(out.filename, out.subfolder || "", metaForVideo(
-                active.map(({ i }) => promptForClip(i)).join("\n\n"),
+                active.map(({ i }) => promptForClip(i, rs)).join("\n\n"),
                 { clips: clipRecords.length, stitched: true, onetake: true, overlapSeconds: overlapSec,
                   frames: null, durationSeconds: totalSeconds,
-                  prompts: (state.prompts || []).map(promptText) },
+                  prompts: (rs.prompts || []).map(promptText) },
+                rs,
               ));
               showResultVideo(url);
               badge.textContent = `FULL · ${clipRecords.length} clips (One-Take)`;
@@ -1513,6 +1571,7 @@ app.registerExtension({
           // into whatever's queued, so Stop drops the whole queue, not just this run.
           const queued = (!stopRequested && nextQueue.length) ? nextQueue.shift() : null;
           if (stopRequested) nextQueue = [];
+          if (!queued) stopWakeAudio();   // truly idle now — anything queued keeps it playing across the handoff
           running = false; stopRequested = false;
           genBtn.disabled = false; genBtn.textContent = "▶ Generate";
           renderNextQueue();
@@ -1681,7 +1740,7 @@ app.registerExtension({
         runGeneration({
           pos: saved.pos, activeIdx: saved.activeIdx, chainFrame: saved.chainFrame,
           prevCheckpointName: saved.prevCheckpointName, clipRecords: saved.clipRecords,
-          inFlightPromptId,
+          runState: saved.runState, inFlightPromptId,
         });
       })();
     };

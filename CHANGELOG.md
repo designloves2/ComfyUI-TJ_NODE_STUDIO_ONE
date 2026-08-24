@@ -2,6 +2,34 @@
 
 ---
 
+## v1.15.1 (2026-08-25)
+
+### MiniMax H3 — 절전/탭 종료 방지 + README 안내
+
+- **백그라운드 웨이크 오디오** — 실행 중(Next Gen 연쇄 포함)에는 거의 무음에 가까운 낮은
+  볼륨의 오디오를 계속 재생해 브라우저/OS가 탭을 절전 상태로 넘기지 않도록 유도(웹 버전과
+  동일한 우회책). 완전히 유휴 상태가 될 때만 정지
+- **탭 종료 경고** — 이 노드 자신의 릴레이(`running`) 또는 Next Gen 대기열이 돌고 있을
+  때만 브라우저 네이티브 "이 페이지를 나가시겠습니까?" 경고 표시. 노드 선택 여부와
+  무관하며, 다른 노드/큐에는 영향 없음
+- **README** — 이미지 노드의 RUN 큐(서버가 통째로 소유, 브라우저 닫아도 계속 처리)와
+  MiniMax H3의 클립 릴레이(브라우저가 매 클립마다 판단해서 재제출하는 구조라 탭이 계속
+  열려 있어야 함) 구조 차이, 절전모드 영향, 새로고침 복구를 한/영으로 명시
+
+- **added sleep/tab-close mitigations for MiniMax H3, documented in README**
+- a near-silent background tone now plays for the whole run (persists across Next Gen
+  chaining), nudging the browser/OS away from suspending the tab — same trick the web
+  version uses; stops only once truly idle
+- a native "leave site?" warning now fires only while this node's own relay or Next Gen
+  queue is actually active — scoped per node instance, unaffected by selection state or
+  any other node/queue
+- README now explains why this differs from image nodes' RUN queue (server-owned,
+  survives closing the browser) — MiniMax H3's clip relay decides and resubmits per clip
+  from the browser, so the tab must stay open — plus the sleep-mode caveat and that a
+  plain refresh is safe
+
+---
+
 ## v1.15.0 (2026-08-24)
 
 ### MiniMax H3 — Next Gen 대기 큐 + 새로고침 후 릴레이 자동 복구
