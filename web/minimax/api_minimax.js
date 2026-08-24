@@ -403,6 +403,45 @@ export function queuePrompt(promptGraph, { onProgress, onNode } = {}) {
 }
 
 /**
+ * Waits on a prompt that's ALREADY queued (from before a page reload), instead of
+ * submitting a new one. Polls `/history/{promptId}` rather than trusting websocket
+ * `executed` events, since some of those may have already fired — and been missed —
+ * before this listener existed. Once ComfyUI's history shows it done, returns the same
+ * `{ byNode }` shape queuePrompt() resolves with, so callers don't need to care which one
+ * actually ran.
+ */
+export async function waitForHistory(promptId, { onProgress, pollMs = 1500 } = {}) {
+  const onProgressEvt = (ev) => {
+    if (!onProgress) return;
+    try {
+      const d = ev.detail || {};
+      if (d.prompt_id && d.prompt_id !== promptId) return;
+      const { value, max } = d;
+      if (max) onProgress(value, max);
+    } catch {}
+  };
+  api.addEventListener("progress", onProgressEvt);
+  try {
+    while (true) {
+      const r = await api.fetchApi(`/history/${promptId}`);
+      const d = await r.json();
+      const entry = d[promptId];
+      if (entry && entry.status) {
+        if (entry.status.status_str === "error") {
+          const msg = (entry.status.messages || [])
+            .map(m => Array.isArray(m) ? m.join(" ") : String(m)).join("; ");
+          throw new Error(msg || "generation failed");
+        }
+        if (entry.status.completed) return { byNode: entry.outputs || {} };
+      }
+      await new Promise(res => setTimeout(res, pollMs));
+    }
+  } finally {
+    api.removeEventListener("progress", onProgressEvt);
+  }
+}
+
+/**
  * Native Image → Brief analysis — no Ollama, no HTTP proxy. Batches the given images
  * through TJ_MultiImageLoader and hands the batch to TextGenerate on the given CLIP
  * checkpoint in one call, which was verified to attend to every image in the batch

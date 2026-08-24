@@ -2,6 +2,35 @@
 
 ---
 
+## v1.15.0 (2026-08-24)
+
+### MiniMax H3 — Next Gen 대기 큐 + 새로고침 후 릴레이 자동 복구
+
+- **Next Gen 대기 큐** — 활성 프롬프트가 1개일 때만 "⏭ Next Gen" 버튼이 나타나며, 누를
+  때마다 지금 화면 전체를 스냅샷해 큐에 추가(ComfyUI 자체 큐처럼 FIFO). 📋 버튼으로 대기
+  목록 팝업을 열어 각 항목을 확인하고 개별 취소 가능. 현재 실행이 정상 종료되면 큐 맨
+  앞 항목이 패널을 이어받아 자동 시작, Stop 시 큐 전체 비움
+- **새로고침 후 멀티클립 릴레이 자동 복구** — 클립이 끝날 때마다 진행 상황(위치, 활성
+  프롬프트 인덱스, One-Take 체크포인트 체인, 완료된 클립 목록)을 노드 state에 저장.
+  정상종료/Stop/에러 시에는 삭제되지만 순수 새로고침에는 그대로 남아, 노드 로드 시 이를
+  감지해 서버에서 실행 중인 클립이 있으면 `waitForHistory`로 재연결(새 제출 없이 결과만
+  기다림), 없으면 그 위치부터 새로 빌드해 나머지 클립과 One-Take 스티치까지 자동 완주
+
+- **added a Next Gen queue and automatic relay resume after a refresh**
+- "⏭ Next Gen" (shown only with exactly one active prompt) snapshots the whole panel and
+  appends it to a FIFO queue, same idea as ComfyUI's own queue; a 📋 button opens a popup
+  listing every queued entry with per-item cancel. The queue's front entry takes over and
+  auto-starts once the current run finishes cleanly; Stop clears the whole queue
+- a reload no longer loses a multi-clip relay run — progress (position, active-prompt
+  indices, One-Take checkpoint chain, finished clips) is saved to node state after every
+  clip and cleared only on a clean finish/Stop/error. On load, if it's still there, the
+  node reconnects to whatever clip is still executing server-side (via the new
+  `waitForHistory`, polling `/history` instead of resubmitting) or rebuilds that one clip
+  fresh, then continues the rest of the run — including the eventual One-Take stitch —
+  automatically
+
+---
+
 ## v1.14.0 (2026-08-24)
 
 ### MiniMax H3 — 웹 버전 기능 이식 + 가속/캐시/어텐션 옵션 확장

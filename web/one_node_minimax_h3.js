@@ -27,7 +27,7 @@ import {
 import { panel, label, button, select, loraSelect, numberField, slider, row, col, modeBar, iconBtn, openVideoFullscreen }
   from "./klein/ui_common.js";
 import {
-  queuePrompt, interrupt, freeMemory, setLastResult, stitchClips,
+  queuePrompt, waitForHistory, interrupt, freeMemory, setLastResult, stitchClips,
   copyOutputToInput, getNodeAvailability, getModels, saveMeta, pickChainFrame, getLoraTriggers,
   getMediaFiles, uploadMedia,
 } from "./minimax/api_minimax.js";
@@ -1102,7 +1102,97 @@ app.registerExtension({
         setStatus("Stopping after the current clip…");
       });
       stopBtn.style.flexShrink = "0";
-      seedGenWrap.appendChild(row([genBtn, stopBtn]));
+      // Only offered for a single-prompt run: with one prompt, the whole clip's graph is
+      // already built and queued by the time this could be clicked, so editing the panel
+      // afterward (to prepare the next run) can never leak into the one in flight. A
+      // multi-clip run reads state.prompts live per clip on purpose (so a later clip's
+      // text can be tweaked while an earlier one renders), and that's exactly what this
+      // queue would corrupt if it were allowed there too.
+      //
+      // Like ComfyUI's own queue: every click snapshots the whole panel as-is and appends
+      // it as one more entry. When the current run finishes cleanly, entry #1 takes over
+      // the panel and restarts; when THAT one finishes, #2 takes over, and so on — a plain
+      // FIFO, not a single toggle.
+      const nextGenBtn = button("⏭ Next Gen", null);
+      nextGenBtn.style.cssText += "flexShrink:0;";
+      nextGenBtn.style.display = "none";
+      nextGenBtn.title = "Snapshot this exact panel and append it to the queue — takes over once everything ahead of it finishes.";
+      // Small badge button next to it opens the full list — same idea as ComfyUI's own
+      // queue button, just scoped to this node's Next Gen entries.
+      const queueListBtn = el("button", { type: "button", text: "📋", title: "View queued runs", style: {
+        cursor: "pointer", fontFamily: "inherit", fontSize: "12px", padding: "0 8px",
+        borderRadius: "6px", background: C.bg3, color: C.text, border: `1px solid ${C.border}`,
+        display: "none", flexShrink: "0", position: "relative",
+      }});
+      const queueCountDot = el("div", { style: {
+        position: "absolute", top: "-5px", right: "-5px", minWidth: "14px", height: "14px",
+        borderRadius: "7px", background: BRAND, color: "#fff", fontSize: "9px", fontWeight: "700",
+        display: "flex", alignItems: "center", justifyContent: "center", padding: "0 2px",
+      }});
+      queueListBtn.appendChild(queueCountDot);
+      let nextQueue = [];
+      function summarizeQueued(snap) {
+        const active = (snap.prompts || []).filter(p => p && p.enabled !== false && (p.text || "").trim());
+        const first = active[0]?.text || "(no prompt text)";
+        return `${active.length} clip${active.length === 1 ? "" : "s"} · ${String(first).slice(0, 40)}${first.length > 40 ? "…" : ""}`;
+      }
+      function renderNextQueue() {
+        nextGenBtn.textContent = nextQueue.length ? `⏭ Next Gen (${nextQueue.length})` : "⏭ Next Gen";
+        nextGenBtn.style.background = nextQueue.length ? BRAND : "";
+        queueListBtn.style.display = nextQueue.length ? "flex" : "none";
+        queueCountDot.textContent = String(nextQueue.length);
+        if (queueListOv.el.style.display !== "none") renderQueueListPopup();
+      }
+      nextGenBtn.onclick = () => {
+        nextQueue.push(JSON.parse(JSON.stringify(state)));
+        renderNextQueue();
+      };
+      queueListBtn.addEventListener("click", () => {
+        renderQueueListPopup();
+        queueListOv.el.style.display = "flex";
+      });
+      seedGenWrap.appendChild(row([genBtn, stopBtn, nextGenBtn, queueListBtn]));
+
+      // ── Queued-runs popup ──────────────────────────────────────────────────
+      const queueListOv = { el: el("div", { style: {
+        position: "absolute", inset: "0", zIndex: "9998", background: "rgba(11,11,11,0.97)",
+        borderRadius: "inherit", display: "none", flexDirection: "column", padding: "14px", boxSizing: "border-box",
+      }})};
+      const queueListTop = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexShrink: "0", marginBottom: "10px" } });
+      queueListTop.appendChild(el("div", { text: "Next Gen queue", style: { color: "#fff", fontSize: "14px", fontWeight: "700", flex: "1" } }));
+      const queueListClose = el("button", { type: "button", text: "✕", style: {
+        cursor: "pointer", fontFamily: "inherit", fontSize: "12px", padding: "5px 10px",
+        borderRadius: "6px", border: "none", background: "#c0392b", color: "#fff",
+      }});
+      queueListClose.addEventListener("click", () => { queueListOv.el.style.display = "none"; });
+      queueListTop.appendChild(queueListClose);
+      const queueListBody = el("div", { style: { flex: "1", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px" } });
+      queueListOv.el.append(queueListTop, queueListBody);
+      function renderQueueListPopup() {
+        clear(queueListBody);
+        if (!nextQueue.length) {
+          queueListBody.appendChild(el("div", { text: "Nothing queued.", style: { color: C.muted, fontSize: "11px" } }));
+          return;
+        }
+        nextQueue.forEach((snap, idx) => {
+          const row_ = el("div", { style: {
+            display: "flex", alignItems: "center", gap: "8px", background: C.bg1,
+            border: `1px solid ${C.border}`, borderRadius: "8px", padding: "8px 10px",
+          }});
+          row_.appendChild(el("div", { text: `#${idx + 1}`, style: { color: BRAND, fontSize: "12px", fontWeight: "700", flexShrink: "0" } }));
+          row_.appendChild(el("div", { text: summarizeQueued(snap), style: { flex: "1", fontSize: "11px", color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }));
+          const cancelBtn = el("button", { type: "button", text: "✕ Cancel", style: {
+            cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "4px 8px",
+            borderRadius: "5px", background: "#c0392b", color: "#fff", border: "none", flexShrink: "0",
+          }});
+          cancelBtn.addEventListener("click", () => {
+            nextQueue.splice(idx, 1);
+            renderNextQueue(); renderQueueListPopup();
+          });
+          row_.appendChild(cancelBtn);
+          queueListBody.appendChild(row_);
+        });
+      }
 
       // ══ RELAY LOOP ══════════════════════════════════════════════════════════
       let running = false, stopRequested = false;
@@ -1155,10 +1245,16 @@ app.registerExtension({
         return out?.images || out?.gifs || [];
       }
 
-      genBtn.onclick = async () => {
+      // resume: { pos, activeIdx, chainFrame, prevCheckpointName, clipRecords, inFlightPromptId }
+      // — set only by checkResumeRunning() below, after a page reload finds this node's
+      // own state._relay progress left over from a run that was still going when it
+      // refreshed. Everything else (a plain Generate click, or a queued Next Gen restart)
+      // calls this with no argument, same as before.
+      async function runGeneration(resume = null) {
         if (running) return;
         running = true; stopRequested = false;
         genBtn.disabled = true; genBtn.textContent = "⏳ Preparing…";
+        nextGenBtn.style.display = "none";
         resetPreview(); barInner.style.width = "0%"; startClock();
 
         try {
@@ -1178,22 +1274,46 @@ app.registerExtension({
             if (pipeOv) showPopup(pipeOv.summary, false);
           } catch {}
 
-          if (state.seedMode === "randomize")      { state.seed = randomSeed(); seedInput.value = state.seed; }
-          else if (state.seedMode === "increment") { state.seed = (state.seed || 0) + 1; seedInput.value = state.seed; }
-          else if (state.seedMode === "decrement") { state.seed = Math.max(0, (state.seed || 0) - 1); seedInput.value = state.seed; }
-          persist();
+          // Resuming continues the same seed sequence it already started with — reroll
+          // only on a genuinely fresh run.
+          if (!resume) {
+            if (state.seedMode === "randomize")      { state.seed = randomSeed(); seedInput.value = state.seed; }
+            else if (state.seedMode === "increment") { state.seed = (state.seed || 0) + 1; seedInput.value = state.seed; }
+            else if (state.seedMode === "decrement") { state.seed = Math.max(0, (state.seed || 0) - 1); seedInput.value = state.seed; }
+            persist();
+          }
 
           const plan = currentPlan();
-          const active = activePrompts(state);   // { p, i } — i = original prompt index, never renumbered
+          // Resuming reconstructs the exact same clip list the interrupted run had —
+          // recomputing activePrompts(state) fresh here could disagree with it if prompts
+          // were toggled while nothing was watching, and that would desync every saved
+          // index (clipRecords, pos, checkpoint names) from what they actually mean.
+          const active = resume ? resume.activeIdx.map(i => ({ i })) : activePrompts(state);
           if (!active.length) throw new Error("No prompts are switched on.");
           totClip = active.length;
-          const clipRecords = [];
-          let chainFrame = state.generationMode === "reference" ? null : (state.firstFrameImage || null);
-          let prevCheckpointName = null;   // One-Take: previous clip's saved latent, loaded fresh each queue submission
+          nextGenBtn.style.display = (totClip === 1) ? "" : "none";
+          const clipRecords = resume ? resume.clipRecords.slice() : [];
+          let chainFrame = resume ? resume.chainFrame
+            : (state.generationMode === "reference" ? null : (state.firstFrameImage || null));
+          let prevCheckpointName = resume ? resume.prevCheckpointName : null;   // One-Take: previous clip's saved latent, loaded fresh each queue submission
           const clipTimes = [];
+          const startPos = resume ? resume.pos : 0;
 
-          for (let pos = 0; pos < active.length; pos++) {
-            if (stopRequested) { setStatus(`Stopped after ${pos} clip(s).`); break; }
+          // Snapshot enough to continue this exact run from `pos` after a reload. Cleared
+          // on a clean finish, a manual Stop, or an error — resuming is only for "the page
+          // reloaded while this was still actively running," never for restarting a run
+          // the user (or an error) already ended on purpose.
+          function saveRelay(pos) {
+            state._relay = {
+              pos, totClip, activeIdx: active.map(a => a.i),
+              chainFrame, prevCheckpointName, clipRecords: clipRecords.slice(),
+            };
+            persist();
+          }
+          if (!resume) saveRelay(0);
+
+          for (let pos = startPos; pos < active.length; pos++) {
+            if (stopRequested) { setStatus(`Stopped after ${pos - startPos} clip(s).`); break; }
             const i = active[pos].i;   // original prompt index — drives seed, filenames, audio-lock offset
             curClip = pos + 1;
             const clipStart = Date.now();
@@ -1242,26 +1362,38 @@ app.registerExtension({
             // never collide on the same checkpoint file.
             const isOneTake = state.continuityMode === "onetake";
             const checkpointName = isOneTake ? `${self.id}_${i}` : null;
-            let built;
-            try {
-              built = buildClipGraph(clipState, ctx.availability, {
-                nodeId: self.id,
-                promptText: promptForClip(i),
-                seed: seedForClip(i),
-                firstFrame,
-                lastFrame: (pos === active.length - 1) ? (state.lastFrameImage || null) : null,
-                refImages,
-                clipIndex: i,
-                saveLastFrame: true,
-                prevCheckpointName: isOneTake ? prevCheckpointName : null,
-                checkpointName,
-              });
-            } finally { restore?.(); }
 
-            setStatus(`Clip ${curClip}/${totClip} · queued`);
-            const res = await queuePrompt(built.graph, {
-              onProgress: (v, m) => setStepProgress(v, m),
-            });
+            let res;
+            if (resume && pos === startPos && resume.inFlightPromptId) {
+              // This exact clip was already queued before the reload — reconnect to it
+              // instead of building and submitting a second copy.
+              restore?.();
+              setStatus(`Clip ${curClip}/${totClip} · reconnecting to in-flight render…`);
+              res = await waitForHistory(resume.inFlightPromptId, {
+                onProgress: (v, m) => setStepProgress(v, m),
+              });
+            } else {
+              let built;
+              try {
+                built = buildClipGraph(clipState, ctx.availability, {
+                  nodeId: self.id,
+                  promptText: promptForClip(i),
+                  seed: seedForClip(i),
+                  firstFrame,
+                  lastFrame: (pos === active.length - 1) ? (state.lastFrameImage || null) : null,
+                  refImages,
+                  clipIndex: i,
+                  saveLastFrame: true,
+                  prevCheckpointName: isOneTake ? prevCheckpointName : null,
+                  checkpointName,
+                });
+              } finally { restore?.(); }
+
+              setStatus(`Clip ${curClip}/${totClip} · queued`);
+              res = await queuePrompt(built.graph, {
+                onProgress: (v, m) => setStepProgress(v, m),
+              });
+            }
             if (isOneTake) prevCheckpointName = checkpointName;
 
             const vid = firstOutput(res.byNode, NODE_IDS.save);
@@ -1303,7 +1435,7 @@ app.registerExtension({
             clipTimes.push((Date.now() - clipStart) / 60000);
             // keep the estimate honest using measured clip times
             state.avgMinutesPerClip = +(clipTimes.reduce((a, b) => a + b, 0) / clipTimes.length).toFixed(2);
-            persist(); refreshPlan();
+            saveRelay(pos + 1); refreshPlan();
 
             if (state.unloadBetweenClips && pos < active.length - 1) {
               setStatus(`Clip ${curClip}/${totClip} done · freeing VRAM…`);
@@ -1358,8 +1490,12 @@ app.registerExtension({
                                     : `Done — ${clipRecords.length} clip(s) saved.`);
           }
 
+          // Nothing left to resume — a fresh Generate click should never think it's
+          // continuing a run that actually finished (or that the user deliberately stopped).
+          delete state._relay; persist();
           barInner.style.width = "100%";
         } catch (e) {
+          delete state._relay; persist();
           if (e.message === "cancelled") { setStatus("Cancelled."); }
           else {
             const why = explainGenerationError(e.message);
@@ -1372,12 +1508,24 @@ app.registerExtension({
           // otherwise sit on the whole card until the next one. The run is over here —
           // nothing in this node still needs the weights.
           try { await freeMemory(); } catch {}
+          // Entry #1 of the Next Gen queue takes over the live panel and restarts, but
+          // only on a clean finish — a stopped or errored run shouldn't silently barrel
+          // into whatever's queued, so Stop drops the whole queue, not just this run.
+          const queued = (!stopRequested && nextQueue.length) ? nextQueue.shift() : null;
+          if (stopRequested) nextQueue = [];
           running = false; stopRequested = false;
           genBtn.disabled = false; genBtn.textContent = "▶ Generate";
+          renderNextQueue();
           badge.textContent = badge.textContent.replace("● LIVE", "").trim() || badge.textContent;
           stopClock();
+          if (queued) {
+            Object.assign(state, queued);
+            persist(); renderPills(); renderLeft();
+            setTimeout(() => runGeneration(), 50);
+          }
         }
-      };
+      }
+      genBtn.onclick = runGeneration;
 
       // ══ HELP ════════════════════════════════════════════════════════════════
       const helpEl = el("div", { style: {
@@ -1458,6 +1606,7 @@ app.registerExtension({
       document.body.appendChild(galleryOv.playerEl);   // fullscreen player lives above everything
 
       root.appendChild(helpEl);
+      root.appendChild(queueListOv.el);
 
       document.addEventListener("keydown", e => {
         if (e.key !== "Escape") return;
@@ -1466,6 +1615,7 @@ app.registerExtension({
         if (promptEditOv?.isOpen()) { promptEditOv.hide(); return; }
         if (galleryOv?.isOpen())   { galleryOv.hide(); return; }
         if (helpEl.style.display !== "none") { helpEl.style.display = "none"; return; }
+        if (queueListOv.el.style.display !== "none") { queueListOv.el.style.display = "none"; return; }
         if (settingsOv?.el.style.display !== "none") { settingsOv.hide(); return; }
       });
 
@@ -1504,6 +1654,36 @@ app.registerExtension({
           setStatus(`Idle · optional packs missing: ${(av.missing_optional || []).join(", ")}`);
         }
       }).catch(() => {});
+
+      // ══ RESUME AFTER REFRESH ═══════════════════════════════════════════════
+      // A reload wipes this node's JS-side relay loop, but state._relay (persisted via the
+      // node's own state, same as everything else on this panel) survives it — saveRelay()
+      // inside runGeneration() writes it after every clip. So on load: if it's still there,
+      // the run was still going when the page reloaded (a clean finish/stop/error always
+      // clears it), and we can rebuild the loop from where it left off. If the clip that
+      // was in flight is still in ComfyUI's queue, reconnect to that exact prompt_id
+      // instead of submitting a second copy of it (see waitForHistory in runGeneration);
+      // if it already finished (or the server restarted) while nobody was watching, the
+      // loop just builds that clip fresh, same as any other clip.
+      (async function checkResumeRunning() {
+        const saved = state._relay;
+        if (!saved || !(saved.pos < saved.totClip)) return;
+        let inFlightPromptId = null;
+        try {
+          const r = await api.fetchApi("/queue");
+          const d = await r.json();
+          const key = previewNodeKey(self.id);
+          const hit = [...(d.queue_running || []), ...(d.queue_pending || [])]
+            .find(item => item[2] && Object.prototype.hasOwnProperty.call(item[2], key));
+          if (hit) inFlightPromptId = hit[1];
+        } catch {}
+        setStatus(`Resuming clip ${saved.pos + 1}/${saved.totClip} after reload…`);
+        runGeneration({
+          pos: saved.pos, activeIdx: saved.activeIdx, chainFrame: saved.chainFrame,
+          prevCheckpointName: saved.prevCheckpointName, clipRecords: saved.clipRecords,
+          inFlightPromptId,
+        });
+      })();
     };
   },
 });
