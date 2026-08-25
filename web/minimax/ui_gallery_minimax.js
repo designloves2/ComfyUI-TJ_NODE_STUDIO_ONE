@@ -433,7 +433,9 @@ export function createGalleryOverlay(state, ctx) {
 
       // Full render settings this clip was actually made with, on hover — the meta already
       // carries everything Reuse (below) restores, this is just a read-only look at it.
-      const infoBtn = el("button", { type: "button", text: "ⓘ", title: "Clip settings", style: {
+      // No `title` here on purpose — the browser's native tooltip would sit right on top
+      // of the custom popup below and hide it.
+      const infoBtn = el("button", { type: "button", text: "ⓘ", style: {
         position: "absolute", top: "4px", left: "4px", zIndex: "3",
         width: "18px", height: "18px", lineHeight: "16px", padding: "0",
         cursor: "default", fontSize: "11px", fontFamily: "inherit",
