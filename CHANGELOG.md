@@ -2,6 +2,17 @@
 
 ---
 
+## v1.16.2 (2026-08-26)
+
+- **버전만 갱신(코드 변경 없음)** — Comfy Registry 자동 리뷰가 지난 버전들을 Flagged로
+  걸러서 ComfyUI Manager의 "Select Version" 목록이 비어 보이던 문제 때문에, 새로
+  발행되어 아직 리뷰 전인 버전을 하나 만들기 위한 갱신
+- **version bump only (no code changes)** — published to get a fresh, not-yet-reviewed
+  version into Comfy Registry after older ones got auto-flagged, which was emptying
+  ComfyUI Manager's "Select Version" list
+
+---
+
 ## v1.16.1 (2026-08-25)
 
 ### MiniMax H3 — Free Text Encoder VRAM 이식
