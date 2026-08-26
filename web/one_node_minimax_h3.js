@@ -1548,7 +1548,15 @@ app.registerExtension({
           frames: st.clipFrames,
           steps: st.steps,
           sampler: st.sampler,
-          accel: st.accelMode,
+          // The pipeline is one field per patch layer now. `accel` stays only so a clip
+          // written today still says something to a reader that predates the split.
+          accel: st.attnBackend,
+          turboMode:   st.turboMode,
+          attnBackend: st.attnBackend,
+          attnForward: st.attnForward,
+          blockCache:  st.blockCache,
+          useSpectrum: !!st.useSpectrum,
+          useFusedModulation: !!st.useFusedModulation,
           seed: st.seed,
           node: "minimax_h3",
           created: Date.now(),
@@ -1972,7 +1980,22 @@ app.registerExtension({
         if (meta.frames) { state.clipFrames = meta.frames; state.clipLengthCustom = false; }
         if (meta.steps != null) state.steps = meta.steps;
         if (meta.sampler) state.sampler = meta.sampler;
-        if (meta.accel) state.attnBackend = meta.accel;
+        // A clip saved after the pipeline split carries each axis; one saved before it
+        // has only `accel`, holding turbo/solattn/spectrum/none — values that are not
+        // valid on any of the new axes, so they get translated the same way
+        // migrateLegacyAccel() translates a stored workflow.
+        if (meta.attnBackend || meta.turboMode || meta.blockCache) {
+          if (meta.turboMode)   state.turboMode   = meta.turboMode;
+          if (meta.attnBackend) state.attnBackend = meta.attnBackend;
+          if (meta.attnForward) state.attnForward = meta.attnForward;
+          if (meta.blockCache)  state.blockCache  = meta.blockCache;
+          if (meta.useSpectrum != null)        state.useSpectrum        = !!meta.useSpectrum;
+          if (meta.useFusedModulation != null) state.useFusedModulation = !!meta.useFusedModulation;
+        } else if (meta.accel) {
+          if (meta.accel === "turbo")         state.turboMode   = "larryvrh";
+          else if (meta.accel === "spectrum") state.useSpectrum = true;
+          else if (meta.accel === "solattn")  state.attnBackend = "solattn_kijai";
+        }
         if (meta.seed != null) {
           state.seed = meta.seed; state.seedMode = "fixed";
           seedInput.value = meta.seed; seedModeDD.value = "fixed";

@@ -365,13 +365,31 @@ export function createSettingsOverlay(state, ctx) {
     // there's a real sample — the field above stays editable either way.
     listVideos(state.saveSubfolder || SUBFOLDER, { limit: 300 }).then(d => {
       const wantLora = (state.loras || []).some(l => l.enabled !== false && l.name && l.name !== "none");
+      // Timing only transfers between runs that accelerated the same way. A clip saved
+      // after the pipeline split records each axis; one saved before it has only the old
+      // single `accel` string, so match that against whichever axis it used to stand for
+      // rather than against the retired accelMode field, which nothing updates any more.
+      const sameAccel = (m) => {
+        if (m.attnBackend || m.turboMode || m.blockCache) {
+          return (m.turboMode   || "none") === (state.turboMode   || "none")
+              && (m.attnBackend || "")     === (state.attnBackend || "")
+              && (m.attnForward || "")     === (state.attnForward || "")
+              && (m.blockCache  || "none") === (state.blockCache  || "none")
+              && !!m.useSpectrum           === !!state.useSpectrum
+              && !!m.useFusedModulation    === !!state.useFusedModulation;
+        }
+        const legacy = state.turboMode === "larryvrh" ? "turbo"
+          : state.useSpectrum ? "spectrum"
+          : state.attnBackend === "solattn_kijai" ? "solattn" : "none";
+        return (m.accel || "") === legacy;
+      };
       const matches = (d.videos || d.images || [])
         .map(v => v.meta).filter(Boolean)
         .filter(m => m.elapsedSec != null
           && m.aspect === state.aspect
           && Math.abs((m.megapixels ?? 1) - (state.megapixels ?? 1)) < 0.01
           && m.frames === state.clipFrames
-          && (m.accel || "") === (state.accelMode || "")
+          && sameAccel(m)
           && ((m.loras || []).some(l => l.enabled !== false && l.name && l.name !== "none")) === wantLora);
       if (!matches.length) { avgNote.textContent = "No past clips at the current settings yet — using the manual value above."; return; }
       const avgMin = matches.reduce((a, m) => a + m.elapsedSec, 0) / matches.length / 60;
