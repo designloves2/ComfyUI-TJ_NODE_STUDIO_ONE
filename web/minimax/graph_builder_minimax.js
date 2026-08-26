@@ -757,17 +757,24 @@ export function buildUpscaleGraph(opts, avail) {
 }
 
 /**
- * Interpolate a finished clip to a higher frame rate with RIFE.
+ * Interpolate a finished clip to a higher frame rate with RIFE Frame Interpolation.
  *
- * fps is multiplied along with the frame count, so the result plays at the original
- * speed and simply moves more smoothly. Leaving fps alone would turn a 2x interpolation
- * into half-speed slow motion instead — a legitimate effect, but not what "smoother"
- * means, and not what the audio track would agree with.
+ * This is `RIFEInterpolation` (image/animation), not ComfyUI-Frame-Interpolation's
+ * `RIFE VFI` — they are different nodes with different interfaces, and this one is the
+ * one the panel offers. It takes an explicit source/target fps pair rather than an
+ * integer multiplier, so a 24 -> 60 conversion is expressible instead of being rounded
+ * to the nearest whole multiple.
+ *
+ * The encode uses targetFps, so the clip keeps its original running time and simply
+ * moves more smoothly. Encoding at the source rate instead would turn the extra frames
+ * into slow motion — a real effect, but not what this is for, and the audio track would
+ * no longer line up.
  */
 export function buildInterpolateGraph(opts, avail) {
-  const { inputFile, ckptName, multiplier, fastMode, ensemble, scaleFactor, folder, stem } = opts;
-  if (!has(avail, "RIFE VFI")) throw new Error("RIFE VFI is not installed.");
-  const mult = Math.max(2, Math.round(multiplier ?? 2));
+  const { inputFile, sourceFps, targetFps, scale, batchSize, useFp16, modelName, folder, stem } = opts;
+  if (!has(avail, "RIFEInterpolation")) throw new Error("RIFE Frame Interpolation is not installed.");
+  const srcFps = Math.max(1, Number(sourceFps) || FPS);
+  const dstFps = Math.max(srcFps, Number(targetFps) || srcFps * 2);
   const g = {};
 
   g[P.load] = { class_type: "VHS_LoadVideo", inputs: {
@@ -776,27 +783,24 @@ export function buildInterpolateGraph(opts, avail) {
     frame_load_cap: 0, skip_first_frames: 0, select_every_nth: 1,
   }};
 
-  g[P.rife] = { class_type: "RIFE VFI", inputs: {
-    frames: [P.load, 0],
-    ckpt_name: ckptName || "rife49.pth",
-    // The cache is cleared every N frames to bound VRAM on a long clip; RIFE's own
-    // default of 10 is what its docs recommend leaving alone.
-    clear_cache_after_n_frames: 10,
-    multiplier: mult,
-    fast_mode: fastMode !== false,
-    ensemble: ensemble !== false,
-    scale_factor: scaleFactor ?? 1.0,
-    dtype: "float32",
-    torch_compile: false,
-    batch_size: 1,
+  g[P.rife] = { class_type: "RIFEInterpolation", inputs: {
+    images: [P.load, 0],
+    source_fps: srcFps,
+    target_fps: dstFps,
+    // Processing scale, not output scale — below 1.0 it estimates motion on a smaller
+    // image, which is faster and lighter on VRAM at some cost in accuracy.
+    scale: scale ?? 1.0,
+    model_name: modelName || "flownet.pkl",
+    batch_size: Math.max(1, Math.round(batchSize ?? 8)),
+    use_fp16: useFp16 !== false,
   }};
 
   g[P.video] = { class_type: "CreateVideo", inputs: {
-    images: [P.rife, 0], fps: FPS * mult, audio: [P.load, 2],
+    images: [P.rife, 0], fps: dstFps, audio: [P.load, 2],
   }};
   g[P.save] = { class_type: "SaveVideo", inputs: {
     video: [P.video, 0],
-    filename_prefix: `${folder}/${stem}_x${mult}`,
+    filename_prefix: `${folder}/${stem}_${Math.round(dstFps)}fps`,
     format: "auto", codec: "auto",
   }};
   return { graph: g, saveNode: P.save };

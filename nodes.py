@@ -611,6 +611,32 @@ def _make_copy_to_input_handler(prefix):
     return handler
 
 
+def _make_discard_input_handler(prefix):
+    """Delete a file that _make_copy_to_input_handler put in input/.
+
+    Every copy_to_input call mints a new `<prefix>_<uuid8>_<name>`, so anything that copies
+    a file in to feed a one-off graph has to take it back out again or the input folder
+    grows without bound — the same leak the relay's chain frames caused. Only names that
+    match that pattern are accepted, so this can never be pointed at a user's own asset.
+    """
+    async def handler(request):
+        data = await request.json()
+        filename = os.path.basename(data.get("filename", "") or "")
+        if not filename.startswith(f"{prefix}_"):
+            return web.json_response({"ok": False, "error": "not a copied file"}, status=400)
+        try:
+            path = _safe_resolve_path(folder_paths.get_input_directory(), "", filename)
+        except ValueError:
+            return web.json_response({"ok": False, "error": "invalid path"}, status=400)
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+        except Exception as e:
+            return web.json_response({"ok": False, "error": str(e)}, status=500)
+        return web.json_response({"ok": True})
+    return handler
+
+
 def _make_lora_triggers_handler():
     async def handler(request):
         lora_name = request.query.get("name", "")
@@ -1559,6 +1585,7 @@ PromptServer.instance.routes.post("/minimax_h3_one/update_meta")(_make_update_me
 PromptServer.instance.routes.get("/minimax_h3_one/meta")(_make_meta_get_handler())
 PromptServer.instance.routes.post("/minimax_h3_one/open_folder")(_make_open_folder_handler())
 PromptServer.instance.routes.post("/minimax_h3_one/delete")(_make_delete_handler("minimax_h3"))
+PromptServer.instance.routes.post("/minimax_h3_one/discard_input")(_make_discard_input_handler("mmh3"))
 PromptServer.instance.routes.post("/minimax_h3_one/copy_to_input")(_make_copy_to_input_handler("mmh3"))
 PromptServer.instance.routes.get("/minimax_h3_one/lora_triggers")(_make_lora_triggers_handler())
 
@@ -2051,6 +2078,10 @@ MMH3_OPTIONAL_NODES = [
     "SolAttnPatch",
     "SpectrumApplyMiniMaxH3",
     "RTXVideoSuperResolution",
+    # gallery post-processing — upscale / frame interpolation on a finished clip
+    "UpscaleModelLoader",
+    "ImageUpscaleWithModel",
+    "RIFEInterpolation",
     # reference video / audio inputs
     "VHS_LoadVideo",
     "LoadAudio",

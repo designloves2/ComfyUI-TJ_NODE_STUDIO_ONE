@@ -47,6 +47,8 @@ export const MMH3_OPTIONAL_NODES = [
   "MiniMaxH3ScheduledSolAttentionPatch", "MiniMaxH3FusedModulation",
   "MiniMaxH3TurboSampler", "MiniMaxH3TurboLoRA", "SolAttnPatch",
   "SpectrumApplyMiniMaxH3", "RTXVideoSuperResolution",
+  // gallery post-processing — upscale / frame interpolation on a finished clip
+  "UpscaleModelLoader", "ImageUpscaleWithModel", "RIFEInterpolation",
   // reference video / audio inputs
   "VHS_LoadVideo", "LoadAudio", "TrimAudioDuration",
   // Audio Lock — pins the real soundtrack into the AV latent (ships with TJ_NODE)
@@ -215,6 +217,18 @@ export async function copyOutputToInput(filename, subfolder, type) {
   const d = await r.json();
   if (!d.ok) throw new Error(d.error || "copy failed");
   return d.filename;
+}
+
+// Take back a file copy_to_input made. Every call there mints a fresh uuid-named copy, so
+// anything that copies a source in just to feed a one-off graph has to clean up after
+// itself or the input folder grows forever.
+export async function discardInputCopy(filename) {
+  if (!filename) return;
+  await api.fetchApi(`${API}/discard_input`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename }),
+  }).catch(() => {});
 }
 
 export async function setLastResult(nodeId, { image, videoPath } = {}) {

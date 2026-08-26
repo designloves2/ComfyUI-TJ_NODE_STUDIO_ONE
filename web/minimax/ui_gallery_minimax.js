@@ -3,9 +3,12 @@
 // The node's results are videos, so the shared PNG gallery doesn't apply: this lists the
 // mp4s written into the output subfolder and plays them full screen with the keyboard
 // shortcuts you'd expect from a review pass.
-import { C, BRAND, el, clear, SUBFOLDER, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES } from "./core_minimax.js";
+import { C, BRAND, el, clear, SUBFOLDER, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES,
+         UPSCALE_MODES, FPS } from "./core_minimax.js";
 import { button, select, numberField } from "../klein/ui_common.js";
-import { listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage, getMediaFiles } from "./api_minimax.js";
+import { listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage, getMediaFiles,
+         copyOutputToInput, discardInputCopy, queuePrompt } from "./api_minimax.js";
+import { buildUpscaleGraph, buildInterpolateGraph } from "./graph_builder_minimax.js";
 
 const STITCH_MAX = 10;
 
@@ -146,17 +149,53 @@ export function createGalleryOverlay(state, ctx) {
     cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "5px 11px",
     borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
   }});
-  stitchBtn.addEventListener("click", () => {
-    stitchMode = !stitchMode;
-    stitchOrder = [];
-    oneTakeUserSet = false;
-    stitchBtn.style.background = stitchMode ? BRAND : C.bg2;
-    stitchBtn.style.borderColor = stitchMode ? BRAND : C.border;
-    stitchBar.style.display = stitchMode ? "flex" : "none";
+  stitchBtn.addEventListener("click", () => setMode(stitchMode ? null : "stitch"));
+  // ── post-processing modes — upscale / interpolate one finished video ────────────
+  //
+  // Same shape as stitch mode (arm a mode, pick from the grid, run from a bar), but the
+  // target is a single video: both operations are per-file, and running them over a
+  // multi-pick would just be a batch queue nobody asked for. The three modes are mutually
+  // exclusive because they all take over what a click on a card means.
+  let postMode = null;        // null | "upscale" | "rife"
+  let postPick = null;        // video key
+
+  const upBtn = el("button", { type: "button", text: "⬆ Upscale", title: "Pick one clip, then upscale it", style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "5px 11px",
+    borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+  }});
+  const rifeBtn = el("button", { type: "button", text: "🎞 Interpolate", title: "Pick one clip, then interpolate it to a higher frame rate", style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "5px 11px",
+    borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+  }});
+
+  /**
+   * Arm one mode and disarm the others; `null` returns the grid to plain browsing.
+   *
+   * `render` is false when closing: hide() has just emptied the grid to stop the hover
+   * videos, and rebuilding it here would put them straight back.
+   */
+  function setMode(m, render = true) {
+    if (postRunning) return;                     // never swap modes mid-job
+    stitchMode = (m === "stitch");
+    postMode   = (m === "upscale" || m === "rife") ? m : null;
+    stitchOrder = []; oneTakeUserSet = false; postPick = null;
+    const paint = (btn, on) => {
+      btn.style.background  = on ? BRAND : C.bg2;
+      btn.style.borderColor = on ? BRAND : C.border;
+    };
+    paint(stitchBtn, stitchMode);
+    paint(upBtn,   postMode === "upscale");
+    paint(rifeBtn, postMode === "rife");
+    stitchBar.style.display        = stitchMode ? "flex" : "none";
     audioOverrideBar.style.display = stitchMode ? "flex" : "none";
-    renderGrid();
-  });
-  hdr.append(fullBtn, stitchBtn, refreshBtn, folderBtn, button("✕ Close", () => hide(), "danger"));
+    upBar.style.display   = postMode === "upscale" ? "flex" : "none";
+    rifeBar.style.display = postMode === "rife"    ? "flex" : "none";
+    if (render) renderGrid();
+  }
+  upBtn.addEventListener("click",   () => setMode(postMode === "upscale" ? null : "upscale"));
+  rifeBtn.addEventListener("click", () => setMode(postMode === "rife"    ? null : "rife"));
+
+  hdr.append(fullBtn, stitchBtn, upBtn, rifeBtn, refreshBtn, folderBtn, button("✕ Close", () => hide(), "danger"));
 
   const stitchBar = el("div", { style: {
     display: "none", flexShrink: "0", alignItems: "center", gap: "8px",
@@ -217,6 +256,237 @@ export function createGalleryOverlay(state, ctx) {
 
   const stitchGoBtn = button("🔗 Combine", () => runStitch(), "primary");
   stitchBar.append(stitchInfo, oneTakeLabel, trimLabel, stitchClearBtn, stitchGoBtn);
+
+  // ── post-processing bars ────────────────────────────────────────────────────────
+  //
+  // Both jobs go through the normal /prompt queue, so they cost a real queue turn and
+  // compete with a generation for the GPU. `postRunning` is what stops a second one being
+  // started on top — the mode buttons and both Run buttons all check it.
+  let postRunning = false;
+
+  const barStyle = {
+    display: "none", flexShrink: "0", alignItems: "center", gap: "8px", flexWrap: "wrap",
+    background: C.bg1, border: `1px solid ${BRAND}`, borderRadius: "8px", padding: "7px 10px",
+  };
+  const smallInput = (w) => ({
+    width: w, boxSizing: "border-box", background: C.bg2, color: C.text,
+    border: `1px solid ${C.border}`, borderRadius: "5px", padding: "3px 4px",
+    fontSize: "10.5px", fontFamily: "inherit", outline: "none",
+  });
+  const smallSelect = (w) => Object.assign(smallInput(w), { cursor: "pointer" });
+
+  /**
+   * The shared progress readout for both bars.
+   *
+   * RTX VSR reports nothing — it upscales the whole batch inside a single node call, so
+   * there is no per-step event to listen to and the bar just says it is working. The other
+   * two (ImageUpscaleWithModel, RIFEInterpolation) tick per frame, so they get a real bar.
+   */
+  function makeProgress() {
+    const wrap = el("div", { style: { flex: "1", minWidth: "150px", display: "flex", alignItems: "center", gap: "7px" } });
+    const text = el("div", { style: { fontSize: "10.5px", color: C.text, whiteSpace: "nowrap" } });
+    const track = el("div", { style: {
+      flex: "1", height: "5px", borderRadius: "3px", background: C.bg2, overflow: "hidden", display: "none",
+    }});
+    const fill = el("div", { style: { width: "0%", height: "100%", background: BRAND, transition: "width .12s linear" } });
+    track.appendChild(fill);
+    wrap.append(text, track);
+    return {
+      el: wrap,
+      idle(msg) { text.textContent = msg; track.style.display = "none"; fill.style.width = "0%"; },
+      busy(msg) { text.textContent = msg; track.style.display = "none"; },
+      step(v, m) {
+        track.style.display = "block";
+        const pct = Math.max(0, Math.min(100, (v / m) * 100));
+        fill.style.width = `${pct.toFixed(1)}%`;
+        text.textContent = `${Math.round(pct)}% · ${v} / ${m}`;
+      },
+    };
+  }
+
+  // ── Upscale ─────────────────────────────────────────────────────────────────────
+  // Both methods from the left panel are offered here, defaulting to whatever that panel
+  // is set to, so a clip can be upscaled after the fact with the settings it would have
+  // been given during the run.
+  const upBar = el("div", { style: Object.assign({}, barStyle) });
+  const upProg = makeProgress();
+  let upMethod = (state.upscaleMode && state.upscaleMode !== "none") ? state.upscaleMode : "model";
+
+  const upMethodSel = el("select", { style: smallSelect("112px") },
+    UPSCALE_MODES.filter(m => m.key !== "none").map(m =>
+      el("option", { value: m.key, text: m.label })));
+  upMethodSel.value = upMethod;
+  const upModelSel = el("select", { style: smallSelect("172px") });
+  const upModelWrap = el("label", { style: { display: "flex", alignItems: "center", gap: "4px", fontSize: "10.5px", color: C.text } });
+  upModelWrap.append(el("span", { text: "model" }), upModelSel);
+
+  const rtxScaleIn = el("input", { type: "number", min: "1", max: "4", step: "0.25", style: smallInput("52px") });
+  rtxScaleIn.value = String(state.rtxScale ?? 2.0);
+  const rtxQualSel = el("select", { style: smallSelect("88px") },
+    ["LOW", "MEDIUM", "HIGH", "ULTRA"].map(q => el("option", { value: q, text: q })));
+  rtxQualSel.value = state.rtxQuality || "ULTRA";
+  const rtxWrap = el("div", { style: { display: "none", alignItems: "center", gap: "8px" } });
+  rtxWrap.append(
+    el("label", { style: { display: "flex", alignItems: "center", gap: "4px", fontSize: "10.5px", color: C.text } },
+      [el("span", { text: "scale" }), rtxScaleIn, el("span", { text: "x", style: { color: C.muted } })]),
+    el("label", { style: { display: "flex", alignItems: "center", gap: "4px", fontSize: "10.5px", color: C.text } },
+      [el("span", { text: "quality" }), rtxQualSel]),
+  );
+
+  function refreshUpModels() {
+    const list = (ctx.availableModels?.upscale_models || []).filter(x => x && x !== "none");
+    clear(upModelSel);
+    if (!list.length) {
+      upModelSel.appendChild(el("option", { value: "", text: "— none installed —" }));
+    } else {
+      const want = list.includes(state.upscaleModel) ? state.upscaleModel : list[0];
+      list.forEach(m => upModelSel.appendChild(el("option", { value: m, text: m })));
+      upModelSel.value = want;
+    }
+  }
+
+  function refreshUpBar() {
+    const isRtx = upMethod === "rtx";
+    upModelWrap.style.display = isRtx ? "none" : "flex";
+    rtxWrap.style.display     = isRtx ? "flex" : "none";
+    const rtxOk = !!ctx.availability?.RTXVideoSuperResolution;
+    const ready = !!postPick && !postRunning && (isRtx ? rtxOk : !!upModelSel.value);
+    upGoBtn.disabled = !ready;
+    upGoBtn.style.opacity = ready ? "1" : "0.5";
+    if (postRunning) return;
+    if (isRtx && !rtxOk) upProg.idle("⚠ RTX VSR node is not installed.");
+    else if (!isRtx && !upModelSel.value) upProg.idle("⚠ No upscale model installed.");
+    else if (!postPick) upProg.idle("Pick one clip to upscale.");
+    else upProg.idle(pickName());
+  }
+  upMethodSel.addEventListener("change", () => { upMethod = upMethodSel.value; refreshUpBar(); });
+  upModelSel.addEventListener("change", refreshUpBar);
+
+  const upGoBtn = button("⬆ Upscale", () => runUpscale(), "primary");
+  upBar.append(upProg.el, upMethodSel, upModelWrap, rtxWrap, upGoBtn);
+
+  // ── Interpolate ─────────────────────────────────────────────────────────────────
+  // RIFEInterpolation takes a source/target fps pair, not a multiplier, so the options
+  // here are the node's own: any target rate is reachable, 24 -> 60 included.
+  const rifeBar = el("div", { style: Object.assign({}, barStyle) });
+  const rifeProg = makeProgress();
+
+  // Source rate is not a field: every clip in this gallery was rendered at FPS (24), so
+  // there is nothing to choose. Only the target is up to the user.
+  const rifeDstIn = el("input", { type: "number", min: "1", max: "240", step: "1", style: smallInput("50px") });
+  rifeDstIn.value = String(FPS * 2);
+  const rifeScaleSel = el("select", { style: smallSelect("64px") },
+    ["0.25", "0.5", "1.0", "2.0", "4.0"].map(v => el("option", { value: v, text: v })));
+  rifeScaleSel.value = "1.0";
+  const rifeBatchIn = el("input", { type: "number", min: "1", max: "32", step: "1", style: smallInput("46px") });
+  rifeBatchIn.value = "8";
+  const rifeFp16Cb = el("input", { type: "checkbox" }); rifeFp16Cb.checked = true; rifeFp16Cb.style.cursor = "pointer";
+  const cbLabel = (cb, t, tip) => {
+    const l = el("label", { title: tip || "", style: {
+      display: "flex", alignItems: "center", gap: "4px", fontSize: "10.5px", color: C.text, cursor: "pointer",
+    }});
+    l.append(cb, el("span", { text: t }));
+    return l;
+  };
+  const fieldLabel = (t, node, tip, suffix) => {
+    const l = el("label", { title: tip || "", style: {
+      display: "flex", alignItems: "center", gap: "4px", fontSize: "10.5px", color: C.text,
+    }});
+    l.append(el("span", { text: t }), node);
+    if (suffix) l.append(el("span", { text: suffix, style: { color: C.muted } }));
+    return l;
+  };
+
+  function refreshRifeBar() {
+    const ok = !!ctx.availability?.RIFEInterpolation;
+    const dst = Number(rifeDstIn.value) || 0;
+    const sane = dst > FPS;
+    const ready = !!postPick && !postRunning && ok && sane;
+    rifeGoBtn.disabled = !ready;
+    rifeGoBtn.style.opacity = ready ? "1" : "0.5";
+    if (postRunning) return;
+    if (!ok) rifeProg.idle("⚠ RIFE Frame Interpolation is not installed.");
+    else if (!sane) rifeProg.idle(`⚠ Target fps must be above ${FPS}.`);
+    else if (!postPick) rifeProg.idle("Pick one clip to interpolate.");
+    else rifeProg.idle(`${pickName()} · ${FPS} → ${dst} fps`);
+  }
+  rifeDstIn.addEventListener("input", refreshRifeBar);
+
+  const rifeGoBtn = button("🎞 Interpolate", () => runInterpolate(), "primary");
+  rifeBar.append(
+    rifeProg.el,
+    fieldLabel(`${FPS} fps →`, rifeDstIn, "Frame rate after interpolation. The clip keeps its running time.", "fps"),
+    fieldLabel("scale", rifeScaleSel, "Motion is estimated at this scale. Below 1.0 is faster and lighter on VRAM, and a little less accurate."),
+    fieldLabel("batch", rifeBatchIn, "Frames processed in parallel. Higher is faster and uses more VRAM."),
+    cbLabel(rifeFp16Cb, "fp16", "Half precision — faster, lower VRAM. Needs a CUDA GPU."),
+    rifeGoBtn,
+  );
+
+  function pickedVideo() { return postPick ? videos.find(v => vKey(v) === postPick) : null; }
+  function pickName() { const v = pickedVideo(); return v ? v.filename : ""; }
+  function refreshPostBars() { refreshUpBar(); refreshRifeBar(); }
+
+  /**
+   * Shared run wrapper: copy the source into input/, queue the graph, reload the grid.
+   *
+   * The result lands in the same output subfolder as everything else, so refresh() is all
+   * it takes for it to show up — no special-casing in the grid.
+   */
+  async function runPost(prog, label, buildFn) {
+    const v = pickedVideo();
+    if (!v || postRunning) return;
+    postRunning = true;
+    refreshPostBars();
+    prog.busy(`Preparing ${v.filename}…`);
+    let copied = null;
+    try {
+      // VHS_LoadVideo only lists ComfyUI's input folder, so the finished mp4 has to be
+      // copied there first — copy_to_input is format-agnostic, it just moves bytes.
+      const inputFile = await copyOutputToInput(v.filename, v.subfolder || "", "output");
+      copied = inputFile;
+      const stem = v.filename.replace(/\.[^.]+$/, "");
+      const { graph } = buildFn(inputFile, stem);
+      prog.busy(`${label}…`);
+      await queuePrompt(graph, { onProgress: (val, max) => prog.step(val, max) });
+      prog.idle(`✓ ${label} done.`);
+      ctx.showPopup?.(`${label} finished — the new file is at the top of the gallery.`, false);
+      postPick = null;
+      await refresh();
+    } catch (e) {
+      const msg = e?.message || String(e);
+      prog.idle(`✕ ${msg}`);
+      ctx.showPopup?.(`${label} failed: ${msg}`, true);
+    } finally {
+      // The copy exists only to get the file where VHS_LoadVideo can see it; once the
+      // graph has run it is dead weight, and copy_to_input names every one differently.
+      await discardInputCopy(copied);
+      postRunning = false;
+      refreshPostBars();
+    }
+  }
+
+  function runUpscale() {
+    return runPost(upProg, "Upscale", (inputFile, stem) => buildUpscaleGraph({
+      inputFile, stem,
+      folder: state.saveSubfolder || SUBFOLDER,
+      method: upMethod,
+      modelName: upModelSel.value,
+      rtxScale: Math.max(1, Math.min(4, parseFloat(rtxScaleIn.value) || 2)),
+      rtxQuality: rtxQualSel.value,
+    }, ctx.availability || {}));
+  }
+
+  function runInterpolate() {
+    return runPost(rifeProg, "Interpolation", (inputFile, stem) => buildInterpolateGraph({
+      inputFile, stem,
+      folder: state.saveSubfolder || SUBFOLDER,
+      sourceFps: FPS,
+      targetFps: Number(rifeDstIn.value) || FPS * 2,
+      scale: parseFloat(rifeScaleSel.value) || 1.0,
+      batchSize: parseInt(rifeBatchIn.value, 10) || 8,
+      useFp16: rifeFp16Cb.checked,
+    }, ctx.availability || {}));
+  }
 
   // Optional: swap the combined result's audio for a separate source file entirely (e.g. a
   // full backing track), instead of whatever the picked clips' own audio was. Independent of
@@ -325,7 +595,7 @@ export function createGalleryOverlay(state, ctx) {
   hint.innerHTML = "double-click a clip to play it full screen · "
     + "<b>space</b> play/pause · <b>← →</b> seek · <b>[ ]</b> previous / next · <b>Esc</b> close";
 
-  ov.append(hdr, stitchBar, audioOverrideBar, grid, hint);
+  ov.append(hdr, stitchBar, audioOverrideBar, upBar, rifeBar, grid, hint);
 
   // ── fullscreen player ──────────────────────────────────────────────────────
   const player = el("div", { style: {
@@ -437,7 +707,8 @@ export function createGalleryOverlay(state, ctx) {
     }
     list.forEach((v, i) => {
       const pickIdx = stitchMode ? stitchOrder.indexOf(vKey(v)) : -1;
-      const picked = pickIdx !== -1;
+      const postPicked = !!postMode && postPick === vKey(v);
+      const picked = pickIdx !== -1 || postPicked;
       // No `overflow` other than visible here — a grid item's automatic minimum size
       // collapses to 0 instead of its content's natural height whenever overflow isn't
       // "visible", which is what was actually squashing every row into ~27px tracks and
@@ -448,7 +719,8 @@ export function createGalleryOverlay(state, ctx) {
         background: C.bg1, border: `1px solid ${picked ? BRAND : (v.is_full ? BRAND : C.border)}`,
         borderRadius: "8px", cursor: "pointer",
         display: "flex", flexDirection: "column",
-        opacity: (stitchMode && !picked && stitchOrder.length >= STITCH_MAX) ? "0.4" : "1",
+        opacity: (stitchMode && !picked && stitchOrder.length >= STITCH_MAX) ? "0.4"
+               : (postRunning && !picked) ? "0.4" : "1",
       }});
       // Square card, long edge fit (contain) — works for portrait and landscape clips alike
       // without cropping either one. A real <img>, not a <video> — see the note above.
@@ -541,6 +813,19 @@ export function createGalleryOverlay(state, ctx) {
             fontSize: "11px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center",
           }}));
         }
+      } else if (postMode) {
+        card.addEventListener("click", () => {
+          if (postRunning) return;          // the source is already in flight
+          postPick = postPicked ? null : vKey(v);
+          renderGrid();
+        });
+        if (postPicked) {
+          card.appendChild(el("div", { text: "✓", style: {
+            position: "absolute", top: "5px", left: "5px", zIndex: "2",
+            width: "20px", height: "20px", borderRadius: "50%", background: BRAND, color: "#fff",
+            fontSize: "12px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center",
+          }}));
+        }
       } else {
         card.addEventListener("dblclick", () => openPlayer(i));
       }
@@ -600,9 +885,11 @@ export function createGalleryOverlay(state, ctx) {
       grid.appendChild(card);
     });
     if (stitchMode) refreshStitchBar();
+    if (postMode) refreshPostBars();
   }
 
   async function refresh() {
+    refreshUpModels();
     countTag.textContent = "loading…";
     try {
       const d = await listVideos(state.saveSubfolder || SUBFOLDER);
@@ -614,9 +901,7 @@ export function createGalleryOverlay(state, ctx) {
   function hide() {
     closePlayer(); stopGridVideos(); ov.style.display = "none";
     clear(grid);
-    stitchMode = false; stitchOrder = []; oneTakeUserSet = false;
-    stitchBtn.style.background = C.bg2; stitchBtn.style.borderColor = C.border;
-    stitchBar.style.display = "none";
+    if (!postRunning) setMode(null, false);
     deleteConfirmOv.style.display = "none"; pendingDelete = null;
   }
 
