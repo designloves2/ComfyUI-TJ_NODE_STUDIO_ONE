@@ -2,6 +2,63 @@
 
 ---
 
+## v1.19.0 (2026-08-27)
+
+### 갤러리: Upscale + Frame Interpolation
+
+- **갤러리에서 바로 업스케일/프레임 보정** — 🔗 Stitch 오른쪽에 ⬆ Upscale / 🎞 Interpolate
+  버튼 추가. 스티치와 같은 방식(모드 선택 → 그리드에서 클립 선택 → 바에서 실행)이며, 대상은
+  단일 영상입니다.
+  - Upscale은 좌측 패널과 동일한 두 방식(Upscale Model / RTX VSR) 제공, 기본값도 패널
+    설정을 따릅니다.
+  - Interpolation은 **RIFE Frame Interpolation**(`RIFEInterpolation`) 노드 사용 — source/
+    target fps 쌍으로 지정하며 소스는 24fps 고정, 타겟만 조절합니다. 인코딩은 target fps
+    기준이라 재생 길이는 그대로 유지되고 움직임만 부드러워집니다 (192f/24fps → 480f/60fps,
+    오디오 유지 확인).
+  - Upscale Model / RIFE는 실시간 진행률 표시. RTX는 배치 전체를 한 번에 처리하는 노드라
+    진행률 이벤트가 없어 "처리 중" 표시만 나옵니다.
+
+### 입력 폴더 임시 파일 누적 수정
+
+- **Last Frame Chain이 아닌 모드에서도 매 클립마다 input 폴더에 체인 프레임이 복사되던
+  문제 수정** — 복사 결과는 Last Frame Chain일 때만 쓰이는데 항상 복사가 실행되어, 다른
+  모드에서는 아무도 읽지 않는 파일이 클립마다 하나씩 쌓였습니다(89개 확인). 이제 continuity
+  모드가 Last Frame Chain일 때만 복사합니다. 그 복사에만 쓰이던 클립당 8장의 임시 프리뷰도
+  같은 조건으로 껐습니다.
+- **last_frame 출력 슬롯이 남기는 PNG가 무한히 누적되던 문제 수정** — 새 프레임이 기록될
+  때 직전 파일을 삭제해 항상 최신 1개만 남도록 변경(400개 → 1개로 확인). 삭제 대상은 이
+  노드가 쓴 `.png`, `frames` 서브폴더, output 루트 내부로 좁게 제한.
+- **갤러리 업스케일/보정이 남기는 input 폴더 복사본 자동 정리** — 처리 후(성공/실패 무관)
+  복사본을 삭제하는 `discard_input` 라우트 추가. 프리픽스가 일치하지 않는 파일(사용자
+  자산)은 거부.
+
+### Gallery: Upscale + Frame Interpolation
+
+- **Upscale and frame-interpolate a clip straight from the gallery** — `⬆ Upscale` /
+  `🎞 Interpolate` buttons next to `🔗 Stitch`, working the same way (arm a mode, pick a
+  clip from the grid, run from a bar), targeting a single video.
+  - Upscale offers the same two methods as the left panel (Upscale Model / RTX VSR),
+    defaulting to the panel's own settings.
+  - Interpolation uses the **RIFE Frame Interpolation** (`RIFEInterpolation`) node — an
+    explicit source/target fps pair, source fixed at 24, target adjustable. Encoding uses
+    the target rate, so the clip keeps its running time and just moves more smoothly
+    (verified 192 frames/24fps in → 480/60fps out, audio intact).
+  - Upscale Model and RIFE report real per-frame progress; RTX processes the whole batch
+    in one node call, so it has no progress events and just shows "working."
+
+### Input-folder accumulation fixes
+
+- **Chain frames were copied into the input folder every clip, in every continuity
+  mode** — only Last Frame Chain ever reads the result, so the rest just accumulated
+  (89 files found). Now gated on the run's continuity mode; the eight temp tail previews
+  that fed it are gated the same way.
+- **The last-frame PNG output slot accumulated one file per clip forever** — now the
+  previous file is deleted when a new one replaces it, keeping exactly one (400 → 1
+  verified). Deletion is narrowly scoped to this node's own files under the output root.
+- **Gallery upscale/interpolate's own input-folder copies are now cleaned up** after the
+  job finishes (success or failure) via a new `discard_input` route, which refuses any
+  filename that doesn't match the pack's copy prefix.
+
 ## v1.18.1 (2026-08-27)
 
 - **좌측 패널: 설정을 바꿀 때마다 스크롤이 맨 위로 튀던 문제 수정** — 컨트롤 하나를
