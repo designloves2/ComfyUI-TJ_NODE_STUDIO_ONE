@@ -95,6 +95,7 @@ Every MiniMax pack is **optional** — a missing one only switches its own featu
 | [ComfyUI-MiniMaxH3-Cache](https://github.com/lihaoyun6/ComfyUI-MiniMaxH3-Cache) | step-reuse cache |
 | [ComfyUI-MiniMaxH3-FirstBlockCache](https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache) | step-reuse cache (alt) |
 | [ComfyUI-PlagueKind-Nodes](https://github.com/PlagueKind/ComfyUI-PlagueKind-Nodes) | H3 SLA Attention (block-sparse) |
+| [ComfyUI-sol-attn](https://github.com/Saganaki22/ComfyUI-sol-attn) | H3 Sol attention + Fused Modulation |
 | [ComfyUI-MiniMax-H3-Turbo](https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo) | 4-step turbo (FL2VA only) |
 | [ComfyUI-VideoHelperSuite](https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite) | reference **video** inputs |
 | [Nvidia RTX Nodes](https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI) | RTX Video Super Resolution |

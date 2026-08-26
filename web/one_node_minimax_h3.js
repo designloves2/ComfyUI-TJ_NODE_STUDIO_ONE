@@ -17,11 +17,14 @@ import { api } from "../../scripts/api.js";
 import {
   C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, SUBFOLDER,
   el, clear, loadState, saveState, defaultState, randomSeed,
-  CLIP_LENGTHS, ASPECTS, ACCEL_MODES, accelModesFor, UPSCALE_MODES,
+  CLIP_LENGTHS, ASPECTS, UPSCALE_MODES,
+  TURBO_MODES, ATTN_BACKENDS, ATTN_FORWARDS, BLOCK_CACHES, FBC_MODES,
+  attnBlockedReason, attnForwardBlockedReason, blockCacheBlockedReason,
+  effectiveTurbo, effectiveSteps, migrateLegacyAccel,
   continuityModesFor, generationModesFor, configIssues,
   clipPlan, formatDuration, formatClock, framesToSeconds, alignFrameCount, FPS, ONE_TAKE_OVERLAP_FRAMES, resolveResolution,
   parseBrief, groupShots, composeClipPrompt,
-  effectiveAccel, turboLoraForMode, explainGenerationError,
+  turboLoraForMode, explainGenerationError,
   promptText, promptFirstFrame, promptEnabled, activePrompts,
 } from "./minimax/core_minimax.js";
 import { panel, label, button, select, loraSelect, numberField, slider, row, col, modeBar, iconBtn, openVideoFullscreen }
@@ -81,10 +84,14 @@ app.registerExtension({
       // starts where the user left off. A node loaded from a saved workflow overwrites
       // this from its own stored copy in onConfigure.
       const state = defaultState(loadState());
+      // A node saved before the pipeline was split into separate axes still carries the
+      // old single `accelMode`; fold it into the new fields before anything renders.
+      migrateLegacyAccel(state);
 
       // The settings ride along in the workflow — see web/shared/node_state.js.
       const persist = attachNodeState(self, {
-        state, save: saveState, normalize: defaultState,
+        state, save: saveState,
+        normalize: (raw) => { const s = defaultState(raw); migrateLegacyAccel(s); return s; },
         rerender: () => self._mmh3Repaint?.(),
       });
 
@@ -167,7 +174,6 @@ app.registerExtension({
         pillsWrap.appendChild(modeBar(modes, state.generationMode, key => {
           state.generationMode = key;
           // Turbo isn't offered in Reference mode, so don't leave it selected there.
-          if (!accelModesFor(key).some(m => m.key === state.accelMode)) state.accelMode = "solattn";
           persist(); renderPills(); renderLeft();
         }));
 
@@ -244,7 +250,14 @@ app.registerExtension({
       // chrome/address bar stay visible, closes with ✕/ESC/outside-click.
       fsBtn.addEventListener("click", () => { if (lastResultURL) openVideoFullscreen(lastResultURL, { startAt: resultVid.currentTime || 0 }); });
 
+      // KJ encodes preview frames on a background thread, so the last few can land
+      // after execution_success — and after the run has already put its final video in
+      // this box. Without a lock those late frames hide the result behind a looping
+      // preview clip that never stops, which reads as "the run never finished".
+      let previewLocked = false;
+
       function showPreviewFrame(dataURL, mime) {
+        if (previewLocked) return;
         placeholder.style.display = "none";
         // Same bug as resetPreview originally had, other direction: hiding resultVid
         // here doesn't stop it. If the user pressed play on clip N's finished result and
@@ -265,8 +278,9 @@ app.registerExtension({
         }
         badge.style.display = "block";
       }
-      function showResultVideo(url) {
+      function showResultVideo(url, { final = false } = {}) {
         lastResultURL = url;
+        if (final) previewLocked = true;
         placeholder.style.display = "none";
         previewImg.style.display = "none";
         try { previewVid.pause(); } catch {}
@@ -279,6 +293,7 @@ app.registerExtension({
         fsBtn.style.display = "block";
       }
       function resetPreview() {
+        previewLocked = false;
         placeholder.style.display = "block";
         previewImg.style.display = "none";
         previewVid.style.display = "none";
@@ -686,6 +701,40 @@ app.registerExtension({
         return label;
       }
 
+      /**
+       * A collapsible left-panel section.
+       *
+       * The panel is narrow and the pipeline now has enough knobs that showing them all
+       * at once buries the ones being used. Collapsed sections still carry a summary of
+       * what they're set to, so the column reads as a status list without expanding
+       * anything; `state.accordion` remembers what was open, so a reopened workflow
+       * looks the way it was left.
+       *
+       * `body` is a thunk — a collapsed section never builds its contents at all.
+       */
+      function accordion(key, title, summary, body) {
+        const open = !!state.accordion?.[key];
+        const head = el("div", { style: {
+          display: "flex", alignItems: "center", gap: "6px", cursor: "pointer",
+          userSelect: "none", padding: "1px 0",
+        }});
+        head.append(
+          el("div", { text: open ? "▼" : "▶", style: { fontSize: "9px", color: C.muted, width: "10px", flexShrink: "0" } }),
+          el("div", { text: title, style: {
+            fontSize: "10px", fontWeight: "700", letterSpacing: "0.06em",
+            textTransform: "uppercase", color: C.muted, flexShrink: "0" } }),
+          el("div", { text: summary || "", title: summary || "", style: {
+            flex: "1", textAlign: "right", fontSize: "10px",
+            color: summary && summary !== "OFF" && summary !== "None" ? BRAND : C.muted,
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }),
+        );
+        head.addEventListener("click", () => {
+          state.accordion = { ...(state.accordion || {}), [key]: !open };
+          persist(); renderLeft();
+        });
+        return panel([head, ...(open ? body().filter(Boolean) : [])]);
+      }
+
       function renderLeft() {
         const contModes = continuityModesFor(state.generationMode, state);
         const lockAvailable = !!ctx.availability?.TJ_H3_AudioLock;
@@ -696,27 +745,21 @@ app.registerExtension({
         if (!cur || cur.disabled) { state.continuityMode = "none"; persist(); }
         clear(leftPanel);
 
-        // A saved state can hold an acceleration this mode doesn't offer (e.g. Turbo
-        // carried over into Reference). Normalise here, not only on mode switch, so a
-        // reloaded node can never sit on an option that isn't in its own dropdown.
-        if (!accelModesFor(state.generationMode).some(m => m.key === state.accelMode)) {
-          state.accelMode = "solattn";
+        // A saved state can hold a combination the current turbo selection forbids —
+        // carried over from before, or left behind when turbo was switched on. Normalise
+        // here rather than only on change, so a reloaded node can never sit on an option
+        // that its own dropdown greys out.
+        if (attnBlockedReason(state.attnBackend, state.turboMode)) {
+          state.attnBackend = state.turboMode === "lightx2v" ? "sla" : "sage";
           persist();
         }
-
-        // Turbo's whole point is a 4-step schedule; H3 Cache reuses steps across a
-        // threshold that a run this short never reaches, and stacking the two on a test
-        // run gives a false read on how fast/good turbo actually is. Force it off with
-        // turbo rather than just warning, since a stray leftover checkbox is exactly the
-        // kind of thing that quietly skews a "how fast is turbo" comparison. Spectrum gets
-        // the same treatment — it's its own step-schedule accelerator, so it conflicts with
-        // H3 Cache's step-reuse the same way Turbo does.
-        if ((state.accelMode === "turbo" || state.accelMode === "spectrum") && state.useCache) {
-          state.useCache = false;
+        if (attnForwardBlockedReason(state.attnForward, state.turboMode, state.attnBackend)) {
+          state.attnForward =
+            attnForwardBlockedReason("memeff_sage", state.turboMode, state.attnBackend) ? "none" : "memeff_sage";
           persist();
         }
-        if (state.accelMode === "turbo" && state.useFirstBlockCache) {
-          state.useFirstBlockCache = false;
+        if (blockCacheBlockedReason(state.blockCache, state.turboMode)) {
+          state.blockCache = "none";
           persist();
         }
 
@@ -769,212 +812,236 @@ app.registerExtension({
 
         // pipeline options — each accel mode's knobs render right under the dropdown so
         // switching modes never means a round-trip through the Settings modal.
-        const accelNode = (ACCEL_MODES.find(m => m.key === state.accelMode) || {}).node;
-        const accelMissing = accelNode && ctx.availability && Object.keys(ctx.availability).length
-          && !ctx.availability[accelNode];
-        leftPanel.appendChild(panel([
-          label("Pipeline"),
-          col([label("Acceleration"), select(accelModesFor(state.generationMode).map(m => ({ value: m.key, label: m.label })),
-            state.accelMode, v => { state.accelMode = v; persist(); renderLeft(); })]),
-          ...(accelMissing ? [el("div", {
-            html: `⚠ <code>${accelNode}</code> not installed — this run will fall back to no acceleration.`,
-            style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } })] : []),
-          ...accelSettings(),
+        // ── pipeline ──────────────────────────────────────────────────────────
+        // One accordion per patch layer. The layers are genuinely independent (see the
+        // graph builder), so the only thing keeping combinations apart is the turbo
+        // selection, which is why it sits first.
+        const availKnown = ctx.availability && Object.keys(ctx.availability).length;
+        const missingNode = (node) => node && availKnown && !ctx.availability[node];
+        const warn = (node) => missingNode(node) ? el("div", {
+          html: `⚠ <code>${node}</code> not installed — this option is skipped at run time.`,
+          style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }) : null;
+        // A dropdown whose blocked entries stay visible, greyed, with the reason inline —
+        // an option that vanishes just reads as a bug.
+        const gatedSelect = (opts, value, reasonFor, onChange) => select(
+          opts.map(o => {
+            const why = reasonFor(o.key);
+            return { value: o.key, disabled: !!why, label: why ? `${o.label} — ${why}` : o.label };
+          }), value, onChange);
+        const loraOpts = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
+        // Turbo LoRA choices are install-level, not per-run, so they round-trip through
+        // the server config the way the model pickers do — picked once, remembered.
+        const rememberLora = (patch) => { persist(); saveConfig(patch).catch(() => {}); };
+        const shortLabel = (s) => String(s || "").replace(/ \(.*\)/, "");
 
-          // Worth flipping per run alongside continuity, so it sits here rather than in
-          // Settings — its tuning fields stay there.
-          checkboxRow("H3 Cache (step reuse)", !!state.useCache, v => {
-            state.useCache = v;
-            if (v) state.useFirstBlockCache = false;
-            persist(); renderLeft();
-          }, {
-            disabled: state.accelMode === "turbo" || state.accelMode === "spectrum",
-            title: state.accelMode === "turbo"
-              ? "Off with Turbo — turbo's 4-step schedule never reaches the threshold H3 Cache reuses steps at"
-              : state.accelMode === "spectrum"
-              ? "Off with Spectrum — Spectrum is its own step-schedule accelerator and conflicts with H3 Cache's step reuse"
-              : "",
-          }),
-          checkboxRow("H3 FirstBlockCache (step reuse)", !!state.useFirstBlockCache, v => {
-            state.useFirstBlockCache = v;
-            if (v) state.useCache = false;
-            persist(); renderLeft();
-          }, {
-            disabled: state.accelMode === "turbo",
-            title: state.accelMode === "turbo"
-              ? "Off with Turbo — turbo's 4-step schedule never reaches the threshold step-reuse caches trigger at"
-              : "Same idea as H3 Cache above, different implementation — only one can be on at a time. Compatible with Spectrum.",
-          }),
-          checkboxRow("H3 SLA Attention Enabled", state.slaRunEnabled !== false, v => {
-            state.slaRunEnabled = v; persist();
-          }, {
-            disabled: !state.useSlaAttention,
-            title: state.useSlaAttention
-              ? "Toggles the node's own bypass — off runs dense attention without removing the node."
-              : "Enable H3 SLA Attention in ⚙ Settings → Models first.",
-          }),
-
-          col([label("Upscale"), select(UPSCALE_MODES.map(m => ({ value: m.key, label: m.label })),
-            state.upscaleMode, v => { state.upscaleMode = v; persist(); renderLeft(); })]),
-          ...(state.upscaleMode === "rtx" ? [row([
-            col([label("RTX scale"), numberField(state.rtxScale ?? 2, v => { state.rtxScale = v; persist(); }, 0.5)]),
-            col([label("Quality"), select(["LOW","MEDIUM","HIGH","ULTRA"].map(q => ({ value: q, label: q })),
-              state.rtxQuality || "ULTRA", v => { state.rtxQuality = v; persist(); })]),
-          ])] : []),
-          col([label("Continuity between clips"), select(
-            contModes.map(m => ({ value: m.key, disabled: m.disabled,
-              label: m.disabled ? `${m.label} — ${m.reason}` : m.label })),
-            state.continuityMode, v => { state.continuityMode = v; persist(); renderLeft(); })]),
-          el("div", { text: (contModes.find(m => m.key === state.continuityMode) || {}).hint || "",
-            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-          el("div", { text: "One prompt renders one clip. To make a longer piece that holds together, split the brief into shots — each shot becomes a clip and continuity carries the look forward.",
-            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5", marginTop: "2px" } }),
-
-          // ── One-Take (latent continuation) ───────────────────────────────
-          ...(state.continuityMode === "onetake" ? (() => {
-            const onetakeAvailable = !!ctx.availability?.TJ_H3_LatentContinuation;
-            return [
-              ...(onetakeAvailable ? [] : [el("div", {
-                html: "⚠ <code>TJ_H3_LatentContinuation</code> not installed — update the TJ_NODE pack, or switch Continuity to something else.",
-                style: { fontSize: "10px", color: C.warn, lineHeight: "1.5", marginTop: "4px" } })]),
-              checkboxRow("Lock the whole audio stream (with Latent Continuation)", !!state.oneTakeLockAudio, v => {
-                state.oneTakeLockAudio = v; persist();
-              }),
-              checkboxRow("Auto-stitch into one clip when the run finishes (overlap trimmed)",
-                state.oneTakeAutoStitch !== false, v => {
-                state.oneTakeAutoStitch = v; persist(); renderLeft();
-              }),
-              el("div", { text: state.oneTakeAutoStitch !== false
-                  ? "The stitched result (overlap trimmed) is what lands in the Gallery. Per-clip files and "
-                    + "checkpoints stay on disk too, for resuming a stopped run."
-                  : "Off — clips stay separate, same as any other run; nothing gets auto-combined.",
-                style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-              ...(state.oneTakeAutoStitch !== false ? [
-                checkboxRow("Replace with Audio Lock source (skip generated audio)",
-                  !!state.oneTakeAudioOverride, v => { state.oneTakeAudioOverride = v; persist(); },
-                  { disabled: !state.audioLock || !state.lockAudioFile }),
-                el("div", { text: state.audioLock && state.lockAudioFile
-                    ? "The stitched result's audio track is swapped for the locked source file itself "
-                      + "(trimmed to match), instead of the model's generated audio."
-                    : "Needs Audio Lock on with a file selected.",
+        const turboMode = state.turboMode || "none";
+        const turboLabel = (TURBO_MODES.find(t => t.key === turboMode) || {}).label || "None";
+        leftPanel.appendChild(accordion("turbo", "Turbo",
+          turboMode === "none" ? "None"
+            : (effectiveTurbo(state, ctx.availability).mode === "none"
+                ? `${shortLabel(turboLabel)} · inactive`
+                : `${shortLabel(turboLabel)} · ${effectiveSteps(state, ctx.availability)} steps`),
+          () => {
+            const rows = [
+              col([label("Turbo"), select(TURBO_MODES.map(t => ({ value: t.key, label: t.label })),
+                turboMode, v => { state.turboMode = v; persist(); renderLeft(); })]),
+              warn((TURBO_MODES.find(t => t.key === turboMode) || {}).node),
+              (() => {
+                const eff = effectiveTurbo(state, ctx.availability);
+                return eff.fellBack ? el("div", { text: `⚠ ${eff.reason}`,
+                  style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }) : null;
+              })(),
+            ];
+            if (turboMode === "larryvrh") {
+              const isRef = state.generationMode === "reference";
+              rows.push(
+                col([label(`Turbo LoRA (Text / First-Last)${isRef ? "" : " ●"}`),
+                  loraSelect(loraOpts, state.turboLora || "none",
+                    v => { state.turboLora = v; rememberLora({ turbo_lora: v }); }).el]),
+                col([label(`Turbo LoRA (Reference)${isRef ? " ●" : ""}`),
+                  loraSelect(loraOpts, state.turboLoraReference || "none",
+                    v => { state.turboLoraReference = v; rememberLora({ turbo_lora_reference: v }); }).el]),
+                el("div", { text: isRef
+                    ? "● Reference mode uses the Reference slot; it falls back to the first one when that is unset."
+                    : "● This mode uses the first slot.",
                   style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-              ] : []),
+                row([
+                  col([label("strength"), numberField(state.turboLoraStrength ?? 1.0,
+                    v => { state.turboLoraStrength = v; rememberLora({ turbo_lora_strength: v }); }, 0.05)]),
+                  col([label("turbo steps"), numberField(state.turboSteps ?? 4,
+                    v => { state.turboSteps = Math.max(1, Math.round(v)); persist(); renderLeft(); }, 1)]),
+                ]),
+                checkboxRow("Low VRAM turbo load", !!state.turboLoraLowVram,
+                  v => { state.turboLoraLowVram = v; rememberLora({ turbo_lora_low_vram: v }); }),
+                el("div", { text: "Runs a 4-step schedule, so sparse attention and the step caches are unavailable — their error has nowhere to average out.",
+                  style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+              );
+            } else if (turboMode === "lightx2v") {
+              rows.push(
+                col([label("SLA turbo LoRA"), loraSelect(loraOpts, state.slaTurboLora || "none",
+                  v => { state.slaTurboLora = v; rememberLora({ sla_turbo_lora: v }); }).el]),
+                row([
+                  col([label("strength"), numberField(state.slaTurboStrength ?? 1.0,
+                    v => { state.slaTurboStrength = v; rememberLora({ sla_turbo_strength: v }); }, 0.05)]),
+                  col([label("steps"), numberField(state.slaTurboSteps ?? 6,
+                    v => { state.slaTurboSteps = Math.max(1, Math.round(v)); persist(); renderLeft(); }, 1)]),
+                ]),
+                el("div", { text: "An ordinary LoRA distilled against the SLA kernel — it gives no speedup on its own, so H3 SLA Attention is selected and locked below. 6 steps is what its authors recommend.",
+                  style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+              );
+            }
+            return rows;
+          }));
+
+        const attnLabel = (ATTN_BACKENDS.find(a => a.key === state.attnBackend) || {}).label || "None";
+        const fwdLabel  = (ATTN_FORWARDS.find(a => a.key === state.attnForward) || {}).label || "None";
+        leftPanel.appendChild(accordion("attn", "Attention",
+          state.attnForward === "none" ? attnLabel
+            : `${shortLabel(attnLabel)} + ${shortLabel(fwdLabel).replace("H3 ", "")}`,
+          () => {
+            const rows = [
+              col([label("Attention backend"), gatedSelect(ATTN_BACKENDS, state.attnBackend,
+                k => attnBlockedReason(k, turboMode),
+                v => { state.attnBackend = v; persist(); renderLeft(); })]),
+              warn((ATTN_BACKENDS.find(a => a.key === state.attnBackend) || {}).node),
             ];
-          })() : []),
+            if (state.attnBackend === "sage") {
+              rows.push(col([label("mode"), select(
+                ["auto", "disabled", "sageattn3", "sageattn3_per_block_mean",
+                 "sageattn_qk_int8_pv_fp16_cuda", "sageattn_qk_int8_pv_fp8_cuda"].map(x => ({ value: x, label: x })),
+                state.sageAttnMode || "auto", v => { state.sageAttnMode = v; persist(); })]));
+            } else if (state.attnBackend === "ck") {
+              rows.push(col([label("attention"), select(
+                [{ value: "comfy_kitchen", label: "comfy kitchen attention" }, { value: "pytorch", label: "pytorch attention" }],
+                state.ckAttentionBackend || "comfy_kitchen", v => { state.ckAttentionBackend = v; persist(); })]));
+            } else if (state.attnBackend === "solattn_kijai") {
+              rows.push(
+                row([
+                  col([label("tau"), numberField(state.solTau ?? 1.3, v => { state.solTau = v; persist(); }, 0.05)]),
+                  col([label("min tokens"), numberField(state.solMinTokens ?? 4096, v => { state.solMinTokens = Math.round(v); persist(); }, 512)]),
+                ]),
+                row([
+                  col([label("start %"), numberField(state.solStart ?? 0.2, v => { state.solStart = v; persist(); }, 0.05)]),
+                  col([label("end %"),   numberField(state.solEnd ?? 0.9,   v => { state.solEnd = v; persist(); }, 0.05)]),
+                ]));
+            } else if (state.attnBackend === "sla") {
+              rows.push(
+                row([
+                  col([label("sparsity"), numberField(state.slaSparsity ?? 0.90, v => { state.slaSparsity = v; persist(); }, 0.05)]),
+                  col([label("block size"), select(["64", "128"].map(x => ({ value: x, label: x })),
+                    state.slaBlockSize || "64", v => { state.slaBlockSize = v; persist(); })]),
+                ]),
+                row([
+                  col([label("min seq len"), numberField(state.slaMinSeqLen ?? 8192, v => { state.slaMinSeqLen = Math.round(v); persist(); }, 1024)]),
+                  col([label("dense last steps"), numberField(state.slaDenseLastSteps ?? 0, v => { state.slaDenseLastSteps = Math.round(v); persist(); }, 1)]),
+                ]),
+                checkboxRow("Protect audio (always attend text/cond/audio prefix)", state.slaProtectAudio !== false,
+                  v => { state.slaProtectAudio = v; persist(); }),
+                checkboxRow("Enabled (node bypass)", state.slaRunEnabled !== false,
+                  v => { state.slaRunEnabled = v; persist(); },
+                  { title: "Off runs dense attention without removing the node — for a like-for-like baseline." }));
+            }
 
-          // ── Audio Lock ────────────────────────────────────────────────────
-          // H3 treats a reference track as a reference and writes new audio over it.
-          // Locking pins the real thing into the latent instead, which is what lip-sync
-          // and music videos need. Per-run choice, so it lives here and not in Settings.
-          ...(lockAvailable ? [
-            checkboxRow("Lock audio (keep the source track)", !!state.audioLock, v => {
-              state.audioLock = v; persist(); renderLeft();
-            }),
-          ] : [
-            el("div", { html: "⚠ <code>TJ_H3_AudioLock</code> not installed — audio lock unavailable. "
-              + "It ships with <b>TJ_NODE</b>.",
-              style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-          ]),
-          ...(lockAvailable && state.audioLock ? [
-            col([label("Audio file"), audioFilePicker()]),
-            ...(!hasTrim ? [el("div", {
-              html: "⚠ <code>TrimAudioDuration</code> missing — every clip would lock onto the "
-                  + "start of the track. Install it, or keep this to a single clip.",
-              style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } })] : []),
-            row([
-              col([label("Mode"), select([
-                { value: "lock",  label: "Lock — source as-is" },
-                { value: "remix", label: "Remix — partly kept" },
-              ], state.audioLockMode || "lock", v => { state.audioLockMode = v; persist(); renderLeft(); })]),
-              // strength only means anything in remix; the value survives switching back
-              ...(state.audioLockMode === "remix" ? [
-                col([label("Strength"), numberField(state.audioLockStrength ?? 0.5,
-                  v => { state.audioLockStrength = Math.min(1, Math.max(0, v)); persist(); }, 0.05)]),
-              ] : []),
-            ]),
-            col([label("Fit"), select([
-              { value: "pad_silence",  label: "Pad silence" },
-              { value: "loop",         label: "Loop" },
-              { value: "stretch_none", label: "None (pad + warn)" },
-            ], state.audioLockFit || "pad_silence", v => { state.audioLockFit = v; persist(); })]),
-            el("div", { text: "The saved video uses the source audio directly — no codec round trip.",
-              style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-          ] : []),
-        ]));
+            rows.push(
+              col([label("H3 attention forward"), gatedSelect(ATTN_FORWARDS, state.attnForward,
+                k => attnForwardBlockedReason(k, turboMode, state.attnBackend),
+                v => { state.attnForward = v; persist(); renderLeft(); })]),
+              warn((ATTN_FORWARDS.find(a => a.key === state.attnForward) || {}).node));
 
-        // Clips are always saved separately now — combine them from the Gallery's
-        // 🔗 Stitch mode instead, which picks clips in click order (see SPEC A6).
-        leftPanel.appendChild(panel([
-          label("Output"),
-          checkboxRow("Free VRAM between clips", state.unloadBetweenClips !== false, v => {
-            state.unloadBetweenClips = v; persist();
-          }),
-          el("div", { text: "Clips are saved separately. Combine them afterward from 🖼 Gallery → 🔗 스티치.",
-            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-        ]));
-
-        // sampling steps live here too — they change per run far more often than the
-        // rest of the sampler config, which stays in Settings.
-        const turbo = state.accelMode === "turbo";
-        leftPanel.appendChild(panel([
-          label("Steps"),
-          row([
-            col([label(turbo ? "Turbo steps ●" : "Turbo steps"),
-              numberField(state.turboSteps ?? 4, v => { state.turboSteps = Math.max(1, Math.round(v)); persist(); }, 1)]),
-            col([label(turbo ? "Normal steps" : "Normal steps ●"),
-              numberField(state.steps ?? 20, v => { state.steps = Math.max(1, Math.round(v)); persist(); }, 1)]),
-          ]),
-          el("div", { text: turbo ? "● Turbo steps are in use (Accel = Turbo LoRA(larryvrh))."
-                                  : "● Normal steps are in use.",
-            style: { fontSize: "10px", color: C.muted } }),
-        ]));
-
-        // images (mode-specific)
-        const imgPanel = mountImagePanel(state, ctx);
-        leftPanel.appendChild(imgPanel.el);
-
-        // LoRA
-        leftPanel.appendChild(mountLoraPanel());
-
-        leftOuter.appendChild(seedGenWrap);
-      }
-
-      /** Tuning widgets for whichever acceleration mode is selected. */
-      function accelSettings() {
-        const n = (v, set, step = 0.05) => numberField(v, x => { set(x); persist(); }, step);
-        switch (state.accelMode) {
-          case "turbo": {
-            const eff = effectiveAccel(state, ctx.availability);
-            return [
-              ...(eff.fellBack ? [el("div", { text: `⚠ ${eff.reason}`,
-                style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } })] : []),
-              row([
-                col([label("Turbo strength"), n(state.turboLoraStrength ?? 1.0, v => state.turboLoraStrength = v)]),
-                col([label("Low VRAM"), (() => {
-                  const c = el("input", { type: "checkbox" });
-                  c.checked = !!state.turboLoraLowVram;
-                  c.addEventListener("change", () => { state.turboLoraLowVram = c.checked; persist(); });
-                  return el("label", { style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: C.text, cursor: "pointer", paddingTop: "6px" } },
-                    [c, el("span", { text: "low_vram" })]);
+            if (state.attnForward === "solattn_sag") {
+              rows.push(
+                row([
+                  col([label("tau start"), numberField(state.solSagTauStart ?? 1.3, v => { state.solSagTauStart = v; persist(); }, 0.05)]),
+                  col([label("tau end"),   numberField(state.solSagTauEnd ?? 0.8,   v => { state.solSagTauEnd = v; persist(); }, 0.05)]),
+                ]),
+                row([
+                  col([label("curve"), select(["linear", "cosine", "sqrt", "smoothstep"].map(x => ({ value: x, label: x })),
+                    state.solSagCurve || "linear", v => { state.solSagCurve = v; persist(); })]),
+                  col([label("dense %"), numberField(state.solSagDensePercent ?? 0, v => { state.solSagDensePercent = v; persist(); }, 0.05)]),
+                ]),
+                row([
+                  col([label("min tokens"), numberField(state.solSagMinTokens ?? 4096, v => { state.solSagMinTokens = Math.round(v); persist(); }, 256)]),
+                  col([label("thresh"), select(["diag", "exact"].map(x => ({ value: x, label: x })),
+                    state.solSagThreshType || "diag", v => { state.solSagThreshType = v; persist(); })]),
+                ]),
+                col([label("sink conditioning"), select(
+                  ["exact_kv", "exact_kv_and_rows", "off"].map(x => ({ value: x, label: x })),
+                  state.solSagSinkCond || "exact_kv", v => { state.solSagSinkCond = v; persist(); })]),
+                col([label("dense blocks (e.g. 0-2,-1)"), (() => {
+                  const i = el("input", { type: "text", style: {
+                    width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+                    border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px",
+                    fontSize: "12px", fontFamily: "inherit", outline: "none" } });
+                  i.value = state.solSagDenseBlocks || "";
+                  i.addEventListener("input", () => { state.solSagDenseBlocks = i.value; persist(); });
+                  return i;
                 })()]),
-              ]),
-              el("div", { html: `LoRA: <code>${(state.turboLora || "none").split(/[\\/]/).pop()}</code> — pick the file in ⚙ Settings.`,
-                style: { fontSize: "10px", color: C.muted, wordBreak: "break-all" } }),
+                row([
+                  col([checkboxRow("int8 qk", !!state.solSagInt8Qk, v => { state.solSagInt8Qk = v; persist(); })]),
+                  col([checkboxRow("int8 pv", !!state.solSagInt8Pv, v => { state.solSagInt8Pv = v; persist(); })]),
+                ]),
+                el("div", { text: ctx.availability?.MiniMaxH3MemoryEfficientSageAttentionPatch
+                    ? "Runs on strided views of the fused qkv projection — no q/k/v copies. MemEff Sage is installed ahead of it and adopted as the fallback for calls the sparse kernel can't take."
+                    : "Runs on strided views of the fused qkv projection — no q/k/v copies.",
+                  style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+              );
+            }
+            return rows;
+          }));
+
+        const cacheLabel = (BLOCK_CACHES.find(c => c.key === state.blockCache) || {}).label || "None";
+        leftPanel.appendChild(accordion("cache", "Block cache",
+          state.blockCache === "fbcache"
+            ? `${cacheLabel.replace("H3 ", "")} · ${String(state.fbcMode || "").split(" — ")[0].replace("H3 ", "")}`
+            : cacheLabel,
+          () => {
+            const rows = [
+              col([label("Block cache"), gatedSelect(BLOCK_CACHES, state.blockCache,
+                k => blockCacheBlockedReason(k, turboMode),
+                v => { state.blockCache = v; persist(); renderLeft(); })]),
+              warn((BLOCK_CACHES.find(c => c.key === state.blockCache) || {}).node),
             ];
-          }
-          case "solattn":
-            return [
-              row([
-                col([label("tau"), n(state.solTau ?? 1.3, v => state.solTau = v)]),
-                col([label("min tokens"), n(state.solMinTokens ?? 4096, v => state.solMinTokens = Math.round(v), 512)]),
-              ]),
-              row([
-                col([label("start %"), n(state.solStart ?? 0.2, v => state.solStart = v)]),
-                col([label("end %"),   n(state.solEnd ?? 0.9,   v => state.solEnd = v)]),
-              ]),
-            ];
-          case "spectrum":
-            return [
+            if (state.blockCache === "h3cache") {
+              rows.push(
+                row([
+                  col([label("reuse threshold"), numberField(state.cacheThreshold ?? 0.3, v => { state.cacheThreshold = v; persist(); }, 0.05)]),
+                  col([label("max steps"), numberField(state.cacheMaxSteps ?? 2, v => { state.cacheMaxSteps = Math.round(v); persist(); }, 1)]),
+                ]),
+                row([
+                  col([label("start %"), numberField(state.cacheStart ?? 0.15, v => { state.cacheStart = v; persist(); }, 0.05)]),
+                  col([label("end %"),   numberField(state.cacheEnd ?? 0.9,   v => { state.cacheEnd = v; persist(); }, 0.05)]),
+                ]));
+            } else if (state.blockCache === "fbcache") {
+              const custom = (state.fbcMode || FBC_MODES[1]) === FBC_MODES[3];
+              const dim = (f) => { if (!custom) { f.disabled = true; f.style.opacity = "0.4"; } return f; };
+              rows.push(
+                col([label("mode"), select(FBC_MODES.map(m => ({ value: m, label: m })),
+                  state.fbcMode || FBC_MODES[1], v => { state.fbcMode = v; persist(); renderLeft(); })]),
+                row([
+                  col([label("threshold"), dim(numberField(state.fbcThreshold ?? 0.10, v => { state.fbcThreshold = v; persist(); }, 0.005))]),
+                  col([label("max hits"),  dim(numberField(state.fbcMaxHits ?? 2, v => { state.fbcMaxHits = Math.round(v); persist(); }, 1))]),
+                ]),
+                row([
+                  col([label("start %"), dim(numberField(state.fbcStartPercent ?? 0.10, v => { state.fbcStartPercent = v; persist(); }, 0.01))]),
+                  col([label("end %"),   dim(numberField(state.fbcEndPercent ?? 0.95, v => { state.fbcEndPercent = v; persist(); }, 0.01))]),
+                ]),
+                checkboxRow("Temporal guard", !!state.fbcTemporalGuard, v => { state.fbcTemporalGuard = v; persist(); }),
+                custom ? null : el("div", { text: "The three named presets carry their own calibration — the values above only apply in Custom mode.",
+                  style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+              );
+            }
+            return rows;
+          }));
+
+        leftPanel.appendChild(accordion("spectrum", "Spectrum", state.useSpectrum ? "ON" : "OFF", () => {
+          const rows = [
+            checkboxRow("Spectrum (forecast whole steps)", !!state.useSpectrum,
+              v => { state.useSpectrum = v; persist(); renderLeft(); }),
+            warn(state.useSpectrum ? "SpectrumApplyMiniMaxH3" : null),
+          ];
+          if (state.useSpectrum) {
+            const n = (v, set, step = 0.05) => numberField(v, x => { set(x); persist(); }, step);
+            rows.push(
               row([
                 col([label("blend weight"), n(state.specBlendWeight ?? 0.5, v => state.specBlendWeight = v)]),
                 col([label("degree"),       n(state.specDegree ?? 1, v => state.specDegree = Math.round(v), 1)]),
@@ -994,11 +1061,165 @@ app.registerExtension({
               col([label("history storage"), select(
                 [{ value: "system_ram", label: "system_ram" }, { value: "vram", label: "vram" }],
                 state.specHistoryStore || "system_ram", v => { state.specHistoryStore = v; persist(); })]),
+              el("div", { text: "Skips whole sampling steps by extrapolating the latent — a different axis from the block cache above, so the two combine.",
+                style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+            );
+          }
+          return rows;
+        }));
+
+        leftPanel.appendChild(accordion("patches", "Model patches",
+          [state.useFusedModulation && "Fused Mod", state.useTorchPatch !== false && "Torch"].filter(Boolean).join(" + ") || "OFF",
+          () => [
+            checkboxRow("Fused Modulation (AdaLN + gated residual)", !!state.useFusedModulation,
+              v => { state.useFusedModulation = v; persist(); renderLeft(); },
+              { title: "Patches blocks[i].forward — a layer nothing else here uses, so it stacks with every option above." }),
+            warn(state.useFusedModulation ? "MiniMaxH3FusedModulation" : null),
+            checkboxRow("Torch settings patch", state.useTorchPatch !== false,
+              v => { state.useTorchPatch = v; persist(); renderLeft(); }),
+            state.useTorchPatch !== false
+              ? checkboxRow("fp16 accumulation", state.fp16Accum !== false, v => { state.fp16Accum = v; persist(); })
+              : null,
+          ]));
+
+        leftPanel.appendChild(accordion("upscale", "Upscale",
+          (UPSCALE_MODES.find(m => m.key === state.upscaleMode) || {}).label || "None",
+          () => [
+            col([label("Upscale"), select(UPSCALE_MODES.map(m => ({ value: m.key, label: m.label })),
+              state.upscaleMode, v => { state.upscaleMode = v; persist(); renderLeft(); })]),
+            state.upscaleMode === "rtx" ? row([
+              col([label("RTX scale"), numberField(state.rtxScale ?? 2, v => { state.rtxScale = v; persist(); }, 0.5)]),
+              col([label("Quality"), select(["LOW","MEDIUM","HIGH","ULTRA"].map(q => ({ value: q, label: q })),
+                state.rtxQuality || "ULTRA", v => { state.rtxQuality = v; persist(); })]),
+            ]) : null,
+          ]));
+
+        leftPanel.appendChild(accordion("continuity", "Continuity",
+          (contModes.find(m => m.key === state.continuityMode) || {}).label || "None",
+          () => {
+            const rows = [
+              col([label("Continuity between clips"), select(
+                contModes.map(m => ({ value: m.key, disabled: m.disabled,
+                  label: m.disabled ? `${m.label} — ${m.reason}` : m.label })),
+                state.continuityMode, v => { state.continuityMode = v; persist(); renderLeft(); })]),
+              el("div", { text: (contModes.find(m => m.key === state.continuityMode) || {}).hint || "",
+                style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+              el("div", { text: "One prompt renders one clip. To make a longer piece that holds together, split the brief into shots — each shot becomes a clip and continuity carries the look forward.",
+                style: { fontSize: "10px", color: C.muted, lineHeight: "1.5", marginTop: "2px" } }),
             ];
-          default:
-            return [el("div", { text: "No acceleration patch — slowest, but the most faithful baseline.",
-              style: { fontSize: "10px", color: C.muted } })];
-        }
+            if (state.continuityMode === "onetake") {
+              if (!ctx.availability?.TJ_H3_LatentContinuation) rows.push(el("div", {
+                html: "⚠ <code>TJ_H3_LatentContinuation</code> not installed — update the TJ_NODE pack, or switch Continuity to something else.",
+                style: { fontSize: "10px", color: C.warn, lineHeight: "1.5", marginTop: "4px" } }));
+              rows.push(
+                checkboxRow("Lock the whole audio stream (with Latent Continuation)", !!state.oneTakeLockAudio,
+                  v => { state.oneTakeLockAudio = v; persist(); }),
+                checkboxRow("Auto-stitch into one clip when the run finishes (overlap trimmed)",
+                  state.oneTakeAutoStitch !== false, v => { state.oneTakeAutoStitch = v; persist(); renderLeft(); }),
+                el("div", { text: state.oneTakeAutoStitch !== false
+                    ? "The stitched result (overlap trimmed) is what lands in the Gallery. Per-clip files and checkpoints stay on disk too, for resuming a stopped run."
+                    : "Off — clips stay separate, same as any other run; nothing gets auto-combined.",
+                  style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+              );
+              if (state.oneTakeAutoStitch !== false) rows.push(
+                checkboxRow("Replace with Audio Lock source (skip generated audio)",
+                  !!state.oneTakeAudioOverride, v => { state.oneTakeAudioOverride = v; persist(); },
+                  { disabled: !state.audioLock || !state.lockAudioFile }),
+                el("div", { text: state.audioLock && state.lockAudioFile
+                    ? "The stitched result's audio track is swapped for the locked source file itself (trimmed to match), instead of the model's generated audio."
+                    : "Needs Audio Lock on with a file selected.",
+                  style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+              );
+            }
+            return rows;
+          }));
+
+        // H3 treats a reference track as a reference and writes new audio over it.
+        // Locking pins the real thing into the latent instead, which is what lip-sync
+        // and music videos need.
+        leftPanel.appendChild(accordion("audiolock", "Audio lock",
+          state.audioLock
+            ? (state.lockAudioFile ? String(state.lockAudioFile).split(/[\\/]/).pop() : "ON")
+            : "OFF",
+          () => {
+            if (!lockAvailable) return [el("div", {
+              html: "⚠ <code>TJ_H3_AudioLock</code> not installed — audio lock unavailable. It ships with <b>TJ_NODE</b>.",
+              style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } })];
+            const rows = [
+              checkboxRow("Lock audio (keep the source track)", !!state.audioLock,
+                v => { state.audioLock = v; persist(); renderLeft(); }),
+            ];
+            if (!state.audioLock) return rows;
+            rows.push(col([label("Audio file"), audioFilePicker()]));
+            if (!hasTrim) rows.push(el("div", {
+              html: "⚠ <code>TrimAudioDuration</code> missing — every clip would lock onto the start of the track. Install it, or keep this to a single clip.",
+              style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
+            rows.push(
+              row([
+                col([label("Mode"), select([
+                  { value: "lock",  label: "Lock — source as-is" },
+                  { value: "remix", label: "Remix — partly kept" },
+                ], state.audioLockMode || "lock", v => { state.audioLockMode = v; persist(); renderLeft(); })]),
+                ...(state.audioLockMode === "remix" ? [
+                  col([label("Strength"), numberField(state.audioLockStrength ?? 0.5,
+                    v => { state.audioLockStrength = Math.min(1, Math.max(0, v)); persist(); }, 0.05)]),
+                ] : []),
+              ]),
+              col([label("Fit"), select([
+                { value: "pad_silence",  label: "Pad silence" },
+                { value: "loop",         label: "Loop" },
+                { value: "stretch_none", label: "None (pad + warn)" },
+              ], state.audioLockFit || "pad_silence", v => { state.audioLockFit = v; persist(); })]),
+              el("div", { text: "The saved video uses the source audio directly — no codec round trip.",
+                style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+            );
+            return rows;
+          }));
+
+        // Clips are always saved separately now — combine them from the Gallery's
+        // 🔗 Stitch mode instead, which picks clips in click order (see SPEC A6).
+        leftPanel.appendChild(panel([
+          label("Output"),
+          checkboxRow("Free VRAM between clips", state.unloadBetweenClips !== false, v => {
+            state.unloadBetweenClips = v; persist();
+          }),
+          el("div", { text: "Clips are saved separately. Combine them afterward from 🖼 Gallery → 🔗 스티치.",
+            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+        ]));
+
+        // Sampling steps change per run far more often than the rest of the sampler
+        // config, which stays in Settings. A turbo schedule supplies its own count, so
+        // this field goes read-only rather than sitting there looking editable while
+        // something else decides the number.
+        const turboNow = effectiveTurbo(state, ctx.availability).mode;
+        leftPanel.appendChild(panel([
+          label("Steps"),
+          (() => {
+            const f = numberField(state.steps ?? 20,
+              v => { state.steps = Math.max(1, Math.round(v)); persist(); }, 1);
+            if (turboNow !== "none") { f.disabled = true; f.style.opacity = "0.4"; }
+            return f;
+          })(),
+          el("div", { text: turboNow === "none"
+              ? "Used as-is."
+              : `Turbo is on — ${effectiveSteps(state, ctx.availability)} steps from the Turbo section are used instead.`,
+            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+        ]));
+
+        // images (mode-specific)
+        const imgPanel = mountImagePanel(state, ctx);
+        const imgCount = state.generationMode === "reference"
+          ? (state.refImages || []).filter(Boolean).length
+          : [state.firstFrameImage, state.lastFrameImage].filter(Boolean).length;
+        leftPanel.appendChild(accordion("images", "Images",
+          state.generationMode === "t2v" ? "Text only" : (imgCount ? `${imgCount} set` : "None"),
+          () => [imgPanel.el]));
+
+        const loraOn = (state.loras || []).filter(l => l && l.enabled !== false && l.name && l.name !== "none").length;
+        leftPanel.appendChild(accordion("lora", "LoRA", loraOn ? `${loraOn} active` : "None",
+          () => [mountLoraPanel()]));
+
+        leftOuter.appendChild(seedGenWrap);
       }
 
       function mountLoraPanel() {
@@ -1607,7 +1828,7 @@ app.registerExtension({
                   prompts: (rs.prompts || []).map(promptText) },
                 rs,
               ));
-              showResultVideo(url);
+              showResultVideo(url, { final: true });
               badge.textContent = `FULL · ${clipRecords.length} clips (One-Take)`;
               await setLastResult(self.id, { videoPath: out.path });
               setStatus(`Done — ${clipRecords.length} clips stitched (One-Take) → ${out.filename}`);
@@ -1644,6 +1865,7 @@ app.registerExtension({
           // into whatever's queued, so Stop drops the whole queue, not just this run.
           const queued = (!stopRequested && nextQueue.length) ? nextQueue.shift() : null;
           if (stopRequested) nextQueue = [];
+          if (!queued && lastResultURL) showResultVideo(lastResultURL, { final: true });
           if (!queued) { stopWakeAudio(); stopQueueWatch(); }   // truly idle now — anything queued keeps these going across the handoff
           running = false; stopRequested = false;
           genBtn.disabled = false; genBtn.textContent = "▶ Generate";
@@ -1750,7 +1972,7 @@ app.registerExtension({
         if (meta.frames) { state.clipFrames = meta.frames; state.clipLengthCustom = false; }
         if (meta.steps != null) state.steps = meta.steps;
         if (meta.sampler) state.sampler = meta.sampler;
-        if (meta.accel) state.accelMode = meta.accel;
+        if (meta.accel) state.attnBackend = meta.accel;
         if (meta.seed != null) {
           state.seed = meta.seed; state.seedMode = "fixed";
           seedInput.value = meta.seed; seedModeDD.value = "fixed";

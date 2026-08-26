@@ -60,6 +60,7 @@ REPOS=(
     "https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3"
     "https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache"
     "https://github.com/PlagueKind/ComfyUI-PlagueKind-Nodes"
+    "https://github.com/Saganaki22/ComfyUI-sol-attn"
 )
 
 TOTAL=${#REPOS[@]}

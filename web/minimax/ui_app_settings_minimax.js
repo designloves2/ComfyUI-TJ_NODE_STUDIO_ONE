@@ -130,94 +130,13 @@ export function createSettingsOverlay(state, ctx) {
       el("div", { html: "→ <code>models/text_encoders/</code> · <code>models/vae/</code>", style: { fontSize: "10px", color: C.muted } }),
     ]));
 
-    const tl = searchableSelect(lor, state.turboLora || "none", v => { state.turboLora = v; ctx.persist(); ctx.refreshPlan?.(); });
     const um = searchableSelect(ups, state.upscaleModel || "none", v => { state.upscaleModel = v; ctx.persist(); });
     wrap.appendChild(panel([
-      label("Acceleration & Upscale"),
-      col([label("Turbo LoRA(larryvrh)"), tl.el]),
-      row([
-        col([label("Turbo strength"), numField(state.turboLoraStrength ?? 1.0, v => { state.turboLoraStrength = v; ctx.persist(); })]),
-        col([label(" "), checkbox("Low VRAM turbo load", state.turboLoraLowVram, v => { state.turboLoraLowVram = v; ctx.persist(); })]),
-      ]),
+      label("Upscale"),
       col([label("Upscale Model (used when Upscale = Upscale Model)"), um.el]),
-    ]));
-
-    // model patches — SageAttention and CK-Attention are two alternative attention
-    // backends, so only one of the two groups can be active at a time. Picking Sage
-    // turns its whole group (mode + the H3 mem-efficient patch) on together; picking
-    // CK turns the Sage group off and leaves only CK's own setting editable.
-    // Both checkboxes stay clickable at all times — picking one just turns the other off,
-    // no separate "uncheck this first" step needed.
-    const sageChk = checkbox("SageAttention (KJ)", state.useSageAttn, v => {
-      state.useSageAttn = v;
-      if (v) state.useCkAttention = false; else state.useMemEffSage = false;
-      ctx.persist(); renderBody();
-    });
-    const sageModeSel = select(
-      ["auto", "disabled", "sageattn3", "sageattn3_per_block_mean",
-       "sageattn_qk_int8_pv_fp16_cuda", "sageattn_qk_int8_pv_fp8_cuda"].map(s => ({ value: s, label: s })),
-      state.sageAttnMode || "auto", v => { state.sageAttnMode = v; ctx.persist(); });
-    const memEffChk = checkbox("H3 memory-efficient SageAttention patch", state.useMemEffSage, v => {
-      state.useMemEffSage = v; ctx.persist();
-    });
-    const ckChk = checkbox("CK-Attention (comfy kitchen)", state.useCkAttention, v => {
-      state.useCkAttention = v;
-      if (v) state.useSageAttn = false;
-      ctx.persist(); renderBody();
-    });
-    const ckSel = select(
-      [{ value: "comfy_kitchen", label: "comfy kitchen attention" }, { value: "pytorch", label: "pytorch attention" }],
-      state.ckAttentionBackend || "comfy_kitchen", v => { state.ckAttentionBackend = v; ctx.persist(); });
-    if (!state.useSageAttn) {
-      sageModeSel.disabled = true; sageModeSel.style.opacity = "0.4";
-      memEffChk.style.opacity = "0.4"; memEffChk.querySelector("input").disabled = true;
-    }
-    if (!state.useCkAttention) { ckSel.disabled = true; ckSel.style.opacity = "0.4"; }
-    wrap.appendChild(panel([
-      label("Model Patches"),
-      el("div", { text: "SageAttention and CK-Attention are alternative backends — only one group is active at a time.",
-        style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-      row([col([sageChk]), col([label("mode"), sageModeSel])]),
-      memEffChk,
-      row([col([ckChk]), col([label("attention"), ckSel])]),
-      row([
-        col([checkbox("Torch settings patch", state.useTorchPatch, v => { state.useTorchPatch = v; ctx.persist(); })]),
-        col([checkbox("fp16 accumulation", state.fp16Accum, v => { state.fp16Accum = v; ctx.persist(); })]),
-      ]),
-      // The on/off lives in the node's left panel — it gets flipped per run. These are
-      // the tuning values behind it, which are set once.
-      label(state.useCache ? "H3 Cache (step reuse) — ON in the node's left panel"
-                           : "H3 Cache (step reuse) — OFF in the node's left panel"),
-      ...(state.useCache ? [row([
-        col([label("reuse threshold"), numField(state.cacheThreshold ?? 0.3, v => { state.cacheThreshold = v; ctx.persist(); })]),
-        col([label("max steps"), numField(state.cacheMaxSteps ?? 2, v => { state.cacheMaxSteps = Math.round(v); ctx.persist(); }, { step: "1" })]),
-      ]), row([
-        col([label("start %"), numField(state.cacheStart ?? 0.15, v => { state.cacheStart = v; ctx.persist(); })]),
-        col([label("end %"),   numField(state.cacheEnd ?? 0.9,   v => { state.cacheEnd = v; ctx.persist(); })]),
-      ])] : []),
-    ]));
-
-    const slaOk = !!availability.available?.H3SLAAttention;
-    wrap.appendChild(panel([
-      checkbox("H3 SLA Attention (block-sparse, last before the sampler)", state.useSlaAttention, v => {
-        state.useSlaAttention = v; ctx.persist(); renderBody(); ctx.refreshModes?.();
-      }),
-      ...(!slaOk ? [el("div", { html: "⚠ <code>H3SLAAttention</code> not installed — this stays off.",
-        style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } })] : []),
-      ...(state.useSlaAttention ? [
-        row([
-          col([label("sparsity ratio"), numField(state.slaSparsity ?? 0.90, v => { state.slaSparsity = v; ctx.persist(); }, { step: "0.05" })]),
-          col([label("block size"), select(["64", "128"].map(s => ({ value: s, label: s })),
-            state.slaBlockSize || "64", v => { state.slaBlockSize = v; ctx.persist(); })]),
-        ]),
-        row([
-          col([label("min seq len"), numField(state.slaMinSeqLen ?? 8192, v => { state.slaMinSeqLen = Math.round(v); ctx.persist(); }, { step: "1024" })]),
-          col([label("dense last steps"), numField(state.slaDenseLastSteps ?? 0, v => { state.slaDenseLastSteps = Math.round(v); ctx.persist(); }, { step: "1" })]),
-        ]),
-        checkbox("Protect audio (always attend text/cond/audio prefix)", state.slaProtectAudio !== false, v => { state.slaProtectAudio = v; ctx.persist(); }),
-        el("div", { text: "Quick on/off per run (the node's own bypass) lives in the node's left panel, under H3 FirstBlockCache.",
-          style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-      ] : []),
+      el("div", { text: "Turbo LoRAs, attention, block cache, Spectrum and the model patches now live in "
+        + "the node's left panel — they are per-run choices, so they sit next to the run.",
+        style: { fontSize: "10px", color: C.muted, lineHeight: "1.55" } }),
     ]));
 
     const missing = availability.missing_optional || [];
@@ -527,6 +446,32 @@ export function createSettingsOverlay(state, ctx) {
       sla_min_seq_len:      state.slaMinSeqLen       ?? 8192,
       sla_dense_last_steps: state.slaDenseLastSteps  ?? 0,
       sla_protect_audio:    state.slaProtectAudio    ?? true,
+      fbc_mode:             state.fbcMode            || "H3 Fast — 0.10 / max 2",
+      fbc_threshold:        state.fbcThreshold       ?? 0.10,
+      fbc_start_percent:    state.fbcStartPercent    ?? 0.10,
+      fbc_end_percent:      state.fbcEndPercent      ?? 0.95,
+      fbc_max_hits:         state.fbcMaxHits         ?? 2,
+      fbc_temporal_guard:   state.fbcTemporalGuard   ?? false,
+      turbo_lora_reference: state.turboLoraReference || "",
+      sla_turbo_lora:       state.slaTurboLora       || "",
+      sla_turbo_strength:   state.slaTurboStrength   ?? 1.0,
+      sla_turbo_steps:      state.slaTurboSteps      ?? 6,
+      turbo_mode:           state.turboMode          || "none",
+      attn_backend:         state.attnBackend        || "sage",
+      attn_forward:         state.attnForward        || "memeff_sage",
+      block_cache:          state.blockCache         || "none",
+      use_spectrum:         state.useSpectrum        ?? false,
+      use_fused_modulation: state.useFusedModulation ?? false,
+      sol_sag_tau_start:    state.solSagTauStart     ?? 1.3,
+      sol_sag_tau_end:      state.solSagTauEnd       ?? 0.8,
+      sol_sag_curve:        state.solSagCurve        || "linear",
+      sol_sag_min_tokens:   state.solSagMinTokens    ?? 4096,
+      sol_sag_dense_percent: state.solSagDensePercent ?? 0.0,
+      sol_sag_thresh_type:  state.solSagThreshType   || "diag",
+      sol_sag_int8_qk:      state.solSagInt8Qk       ?? false,
+      sol_sag_int8_pv:      state.solSagInt8Pv       ?? false,
+      sol_sag_sink_cond:    state.solSagSinkCond     || "exact_kv",
+      sol_sag_dense_blocks: state.solSagDenseBlocks  || "",
       cache_threshold:  state.cacheThreshold ?? 0.3,
       cache_start:      state.cacheStart     ?? 0.15,
       cache_end:        state.cacheEnd       ?? 0.9,
@@ -601,6 +546,32 @@ export function createSettingsOverlay(state, ctx) {
     if (cfg.sla_min_seq_len != null)      state.slaMinSeqLen      = cfg.sla_min_seq_len;
     if (cfg.sla_dense_last_steps != null) state.slaDenseLastSteps = cfg.sla_dense_last_steps;
     if (cfg.sla_protect_audio != null)    state.slaProtectAudio   = cfg.sla_protect_audio;
+    if (cfg.fbc_mode)                     state.fbcMode           = cfg.fbc_mode;
+    if (cfg.fbc_threshold != null)        state.fbcThreshold      = cfg.fbc_threshold;
+    if (cfg.fbc_start_percent != null)    state.fbcStartPercent   = cfg.fbc_start_percent;
+    if (cfg.fbc_end_percent != null)      state.fbcEndPercent     = cfg.fbc_end_percent;
+    if (cfg.fbc_max_hits != null)         state.fbcMaxHits        = cfg.fbc_max_hits;
+    if (cfg.fbc_temporal_guard != null)   state.fbcTemporalGuard  = cfg.fbc_temporal_guard;
+    take("turboLoraReference", cfg.turbo_lora_reference);
+    take("slaTurboLora",       cfg.sla_turbo_lora);
+    if (cfg.sla_turbo_strength != null)   state.slaTurboStrength  = cfg.sla_turbo_strength;
+    if (cfg.sla_turbo_steps != null)      state.slaTurboSteps     = cfg.sla_turbo_steps;
+    if (cfg.turbo_mode)                   state.turboMode         = cfg.turbo_mode;
+    if (cfg.attn_backend)                 state.attnBackend       = cfg.attn_backend;
+    if (cfg.attn_forward)                 state.attnForward       = cfg.attn_forward;
+    if (cfg.block_cache)                  state.blockCache        = cfg.block_cache;
+    if (cfg.use_spectrum != null)         state.useSpectrum       = cfg.use_spectrum;
+    if (cfg.use_fused_modulation != null) state.useFusedModulation = cfg.use_fused_modulation;
+    if (cfg.sol_sag_tau_start != null)    state.solSagTauStart    = cfg.sol_sag_tau_start;
+    if (cfg.sol_sag_tau_end != null)      state.solSagTauEnd      = cfg.sol_sag_tau_end;
+    if (cfg.sol_sag_curve)                state.solSagCurve       = cfg.sol_sag_curve;
+    if (cfg.sol_sag_min_tokens != null)   state.solSagMinTokens   = cfg.sol_sag_min_tokens;
+    if (cfg.sol_sag_dense_percent != null) state.solSagDensePercent = cfg.sol_sag_dense_percent;
+    if (cfg.sol_sag_thresh_type)          state.solSagThreshType  = cfg.sol_sag_thresh_type;
+    if (cfg.sol_sag_int8_qk != null)      state.solSagInt8Qk      = cfg.sol_sag_int8_qk;
+    if (cfg.sol_sag_int8_pv != null)      state.solSagInt8Pv      = cfg.sol_sag_int8_pv;
+    if (cfg.sol_sag_sink_cond)            state.solSagSinkCond    = cfg.sol_sag_sink_cond;
+    if (cfg.sol_sag_dense_blocks)         state.solSagDenseBlocks = cfg.sol_sag_dense_blocks;
     if (cfg.cache_threshold != null)  state.cacheThreshold = cfg.cache_threshold;
     if (cfg.cache_start != null)      state.cacheStart     = cfg.cache_start;
     if (cfg.cache_end != null)        state.cacheEnd       = cfg.cache_end;

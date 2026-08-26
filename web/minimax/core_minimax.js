@@ -51,27 +51,57 @@ export function alignFrameCount(n) {
 // SPEC_MINIMAX_H3_NEXT_ROUND.md §B2.
 export const ONE_TAKE_OVERLAP_FRAMES = 39;
 
-/** The turbo LoRA for the current mode. */
+/**
+ * The larryvrh turbo LoRA for the current mode.
+ *
+ * Reference mode has its own slot because a turbo LoRA is trained against one base
+ * model, but it falls back to the main one when unset — that keeps a setup that only
+ * ever filled the main slot working in Reference mode exactly as it did before.
+ */
 export function turboLoraForMode(state) {
-  const name = state.turboLora;
-  return (name && name !== "none") ? name : "";
+  const isRef = (state.generationMode || "t2v") === "reference";
+  const pick = (isRef && state.turboLoraReference && state.turboLoraReference !== "none")
+    ? state.turboLoraReference
+    : state.turboLora;
+  return (pick && pick !== "none") ? pick : "";
 }
 
 /**
- * Turbo is only usable when a turbo LoRA exists for the mode's base model. Applying the
- * wrong one is not a soft failure — it throws inside the turbo pack — so this reports
- * when the UI should fall back and why.
+ * Whether the selected turbo actually runs, and why not when it doesn't.
+ *
+ * Both packs fail softly here rather than throwing mid-run: a missing LoRA or an
+ * uninstalled pack just means the run falls back to the normal step count.
  */
-export function effectiveAccel(state, avail) {
-  const want = state.accelMode || "turbo";
-  if (want !== "turbo") return { mode: want, fellBack: false };
-  if (!turboLoraForMode(state)) {
-    return { mode: "none", fellBack: true, reason: "No turbo LoRA set — turbo skipped." };
+export function effectiveTurbo(state, avail) {
+  const want = state.turboMode || "none";
+  if (want === "none") return { mode: "none", fellBack: false };
+
+  const installed = (name) => !(avail && Object.keys(avail).length) || !!avail[name];
+
+  if (want === "larryvrh") {
+    if (!turboLoraForMode(state))
+      return { mode: "none", fellBack: true, reason: "No turbo LoRA set — turbo skipped." };
+    if (!installed("MiniMaxH3TurboLoRA"))
+      return { mode: "none", fellBack: true, reason: "comfyui-minimax-h3-turbo is not installed — turbo skipped." };
+    return { mode: "larryvrh", fellBack: false };
   }
-  if (avail && Object.keys(avail).length && !avail.MiniMaxH3TurboLoRA) {
-    return { mode: "none", fellBack: true, reason: "comfyui-minimax-h3-turbo is not installed — turbo skipped." };
-  }
-  return { mode: "turbo", fellBack: false };
+
+  // lightx2v is a plain LoRA, but without the SLA kernel it was distilled against it
+  // contributes nothing but its own load time, so treat a missing SLA pack as a
+  // fallback rather than quietly running a LoRA that can't pay off.
+  if (!state.slaTurboLora || state.slaTurboLora === "none")
+    return { mode: "none", fellBack: true, reason: "No SLA turbo LoRA set — turbo skipped." };
+  if (!installed("H3SLAAttention"))
+    return { mode: "none", fellBack: true, reason: "H3 SLA Attention is not installed — the lightx2v LoRA gives no speedup without it." };
+  return { mode: "lightx2v", fellBack: false };
+}
+
+/** Steps this run will actually sample at, given the turbo selection. */
+export function effectiveSteps(state, avail) {
+  const t = effectiveTurbo(state, avail).mode;
+  if (t === "larryvrh") return Math.max(1, Math.round(state.turboSteps ?? 4));
+  if (t === "lightx2v") return Math.max(1, Math.round(state.slaTurboSteps ?? 6));
+  return Math.max(1, Math.round(state.steps ?? 20));
 }
 
 /**
@@ -240,6 +270,116 @@ export const UPSCALE_MODES = [
   { key: "model", label: "Upscale Model" },
   { key: "rtx",   label: "RTX VSR" },
 ];
+
+// ── pipeline axis options ─────────────────────────────────────────────────────
+export const TURBO_MODES = [
+  { key: "none",     label: "None" },
+  { key: "larryvrh", label: "Turbo LoRA (larryvrh)", node: "MiniMaxH3TurboLoRA" },
+  { key: "lightx2v", label: "SLA Turbo (lightx2v)",  node: "H3SLAAttention" },
+];
+export const ATTN_BACKENDS = [
+  { key: "none",          label: "None",                   node: null,                   dense: true },
+  { key: "sage",          label: "SageAttention (KJ)",     node: "PathchSageAttentionKJ", dense: true },
+  { key: "ck",            label: "CK-Attention",           node: "ModelAttentionBackend", dense: true },
+  { key: "solattn_kijai", label: "SolAttn (kijai)",        node: "SolAttnPatch",          dense: false },
+  { key: "sla",           label: "H3 SLA Attention",       node: "H3SLAAttention",        dense: false },
+];
+export const ATTN_FORWARDS = [
+  { key: "none",         label: "None",                        node: null,                                          dense: true },
+  { key: "memeff_sage",  label: "H3 MemEff Sage (KJ)",         node: "MiniMaxH3MemoryEfficientSageAttentionPatch",  dense: true },
+  { key: "solattn_sag",  label: "SolAttn (Saganaki22)",        node: "MiniMaxH3ScheduledSolAttentionPatch",         dense: false },
+];
+export const BLOCK_CACHES = [
+  { key: "none",    label: "None",                   node: null },
+  { key: "h3cache", label: "H3 Cache",               node: "MiniMaxH3Cache" },
+  { key: "fbcache", label: "H3 FirstBlockCache",     node: "ApplyMiniMaxH3FirstBlockCache" },
+];
+export const FBC_MODES = [
+  "H3 Safe — 0.08 / max 2", "H3 Fast — 0.10 / max 2",
+  "H3 Aggressive — 0.12 / max 2", "Custom — manual values",
+];
+
+/**
+ * Why a pipeline option can't be used right now, or "" when it's fine.
+ *
+ * The two turbo packs pull in opposite directions and this is the whole reason these
+ * axes are gated rather than free-form:
+ *
+ *   larryvrh runs a 4-step schedule, so a sparse attention kernel's approximation
+ *   error lands on a step that carries ~10x its usual weight and the clip falls
+ *   apart — dense backends only.
+ *
+ *   lightx2v is the reverse: it ships an ordinary LoRA distilled *against* the SLA
+ *   block-sparse kernel, and the pack's own docs say the LoRA "gives no speedup on
+ *   its own" — it needs SLA to be the thing actually skipping work.
+ */
+export function attnBlockedReason(key, turboMode) {
+  const b = ATTN_BACKENDS.find(x => x.key === key);
+  if (!b) return "";
+  if (turboMode === "larryvrh" && !b.dense)
+    return "Turbo LoRA (larryvrh) runs 4 steps — sparse attention's error is too large to absorb there";
+  if (turboMode === "lightx2v" && key !== "sla")
+    return "SLA Turbo (lightx2v) is distilled against the SLA kernel and needs it to provide the speedup";
+  return "";
+}
+export function attnForwardBlockedReason(key, turboMode, attnBackend) {
+  const f = ATTN_FORWARDS.find(x => x.key === key);
+  if (!f || key === "none") return "";
+  if (turboMode === "larryvrh" && !f.dense)
+    return "Turbo LoRA (larryvrh) runs 4 steps — sparse attention's error is too large to absorb there";
+  // Replacing blocks[i].attn.forward removes the stock forward, and the stock forward is
+  // the only thing that consults `optimized_attention_override`. So an override-based
+  // backend would still look enabled while never running on the transformer blocks —
+  // the exact silent-overwrite this split was meant to end. Sage is the exception: its
+  // override and this patch are two halves of one pack, covering the blocks and the
+  // text refiner respectively.
+  if (attnBackend === "ck" || attnBackend === "solattn_kijai" || attnBackend === "sla") {
+    const name = (ATTN_BACKENDS.find(b => b.key === attnBackend) || {}).label || attnBackend;
+    return `${name} hooks the attention the stock forward calls, and this replaces that forward — it would never run`;
+  }
+  return "";
+}
+export function blockCacheBlockedReason(key, turboMode) {
+  if (key === "none") return "";
+  if (turboMode !== "none")
+    return "A turbo schedule is only a handful of steps, which never reaches the threshold these caches reuse steps at";
+  return "";
+}
+
+/**
+ * Carry a workflow saved before the pipeline was split into separate axes.
+ *
+ * The old `accelMode` held one of turbo/solattn/spectrum/none, while attention and the
+ * caches lived in unrelated booleans. Reading those once, on load, keeps an existing
+ * workflow rendering the same pipeline it did before instead of silently resetting to
+ * defaults. Runs once — `pipelineMigrated` marks it done.
+ */
+export function migrateLegacyAccel(state) {
+  if (state.pipelineMigrated) return false;
+  state.pipelineMigrated = true;
+
+  const accel = state.accelMode || "";
+  if (accel === "turbo")         state.turboMode = "larryvrh";
+  else if (accel === "spectrum") state.useSpectrum = true;
+  else if (accel === "solattn")  state.attnBackend = "solattn_kijai";
+
+  // Attention: SLA was a separate checkbox that silently overwrote whatever else had
+  // claimed the override slot, so it wins here too — that is what the run was actually
+  // doing, however it looked in the old UI.
+  if (state.useSlaAttention) state.attnBackend = "sla";
+  else if (accel !== "solattn") {
+    if (state.useCkAttention)    state.attnBackend = "ck";
+    else if (state.useSageAttn)  state.attnBackend = "sage";
+    else                         state.attnBackend = "none";
+  }
+  state.attnForward = state.useMemEffSage ? "memeff_sage" : "none";
+
+  if (state.useFirstBlockCache)  state.blockCache = "fbcache";
+  else if (state.useCache)       state.blockCache = "h3cache";
+  else                           state.blockCache = "none";
+
+  return true;
+}
 /**
  * How a clip picks up from the one before it.
  *
@@ -384,7 +524,8 @@ export function defaultState(saved) {
 
     // modes
     generationMode: saved.generationMode || "t2v",
-    accelMode:      saved.accelMode      || "solattn",   // safe in all three modes
+    accelMode:      saved.accelMode      || "solattn",   // legacy — kept only so old
+                                                         // workflows can be migrated below
     upscaleMode:    saved.upscaleMode    || "none",
     continuityMode: saved.continuityMode || "onetake",
     oneTakeLockAudio: saved.oneTakeLockAudio ?? false,
@@ -469,6 +610,69 @@ export function defaultState(saved) {
     fp16Accum:     saved.fp16Accum     ?? true,
     useCache:            saved.useCache            ?? true,
     useFirstBlockCache:  saved.useFirstBlockCache   ?? false,
+    // ApplyMiniMaxH3FirstBlockCache tuning — manual fields only apply when fbcMode is
+    // the custom option; the three named presets ignore them (the node's own behavior).
+    fbcMode:           saved.fbcMode           || "H3 Fast — 0.10 / max 2",
+    fbcThreshold:      saved.fbcThreshold      ?? 0.10,
+    fbcStartPercent:   saved.fbcStartPercent   ?? 0.10,
+    fbcEndPercent:     saved.fbcEndPercent     ?? 0.95,
+    fbcMaxHits:        saved.fbcMaxHits        ?? 2,
+    fbcTemporalGuard:  !!saved.fbcTemporalGuard,
+
+    // ── pipeline axes ────────────────────────────────────────────────────────
+    // One control per patch layer, instead of the old single `accelMode` that mixed
+    // weights (turbo), attention (solattn) and step-forecasting (spectrum) into one
+    // dropdown — see migrateLegacyAccel() for how old workflows are carried over.
+    //
+    //   turboMode   none | larryvrh | lightx2v      weights + step count
+    //   attnBackend none | sage | ck | solattn_kijai | sla
+    //                                               transformer_options override slot
+    //   attnForward none | memeff_sage | solattn_sag
+    //                                               blocks[i].attn.forward object patch
+    //   blockCache  none | h3cache | fbcache        block-output reuse across steps
+    //   useSpectrum bool                            latent-level step forecasting
+    //   useFusedModulation bool                     blocks[i].forward AdaLN fusion
+    //
+    // Every one of these except turboMode/useSpectrum is independent of the others;
+    // the UI greys out the combinations that are known to break (see attnAllowedFor).
+    // A brand-new node starts already migrated; only a `saved` blob from before the
+    // split needs migrateLegacyAccel() to run over it.
+    pipelineMigrated: saved.pipelineMigrated ?? (saved.accelMode == null),
+    turboMode:   saved.turboMode   || "none",
+    attnBackend: saved.attnBackend || "sage",
+    attnForward: saved.attnForward || "memeff_sage",
+    blockCache:  saved.blockCache  || "none",
+    useSpectrum: saved.useSpectrum ?? false,
+    useFusedModulation: saved.useFusedModulation ?? false,
+
+    // lightx2v SLA turbo: an ordinary LoRA, but it only pays off with the SLA
+    // attention kernel it was distilled against ("the LoRA's job is to make the model
+    // tolerate the sparsity, not to provide it"), so it lives with the turbo controls
+    // rather than in the generic LoRA slots.
+    slaTurboLora:     saved.slaTurboLora     || "none",
+    slaTurboStrength: saved.slaTurboStrength ?? 1.0,
+    slaTurboSteps:    saved.slaTurboSteps    ?? 6,
+
+    // SolAttn (Saganaki22) — blocks[i].attn.forward, tau ramped across sampling
+    solSagTauStart:    saved.solSagTauStart    ?? 1.3,
+    solSagTauEnd:      saved.solSagTauEnd      ?? 0.8,
+    solSagCurve:       saved.solSagCurve       || "linear",
+    solSagMinTokens:   saved.solSagMinTokens   ?? 4096,
+    solSagStrict:      !!saved.solSagStrict,
+    solSagDensePercent: saved.solSagDensePercent ?? 0.0,
+    solSagThreshType:  saved.solSagThreshType  || "diag",
+    solSagInt8Qk:      !!saved.solSagInt8Qk,
+    solSagInt8Pv:      !!saved.solSagInt8Pv,
+    solSagSinkCond:    saved.solSagSinkCond    || "exact_kv",
+    solSagDenseBlocks: saved.solSagDenseBlocks || "",
+
+    // Which left-panel sections are expanded. Persisted so a reopened workflow looks
+    // the way it was left instead of springing every section back open.
+    accordion: Object.assign({
+      turbo: false, attn: false, cache: false, spectrum: false, patches: false,
+      upscale: false, continuity: false, audiolock: false, images: false, lora: false,
+    }, saved.accordion || {}),
+
     cacheThreshold: saved.cacheThreshold ?? 0.3,
     cacheStart:     saved.cacheStart     ?? 0.15,
     cacheEnd:       saved.cacheEnd       ?? 0.9,

@@ -7,7 +7,7 @@
 //
 // Optional third-party nodes are gated on `avail` (from /minimax_h3_one/node_availability):
 // a missing pack disables that one feature rather than failing the whole prompt.
-import { SUBFOLDER, FPS, resolveResolution, effectiveAccel, turboLoraForMode, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES } from "./core_minimax.js";
+import { SUBFOLDER, FPS, resolveResolution, effectiveTurbo, effectiveSteps, turboLoraForMode, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES } from "./core_minimax.js";
 
 const N = {
   unet:   "MM:unet",
@@ -17,6 +17,9 @@ const N = {
   sage:   "MM:sage",
   memSage:"MM:mem_sage",
   ckAttn: "MM:ck_attn",
+  solSag: "MM:sol_sag",
+  fusedMod: "MM:fused_mod",
+  slaTurboLora: "MM:sla_turbo_lora",
   sla:    "MM:sla",
   freeClipVram: "MM:free_clip_vram",
   torch:  "MM:torch",
@@ -188,25 +191,71 @@ function buildModelChain(g, state, avail) {
   g[N.unet] = unetNode(unet);
   let m = [N.unet, 0];
 
-  // SageAttention and CK-Attention are alternative attention backends — the Settings UI
-  // enforces only one group being on, so these never stack.
-  if (state.useCkAttention && has(avail, "ModelAttentionBackend")) {
+  // ── attention backend (transformer_options override slot) ─────────────────
+  // Exactly one of these may be installed: they all write the same
+  // `optimized_attention_override` key (CK writes the sibling `optimized_attention`),
+  // and the last writer silently wins. The UI offers them as one dropdown for that
+  // reason — stacking two used to look enabled while only one actually ran.
+  //
+  // SLA is deliberately NOT placed here even though it claims the same slot: it wants
+  // to be the last patch before the sampler, so it is applied in applySla() further
+  // down, after the preview wrapper.
+  const attn = state.attnBackend || "none";
+  if (attn === "ck" && has(avail, "ModelAttentionBackend")) {
     g[N.ckAttn] = { class_type: "ModelAttentionBackend", inputs: {
       model: m,
       attention: state.ckAttentionBackend === "pytorch" ? "pytorch attention" : "comfy kitchen attention",
     }};
     m = [N.ckAttn, 0];
-  } else {
-    if (state.useSageAttn && has(avail, "PathchSageAttentionKJ")) {
-      g[N.sage] = { class_type: "PathchSageAttentionKJ", inputs: {
-        model: m, sage_attention: state.sageAttnMode || "auto",
-      }};
-      m = [N.sage, 0];
-    }
-    if (state.useMemEffSage && has(avail, "MiniMaxH3MemoryEfficientSageAttentionPatch")) {
-      g[N.memSage] = { class_type: "MiniMaxH3MemoryEfficientSageAttentionPatch", inputs: { model: m } };
-      m = [N.memSage, 0];
-    }
+  } else if (attn === "sage" && has(avail, "PathchSageAttentionKJ")) {
+    g[N.sage] = { class_type: "PathchSageAttentionKJ", inputs: {
+      model: m, sage_attention: state.sageAttnMode || "auto",
+    }};
+    m = [N.sage, 0];
+  } else if (attn === "solattn_kijai" && has(avail, "SolAttnPatch")) {
+    g[N.sol] = { class_type: "SolAttnPatch", inputs: {
+      model: m,
+      tau: state.solTau ?? 1.3,
+      start_percent: state.solStart ?? 0.2,
+      end_percent:   state.solEnd ?? 0.9,
+      min_tokens:    state.solMinTokens ?? 4096,
+      int8_qk: true, sink_conditioning: "exact_kv_and_rows",
+      morton: false, morton_curve: "2d_frame",
+      int8_pv: true, verbose: false, use_tma: false, dense_blocks: "",
+    }};
+    m = [N.sol, 0];
+  }
+
+  // ── H3 attention forward (blocks[i].attn.forward object patch) ────────────
+  // A different layer from the override above, so it combines with it. Order matters
+  // for the Saganaki22 node specifically: it adopts whatever already patched
+  // attn.forward as its own fallback for calls its kernel can't take, which is how
+  // "MemEff Sage + Sol" ends up being a working stack rather than a collision — so
+  // Sage has to be installed first.
+  const attnFwd = state.attnForward || "none";
+  if ((attnFwd === "memeff_sage" || attnFwd === "solattn_sag")
+      && has(avail, "MiniMaxH3MemoryEfficientSageAttentionPatch")
+      && (attnFwd === "memeff_sage" || state.solSagAdoptSage !== false)) {
+    g[N.memSage] = { class_type: "MiniMaxH3MemoryEfficientSageAttentionPatch", inputs: { model: m } };
+    m = [N.memSage, 0];
+  }
+  if (attnFwd === "solattn_sag" && has(avail, "MiniMaxH3ScheduledSolAttentionPatch")) {
+    g[N.solSag] = { class_type: "MiniMaxH3ScheduledSolAttentionPatch", inputs: {
+      model: m,
+      enabled: true,
+      tau_start:     state.solSagTauStart ?? 1.3,
+      tau_end:       state.solSagTauEnd ?? 0.8,
+      curve:         state.solSagCurve || "linear",
+      min_tokens:    Math.round(state.solSagMinTokens ?? 4096),
+      strict:        !!state.solSagStrict,
+      dense_percent: state.solSagDensePercent ?? 0.0,
+      thresh_type:   state.solSagThreshType || "diag",
+      int8_qk:       !!state.solSagInt8Qk,
+      int8_pv:       !!state.solSagInt8Pv,
+      sink_conditioning: state.solSagSinkCond || "exact_kv",
+      dense_blocks:  state.solSagDenseBlocks || "",
+    }};
+    m = [N.solSag, 0];
   }
   if (state.useTorchPatch && has(avail, "ModelPatchTorchSettings")) {
     g[N.torch] = { class_type: "ModelPatchTorchSettings", inputs: {
@@ -235,7 +284,35 @@ function buildModelChain(g, state, avail) {
     m = [id, 0];
   });
 
-  if (state.useCache && has(avail, "MiniMaxH3Cache")) {
+  // ── turbo (weights) ───────────────────────────────────────────────────────
+  // Goes after the user LoRA chain so a turbo LoRA sits closest to the sampler, and
+  // before the caches for the same reason the caches sit before Spectrum: each layer
+  // wraps the one above it.
+  const turbo = effectiveTurbo(state, avail).mode;
+  if (turbo === "larryvrh" && has(avail, "MiniMaxH3TurboLoRA")) {
+    g[N.turbo] = { class_type: "MiniMaxH3TurboLoRA", inputs: {
+      model: m, lora_name: turboLoraForMode(state),
+      strength: state.turboLoraStrength ?? 1.0,
+      low_vram: !!state.turboLoraLowVram,
+    }};
+    m = [N.turbo, 0];
+  } else if (turbo === "lightx2v") {
+    // An ordinary LoRA — the speedup comes from the SLA kernel it was distilled
+    // against, which applySla() installs later.
+    g[N.slaTurboLora] = { class_type: "LoraLoaderModelOnly", inputs: {
+      model: m, lora_name: state.slaTurboLora,
+      strength_model: state.slaTurboStrength ?? 1.0,
+    }};
+    m = [N.slaTurboLora, 0];
+  }
+
+  // ── block-output cache ────────────────────────────────────────────────────
+  // One or the other: both reuse block outputs across steps, so running them together
+  // just compounds the same approximation twice. (They wouldn't error — H3 Cache takes
+  // the whole block loop while FirstBlockCache replaces individual blocks — which is
+  // exactly why the UI has to be the thing keeping them apart.)
+  const cache = state.blockCache || "none";
+  if (cache === "h3cache" && has(avail, "MiniMaxH3Cache")) {
     g[N.cache] = { class_type: "MiniMaxH3Cache", inputs: {
       model: m,
       resuse_threshold: state.cacheThreshold ?? 0.3,
@@ -245,42 +322,24 @@ function buildModelChain(g, state, avail) {
       device: "auto", verbose: false,
     }};
     m = [N.cache, 0];
-  }
-
-  // Same reuse-cache idea as MiniMaxH3Cache above, just a different implementation — the
-  // UI enforces only one of the two being on at once, so this never stacks with N.cache.
-  if (state.useFirstBlockCache && has(avail, "ApplyMiniMaxH3FirstBlockCache")) {
+  } else if (cache === "fbcache" && has(avail, "ApplyMiniMaxH3FirstBlockCache")) {
     g[N.fbcache] = { class_type: "ApplyMiniMaxH3FirstBlockCache", inputs: {
       model: m,
-      mode: "H3 Fast — 0.10 / max 2",
-      threshold: 0.10, start_percent: 0.10, end_percent: 0.95,
-      max_consecutive_hits: 2, temporal_guard: false,
+      mode: state.fbcMode || "H3 Fast — 0.10 / max 2",
+      threshold: state.fbcThreshold ?? 0.10,
+      start_percent: state.fbcStartPercent ?? 0.10,
+      end_percent: state.fbcEndPercent ?? 0.95,
+      max_consecutive_hits: state.fbcMaxHits ?? 2,
+      temporal_guard: !!state.fbcTemporalGuard,
     }};
     m = [N.fbcache, 0];
   }
 
-  // Turbo only when a LoRA exists for THIS mode's base model — see effectiveAccel.
-  const accel = effectiveAccel(state, avail).mode;
-  if (accel === "turbo" && has(avail, "MiniMaxH3TurboLoRA")) {
-    g[N.turbo] = { class_type: "MiniMaxH3TurboLoRA", inputs: {
-      model: m, lora_name: turboLoraForMode(state),
-      strength: state.turboLoraStrength ?? 1.0,
-      low_vram: !!state.turboLoraLowVram,
-    }};
-    m = [N.turbo, 0];
-  } else if (accel === "solattn" && has(avail, "SolAttnPatch")) {
-    g[N.sol] = { class_type: "SolAttnPatch", inputs: {
-      model: m,
-      tau: state.solTau ?? 1.3,
-      start_percent: state.solStart ?? 0.2,
-      end_percent:   state.solEnd ?? 0.9,
-      min_tokens:    state.solMinTokens ?? 4096,
-      int8_qk: true, sink_conditioning: "exact_kv_and_rows",
-      morton: false, morton_curve: "2d_frame",
-      int8_pv: true, verbose: false, use_tma: false, dense_blocks: "",
-    }};
-    m = [N.sol, 0];
-  } else if (accel === "spectrum" && has(avail, "SpectrumApplyMiniMaxH3")) {
+  // ── Spectrum (latent-level step forecasting) ──────────────────────────────
+  // Independent of the caches above: those decide whether to recompute blocks *within*
+  // a step, Spectrum decides whether to run the model for a step at all. Its wrapper
+  // sits outside theirs, so the two compose instead of competing.
+  if (state.useSpectrum && has(avail, "SpectrumApplyMiniMaxH3")) {
     g[N.spectrum] = { class_type: "SpectrumApplyMiniMaxH3", inputs: {
       model: m,
       enabled: true,
@@ -337,8 +396,24 @@ function applyPreview(g, state, avail, modelLink, nodeId) {
 // buildModelChain. Enabling it lives in Settings; the node's own `enabled` bypass is the
 // left-panel per-run checkbox, so the node stays in the graph either way once turned on
 // in Settings — flipping the left-panel box just toggles sparse vs dense passthrough.
+// Fuses H3's segmented AdaLN scale/shift and gated residual updates into Triton
+// kernels. It patches blocks[i].forward, a layer nothing else here touches, and it
+// still *calls* block.adaln_proj() rather than reading its weights — so a turbo LoRA's
+// AdaLN injection survives it. That makes this safe to leave on with any combination
+// of the axes above.
+function applyFusedModulation(g, state, avail, modelLink) {
+  if (!state.useFusedModulation || !has(avail, "MiniMaxH3FusedModulation")) return modelLink;
+  g[N.fusedMod] = { class_type: "MiniMaxH3FusedModulation", inputs: {
+    model: modelLink, enabled: true,
+  }};
+  return [N.fusedMod, 0];
+}
+
 function applySla(g, state, avail, modelLink) {
-  if (!state.useSlaAttention || !has(avail, "H3SLAAttention")) return modelLink;
+  // Selected either as the attention backend outright, or implied by the lightx2v
+  // turbo LoRA, which is worthless without it.
+  const wantSla = state.attnBackend === "sla" || state.turboMode === "lightx2v";
+  if (!wantSla || !has(avail, "H3SLAAttention")) return modelLink;
   g[N.sla] = { class_type: "H3SLAAttention", inputs: {
     model: modelLink,
     sparsity_ratio: state.slaSparsity ?? 0.90,
@@ -479,8 +554,9 @@ export function buildClipGraph(state, avail, opts = {}) {
   g[N.vaeV] = { class_type: "VAELoader", inputs: { vae_name: state.vaeVideo } };
   g[N.vaeA] = { class_type: "VAELoader", inputs: { vae_name: state.vaeAudio } };
 
-  const modelLink1 = applyPreview(g, state, avail, modelLink0, nodeId);
-  const modelLink = applySla(g, state, avail, modelLink1);
+  const modelLink1 = applyFusedModulation(g, state, avail, modelLink0);
+  const modelLink2 = applyPreview(g, state, avail, modelLink1, nodeId);
+  const modelLink = applySla(g, state, avail, modelLink2);
 
   // ── conditioning ───────────────────────────────────────────────────────────
   // `promptText` arrives fully composed (header + shots + footer + suffix) from
@@ -490,11 +566,12 @@ export function buildClipGraph(state, avail, opts = {}) {
     { firstFrame, lastFrame, refImages: refImages ?? state.refImages }, avail);
 
   // ── sampling ───────────────────────────────────────────────────────────────
-  // The turbo sampler's 4-step schedule only makes sense with the turbo LoRA applied,
-  // so it follows the same resolution rather than state.accelMode directly.
-  const accel = effectiveAccel(state, avail).mode;
-  const useTurboSampler = accel === "turbo" && has(avail, "MiniMaxH3TurboSampler");
-  const steps = useTurboSampler ? (state.turboSteps ?? 4) : (state.steps ?? 20);
+  // The dedicated turbo sampler belongs to the larryvrh pack and only makes sense with
+  // that LoRA applied. lightx2v is a plain LoRA distilled for the ordinary sampler, so
+  // it keeps the normal sampler and only changes the step count.
+  const turboMode = effectiveTurbo(state, avail).mode;
+  const useTurboSampler = turboMode === "larryvrh" && has(avail, "MiniMaxH3TurboSampler");
+  const steps = effectiveSteps(state, avail);
 
   g[N.noise] = { class_type: "RandomNoise", inputs: { noise_seed: seed ?? 0 } };
   if (useTurboSampler) {

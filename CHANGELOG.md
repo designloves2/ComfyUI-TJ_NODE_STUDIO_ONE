@@ -2,6 +2,68 @@
 
 ---
 
+## v1.17.0 (2026-08-26)
+
+### MiniMax H3 — 파이프라인 축 분리 + 아코디언 UI + 신규 가속 노드
+
+가속 옵션들이 서로 어떻게 간섭하는지 코드로 전수 감사한 뒤, **패치 계층별로 축을 나눠**
+재구성했습니다. 조용히 서로를 덮어쓰던 조합이 사라지고, 못 쓰는 조합은 회색 + 사유로
+표시됩니다.
+
+- **조용한 덮어쓰기 2건 수정 (실제 낭비였음)**
+  - `H3 SLA Attention`이 `optimized_attention_override`를 기존 값 확인 없이 대입해서,
+    SageAttention·SolAttn과 같이 켜면 **경고 없이 하나만 동작**하던 문제
+  - `MemEff Sage`가 `blocks[i].attn.forward`를 교체해 stock forward를 없애는데, override
+    방식 백엔드(CK/SolAttn/SLA)는 그 stock forward를 통해서만 호출되므로 **켜둔 백엔드가
+    전혀 실행되지 않던** 문제 — 이제 해당 조합은 선택 자체가 막힙니다
+- **Turbo 2종 분리** — larryvrh(전용 노드, 4스텝)와 lightx2v(일반 LoRA)는 요구 어텐션이
+  정반대입니다. larryvrh는 dense 전용(4스텝이라 sparse 오차를 흡수 못 함), lightx2v는
+  SLA 커널에 맞춰 distill된 것이라 SLA가 없으면 속도 이득이 아예 없음 — 각각에 맞는
+  어텐션만 선택 가능하도록 게이팅. Turbo LoRA 선택은 Settings가 아닌 노드 패널에서,
+  변경 즉시 자동 저장
+- **신규 노드 2종 배선** (Saganaki22/ComfyUI-sol-attn)
+  - `MiniMaxH3FusedModulation` — AdaLN scale/shift + gated residual을 Triton으로 fuse.
+    `blocks[i].forward`를 패치하지만 `adaln_proj`는 그대로 호출하므로 Turbo의 LoRA 주입도
+    살아남습니다. **다른 모든 옵션과 자유 조합 가능**
+  - `MiniMaxH3ScheduledSolAttentionPatch` — fused qkv의 strided view로 동작해 q/k/v 복사가
+    없고, tau를 샘플링 구간에 걸쳐 램프. MemEff Sage가 앞에 있으면 fallback으로 자동 채택
+- **블록 캐시 상호배제 명시** — H3 Cache(`block_loop`)와 FirstBlockCache(`double_block`)는
+  기전이 달라 서로의 충돌 검사에 안 걸리지만 같은 근사를 이중으로 적용하므로 배타 처리.
+  **Spectrum은 latent 축이라 캐시와 상보적** — 독립 토글로 분리해 함께 사용 가능
+- **좌측 패널 아코디언화** — Turbo / 어텐션 / 블록 캐시 / Spectrum / 모델 패치 / 업스케일 /
+  연속성 / 오디오 락 / Images / LoRA. 접힌 상태로도 헤더에 현재 설정 요약이 보이고, 펼침
+  상태는 워크플로우에 저장됩니다. 비활성 옵션은 숨기지 않고 회색 + 사유 툴팁
+- **Steps** — Turbo가 켜지면 일반 스텝 필드는 비활성화되고, Turbo 쪽 스텝이 실제로 사용됨을
+  명시
+- **기존 워크플로우 자동 마이그레이션** — 예전 `accelMode` 단일 값을 새 축들로 변환하므로
+  저장된 워크플로우가 초기화되지 않습니다
+- **버그 수정: 생성 완료 후 프리뷰가 결과 영상으로 안 바뀌던 문제** — KJ 프리뷰 인코더가
+  백그라운드 스레드라 `execution_success` 이후에도 프레임이 도착하는데, 그게 이미 표시된
+  결과 영상을 덮고 loop로 무한 재생되고 있었습니다(스티치 결과 포함). 최종 결과 표시 후
+  프리뷰 박스를 잠그도록 수정
+
+- **split the pipeline into one control per patch layer, with accordions**
+- fixed two silent overwrites found by auditing what each node actually patches: SLA
+  clobbered any other `optimized_attention_override` without a word, and MemEff Sage
+  replaced the stock `attn.forward` that override-based backends rely on — so an
+  enabled backend never ran. Both combinations are now blocked in the UI with a reason
+- the two turbo packs pull opposite ways (larryvrh needs dense attention at 4 steps;
+  lightx2v is distilled against the SLA kernel and is pointless without it), so each
+  gates the attention list to what it can actually use
+- wired `MiniMaxH3FusedModulation` (stacks with everything — verified it still calls
+  `adaln_proj`, so turbo's LoRA injection survives) and
+  `MiniMaxH3ScheduledSolAttentionPatch` (strided fused-qkv views, ramped tau)
+- H3 Cache and FirstBlockCache are now mutually exclusive; Spectrum works on the latent
+  axis instead and stays an independent toggle that combines with either
+- left panel is now collapsible sections that summarise their settings while closed and
+  remember what was open; blocked options stay visible, greyed, with the reason
+- old workflows migrate automatically from the previous single `accelMode`
+- fixed the preview box keeping a looping live frame instead of the finished video: KJ
+  encodes previews on a background thread, so late frames landed after the result was
+  already shown
+
+---
+
 ## v1.16.2 (2026-08-26)
 
 - **버전만 갱신(코드 변경 없음)** — Comfy Registry 자동 리뷰가 지난 버전들을 Flagged로

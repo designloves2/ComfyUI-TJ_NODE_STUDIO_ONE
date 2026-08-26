@@ -55,18 +55,22 @@ set REPOS[15]=https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite
 set REPOS[16]=https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3
 set REPOS[17]=https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache
 set REPOS[18]=https://github.com/PlagueKind/ComfyUI-PlagueKind-Nodes
+set REPOS[19]=https://github.com/Saganaki22/ComfyUI-sol-attn
 
-set COUNT=19
+set COUNT=20
+set /a LAST=COUNT-1
 
 :: ── 설치 루프 ──────────────────────────────────────────────────────────────────
-for /L %%i in (0,1,16) do (
+:: 상한은 REPOS 개수에서 계산한다 — 예전에는 숫자가 박혀 있어서 목록에 항목을 추가해도
+:: 뒤쪽 저장소가 그냥 설치되지 않고 넘어갔다.
+for /L %%i in (0,1,!LAST!) do (
     set "URL=!REPOS[%%i]!"
 
     :: URL에서 폴더명 추출 (마지막 /뒤)
     for %%F in (!URL!) do set "FOLDER=%%~nxF"
 
     echo --------------------------------------------------------
-    echo [%%i/8] !FOLDER!
+    echo [%%i/!LAST!] !FOLDER!
     echo         !URL!
 
     if exist "!FOLDER!" (

@@ -43,6 +43,8 @@ export const MMH3_OPTIONAL_NODES = [
   "PathchSageAttentionKJ", "ModelPreviewOverrideKJ", "ModelPatchTorchSettings",
   "MiniMaxH3MemoryEfficientSageAttentionPatch", "MiniMaxH3Cache", "ApplyMiniMaxH3FirstBlockCache",
   "ModelAttentionBackend", "H3SLAAttention", "TJ_FreeTextEncoderVRAM",
+  // Saganaki22/ComfyUI-sol-attn — H3-specific sparse attention + AdaLN fusion
+  "MiniMaxH3ScheduledSolAttentionPatch", "MiniMaxH3FusedModulation",
   "MiniMaxH3TurboSampler", "MiniMaxH3TurboLoRA", "SolAttnPatch",
   "SpectrumApplyMiniMaxH3", "RTXVideoSuperResolution",
   // reference video / audio inputs
