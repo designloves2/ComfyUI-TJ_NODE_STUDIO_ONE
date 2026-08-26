@@ -2,6 +2,49 @@
 
 ---
 
+## v1.18.0 (2026-08-27)
+
+### One-Take 이음매 아티팩트 완화 + 좌측 패널 정리
+
+**측정 결과 먼저** — One-Take로 이어붙인 클립은 2번째부터 **프레임 39~42에서 색이 깨집니다.**
+9클립 런에서 8개 전부 같은 자리, 같은 규모로 발생했습니다. 오버랩 39프레임이 끝나고 새로
+생성된 구간이 시작되는 바로 그 지점입니다.
+
+동일 조건(같은 시드·프롬프트, 0.2MP) A/B 대조로 원인을 좁혔습니다:
+
+| | 프레임간 색 점프 피크 | baseline 대비 | 소요 |
+|---|---|---|---|
+| Spectrum + FirstBlockCache | 183.9 | 191× | 3.8분 |
+| 가속기 전부 OFF | 59.4 | **50×** | 7.8분 |
+
+**가속기를 다 꺼도 이음매는 남습니다.** 근본 원인은 `TJ_H3_LatentContinuation`이 이전 클립의
+latent를 페더링 없이 하드 스플라이스하는 것이고, VAE가 그 경계를 디코드하며 몇 프레임을
+망칩니다. 가속기는 이를 약 3배 증폭하는 악화 요인이지 원인이 아닙니다. (가속기가 시간을
+절반으로 줄여주는 것도 함께 확인됐으니, 이 문제 때문에 끌 이유는 없습니다.)
+
+- **갤러리 스티치에 트림 프레임 입력 필드 추가** — 기본값 43(오버랩 39 + 가드 4). 기존에는
+  39프레임만 잘라내서 **깨진 39~42가 최종본에 그대로 남았습니다.** 소재에 따라 아티팩트
+  길이가 조금씩 달라서 조절 가능하게 했습니다. 자동 스티치는 요청대로 39 유지 — 결과가
+  이상하면 갤러리에서 다시 합치면 됩니다
+- **좌측 패널 Output 제거** — 유일한 항목이던 "Free VRAM between clips"가 Settings →
+  Output → Relay에 이미 있고, 그쪽은 서버 config를 왕복해 새 노드에도 승계됩니다. 한 값에
+  체크박스 둘이면 어느 쪽이 이겼는지 헷갈릴 뿐이라 정리
+- **Steps 위치 이동** — 스크롤 영역 맨 아래, 고정된 Seed/Generate 바로 위로
+
+- **measured the One-Take seam artefact and shipped a mitigation**
+- every continued clip breaks up in colour at frames 39-42 — exactly where the 39-frame
+  carried latent ends. A matched A/B at 0.2MP (same seed and prompt, only the
+  accelerators differing) peaked at 191x baseline with Spectrum + FirstBlockCache and
+  still 50x with everything off, so the hard latent splice is the cause and the
+  accelerators roughly treble it rather than creating it
+- the Gallery stitch gained an editable trim-frames field, defaulting to 43 (the overlap
+  plus four frames of guard); trimming the bare overlap left the broken frames in. Auto
+  stitch keeps using 39 as requested — re-stitch by hand when it looks wrong
+- removed the left panel's Output section, whose one control duplicated Settings
+- Steps moved to the bottom of the scrolling column, just above Seed/Generate
+
+---
+
 ## v1.17.1 (2026-08-26)
 
 ### 설치 스크립트 수정 + 전체 노드 업데이트 배치 + Reuse 복구

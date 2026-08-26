@@ -805,7 +805,8 @@ app.registerExtension({
           totalLine,
           planLine,
           el("div", { text: "Length follows the prompts: one prompt is one clip. Add a prompt "
-            + "(or split the brief into shots) to make the piece longer.",
+            + "(or split the brief into shots) to make the piece longer. Each clip is saved "
+            + "on its own; combine them afterwards from 🖼 Gallery → 🔗 Stitch.",
             style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
         ]));
         refreshPlan();
@@ -1176,21 +1177,29 @@ app.registerExtension({
             return rows;
           }));
 
-        // Clips are always saved separately now — combine them from the Gallery's
-        // 🔗 Stitch mode instead, which picks clips in click order (see SPEC A6).
-        leftPanel.appendChild(panel([
-          label("Output"),
-          checkboxRow("Free VRAM between clips", state.unloadBetweenClips !== false, v => {
-            state.unloadBetweenClips = v; persist();
-          }),
-          el("div", { text: "Clips are saved separately. Combine them afterward from 🖼 Gallery → 🔗 스티치.",
-            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-        ]));
+        // No Output panel here: "Free VRAM between clips" is the same setting as the one
+        // in Settings → Output → Relay, which also round-trips through the server config
+        // so a new node inherits it. Two checkboxes for one value is just a way to end up
+        // wondering which one won.
 
-        // Sampling steps change per run far more often than the rest of the sampler
-        // config, which stays in Settings. A turbo schedule supplies its own count, so
-        // this field goes read-only rather than sitting there looking editable while
-        // something else decides the number.
+        // images (mode-specific)
+        const imgPanel = mountImagePanel(state, ctx);
+        const imgCount = state.generationMode === "reference"
+          ? (state.refImages || []).filter(Boolean).length
+          : [state.firstFrameImage, state.lastFrameImage].filter(Boolean).length;
+        leftPanel.appendChild(accordion("images", "Images",
+          state.generationMode === "t2v" ? "Text only" : (imgCount ? `${imgCount} set` : "None"),
+          () => [imgPanel.el]));
+
+        const loraOn = (state.loras || []).filter(l => l && l.enabled !== false && l.name && l.name !== "none").length;
+        leftPanel.appendChild(accordion("lora", "LoRA", loraOn ? `${loraOn} active` : "None",
+          () => [mountLoraPanel()]));
+
+        // Last in the scrolling column, directly above the pinned Seed/Generate block:
+        // steps change per run far more often than the rest of the sampler config, which
+        // stays in Settings, so this sits where the eye lands right before pressing
+        // Generate. A turbo schedule supplies its own count, so the field goes read-only
+        // rather than sitting there looking editable while something else decides.
         const turboNow = effectiveTurbo(state, ctx.availability).mode;
         leftPanel.appendChild(panel([
           label("Steps"),
@@ -1205,19 +1214,6 @@ app.registerExtension({
               : `Turbo is on — ${effectiveSteps(state, ctx.availability)} steps from the Turbo section are used instead.`,
             style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
         ]));
-
-        // images (mode-specific)
-        const imgPanel = mountImagePanel(state, ctx);
-        const imgCount = state.generationMode === "reference"
-          ? (state.refImages || []).filter(Boolean).length
-          : [state.firstFrameImage, state.lastFrameImage].filter(Boolean).length;
-        leftPanel.appendChild(accordion("images", "Images",
-          state.generationMode === "t2v" ? "Text only" : (imgCount ? `${imgCount} set` : "None"),
-          () => [imgPanel.el]));
-
-        const loraOn = (state.loras || []).filter(l => l && l.enabled !== false && l.name && l.name !== "none").length;
-        leftPanel.appendChild(accordion("lora", "LoRA", loraOn ? `${loraOn} active` : "None",
-          () => [mountLoraPanel()]));
 
         leftOuter.appendChild(seedGenWrap);
       }

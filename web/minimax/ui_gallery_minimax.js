@@ -3,11 +3,14 @@
 // The node's results are videos, so the shared PNG gallery doesn't apply: this lists the
 // mp4s written into the output subfolder and plays them full screen with the keyboard
 // shortcuts you'd expect from a review pass.
-import { C, BRAND, el, clear, SUBFOLDER, framesToSeconds, alignFrameCount, ONE_TAKE_OVERLAP_FRAMES } from "./core_minimax.js";
+import { C, BRAND, el, clear, SUBFOLDER, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES } from "./core_minimax.js";
 import { button, select, numberField } from "../klein/ui_common.js";
 import { listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage, getMediaFiles } from "./api_minimax.js";
 
 const STITCH_MAX = 10;
+
+// Overlap (39) plus four frames of guard — see the note on the trim field below.
+const DEFAULT_STITCH_TRIM_FRAMES = ONE_TAKE_OVERLAP_FRAMES + 4;
 
 function viewURL(v) {
   return `/view?filename=${encodeURIComponent(v.filename)}`
@@ -179,10 +182,41 @@ export function createGalleryOverlay(state, ctx) {
   oneTakeCb.style.cursor = "pointer";
   let oneTakeUserSet = false;
   oneTakeCb.addEventListener("change", () => { oneTakeUserSet = true; });
-  oneTakeLabel.append(oneTakeCb, el("span", { text: "One-Take (trim overlap)" }));
+  oneTakeLabel.append(oneTakeCb, el("span", { text: "One-Take (trim)" }));
+
+  // How many frames to drop from the head of every clip after the first.
+  //
+  // The overlap itself is 39 frames, but trimming exactly that leaves the artefact that
+  // sits right on the seam: the carried latent is spliced in hard, with no feathering, so
+  // the VAE produces a few frames of colour breakup where it meets freshly sampled
+  // content. Measured on a matched pair at 0.2MP (same seed, same prompt, only the
+  // accelerators differing), the frame-to-frame colour jump peaked at 184x baseline with
+  // Spectrum + FirstBlockCache on and still 50x with every accelerator off — so the
+  // accelerators amplify it roughly threefold but are not the cause. The breakup spans
+  // frames 39-42 consistently, hence 43 as the default here: overlap plus four frames of
+  // guard. Editable because the artefact's length varies a little with the material, and
+  // because a run stitched by hand is exactly where you would want to tune it.
+  const trimLabel = el("label", { style: {
+    display: "flex", alignItems: "center", gap: "4px", fontSize: "10.5px", color: C.text,
+  }});
+  const trimIn = el("input", { type: "number", min: "0", max: "240", step: "1", style: {
+    width: "48px", boxSizing: "border-box", background: C.bg2, color: C.text,
+    border: `1px solid ${C.border}`, borderRadius: "5px", padding: "3px 4px",
+    fontSize: "10.5px", fontFamily: "inherit", outline: "none",
+  }});
+  trimIn.value = String(state.stitchTrimFrames ?? DEFAULT_STITCH_TRIM_FRAMES);
+  trimIn.title = "Frames trimmed from the head of every clip after the first.\n"
+    + `${ONE_TAKE_OVERLAP_FRAMES} = the overlap alone; the default adds a few frames of guard `
+    + "because the seam itself shows some colour breakup.";
+  trimIn.addEventListener("input", () => {
+    state.stitchTrimFrames = Math.max(0, Math.round(parseFloat(trimIn.value) || 0));
+    ctx.persist?.();
+    refreshStitchBar();
+  });
+  trimLabel.append(el("span", { text: "trim" }), trimIn, el("span", { text: "f", style: { color: C.muted } }));
 
   const stitchGoBtn = button("🔗 Combine", () => runStitch(), "primary");
-  stitchBar.append(stitchInfo, oneTakeLabel, stitchClearBtn, stitchGoBtn);
+  stitchBar.append(stitchInfo, oneTakeLabel, trimLabel, stitchClearBtn, stitchGoBtn);
 
   // Optional: swap the combined result's audio for a separate source file entirely (e.g. a
   // full backing track), instead of whatever the picked clips' own audio was. Independent of
@@ -232,7 +266,7 @@ export function createGalleryOverlay(state, ctx) {
     if (picked.length >= STITCH_MAX) text += " · longer edits need a real video editor";
     if (total != null) {
       const trimmed = oneTakeCb.checked && picked.length > 1
-        ? total - (picked.length - 1) * framesToSeconds(alignFrameCount(ONE_TAKE_OVERLAP_FRAMES))
+        ? total - (picked.length - 1) * trimSeconds()
         : total;
       text += ` · ≈${trimmed.toFixed(2)}s`;
     }
@@ -242,11 +276,18 @@ export function createGalleryOverlay(state, ctx) {
     stitchGoBtn.style.opacity = picked.length < 2 ? "0.5" : "1";
   }
 
+  // Frames are the unit that matters here (the artefact is N frames wide), but the
+  // stitch API takes seconds — convert once, in one place.
+  function trimSeconds() {
+    const f = Math.max(0, Math.round(state.stitchTrimFrames ?? DEFAULT_STITCH_TRIM_FRAMES));
+    return framesToSeconds(f);
+  }
+
   async function runStitch() {
     const picked = stitchOrder.map(k => videos.find(v => vKey(v) === k)).filter(Boolean);
     if (picked.length < 2) return;
     stitchGoBtn.disabled = true;
-    const overlapSec = oneTakeCb.checked ? framesToSeconds(alignFrameCount(ONE_TAKE_OVERLAP_FRAMES)) : null;
+    const overlapSec = oneTakeCb.checked ? trimSeconds() : null;
     stitchInfo.textContent = `Stitching ${picked.length} clips${overlapSec ? ` (One-Take, ${overlapSec.toFixed(3)}s overlap trimmed)` : ""}…`;
     try {
       const folder = (state.saveSubfolder || SUBFOLDER).replace(/\\/g, "/");

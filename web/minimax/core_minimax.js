@@ -517,6 +517,13 @@ export function defaultState(saved) {
     audioLockTrimEnd:   saved.audioLockTrimEnd   ?? 0,   // 0 = to the end of the file
     oneTakeAudioOverride: !!saved.oneTakeAudioOverride,
 
+    // Frames the Gallery's manual stitch drops from the head of each clip after the
+    // first. Defaults to the overlap plus a small guard, because the seam itself shows a
+    // few frames of colour breakup — trimming the overlap exactly would leave it in.
+    // The auto-stitch keeps using the bare overlap; this is the knob for re-stitching by
+    // hand when the automatic result looks wrong.
+    stitchTrimFrames: saved.stitchTrimFrames ?? (ONE_TAKE_OVERLAP_FRAMES + 4),
+
     loras: Array.isArray(saved.loras) ? saved.loras.map(l => ({
       name: l.name || "none", strength: l.strength ?? 1.0,
       triggerWord: l.triggerWord || "", enabled: l.enabled !== false,
