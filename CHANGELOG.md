@@ -2,6 +2,47 @@
 
 ---
 
+## v1.17.1 (2026-08-26)
+
+### 설치 스크립트 수정 + 전체 노드 업데이트 배치 + Reuse 복구
+
+- **리눅스에서 설치가 안 되던 원인** — `install_requirements.sh`가 실행 권한 없이(100644)
+  커밋되어 있어 `./install_requirements.sh` 시 Permission denied. 100755로 고치고,
+  `.gitattributes`로 `*.sh`를 LF에 고정해 윈도우에서 커밋해도 CRLF가 섞이지 않게 함
+  (CRLF면 리눅스에서 "bad interpreter"로 죽는데, 원인 파악이 어려운 형태의 같은 문제)
+- **`.bat`이 뒤쪽 저장소를 아예 설치하지 않던 문제** — 루프 상한이 `16`으로 박혀 있었는데
+  목록은 20개로 늘어나 있었음. 목록 개수에서 계산하도록 수정
+- **RTX 노드 설치 실패** — `nvidia-vfx`가 NVIDIA의 `wheel-stub`을 빌드 백엔드로 선언하는데
+  pip이 이를 항상 받아오지는 않고, pip의 격리 빌드 환경은 전역 빌드 도구를 물려받지도
+  않음. `wheel-stub` 선설치 + 실패 시 `--no-build-isolation` 재시도로 해결
+- **중복 설치** — Manager는 저장소 이름이 아니라 pyproject의 `name`으로 폴더를 만들어서,
+  이미 설치된 3개 팩을 저장소 이름으로 또 clone하고 있었음(노드 이중 등록). 두 이름 모두
+  대소문자 무시하고 확인(리눅스는 대소문자 구분)
+- **pip 선갱신** + 기존 팩은 건너뛰지 않고 `git pull`하도록 변경 — 설치 스크립트가
+  업데이트도 겸함
+- **`update_all_nodes.bat` 신규** — `custom_nodes` 아래 모든 git 체크아웃을 pull.
+  `--ff-only`에 사전 dirty 검사까지 해서 로컬 변경이 있는 폴더는 손대지 않고 보고만 함
+  (머지·리셋·폐기 없음). 실제로 갱신된 팩만 의존성 재설치
+- **Reuse / 실측 ETA 복구** — 파이프라인 축 분리 이후 `accelMode`를 계속 읽던 3곳을 수정.
+  클립 메타가 죽은 값을 저장하고, Reuse가 `attnBackend`에 `"turbo"` 같은 유효하지 않은
+  값을 넣고, 실측 평균은 매칭이 영영 실패해 조용히 수동값으로 폴백하고 있었음
+
+- **installer fixes, an update-everything batch, and Reuse repair**
+- the Linux installer was committed without its exec bit (Permission denied); fixed and
+  pinned `*.sh` to LF via .gitattributes so a Windows commit can't reintroduce CRLF
+- the .bat loop bound was hardcoded below the list length, silently skipping the last
+  repos entirely
+- RTX nodes now install: wheel-stub up front plus a `--no-build-isolation` retry
+- three packs were being cloned a second time next to a Manager install because Manager
+  names folders after the pyproject name; matched on both names, case-insensitively
+- existing packs are pulled rather than skipped, so the installer doubles as an updater
+- new `update_all_nodes.bat` pulls every git checkout under custom_nodes, refusing to
+  touch anything with local changes and refreshing requirements only where something
+  actually moved
+- fixed clip Reuse and the measured ETA, which both still read the retired accelMode
+
+---
+
 ## v1.17.0 (2026-08-26)
 
 ### MiniMax H3 — 파이프라인 축 분리 + 아코디언 UI + 신규 가속 노드
