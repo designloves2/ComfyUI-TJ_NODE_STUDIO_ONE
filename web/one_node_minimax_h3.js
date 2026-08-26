@@ -736,6 +736,12 @@ app.registerExtension({
       }
 
       function renderLeft() {
+        // Every control in this column re-runs renderLeft(), which rebuilds the whole
+        // panel — and a rebuilt scroll container starts back at the top. Ticking one
+        // checkbox halfway down therefore threw you back to Canvas and you had to scroll
+        // down again for the next one. Remember where the column was and put it back
+        // after the rebuild; the browser clamps for us if the new content is shorter.
+        const prevScroll = leftPanel.scrollTop;
         const contModes = continuityModesFor(state.generationMode, state);
         const lockAvailable = !!ctx.availability?.TJ_H3_AudioLock;
         const hasTrim       = !!ctx.availability?.TrimAudioDuration;
@@ -1216,6 +1222,7 @@ app.registerExtension({
         ]));
 
         leftOuter.appendChild(seedGenWrap);
+        leftPanel.scrollTop = prevScroll;
       }
 
       function mountLoraPanel() {

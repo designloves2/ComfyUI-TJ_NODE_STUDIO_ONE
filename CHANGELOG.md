@@ -2,6 +2,19 @@
 
 ---
 
+## v1.18.1 (2026-08-27)
+
+- **좌측 패널: 설정을 바꿀 때마다 스크롤이 맨 위로 튀던 문제 수정** — 컨트롤 하나를
+  건드리면 패널 전체를 다시 그리는데, 새로 그려진 스크롤 컨테이너는 맨 위에서 시작합니다.
+  그래서 중간쯤에 있는 체크박스 하나를 켤 때마다 Canvas로 되돌아가 다시 스크롤해 내려와야
+  했습니다. 다시 그리기 전후로 스크롤 위치를 보존하도록 수정
+- **fixed the left panel jumping back to the top on every change** — each control
+  re-renders the whole column, and a rebuilt scroll container starts at the top, so
+  ticking one checkbox halfway down threw you back to Canvas. The scroll position is
+  now carried across the rebuild
+
+---
+
 ## v1.18.0 (2026-08-27)
 
 ### One-Take 이음매 아티팩트 완화 + 좌측 패널 정리
