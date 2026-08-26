@@ -1,0 +1,8 @@
+# Shell scripts must keep LF endings whoever commits them. A .sh checked in with CRLF
+# fails on Linux with a confusing "bad interpreter" / "\r: command not found", which is
+# not obviously a line-ending problem when you hit it.
+*.sh text eol=lf
+
+# Batch files are the mirror image: cmd.exe wants CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
