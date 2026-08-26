@@ -2440,6 +2440,40 @@ async def mmh3_llm_enhance(request):
 _mmh3_last: dict = {}
 
 
+def _mmh3_drop_stale_last_frame(prev, nxt):
+    """Delete the last-frame PNG that `prev` points at, now that `nxt` replaces it.
+
+    The last_frame output slot re-opens this file from disk on every RUN, so it has to
+    survive the render — but only the newest one ever gets read, and _mmh3_last is an
+    in-memory dict that is empty again after a restart. Left alone the relay wrote one
+    PNG per clip into output/<pack>/frames and never came back for them (400 of them
+    before anyone looked). Keeping exactly the current frame is the same thing as
+    overwriting a single file, without asking SaveImage to do something it cannot.
+
+    Deliberately narrow: only a file this node just wrote, in that frames folder, under
+    the output root. Anything unexpected is left where it is.
+    """
+    try:
+        old_name = (prev or {}).get("filename")
+        if not old_name or not old_name.lower().endswith(".png"):
+            return
+        if (prev or {}).get("type", "output") != "output":
+            return
+        sub = ((prev or {}).get("subfolder") or "").replace("\\", "/")
+        if not sub.endswith("/frames") and sub != "frames":
+            return
+        if old_name == (nxt or {}).get("filename") and sub == (((nxt or {}).get("subfolder") or "").replace("\\", "/")):
+            return
+        root = os.path.realpath(folder_paths.get_output_directory())
+        path = os.path.realpath(os.path.join(root, sub, old_name))
+        if os.path.commonpath([root, path]) != root:
+            return
+        if os.path.isfile(path):
+            os.remove(path)
+    except Exception as e:
+        print(f"[MMH3] could not drop stale last frame: {e}")
+
+
 @PromptServer.instance.routes.post("/minimax_h3_one/set_last_image")
 async def mmh3_set_last_image(request):
     data = await request.json()
@@ -2447,7 +2481,9 @@ async def mmh3_set_last_image(request):
     if uid:
         rec = _mmh3_last.setdefault(uid, {})
         if "image" in data:
-            rec["image"] = data.get("image", {})
+            nxt = data.get("image", {})
+            _mmh3_drop_stale_last_frame(rec.get("image"), nxt)
+            rec["image"] = nxt
         if "video_path" in data:
             rec["video_path"] = data.get("video_path", "")
     return web.json_response({"ok": True})

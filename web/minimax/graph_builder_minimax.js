@@ -535,7 +535,7 @@ export function buildClipGraph(state, avail, opts = {}) {
   const {
     nodeId, promptText, seed,
     firstFrame = null, lastFrame = null, refImages = null,
-    clipIndex = 0, saveLastFrame = true,
+    clipIndex = 0, saveLastFrame = true, saveTailPreviews = true,
     prevCheckpointName = null, checkpointName = null,
   } = opts;
 
@@ -665,14 +665,140 @@ export function buildClipGraph(state, avail, opts = {}) {
     // A clip sometimes fades to black over its final frames, and handing that to the
     // next clip starts it from an empty screen. Keep a short tail as temp previews so
     // the relay can step back to the last frame that actually has a picture in it.
-    const tail = Math.min(TAIL_CANDIDATES, frames);
-    g[N.tailF] = { class_type: "ImageFromBatch", inputs: {
-      image: images, batch_index: Math.max(0, frames - tail), length: tail,
-    }};
-    g[N.tailPrev] = { class_type: "PreviewImage", inputs: { images: [N.tailF, 0] } };
+    // Only Last Frame Chain reads them, so the caller switches them off otherwise
+    // rather than writing eight temp PNGs per clip for nothing.
+    if (saveTailPreviews) {
+      const tail = Math.min(TAIL_CANDIDATES, frames);
+      g[N.tailF] = { class_type: "ImageFromBatch", inputs: {
+        image: images, batch_index: Math.max(0, frames - tail), length: tail,
+      }};
+      g[N.tailPrev] = { class_type: "PreviewImage", inputs: { images: [N.tailF, 0] } };
+    }
   }
 
   return { graph: g, meta: { width, height, frames, steps, seed, videoNode: N.save, lastFrameNode: N.saveLF } };
 }
 
 export const NODE_IDS = N;
+
+// ── post-processing an already-rendered clip ─────────────────────────────────
+// Upscaling and frame interpolation both follow the same shape: read the finished mp4
+// back in, run the frames through one node, and write a new mp4 beside it. They are
+// separate from buildClipGraph because nothing about the original run is involved — no
+// UNET, no sampler, no conditioning — so building them here keeps that graph from
+// growing branches it would have to skip on every normal render.
+//
+// The source has to be copied into ComfyUI's input folder first (VHS_LoadVideo only
+// lists input/), which the caller does with copyOutputToInput before calling this.
+const P = {
+  load:  "PP:load",
+  model: "PP:upscale_model",
+  apply: "PP:upscale",
+  rtx:   "PP:rtx",
+  rife:  "PP:rife",
+  video: "PP:video",
+  save:  "PP:save",
+};
+
+/**
+ * Upscale every frame of a finished clip and re-encode it, audio intact.
+ *
+ * @param opts.inputFile   filename already in ComfyUI's input folder
+ * @param opts.method      "model" | "rtx"
+ * @param opts.modelName   upscale model file, for method "model"
+ * @param opts.rtxScale    multiplier, for method "rtx"
+ * @param opts.rtxQuality  LOW | MEDIUM | HIGH | ULTRA
+ * @param opts.folder      output subfolder
+ * @param opts.stem        filename prefix
+ */
+export function buildUpscaleGraph(opts, avail) {
+  const { inputFile, method, modelName, rtxScale, rtxQuality, folder, stem } = opts;
+  const g = {};
+
+  // force_rate 0 keeps the file's own timing; the frame count and audio come back
+  // alongside the images so the re-encode can stay in sync with the original.
+  g[P.load] = { class_type: "VHS_LoadVideo", inputs: {
+    video: inputFile, force_rate: 0,
+    custom_width: 0, custom_height: 0,
+    frame_load_cap: 0, skip_first_frames: 0, select_every_nth: 1,
+  }};
+  let images = [P.load, 0];
+
+  if (method === "rtx") {
+    if (!has(avail, "RTXVideoSuperResolution"))
+      throw new Error("RTXVideoSuperResolution is not installed.");
+    g[P.rtx] = { class_type: "RTXVideoSuperResolution", inputs: {
+      images,
+      // dynamic combo: the selected key plus its sub-input, dot-addressed
+      resize_type: "scale by multiplier",
+      "resize_type.scale": rtxScale ?? 2.0,
+      quality: rtxQuality || "ULTRA",
+    }};
+    images = [P.rtx, 0];
+  } else {
+    if (!modelName || modelName === "none")
+      throw new Error("No upscale model selected.");
+    g[P.model] = { class_type: "UpscaleModelLoader", inputs: { model_name: modelName } };
+    g[P.apply] = { class_type: "ImageUpscaleWithModel", inputs: {
+      upscale_model: [P.model, 0], image: images,
+    }};
+    images = [P.apply, 0];
+  }
+
+  g[P.video] = { class_type: "CreateVideo", inputs: {
+    images, fps: FPS, audio: [P.load, 2],
+  }};
+  g[P.save] = { class_type: "SaveVideo", inputs: {
+    video: [P.video, 0],
+    filename_prefix: `${folder}/${stem}_upscaled`,
+    format: "auto", codec: "auto",
+  }};
+  return { graph: g, saveNode: P.save };
+}
+
+/**
+ * Interpolate a finished clip to a higher frame rate with RIFE.
+ *
+ * fps is multiplied along with the frame count, so the result plays at the original
+ * speed and simply moves more smoothly. Leaving fps alone would turn a 2x interpolation
+ * into half-speed slow motion instead — a legitimate effect, but not what "smoother"
+ * means, and not what the audio track would agree with.
+ */
+export function buildInterpolateGraph(opts, avail) {
+  const { inputFile, ckptName, multiplier, fastMode, ensemble, scaleFactor, folder, stem } = opts;
+  if (!has(avail, "RIFE VFI")) throw new Error("RIFE VFI is not installed.");
+  const mult = Math.max(2, Math.round(multiplier ?? 2));
+  const g = {};
+
+  g[P.load] = { class_type: "VHS_LoadVideo", inputs: {
+    video: inputFile, force_rate: 0,
+    custom_width: 0, custom_height: 0,
+    frame_load_cap: 0, skip_first_frames: 0, select_every_nth: 1,
+  }};
+
+  g[P.rife] = { class_type: "RIFE VFI", inputs: {
+    frames: [P.load, 0],
+    ckpt_name: ckptName || "rife49.pth",
+    // The cache is cleared every N frames to bound VRAM on a long clip; RIFE's own
+    // default of 10 is what its docs recommend leaving alone.
+    clear_cache_after_n_frames: 10,
+    multiplier: mult,
+    fast_mode: fastMode !== false,
+    ensemble: ensemble !== false,
+    scale_factor: scaleFactor ?? 1.0,
+    dtype: "float32",
+    torch_compile: false,
+    batch_size: 1,
+  }};
+
+  g[P.video] = { class_type: "CreateVideo", inputs: {
+    images: [P.rife, 0], fps: FPS * mult, audio: [P.load, 2],
+  }};
+  g[P.save] = { class_type: "SaveVideo", inputs: {
+    video: [P.video, 0],
+    filename_prefix: `${folder}/${stem}_x${mult}`,
+    format: "auto", codec: "auto",
+  }};
+  return { graph: g, saveNode: P.save };
+}
+

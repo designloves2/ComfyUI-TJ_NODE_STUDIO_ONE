@@ -1731,6 +1731,10 @@ app.registerExtension({
                   refImages,
                   clipIndex: i,
                   saveLastFrame: true,
+                  // Tail previews exist only so the relay can step back past a fade to
+                  // black when picking a chain frame — dead weight (and eight temp PNGs
+                  // per clip) in every other continuity mode.
+                  saveTailPreviews: rs.continuityMode === "lastframe",
                   prevCheckpointName: isOneTake ? prevCheckpointName : null,
                   checkpointName,
                 });
@@ -1777,21 +1781,27 @@ app.registerExtension({
             }
             if (lastImg) {
               await setLastResult(self.id, { image: lastImg });
-              // Prefer the newest trailing frame that is not a fade-to-black; the plain
-              // last frame is the fallback when the tail is unreadable or all dark.
-              let carry = lastImg;
-              const tail = allOutputs(res.byNode, NODE_IDS.tailPrev);
-              if (tail.length) {
-                const pick = await pickChainFrame(tail.map(t => ({
-                  filename: t.filename, subfolder: t.subfolder || "", type: t.type || "temp",
-                })));
-                if (pick?.picked) {
-                  carry = pick.picked;
-                  if (pick.steppedBack) console.info("[MMH3] chain frame stepped back past a black tail:", pick.checked);
+              // The chain frame is only ever read by Last Frame Chain. Building it in the
+              // other modes copied a PNG into the input folder for every clip that nothing
+              // then looked at — they just accumulated there (89 of them before this was
+              // noticed). Continuity is fixed for the whole run, so this decides once.
+              if (rs.continuityMode === "lastframe") {
+                // Prefer the newest trailing frame that is not a fade-to-black; the plain
+                // last frame is the fallback when the tail is unreadable or all dark.
+                let carry = lastImg;
+                const tail = allOutputs(res.byNode, NODE_IDS.tailPrev);
+                if (tail.length) {
+                  const pick = await pickChainFrame(tail.map(t => ({
+                    filename: t.filename, subfolder: t.subfolder || "", type: t.type || "temp",
+                  })));
+                  if (pick?.picked) {
+                    carry = pick.picked;
+                    if (pick.steppedBack) console.info("[MMH3] chain frame stepped back past a black tail:", pick.checked);
+                  }
                 }
+                try { chainFrame = await copyOutputToInput(carry.filename, carry.subfolder || "", carry.type || "output"); }
+                catch { chainFrame = null; }
               }
-              try { chainFrame = await copyOutputToInput(carry.filename, carry.subfolder || "", carry.type || "output"); }
-              catch { chainFrame = null; }
             }
 
             clipTimes.push((Date.now() - clipStart) / 60000);
