@@ -32,7 +32,7 @@ import { panel, label, button, select, loraSelect, numberField, slider, row, col
 import {
   queuePrompt, waitForHistory, interrupt, freeMemory, setLastResult, stitchClips,
   copyOutputToInput, getNodeAvailability, getModels, saveMeta, pickChainFrame, getLoraTriggers,
-  getMediaFiles, uploadMedia,
+  getMediaFiles, uploadMedia, getVramStats,
 } from "./minimax/api_minimax.js";
 import { buildClipGraph, NODE_IDS, previewNodeKey } from "./minimax/graph_builder_minimax.js";
 import { createSettingsOverlay } from "./minimax/ui_app_settings_minimax.js";
@@ -1623,6 +1623,38 @@ app.registerExtension({
       // finds this node's own state._relay progress left over from a run that was still
       // going when it refreshed. Everything else (a plain Generate click, or a queued Next
       // Gen restart) calls this with no argument, same as before.
+      /**
+       * Poll VRAM / system RAM for as long as a clip is running and keep the extremes.
+       *
+       * Cheap on purpose — a few reads a minute, no logging, and it never throws: if the
+       * route is missing (an older backend that has not been restarted) it simply records
+       * nothing rather than taking the run down with it.
+       */
+      function watchMemory(everyMs = 10000) {
+        let vramFreeMin = Infinity, vramUsedMax = 0, ramFreeMin = Infinity, samples = 0;
+        const tick = async () => {
+          const d = await getVramStats();
+          if (!d || !d.ok) return;
+          samples++;
+          if (typeof d.vramFreeMiB === "number") vramFreeMin = Math.min(vramFreeMin, d.vramFreeMiB);
+          if (typeof d.vramUsedMiB === "number") vramUsedMax = Math.max(vramUsedMax, d.vramUsedMiB);
+          if (typeof d.ramFreeMiB === "number")  ramFreeMin  = Math.min(ramFreeMin, d.ramFreeMiB);
+        };
+        tick();
+        const id = setInterval(tick, everyMs);
+        return {
+          stop() { clearInterval(id); },
+          peak() {
+            if (!samples) return null;
+            return {
+              vramFreeMinMiB: Number.isFinite(vramFreeMin) ? vramFreeMin : null,
+              vramUsedMaxMiB: vramUsedMax || null,
+              ramFreeMinMiB:  Number.isFinite(ramFreeMin) ? ramFreeMin : null,
+            };
+          },
+        };
+      }
+
       async function runGeneration(resume = null) {
         if (running) return;
         running = true; stopRequested = false;
@@ -1750,6 +1782,7 @@ app.registerExtension({
             const checkpointName = isOneTake ? `${self.id}_${i}` : null;
 
             let res;
+            let mem = null;   // memory watcher for this clip; see watchMemory()
             if (resume && pos === startPos && resume.inFlightPromptId) {
               // This exact clip was already queued before the reload — reconnect to it
               // instead of building and submitting a second copy.
@@ -1780,9 +1813,17 @@ app.registerExtension({
               } finally { restore?.(); }
 
               setStatus(`Clip ${curClip}/${totClip} · queued`);
-              res = await queuePrompt(built.graph, {
-                onProgress: (v, m) => setStepProgress(v, m),
-              });
+              // Watch memory for the length of the clip. A render that runs out of VRAM
+              // does not fail on Windows — the driver spills to system RAM, then to the
+              // pagefile, and the only symptom is steps taking tens of times longer. That
+              // is indistinguishable from a hang once it is over, so the extremes are
+              // recorded while it happens and saved with the clip.
+              mem = watchMemory();
+              try {
+                res = await queuePrompt(built.graph, {
+                  onProgress: (v, m) => setStepProgress(v, m),
+                });
+              } finally { mem.stop(); }
             }
             if (isOneTake) prevCheckpointName = checkpointName;
 
@@ -1791,6 +1832,7 @@ app.registerExtension({
             // running ETA estimate below, instead of taking two slightly different
             // Date.now() readings for the same clip.
             const elapsedSec = (Date.now() - clipStart) / 1000;
+            const memPeak = mem ? mem.peak() : null;
 
             const vid = firstOutput(res.byNode, NODE_IDS.save);
             const lastImg = firstOutput(res.byNode, NODE_IDS.saveLF);
@@ -1808,6 +1850,9 @@ app.registerExtension({
                 // everything a full Reuse needs to reproduce this exact clip, plus the
                 // measured time it actually took (see refreshAvgFromHistory)
                 elapsedSec,
+                // Memory extremes over this clip. vramFreeMinMiB near zero is the
+                // signature of a spill: the step times balloon and nothing errors.
+                ...(memPeak || {}),
                 turboLora: rs.turboLora || "", turboLoraReference: rs.turboLoraReference || "",
                 turboLoraStrength: rs.turboLoraStrength ?? 1.0, turboLoraLowVram: !!rs.turboLoraLowVram,
                 loras: (rs.loras || []).map(l => ({

@@ -611,6 +611,52 @@ def _make_copy_to_input_handler(prefix):
     return handler
 
 
+@PromptServer.instance.routes.get("/minimax_h3_one/vram_stats")
+async def mmh3_vram_stats(request):
+    """VRAM + system RAM right now, for sampling during a run.
+
+    A render that falls off the VRAM cliff does not error — on Windows the driver spills
+    to system RAM, and then to the pagefile, and the only symptom is that steps take
+    tens of times longer. That looks identical to a hang, and by the time anyone looks
+    the numbers that would explain it are gone. Sampling this during the run and storing
+    the extremes with the clip is what makes the next occurrence diagnosable instead of
+    a guess.
+    """
+    out = {"ok": True}
+    try:
+        import torch
+        if torch.cuda.is_available():
+            free_b, total_b = torch.cuda.mem_get_info()
+            out["vramFreeMiB"]  = round(free_b / 2**20)
+            out["vramTotalMiB"] = round(total_b / 2**20)
+            out["vramUsedMiB"]  = round((total_b - free_b) / 2**20)
+            out["vramReservedMiB"] = round(torch.cuda.memory_reserved() / 2**20)
+    except Exception as e:
+        out["vramError"] = str(e)
+    try:
+        if os.name == "nt":
+            import ctypes
+
+            class _MEMSTAT(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("sullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            st = _MEMSTAT()
+            st.dwLength = ctypes.sizeof(_MEMSTAT)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st))
+            out["ramFreeMiB"]      = round(st.ullAvailPhys / 2**20)
+            out["ramTotalMiB"]     = round(st.ullTotalPhys / 2**20)
+            out["pagefileFreeMiB"] = round(st.ullAvailPageFile / 2**20)
+    except Exception as e:
+        out["ramError"] = str(e)
+    return web.json_response(out)
+
+
 def _make_discard_input_handler(prefix):
     """Delete a file that _make_copy_to_input_handler put in input/.
 
@@ -2139,6 +2185,73 @@ def _ffmpeg_exe():
     except Exception:
         pass
     return shutil.which("ffmpeg")
+
+
+def _ffprobe_exe():
+    """ffprobe usually ships beside ffmpeg; imageio-ffmpeg only bundles the latter, so
+    check next to whatever _ffmpeg_exe found before falling back to PATH."""
+    ff = _ffmpeg_exe()
+    if ff:
+        guess = os.path.join(os.path.dirname(ff), "ffprobe.exe" if os.name == "nt" else "ffprobe")
+        if os.path.isfile(guess):
+            return guess
+    return shutil.which("ffprobe")
+
+
+@PromptServer.instance.routes.post("/minimax_h3_one/video_info")
+async def mmh3_video_info(request):
+    """fps / width / height / frame count for a video already on disk (input or output).
+
+    Used to size gallery post-processing (upscale/interpolate) into memory-bounded chunks
+    before the graph is built — VHS_LoadVideo materializes every requested frame as a
+    float32 array up front, so a full stitched video (thousands of frames) loaded whole
+    can exceed available RAM. nb_frames is sometimes absent from the container's stream
+    tags (common for freshly muxed mp4s); duration * fps is the fallback.
+    """
+    data = await request.json()
+    filename = data.get("filename", "")
+    subfolder = data.get("subfolder", "") or ""
+    file_type = data.get("type", "input")
+    base = folder_paths.get_output_directory() if file_type == "output" else folder_paths.get_input_directory()
+    try:
+        path = _safe_resolve_path(base, subfolder, filename)
+    except ValueError:
+        return web.json_response({"ok": False, "error": "invalid path"}, status=400)
+    if not os.path.isfile(path):
+        return web.json_response({"ok": False, "error": "file not found"}, status=404)
+    ffprobe = _ffprobe_exe()
+    if not ffprobe:
+        return web.json_response({"ok": False, "error": "ffprobe not found"}, status=500)
+    cmd = [
+        ffprobe, "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=width,height,r_frame_rate,nb_frames,duration",
+        "-of", "json", path,
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        info = json.loads(proc.stdout or "{}").get("streams", [{}])[0]
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+    if not info:
+        return web.json_response({"ok": False, "error": "ffprobe returned nothing"}, status=500)
+    try:
+        num, den = (info.get("r_frame_rate") or "24/1").split("/")
+        fps = float(num) / float(den or 1)
+    except Exception:
+        fps = 24.0
+    width = int(info.get("width") or 0)
+    height = int(info.get("height") or 0)
+    nb_frames = info.get("nb_frames")
+    duration = info.get("duration")
+    frames = 0
+    if nb_frames and str(nb_frames).isdigit():
+        frames = int(nb_frames)
+    elif duration:
+        try:
+            frames = max(1, round(float(duration) * fps))
+        except (TypeError, ValueError):
+            frames = 0
+    return web.json_response({"ok": True, "fps": fps, "width": width, "height": height, "frames": frames})
 
 
 @PromptServer.instance.routes.post("/minimax_h3_one/stitch")

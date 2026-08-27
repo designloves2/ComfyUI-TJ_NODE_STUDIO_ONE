@@ -219,6 +219,30 @@ export async function copyOutputToInput(filename, subfolder, type) {
   return d.filename;
 }
 
+// VRAM + system RAM right now. Sampled during a run so the extremes land in the clip's
+// metadata: a render that spills to system RAM (and then to the pagefile) never errors,
+// it just takes tens of times longer, and without these numbers that is indistinguishable
+// from a hang after the fact.
+export async function getVramStats() {
+  try {
+    const r = await api.fetchApi(`${API}/vram_stats`);
+    return await r.json();
+  } catch { return null; }
+}
+
+// fps / width / height / frame count — used to size chunked post-processing so a
+// VHS_LoadVideo call never has to materialize more frames than memory allows.
+export async function getVideoInfo(filename, subfolder, type) {
+  const r = await api.fetchApi(`${API}/video_info`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename, subfolder: subfolder || "", type: type || "input" }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "video_info failed");
+  return d;
+}
+
 // Take back a file copy_to_input made. Every call there mints a fresh uuid-named copy, so
 // anything that copies a source in just to feed a one-off graph has to clean up after
 // itself or the input folder grows forever.
