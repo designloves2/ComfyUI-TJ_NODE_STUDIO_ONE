@@ -16,7 +16,7 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import {
   C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, SUBFOLDER,
-  el, clear, loadState, saveState, defaultState, randomSeed,
+  el, clear, loadState, saveState, lastUsedAt, defaultState, randomSeed,
   CLIP_LENGTHS, ASPECTS, UPSCALE_MODES,
   TURBO_MODES, ATTN_BACKENDS, ATTN_FORWARDS, BLOCK_CACHES, FBC_MODES,
   attnBlockedReason, attnForwardBlockedReason, attnForwardOverlapNote, blockCacheBlockedReason,
@@ -73,7 +73,10 @@ app.registerExtension({
     // values it inherited from the browser.
     nodeType.prototype.onConfigure = function () {
       this.size = [NODE_MW, NODE_MH];
-      restoreNodeState(this);
+      // The node was already seeded with the settings last used in this browser.
+      // Only let the workflow's own copy replace them if it is the newer of the two,
+      // so reopening an older file does not undo everything configured since.
+      restoreNodeState(this, { preferNewerThan: lastUsedAt() });
     };
     nodeType.prototype.onResize    = function () { this.size = [NODE_MW, NODE_MH]; };
     nodeType.prototype.getSlotMenuOptions = function () { return []; };
@@ -1689,6 +1692,12 @@ app.registerExtension({
             else if (state.seedMode === "decrement") { state.seed = Math.max(0, (state.seed || 0) - 1); seedInput.value = state.seed; }
             persist();
           }
+
+          // Queueing is the moment the panel becomes "the settings I last used" — more so
+          // than any individual edit, since this is the configuration that actually
+          // produced something. Stamp it now so a node dropped later, or the same node
+          // after a workflow reload, comes back to exactly this.
+          persist();
 
           // Same idea as ComfyUI's own queue: clicking Generate (or Next Gen) freezes the
           // whole panel into one snapshot right here, and everything below reads only that

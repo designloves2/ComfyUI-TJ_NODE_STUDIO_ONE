@@ -69,12 +69,26 @@ export function attachNodeState(node, { state, save, normalize, rerender }) {
   return persist;
 }
 
-/** Call from onConfigure: put the workflow's stored settings back on screen. */
-export function restoreNodeState(node) {
+/**
+ * Call from onConfigure: put the workflow's stored settings back on screen.
+ *
+ * `preferNewerThan` is the timestamp of what the node already inherited (the browser's
+ * "last used" settings). A workflow written before that is stale — opening it would
+ * silently discard everything configured since — so the inherited settings are kept
+ * instead. Pass 0, or leave it out, for the old unconditional behaviour; a workflow from
+ * another machine has nothing to compare against and still wins, which is the point of
+ * carrying the state in the file at all.
+ */
+export function restoreNodeState(node, { preferNewerThan = 0 } = {}) {
   const w = node.widgets?.find(x => x.name === WIDGET_NAME);
   if (!w || !w.value) return false;               // fresh node — keep what it inherited
   try {
-    return !!node._tjApplyState?.(JSON.parse(w.value));
+    const stored = JSON.parse(w.value);
+    if (preferNewerThan) {
+      const at = typeof stored?.savedAt === "number" ? stored.savedAt : 0;
+      if (at < preferNewerThan) return false;     // the panel already holds something newer
+    }
+    return !!node._tjApplyState?.(stored);
   } catch (e) {
     console.warn("[TJ] stored node state unreadable, keeping current settings:", e);
     return false;

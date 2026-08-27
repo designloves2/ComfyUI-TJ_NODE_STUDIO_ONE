@@ -495,8 +495,24 @@ export function continuityModesFor(generationMode, state) {
 export function loadState() {
   try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}"); } catch { return {}; }
 }
+
+/**
+ * Write "the settings I last used", stamped with when.
+ *
+ * The stamp is what lets a node tell a stale copy from a fresh one. A node dropped on the
+ * canvas seeds from here, but a node loaded from a saved workflow also carries its own
+ * copy from whenever that file was written — and without a way to compare them, opening
+ * last week's workflow silently throws away everything configured since. Whichever side
+ * is newer wins; see restoreNodeState.
+ */
 export function saveState(s) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(s)); } catch {}
+  try { localStorage.setItem(LS_KEY, JSON.stringify({ ...s, savedAt: Date.now() })); } catch {}
+}
+
+/** When the panel was last changed in this browser. 0 when nothing has been saved yet. */
+export function lastUsedAt() {
+  const v = loadState().savedAt;
+  return typeof v === "number" ? v : 0;
 }
 
 export function defaultState(saved) {
@@ -658,6 +674,9 @@ export function defaultState(saved) {
     // the UI greys out the combinations that are known to break (see attnAllowedFor).
     // A brand-new node starts already migrated; only a `saved` blob from before the
     // split needs migrateLegacyAccel() to run over it.
+    // When this state was last written. Kept through normalize so the value a node
+    // serialises into a workflow can be compared against the browser's own.
+    savedAt: typeof saved.savedAt === "number" ? saved.savedAt : 0,
     pipelineMigrated: saved.pipelineMigrated === true ? 1
                     : (saved.pipelineMigrated ?? (saved.accelMode == null ? PIPELINE_MIGRATION : 0)),
     turboMode:   saved.turboMode   || "none",
