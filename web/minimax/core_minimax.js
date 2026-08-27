@@ -14,6 +14,9 @@ export const PAD          = 12;
 export const SUBFOLDER    = "one_minimax_h3";
 export const API          = "/minimax_h3_one";
 export const LS_KEY       = "minimax_h3_one_state_v1";
+// Bump to re-run migrateLegacyAccel once on the next load, when a past revision of it
+// left states wrong. v1 = original boolean flag; v2 = SLA no longer hijacks the backend.
+export const PIPELINE_MIGRATION = 2;
 
 export const FPS = 24;
 
@@ -327,15 +330,24 @@ export function attnForwardBlockedReason(key, turboMode, attnBackend) {
   if (!f || key === "none") return "";
   if (turboMode === "larryvrh" && !f.dense)
     return "Turbo LoRA (larryvrh) runs 4 steps — sparse attention's error is too large to absorb there";
-  // Replacing blocks[i].attn.forward removes the stock forward, and the stock forward is
-  // the only thing that consults `optimized_attention_override`. So an override-based
-  // backend would still look enabled while never running on the transformer blocks —
-  // the exact silent-overwrite this split was meant to end. Sage is the exception: its
-  // override and this patch are two halves of one pack, covering the blocks and the
-  // text refiner respectively.
+  return "";
+}
+
+/**
+ * Not a block — a note. Replacing blocks[i].attn.forward removes the stock forward, and
+ * the stock forward is the only thing that reads `optimized_attention_override`. So when
+ * both are on, the override-based backend simply doesn't reach the transformer blocks;
+ * it still covers the attention outside them (text refiner, cross-attention).
+ *
+ * This used to be modelled as the forward patch being illegal, which had it exactly
+ * backwards: the forward patch is the faster of the two, and switching it off left the
+ * inert one running. Both are legal, so the UI says what happens instead of choosing.
+ */
+export function attnForwardOverlapNote(key, attnBackend) {
+  if (!key || key === "none") return "";
   if (attnBackend === "ck" || attnBackend === "solattn_kijai" || attnBackend === "sla") {
     const name = (ATTN_BACKENDS.find(b => b.key === attnBackend) || {}).label || attnBackend;
-    return `${name} hooks the attention the stock forward calls, and this replaces that forward — it would never run`;
+    return `${name} only applies outside the transformer blocks here — this forward patch replaces the blocks' own attention.`;
   }
   return "";
 }
@@ -355,22 +367,24 @@ export function blockCacheBlockedReason(key, turboMode) {
  * defaults. Runs once — `pipelineMigrated` marks it done.
  */
 export function migrateLegacyAccel(state) {
-  if (state.pipelineMigrated) return false;
-  state.pipelineMigrated = true;
+  if (state.pipelineMigrated >= PIPELINE_MIGRATION) return false;
+  state.pipelineMigrated = PIPELINE_MIGRATION;
 
   const accel = state.accelMode || "";
   if (accel === "turbo")         state.turboMode = "larryvrh";
   else if (accel === "spectrum") state.useSpectrum = true;
   else if (accel === "solattn")  state.attnBackend = "solattn_kijai";
 
-  // Attention: SLA was a separate checkbox that silently overwrote whatever else had
-  // claimed the override slot, so it wins here too — that is what the run was actually
-  // doing, however it looked in the old UI.
-  if (state.useSlaAttention) state.attnBackend = "sla";
-  else if (accel !== "solattn") {
-    if (state.useCkAttention)    state.attnBackend = "ck";
-    else if (state.useSageAttn)  state.attnBackend = "sage";
-    else                         state.attnBackend = "none";
+  // The backend a run was actually configured with wins. SLA used to be its own
+  // checkbox alongside these, so mapping it onto the backend dropdown here would take
+  // the slot away from the backend the user had picked — and, through the old
+  // attnForward gating, take the H3 forward patch down with it. SLA is only adopted
+  // when nothing else claimed the slot.
+  if (accel !== "solattn") {
+    if (state.useCkAttention)      state.attnBackend = "ck";
+    else if (state.useSageAttn)    state.attnBackend = "sage";
+    else if (state.useSlaAttention) state.attnBackend = "sla";
+    else                           state.attnBackend = "none";
   }
   state.attnForward = state.useMemEffSage ? "memeff_sage" : "none";
 
@@ -644,7 +658,8 @@ export function defaultState(saved) {
     // the UI greys out the combinations that are known to break (see attnAllowedFor).
     // A brand-new node starts already migrated; only a `saved` blob from before the
     // split needs migrateLegacyAccel() to run over it.
-    pipelineMigrated: saved.pipelineMigrated ?? (saved.accelMode == null),
+    pipelineMigrated: saved.pipelineMigrated === true ? 1
+                    : (saved.pipelineMigrated ?? (saved.accelMode == null ? PIPELINE_MIGRATION : 0)),
     turboMode:   saved.turboMode   || "none",
     attnBackend: saved.attnBackend || "sage",
     attnForward: saved.attnForward || "memeff_sage",

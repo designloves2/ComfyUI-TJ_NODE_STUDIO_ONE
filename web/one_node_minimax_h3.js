@@ -19,7 +19,7 @@ import {
   el, clear, loadState, saveState, defaultState, randomSeed,
   CLIP_LENGTHS, ASPECTS, UPSCALE_MODES,
   TURBO_MODES, ATTN_BACKENDS, ATTN_FORWARDS, BLOCK_CACHES, FBC_MODES,
-  attnBlockedReason, attnForwardBlockedReason, blockCacheBlockedReason,
+  attnBlockedReason, attnForwardBlockedReason, attnForwardOverlapNote, blockCacheBlockedReason,
   effectiveTurbo, effectiveSteps, migrateLegacyAccel,
   continuityModesFor, generationModesFor, configIssues,
   clipPlan, formatDuration, formatClock, framesToSeconds, alignFrameCount, FPS, ONE_TAKE_OVERLAP_FRAMES, resolveResolution,
@@ -755,18 +755,39 @@ app.registerExtension({
         // carried over from before, or left behind when turbo was switched on. Normalise
         // here rather than only on change, so a reloaded node can never sit on an option
         // that its own dropdown greys out.
-        if (attnBlockedReason(state.attnBackend, state.turboMode)) {
-          state.attnBackend = state.turboMode === "lightx2v" ? "sla" : "sage";
+        //
+        // Every change here is announced. These used to be silent, and a silently
+        // rewritten accelerator is invisible until a render takes hours: the panel shows
+        // the value it just wrote, so it agrees with itself and looks like what you
+        // chose. If this code is going to overrule a selection, saying so is the whole
+        // job — the render is long enough that a wrong stack costs an evening.
+        const forced = [];
+        const force = (what, from, to, why) => {
+          if (from === to) return;
+          forced.push(`${what}: ${from} → ${to} (${why})`);
+        };
+        let reason;
+        if ((reason = attnBlockedReason(state.attnBackend, state.turboMode))) {
+          const next = state.turboMode === "lightx2v" ? "sla" : "sage";
+          force("Attention backend", state.attnBackend, next, reason);
+          state.attnBackend = next;
           persist();
         }
-        if (attnForwardBlockedReason(state.attnForward, state.turboMode, state.attnBackend)) {
-          state.attnForward =
+        if ((reason = attnForwardBlockedReason(state.attnForward, state.turboMode, state.attnBackend))) {
+          const next =
             attnForwardBlockedReason("memeff_sage", state.turboMode, state.attnBackend) ? "none" : "memeff_sage";
+          force("H3 attention forward", state.attnForward, next, reason);
+          state.attnForward = next;
           persist();
         }
-        if (blockCacheBlockedReason(state.blockCache, state.turboMode)) {
+        if ((reason = blockCacheBlockedReason(state.blockCache, state.turboMode))) {
+          force("Block cache", state.blockCache, "none", reason);
           state.blockCache = "none";
           persist();
+        }
+        if (forced.length) {
+          console.warn("[MMH3] pipeline selections overruled:\n  " + forced.join("\n  "));
+          showPopup("Pipeline changed automatically — " + forced.join(" · "), true);
         }
 
         // resolution
@@ -828,6 +849,11 @@ app.registerExtension({
         const warn = (node) => missingNode(node) ? el("div", {
           html: `⚠ <code>${node}</code> not installed — this option is skipped at run time.`,
           style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }) : null;
+        // Same shape as warn(), muted rather than amber: this describes how two legal
+        // options interact, it is not something to fix.
+        const hint = (text) => text ? el("div", {
+          text,
+          style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }) : null;
         // A dropdown whose blocked entries stay visible, greyed, with the reason inline —
         // an option that vanishes just reads as a bug.
         const gatedSelect = (opts, value, reasonFor, onChange) => select(
@@ -954,6 +980,8 @@ app.registerExtension({
                 k => attnForwardBlockedReason(k, turboMode, state.attnBackend),
                 v => { state.attnForward = v; persist(); renderLeft(); })]),
               warn((ATTN_FORWARDS.find(a => a.key === state.attnForward) || {}).node));
+            const overlap = attnForwardOverlapNote(state.attnForward, state.attnBackend);
+            if (overlap) rows.push(hint(overlap));
 
             if (state.attnForward === "solattn_sag") {
               rows.push(
