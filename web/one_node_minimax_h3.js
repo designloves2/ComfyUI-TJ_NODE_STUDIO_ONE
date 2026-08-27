@@ -1049,6 +1049,17 @@ app.registerExtension({
             } else if (state.blockCache === "fbcache") {
               const custom = (state.fbcMode || FBC_MODES[1]) === FBC_MODES[3];
               const dim = (f) => { if (!custom) { f.disabled = true; f.style.opacity = "0.4"; } return f; };
+              // Same treatment for a row that wraps its input. The node reads NONE of the
+              // manual values outside Custom mode — it swaps in the preset's own config
+              // wholesale — so anything still live here is the panel telling you it did
+              // something it didn't.
+              const dimRow = (rowEl) => {
+                if (!custom) {
+                  rowEl.style.opacity = "0.4";
+                  rowEl.querySelectorAll("input, select").forEach(i => { i.disabled = true; });
+                }
+                return rowEl;
+              };
               rows.push(
                 col([label("mode"), select(FBC_MODES.map(m => ({ value: m, label: m })),
                   state.fbcMode || FBC_MODES[1], v => { state.fbcMode = v; persist(); renderLeft(); })]),
@@ -1060,8 +1071,8 @@ app.registerExtension({
                   col([label("start %"), dim(numberField(state.fbcStartPercent ?? 0.10, v => { state.fbcStartPercent = v; persist(); }, 0.01))]),
                   col([label("end %"),   dim(numberField(state.fbcEndPercent ?? 0.95, v => { state.fbcEndPercent = v; persist(); }, 0.01))]),
                 ]),
-                checkboxRow("Temporal guard", !!state.fbcTemporalGuard, v => { state.fbcTemporalGuard = v; persist(); }),
-                custom ? null : el("div", { text: "The three named presets carry their own calibration — the values above only apply in Custom mode.",
+                dimRow(checkboxRow("Temporal guard", !!state.fbcTemporalGuard, v => { state.fbcTemporalGuard = v; persist(); })),
+                custom ? null : el("div", { text: "The three named presets carry their own calibration — every value above, Temporal guard included, applies only in Custom mode.",
                   style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
               );
             }
