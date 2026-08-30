@@ -489,12 +489,14 @@ MiniMax H3 only accepts frame counts on a **17k+5 grid** and a single pass is VR
 | **클립 릴레이**<br><sub>Clip relay</sub>| 클립 수 · 실제 총 길이 · 예상 소요시간을 설정 즉시 표시. 실측 시간으로 예상치 자동 보정<br><sub>clip count / actual length / ETA shown live, ETA self-corrects from measured clip times</sub>|
 | **연속성**<br><sub>Continuity</sub>| 메뉴 순서 **None → One-Take (latent) → Reference → Last Frame Chain**, 기본값은 **One-Take**. **One-Take**(기본값) — 클립의 샘플링된 latent 꼬리를 다음 클립의 머리에 그대로 이어붙입니다(TJ_NODE의 `TJ_H3_LatentContinuation`). VAE 왕복이 없고 원래 모드(Reference 포함)가 그대로 유지됩니다. 클립마다 새 큐를 제출하는 릴레이 구조상, latent는 디스크 체크포인트(`TJ_H3_SaveLatentCheckpoint`/`LoadLatentCheckpoint`)로 클립 사이를 이동합니다 · **Last Frame Chain** — 이전 클립의 마지막 프레임이 다음 클립의 첫 프레임이 됩니다(FL2VA로 강제 전환) · **Reference**(Reference 모드 전용) — 모든 클립이 같은 레퍼런스 이미지를 사용 · **None** — 아무것도 넘기지 않되 해당 모드의 모델은 그대로<br>모든 경우에 프롬프트의 **공통 부분(스타일 머리말 · 사운드 꼬리말)은 모든 클립에 전달**됩니다<br><sub>Menu order is **None → One-Take (latent) → Reference → Last Frame Chain**, default is **One-Take**. One-Take (default) feeds the previous clip's sampled latent tail straight into the next clip's head (TJ_NODE's `TJ_H3_LatentContinuation`) — no VAE round trip, and the run's own mode (Reference included) keeps going. Since the relay submits a fresh queue per clip, the latent crosses that boundary through a disk checkpoint (`TJ_H3_SaveLatentCheckpoint`/`LoadLatentCheckpoint`). Last Frame Chain hands the previous ending over as a real first frame (forces FL2VA); Reference (Reference mode only) re-uses the same reference images; None hands nothing across but stays on the run's own model. In every case the shared part of the prompt reaches every clip.</sub>|
 | **원테이크 세부 설정**<br><sub>One-Take controls</sub>| 겹침은 **39프레임(1.625초)로 고정**(latent에 실제로 구운 값과 어긋나면 잘못 합쳐지므로 조절 불가) · 오디오 전체 고정 옵션 · 실행 완료 시 **자동으로 겹침을 잘라내고 하나로 합쳐 갤러리에 등록**(끌 수 있음) — 개별 클립 파일 · 체크포인트도 재개용으로 그대로 남습니다<br><sub>overlap is fixed at **39 frames (1.625s)** — not user-adjustable, since it has to match what's actually baked into the sampled latents or the stitch would be wrong · optional whole-audio lock · on a finished run, auto-stitches the overlap out and registers the combined file in the Gallery (toggle-able) — per-clip files and checkpoints stay on disk for resuming</sub>|
-| **프롬프트 워크벤치**<br><sub>Prompt workbench</sub>| 프롬프트마다 **켜기/끄기** 체크박스(끈 프롬프트는 건너뛰되 시드·파일명·오디오락 구간은 원래 번호 그대로 유지 — 중단 후 재개에 사용) · 클립별 **첫 프레임 오버라이드**(FL2VA로 전환) · **초기화** 버튼(중앙 팝업 확인) · 이름 붙여 서버에 저장하는 **프롬프트 세트**(불러오기/저장/삭제)<br><sub>per-prompt **on/off** checkbox (an off prompt is skipped but keeps its own seed/filename/audio-lock offset — resume a stopped run by turning 1-10 off and 11+ on) · per-clip **first-frame override** (forces FL2VA) · **Reset** button (centered confirm) · named **prompt sets** saved server-side (load/save/delete)</sub>|
+| **프롬프트 워크벤치**<br><sub>Prompt workbench</sub>| 프롬프트마다 **켜기/끄기** 체크박스(끈 프롬프트는 건너뛰되 시드·파일명·오디오락 구간은 원래 번호 그대로 유지 — 중단 후 재개에 사용) · 클립별 **첫 프레임 오버라이드**(FL2VA로 전환) · **초기화** 버튼 · 이름 붙여 서버에 저장하는 **프롬프트 세트**(불러오기/저장/삭제) — v1.20.0부터 **레퍼런스 이미지·비디오·오디오까지 함께 저장/복원**되고, 그 사이 사라진 파일은 빈 칸이 아니라 이름이 적힌 고스트 썸네일로 표시됩니다<br><sub>per-prompt **on/off** checkbox (an off prompt is skipped but keeps its own seed/filename/audio-lock offset) · per-clip **first-frame override** (forces FL2VA) · **Reset** button · named **prompt sets** saved server-side. Since v1.20.0 a set also carries its reference images, video and audio; a file that has since left the input folder shows as a named ghost tile rather than an empty slot</sub>|
+| **클립별 레퍼런스 오버라이드** 🆕<br><sub>Per-clip reference override</sub>| Prompt Edit의 `override for this clip` 체크박스. 켜면 그 클립만 **자기 전용** 이미지·first/last frame·비디오·오디오·헤더·사운드 꼬리말을 쓰고 공통 세트를 무시합니다(처음 켤 때 공통 세트를 복사해 채움). 멀티 프롬프트를 한 번에 돌리면서 샷마다 그림을 바꿔야 할 때를 위한 것입니다<br><sub>a checkbox in Prompt Edit makes one clip render with its **own** images, first/last frame, video, audio, header and sound tail instead of the shared set (seeded from the common set on first tick). This is what lets a multi-prompt run change its pictures shot by shot</sub>|
+| **레퍼런스 비디오/오디오 슬롯** 🆕<br><sub>Reference video / audio slots</sub>| 이미지 칸과 같은 썸네일 타일. 비디오는 **마우스 오버 시 무음 재생**되고 🖼 버튼으로 갤러리에서 바로 고를 수 있습니다. 타일 아래 재생/정지·처음부터·재생시간·(오디오)스크럽 바·in·out·소스 정보. **in/out은 그 타일이 재생하는 구간**이라 값을 고치면 즉시 반영되고, 파일을 처음 넣으면 in 0 / out 전체 길이로 채워집니다<br><sub>thumbnail tiles like the image slots — video previews muted on hover and can be picked straight from the gallery. Transport, play time, scrub bar (audio), in/out and source facts sit under each tile. **in/out is the window the tile plays**, applied live; a newly added file starts at in 0 / out = full length</sub>|
 | **프롬프트 자동 분할**<br><sub>Prompt auto-split</sub>| `[Shot N]` 타임코드 · `---` · 빈 줄 기준으로 긴 브리프를 클립별 프롬프트로 분할. 스타일 머리말과 사운드 꼬리말은 **공통 영역으로 올려서 모든 클립이 함께 받습니다** — 길이를 늘려도 룩이 유지되는 이유입니다<br><sub>splits a long brief on `[Shot N]`, `---`, or blank lines, and lifts the style preamble and sound tail into the common header/footer so every clip carries them</sub>|
-| **이미지 → 브리프**<br><sub>Image → Brief</sub>| 이미지 1~8장(First/Last=최대 2, Reference=최대 8)을 브리프로 변환. 비전 소스로 **Ollama**(순차 분석 + 병합) 또는 **네이티브**(ComfyUI 자체 CLIP, `TextGenerate`로 이미지 전체를 한 번에 배치 분석 — 진짜 멀티이미지) 중 선택. 브리프 작성 모델과 비전 분석 모델은 각각 따로 지정<br><sub>turns 1-8 images (First/Last: max 2, Reference: max 8) into a brief. Vision source is either **Ollama** (sequential per-image analysis, merged) or **native** (ComfyUI's own CLIP via `TextGenerate` — batches every image in one call, genuine multi-image). Brief-writing and vision-analysis models are set separately</sub>|
+| **이미지 → 브리프**<br><sub>Image → Brief</sub>| 이미지 1~8장(First/Last=최대 2, Reference=최대 8)을 브리프로 변환. **ComfyUI 자체 CLIP**을 씁니다(`TextGenerate`로 이미지 전체를 한 번에 배치 분석 — 진짜 멀티이미지). 브리프 작성 모델과 비전 분석 모델은 각각 따로 지정<br><sub>turns 1-8 images (First/Last: max 2, Reference: max 8) into a brief, using **ComfyUI's own CLIP** via `TextGenerate` — every image batched in one call, genuine multi-image. Brief-writing and vision-analysis models are set separately. (v1.20.0: the external Ollama backend was removed)</sub>|
 | **가속 / 업스케일**<br><sub>Accel / Upscale</sub>| Turbo LoRA(FL2VA 전용) · SolAttn · Spectrum · None / Upscale Model · RTX VSR · None. **Turbo를 켜면 H3 Cache는 자동으로 꺼집니다**(4스텝 스케줄은 캐시 재사용 임계값에 도달하지 않아 같이 켜면 속도/품질 비교가 왜곡됨)<br><sub>selectable acceleration and upscaling. **Turbo forces H3 Cache off** — its 4-step schedule never reaches the threshold H3 Cache reuses steps at, so leaving both on skews any speed/quality comparison</sub>|
 | **설정 누락 차단**<br><sub>Missing-model guard</sub>| UNET이 지정되지 않은 모드는 **진입 자체가 막히고**, 상단에 무엇이 빠졌는지 경고가 뜹니다. 해당 모델이 필요한 연속성 옵션도 사라지지 않고 **회색으로 비활성화되어 이유가 표시**됩니다<br><sub>a mode whose UNET is unset cannot be entered — the top bar says what Settings still needs, and a continuity option needing that model stays in the menu, greyed out with a reason, instead of disappearing</sub>|
-| **갤러리**<br><sub>Gallery</sub>| 클립·합본을 한 곳에서, 실제 첫 프레임 썸네일(서버에서 ffmpeg로 추출·캐시) + 길이 표시. **🔗 스티치** 모드로 순서대로 골라 합치기(최대 10개, One-Take 클립이면 겹침 자동 트림 옵션 자동 체크) · 카드마다 **✕ 삭제**(중앙 팝업 확인, Enter=삭제/Esc=취소) · 카드마다 **생성에 쓰인 프롬프트**로 다시 불러오거나 복사 · 전체화면 플레이어(스페이스=재생, ←→=이동, `[`/`]`=이전/다음, Esc=닫기)<br><sub>real first-frame thumbnails (ffmpeg-extracted and cached server-side) plus each clip's length. **🔗 Stitch** mode picks clips in order (max 10, auto-checks overlap-trim for One-Take clips) · **✕ delete** on every card (centered confirm, Enter=Delete/Esc=Cancel) · each card keeps the prompt it was rendered from (reuse or copy) · fullscreen player</sub>|
+| **갤러리**<br><sub>Gallery</sub>| 클립·합본을 한 곳에서, 실제 첫 프레임 썸네일(서버에서 ffmpeg로 추출·캐시) + 길이 표시. **🔗 스티치** 모드로 순서대로 골라 합치기(최대 10개, One-Take 클립이면 겹침 자동 트림 옵션 자동 체크) · **⬆ 업스케일 / 🎞 보간 / 디블러**(디블러는 업스케일과 독립된 단계라 업스케일 없이 단독 실행되고 해상도를 바꾸지 않습니다). 업스케일·디블러·스티치 결과는 **원본의 메타데이터를 그대로 가져갑니다** · 카드마다 **✕ 삭제**(중앙 팝업 확인, Enter=삭제/Esc=취소) · 카드마다 **생성에 쓰인 프롬프트**로 다시 불러오거나 복사 · 전체화면 플레이어(스페이스=재생, ←→=이동, `[`/`]`=이전/다음, Esc=닫기)<br><sub>real first-frame thumbnails (ffmpeg-extracted and cached server-side) plus each clip's length. **🔗 Stitch** mode picks clips in order (max 10, auto-checks overlap-trim for One-Take clips) · **✕ delete** on every card (centered confirm, Enter=Delete/Esc=Cancel) · each card keeps the prompt it was rendered from (reuse or copy) · fullscreen player</sub>|
 | **설정 저장**<br><sub>Settings persistence</sub>| 노드 설정이 **워크플로우에 함께 저장**됩니다. 다른 PC에서 열거나 남에게 파일을 넘겨도 그대로 재현되고, 한 그래프에 노드를 여러 개 둬도 각자 값을 유지합니다<br><sub>settings are saved inside the workflow, so the file reproduces on another machine and multiple nodes keep separate values</sub>|
 | **텍스트 인코더 VRAM 명시적 해제**<br><sub>Explicit text-encoder VRAM release</sub>| conditioning 계산이 끝난 직후, 샘플링 시작 직전에 텍스트 인코더를 강제로 언로드(`TJ_FreeTextEncoderVRAM`, 설치돼 있을 때만 자동 적용). 아래 "왜 이걸 만들었는가" 참고<br><sub>force-unloads the text encoder right after conditioning is built and before sampling starts (`TJ_FreeTextEncoderVRAM`, applied automatically only when installed). See "Why this exists" below</sub>|
 
@@ -598,8 +600,37 @@ only `BasicGuider` (positive-only), like MiniMax H3, don't have this problem.
 ## 버그 수정 이력
 ## Bug Fix History
 
-### v1.13.0 (현재) — 프롬프트 템플릿 저장소 독립화
-### v1.13.0 (Current) — prompt-template storage decoupled
+### v1.20.0 (현재) — MiniMax H3: 클립별 레퍼런스 오버라이드
+### v1.20.0 (Current) — MiniMax H3: per-clip reference override
+
+- **추가** 클립별 레퍼런스 오버라이드 — 헤더·사운드 꼬리말까지 함께 따라갑니다
+- **추가** 레퍼런스 비디오/오디오 입력을 미리보기·재생 가능한 썸네일 타일로 교체
+  (왼쪽 패널과 Prompt Edit 공용). 갤러리에서 레퍼런스 비디오 고르기
+- **추가** 프롬프트 세트가 첨부 파일까지 저장/복원. 사라진 파일은 고스트 썸네일로 표시
+- **추가** 파이프라인 프리셋 저장·이름변경·순서변경·삭제 · 노드 전체화면 · 노드 폭 +25%
+- **추가** 갤러리 이미지 피커에 INPUT 폴더 탭(기본 선택)
+- **변경** 디블러가 업스케일과 독립된 단계로 분리 — 업스케일 없이 단독 실행
+- **삭제** Image → Brief의 외부 Ollama 백엔드. 네이티브 CLIP 경로만 남습니다
+- **수정** Reuse가 이미지를 복원하지 못하던 문제(메타데이터에 이미지가 없었음).
+  업스케일·디블러·스티치 결과가 원본 메타를 가져가고, 스티치본 Reuse는 프롬프트를 분리 복원
+- **수정** 프롬프트 세트의 Save/Delete 버튼이 눌리지 않던 문제(ComfyUI가 브라우저 기본
+  다이얼로그를 억제), 저장 라우트가 첨부 파일 필드를 버리던 문제
+
+- **added** per-clip reference override, carrying the header and sound tail with it
+- **added** reference video/audio inputs rebuilt as previewable thumbnail tiles, shared by
+  the left panel and Prompt Edit; reference video can be picked from the gallery
+- **added** prompt sets now save and restore their attachments; a file that has since been
+  deleted shows as a named ghost tile
+- **added** savable pipeline presets, node fullscreen, +25% node width, INPUT folder tab
+- **changed** deblur is its own stage, independent of upscale
+- **removed** the external Ollama backend for Image → Brief — native CLIP only
+- **fixed** Reuse could not restore images (metadata never stored them); upscale/deblur/
+  stitch outputs now carry their source metadata
+- **fixed** prompt-set Save/Delete did nothing (ComfyUI suppresses browser dialogs), and the
+  save route dropped every attachment field
+
+### v1.13.0 — 프롬프트 템플릿 저장소 독립화
+### v1.13.0 — prompt-template storage decoupled
 
 - **사용자 템플릿을 Klein config에서 완전히 독립** — nl 풀(Klein·Krea2·Z-Image·Qwen2511·
   Anima 공유) / tag 풀(SDXL 전용) 두 개로 분리. 기존 템플릿은 중복 제거 후 자동 병합
