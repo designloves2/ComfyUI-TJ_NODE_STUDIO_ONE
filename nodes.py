@@ -633,6 +633,21 @@ async def mmh3_vram_stats(request):
             out["vramReservedMiB"] = round(torch.cuda.memory_reserved() / 2**20)
     except Exception as e:
         out["vramError"] = str(e)
+    # GPU temperature is a more honest "is it actually computing" signal than utilisation.
+    # Utilisation counts a kernel as resident even while it stalls waiting on weights
+    # coming back over PCIe, so a spilling render still reads 100%. Temperature only rises
+    # when the SMs are doing arithmetic: on this card idle sits at ~52C, and anything
+    # under 60C during sampling means the work is not happening. Power tracks the same
+    # thing with less thermal lag.
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        h = pynvml.nvmlDeviceGetHandleByIndex(0)
+        out["gpuTempC"] = pynvml.nvmlDeviceGetTemperature(h, pynvml.NVML_TEMPERATURE_GPU)
+        out["gpuPowerW"] = round(pynvml.nvmlDeviceGetPowerUsage(h) / 1000.0, 1)
+        out["gpuUtilPct"] = pynvml.nvmlDeviceGetUtilizationRates(h).gpu
+    except Exception:
+        pass  # no NVML — the VRAM numbers above still stand on their own
     try:
         if os.name == "nt":
             import ctypes
@@ -1952,17 +1967,16 @@ async def mmh3_get_config(request):
         "cache_start":      cfg.get("cache_start",      0.15),
         "cache_end":        cfg.get("cache_end",        0.9),
         "cache_max_steps":  cfg.get("cache_max_steps",  2),
-        "ollama_url":            cfg.get("ollama_url",            "http://127.0.0.1:11434"),
-        "ollama_model":          cfg.get("ollama_model",          ""),
-        "ollama_vision_model":   cfg.get("ollama_vision_model",   ""),
-        "ollama_temperature":    cfg.get("ollama_temperature",    0.7),
-        "ollama_top_p":          cfg.get("ollama_top_p",          0.9),
-        "vision_source":         cfg.get("vision_source",         "ollama"),
+        # Ollama was removed; native is the only backend now.
+        "vision_source":         "native",
         "native_vision_clip":    cfg.get("native_vision_clip",    "Qwen3\\qwen_3vl_8b_nvfp4.safetensors"),
         "filename_prefix":       cfg.get("filename_prefix",       "MMH3"),
         "stitch_at_end":         cfg.get("stitch_at_end",         True),
         "trim_last_clip":        cfg.get("trim_last_clip",        False),
         "unload_between_clips":  cfg.get("unload_between_clips",  True),
+        # User-defined pipeline presets (name + the axes a preset owns). Server-side so
+        # they outlive a browser reset; the six built-ins live in presets_minimax.js.
+        "user_presets":          cfg.get("user_presets",          []),
     })
 
 
@@ -2045,14 +2059,25 @@ async def mmh3_save_prompt_set(request):
         data = await request.json()
         name = data.get("name", "")
         path = _prompt_set_path(name)
+        # A prompt set stores the reference assets too: restoring the words without the
+        # pictures reproduces nothing in Reference mode. The client sends these; the
+        # payload used to whitelist them away, which is why they never reached disk.
         payload = {
-            "v": 1,
+            "v": 2,
             "name": name.strip(),
             "saved": int(time.time() * 1000),
             "clipFrames": data.get("clipFrames"),
             "promptHeader": data.get("promptHeader", ""),
             "promptFooter": data.get("promptFooter", ""),
             "prompts": data.get("prompts") or [],
+            "generationMode": data.get("generationMode", ""),
+            "refTypes": data.get("refTypes") or {},
+            "refImages": data.get("refImages") or [],
+            "refImagesMp": data.get("refImagesMp") or [],
+            "firstFrameImage": data.get("firstFrameImage", ""),
+            "lastFrameImage": data.get("lastFrameImage", ""),
+            "refVideos": data.get("refVideos") or [],
+            "refAudios": data.get("refAudios") or [],
         }
         with open(path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
@@ -2077,6 +2102,64 @@ async def mmh3_delete_prompt_set(request):
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 
 
+@PromptServer.instance.routes.get("/tj_shared/input_gallery")
+async def tj_shared_input_gallery(request):
+    """Images already sitting in ComfyUI's input folder, newest first.
+
+    The cross-tool picker otherwise only offers the five image tools' *output* galleries,
+    which means a picture the user put in input/ themselves — or one a previous pick
+    already copied there — cannot be reached without going through a file dialog again.
+    """
+    try:
+        offset = int(request.query.get("offset", 0))
+        limit  = min(200, int(request.query.get("limit", 48)))
+    except Exception:
+        offset, limit = 0, 48
+    base = folder_paths.get_input_directory()
+    exts = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif")
+    rows = []
+    try:
+        for name in os.listdir(base):
+            if not name.lower().endswith(exts):
+                continue
+            p = os.path.join(base, name)
+            if os.path.isfile(p):
+                rows.append({"filename": name, "subfolder": "", "mtime": os.path.getmtime(p)})
+    except Exception as e:
+        return web.json_response({"images": [], "total": 0, "error": str(e)})
+    rows.sort(key=lambda r: r["mtime"], reverse=True)
+    return web.json_response({"images": rows[offset:offset + limit], "total": len(rows)})
+
+
+@PromptServer.instance.routes.post("/tj_shared/input_exists")
+async def tj_shared_input_exists(request):
+    """Which of these filenames are still in ComfyUI's input folder.
+
+    A saved prompt set records the pictures and clips it was built with, but those live in
+    input/ and can be cleaned up at any time. Checking them one HEAD request at a time
+    would be a dozen round trips per load, so the whole list is asked about at once.
+    """
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"missing": [], "error": "bad request"}, status=400)
+    names = data.get("names") or []
+    if not isinstance(names, list):
+        return web.json_response({"missing": [], "error": "names must be a list"}, status=400)
+    base = folder_paths.get_input_directory()
+    missing = []
+    for n in names[:200]:
+        if not isinstance(n, str) or not n:
+            continue
+        # Names come from saved state, so never trust them as a path.
+        if os.path.basename(n) != n:
+            missing.append(n)
+            continue
+        if not os.path.isfile(os.path.join(base, n)):
+            missing.append(n)
+    return web.json_response({"missing": missing})
+
+
 @PromptServer.instance.routes.get("/minimax_h3_one/models")
 async def mmh3_get_models(request):
     def scan(key, ext=None):
@@ -2099,6 +2182,10 @@ async def mmh3_get_models(request):
         # ModelPreviewOverrideKJ's optional tiny_vae — a fast approx decoder for the live
         # preview only (not used for the real render). Folder is models/vae_approx/.
         "vae_approx":       scan("vae_approx", [".pth", ".safetensors"]),
+        # PDD Acc checkpoints. The folder is registered by ComfyUI-MiniMax-H3-PDD-Acc, so
+        # this comes back empty until that pack is installed — which is the right answer
+        # rather than an error, since the picker is only reachable from its turbo mode.
+        "pdd_acc":          scan("pdd_acc", [".safetensors", ".pt"]),
     })
 
 
@@ -2121,9 +2208,14 @@ MMH3_OPTIONAL_NODES = [
     "MiniMaxH3FusedModulation",
     "MiniMaxH3TurboSampler",
     "MiniMaxH3TurboLoRA",
+    # Jalen-Brunson/ComfyUI-MiniMax-H3-PDD-Acc — loads the alibaba-pai PDD Acc release
+    # (trunk LoRA + 32-interval head bank) and emits the sigmas it was trained on.
+    "MiniMaxH3PDDAccApply",
     "SolAttnPatch",
     "SpectrumApplyMiniMaxH3",
     "RTXVideoSuperResolution",
+    # ships with TJ_NODE — NVIDIA VFX deblur, same-resolution sharpening
+    "TJ_RTXDeblur",
     # gallery post-processing — upscale / frame interpolation on a finished clip
     "UpscaleModelLoader",
     "ImageUpscaleWithModel",
@@ -2440,7 +2532,6 @@ async def mmh3_stitch(request):
 # configurable. Nothing here is imported at module scope, so a missing Ollama install
 # just means the Enhance button reports "unreachable".
 
-MMH3_OLLAMA_DEFAULT = "http://127.0.0.1:11434"
 
 # Used when TJ_NODE isn't installed. The full brief-writing instruction lives in
 # ComfyUI-TJ_NODE/nodes/llm/data/model_formats.json as "Minimax H3 (Video)".
@@ -2490,133 +2581,9 @@ async def mmh3_llm_system_prompt(request):
     })
 
 
-@PromptServer.instance.routes.get("/minimax_h3_one/llm/ollama_models")
-async def mmh3_ollama_models(request):
-    import aiohttp
-    base = (request.query.get("server_url") or MMH3_OLLAMA_DEFAULT).rstrip("/")
-    try:
-        timeout = aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(timeout=timeout) as s:
-            async with s.get(f"{base}/api/tags") as r:
-                data = await r.json()
-        models = [m.get("name") for m in (data.get("models") or []) if m.get("name")]
-        return web.json_response({"ok": True, "models": models, "server_url": base})
-    except Exception as e:
-        return web.json_response({"ok": False, "models": [], "error": str(e), "server_url": base})
-
-
-@PromptServer.instance.routes.post("/minimax_h3_one/llm/enhance")
-async def mmh3_llm_enhance(request):
-    """Run one Ollama chat turn. `image_b64` (optional) switches the model to vision mode."""
-    import aiohttp
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"ok": False, "error": "invalid payload"}, status=400)
-
-    base = (body.get("server_url") or MMH3_OLLAMA_DEFAULT).rstrip("/")
-    model = body.get("model") or ""
-    if not model:
-        return web.json_response({"ok": False, "error": "no model selected"}, status=400)
-
-    system_prompt = body.get("system_prompt") or MMH3_FALLBACK_SYSTEM_PROMPT
-    user_prompt = body.get("user_prompt") or ""
-    image_b64 = body.get("image_b64") or ""
-    if image_b64 and "," in image_b64[:64]:
-        image_b64 = image_b64.split(",", 1)[1]      # strip a data: URI prefix
-    if image_b64:
-        # Ollama refuses some PNG variants outright ("Failed to load image or audio
-        # file"), so normalize whatever we were handed to a plain RGB JPEG and cap the
-        # long edge — vision encoders downscale anyway.
-        try:
-            import base64 as _b64
-            from io import BytesIO as _BytesIO
-            img = Image.open(_BytesIO(_b64.b64decode(image_b64))).convert("RGB")
-            max_edge = int(body.get("image_max_edge", 1280) or 1280)
-            if max(img.size) > max_edge:
-                scale = max_edge / max(img.size)
-                img = img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))), Image.LANCZOS)
-            buf = _BytesIO()
-            img.save(buf, format="JPEG", quality=90)
-            image_b64 = _b64.b64encode(buf.getvalue()).decode("ascii")
-        except Exception as e:
-            return web.json_response({"ok": False, "error": f"could not read the image: {e}"}, status=400)
-
-    user_msg = {"role": "user", "content": user_prompt}
-    if image_b64:
-        user_msg["images"] = [image_b64]
-
-    payload = {
-        "model": model,
-        "messages": [{"role": "system", "content": system_prompt}, user_msg],
-        "stream": False,
-        "options": {
-            "temperature": float(body.get("temperature", 0.7) or 0.7),
-            "top_p": float(body.get("top_p", 0.9) or 0.9),
-        },
-    }
-    seed = body.get("seed")
-    if seed not in (None, ""):
-        try:
-            payload["options"]["seed"] = int(seed)
-        except (TypeError, ValueError):
-            pass
-    if body.get("think") is False:
-        payload["think"] = False
-
-    try:
-        timeout = aiohttp.ClientTimeout(total=float(body.get("timeout", 600) or 600))
-        async with aiohttp.ClientSession(timeout=timeout) as s:
-            async with s.post(f"{base}/api/chat", json=payload) as r:
-                if r.status != 200:
-                    return web.json_response(
-                        {"ok": False, "error": f"ollama HTTP {r.status}: {(await r.text())[:300]}"}, status=502)
-                data = await r.json()
-        msg = (data.get("message") or {})
-        text = (msg.get("content") or "").strip()
-        if not text:
-            return web.json_response({"ok": False, "error": "empty response from Ollama"}, status=502)
-        return web.json_response({"ok": True, "response": text, "thinking": (msg.get("thinking") or "")})
-    except Exception as e:
-        return web.json_response({"ok": False, "error": str(e)}, status=502)
-
-
-_mmh3_last: dict = {}
-
-
-def _mmh3_drop_stale_last_frame(prev, nxt):
-    """Delete the last-frame PNG that `prev` points at, now that `nxt` replaces it.
-
-    The last_frame output slot re-opens this file from disk on every RUN, so it has to
-    survive the render — but only the newest one ever gets read, and _mmh3_last is an
-    in-memory dict that is empty again after a restart. Left alone the relay wrote one
-    PNG per clip into output/<pack>/frames and never came back for them (400 of them
-    before anyone looked). Keeping exactly the current frame is the same thing as
-    overwriting a single file, without asking SaveImage to do something it cannot.
-
-    Deliberately narrow: only a file this node just wrote, in that frames folder, under
-    the output root. Anything unexpected is left where it is.
-    """
-    try:
-        old_name = (prev or {}).get("filename")
-        if not old_name or not old_name.lower().endswith(".png"):
-            return
-        if (prev or {}).get("type", "output") != "output":
-            return
-        sub = ((prev or {}).get("subfolder") or "").replace("\\", "/")
-        if not sub.endswith("/frames") and sub != "frames":
-            return
-        if old_name == (nxt or {}).get("filename") and sub == (((nxt or {}).get("subfolder") or "").replace("\\", "/")):
-            return
-        root = os.path.realpath(folder_paths.get_output_directory())
-        path = os.path.realpath(os.path.join(root, sub, old_name))
-        if os.path.commonpath([root, path]) != root:
-            return
-        if os.path.isfile(path):
-            os.remove(path)
-    except Exception as e:
-        print(f"[MMH3] could not drop stale last frame: {e}")
-
+# The Ollama proxy routes (llm/ollama_models, llm/enhance) were removed on 2026-08-31.
+# Image -> Brief now runs natively inside ComfyUI; see analyzeImagesNative /
+# writeBriefNative on the frontend and the TextGenerate graph they submit.
 
 @PromptServer.instance.routes.post("/minimax_h3_one/set_last_image")
 async def mmh3_set_last_image(request):
@@ -3114,7 +3081,71 @@ class AnimaOneTJNode:
         return float("nan")
 
 
+class TJ_RTXDeblur:
+    """NVIDIA VFX deblur — sharpen soft or motion-blurred footage, resolution unchanged.
+
+    The SDK exposes deblur as a quality level of the same VideoSuperRes filter the RTX
+    upscale node uses, not as a separate effect: levels 12-15 are DEBLUR_LOW..ULTRA, and
+    NVIDIA documents them as "same-resolution processing" — so output width/height are set
+    to the input's and never derived from a scale factor.
+
+    This lives here rather than as a patch to comfyui_nvidia_rtx_nodes because that pack is
+    a git checkout: editing it in place would leave the tree dirty, and update_all_nodes.bat
+    skips dirty repos, silently freezing that pack at its current version forever.
+    """
+    _LEVELS = ("LOW", "MEDIUM", "HIGH", "ULTRA")
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "images": ("IMAGE",),
+            "strength": (list(cls._LEVELS), {
+                "default": "MEDIUM",
+                "tooltip": "Deblur intensity. Resolution is never changed — this sharpens, "
+                           "it does not upscale.",
+            }),
+        }}
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("images",)
+    FUNCTION = "run"
+    CATEGORY = " ✨ TJ_Node/Image"
+
+    def run(self, images, strength="MEDIUM"):
+        try:
+            import nvvfx
+        except Exception as e:
+            raise RuntimeError(
+                "RTX Deblur initialization failed. Please verify that the NVIDIA VFX SDK "
+                "and required runtime libraries are installed correctly. (%s)" % e
+            )
+
+        quality = getattr(nvvfx.effects.QualityLevel, "DEBLUR_%s" % strength, None)
+        if quality is None:
+            raise RuntimeError(
+                "RTX Deblur: this NVIDIA VFX SDK build has no DEBLUR_%s level. "
+                "SDK reports version %s." % (strength, nvvfx.get_sdk_version())
+            )
+
+        b, h, w, c = images.shape
+        # Batching mirrors the RTX upscale node's own pixel budget so a long clip does not
+        # try to stage every frame on the GPU at once.
+        batch_size = max(1, (1024 * 1024 * 16) // max(1, w * h))
+
+        out = torch.empty_like(images)
+        with nvvfx.VideoSuperRes(quality) as sr:
+            sr.output_width = w      # deblur is same-resolution by definition
+            sr.output_height = h
+            sr.load()
+            for i in range(0, b, batch_size):
+                chunk = images[i:i + batch_size].cuda().permute(0, 3, 1, 2).float().contiguous()
+                for j in range(chunk.shape[0]):
+                    dl = sr.run(chunk[j]).image
+                    out[i + j:i + j + 1] = torch.from_dlpack(dl).movedim(0, -1).unsqueeze(0)
+        return (out,)
+
+
 NODE_CLASS_MAPPINGS = {
+    "TJ_RTXDeblur":                TJ_RTXDeblur,
     "Flux2KleinOneTJNode":         Flux2KleinOneTJNode,
     "ZImageTurboOneNode":          ZImageTurboOneNode,
     "Krea2OneTJNode":              Krea2OneTJNode,
@@ -3131,6 +3162,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "QwenImageEdit2511OneTJNode":  "Qwen Image Edit 2511 ONE STUDIO (TJ)",
     "SDXLOneTJNode":               "SDXL ONE STUDIO (TJ)",
     "MiniMaxH3OneTJNode":          "MiniMax H3 ONE STUDIO (TJ)",
+    "TJ_RTXDeblur":                "RTX Deblur (TJ)",
     "TJStudioOneTextOutput":       "TJ Studio ONE — Text Output",
     "AnimaOneTJNode":              "Anima ONE STUDIO (TJ)",
 }

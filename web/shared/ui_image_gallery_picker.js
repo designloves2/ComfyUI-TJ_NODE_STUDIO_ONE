@@ -7,6 +7,10 @@
 import { el, clear } from "../klein/core_klein.js";
 
 export const IMAGE_GALLERY_TOOLS = [
+  // INPUT first and default: it is where a picture the user brought themselves already
+  // lives, and where every previous pick was copied to — so it is the most likely place
+  // to find the image being looked for, and it needs no copy step at all.
+  { id: "input",    label: "INPUT folder",    api: "/tj_shared",     subfolder: "", input: true },
   { id: "krea2",    label: "Krea2",           api: "/krea2_one",     subfolder: "one_krea2" },
   { id: "zimage",   label: "Z-Image",         api: "/z_image_turbo", subfolder: "one_z-image" },
   { id: "klein",    label: "Flux2 Klein",     api: "/flux_klein",    subfolder: "one_flux2-klein" },
@@ -19,13 +23,19 @@ const C = { bg1: "#111111", bg2: "#181818", border: "#2a2a2a", text: "#dedede", 
 
 async function fetchGallery(tool, offset, limit) {
   try {
-    const r = await fetch(`${tool.api}/gallery?offset=${offset}&limit=${limit}&subfolder=${encodeURIComponent(tool.subfolder)}`);
+    const url = tool.input
+      ? `${tool.api}/input_gallery?offset=${offset}&limit=${limit}`
+      : `${tool.api}/gallery?offset=${offset}&limit=${limit}&subfolder=${encodeURIComponent(tool.subfolder)}`;
+    const r = await fetch(url);
     if (!r.ok) throw new Error(String(r.status));
     return await r.json();
   } catch { return { images: [], total: 0 }; }
 }
 
 async function copyToInput(tool, img) {
+  // Already in input/ — copying it onto itself would only make a duplicate under a new
+  // unique name, so the existing filename is handed straight back.
+  if (tool.input) return img.filename;
   const r = await fetch(`${tool.api}/copy_to_input`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -36,8 +46,9 @@ async function copyToInput(tool, img) {
   return d.filename;
 }
 
-function viewUrl(img) {
-  return `/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder || "")}&type=output&t=${img.mtime || ""}`;
+function viewUrl(img, tool) {
+  const type = tool && tool.input ? "input" : "output";
+  return `/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder || "")}&type=${type}&t=${img.mtime || ""}`;
 }
 
 export function openImageGalleryPicker(onPick, initialToolId) {
@@ -104,7 +115,7 @@ export function openImageGalleryPicker(onPick, initialToolId) {
     const imgs = data.images || [];
     imgs.forEach(img => {
       const cell = el("div", { style: { position: "relative", borderRadius: "4px", overflow: "hidden", border: `1px solid ${C.border}`, background: C.bg2, cursor: "pointer" } });
-      const im = el("img", { src: viewUrl(img), style: { width: "100%", height: "auto", display: "block" } });
+      const im = el("img", { src: viewUrl(img, activeTool), style: { width: "100%", height: "auto", display: "block" } });
       cell.appendChild(im);
       cell.addEventListener("click", async () => {
         if (picking) return;

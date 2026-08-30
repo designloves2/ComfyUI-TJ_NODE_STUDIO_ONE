@@ -4,8 +4,11 @@
 // images are picked from files that already exist (upload or drag-drop from disk, or
 // handed over from another ONE STUDIO node's gallery).
 import { C, BRAND, el, clear } from "./core_minimax.js";
+import { buildClipMediaSlots } from "./ui_clip_media_slots.js";
+import { openVideoGalleryPicker } from "./ui_video_picker_minimax.js";
 import { panel, label, select, numberField, row, col } from "../klein/ui_common.js";
 import { uploadImage, getMediaFiles, uploadMedia, getMediaInfo } from "./api_minimax.js";
+import { syncImageLists } from "./core_minimax.js";
 import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
 
 export function imageSlot(labelText, initialFile, onSet, { box = 132 } = {}) {
@@ -154,7 +157,7 @@ function refTypeDropdown(state, ctx, onChange) {
 }
 
 // A single reference video / audio row: file picker + in/out seconds.
-function mediaRow(kind, entry, idx, files, ctx, state, onRefresh) {
+function mediaRow(kind, entry, idx, files, ctx, state, onRefresh, ownList) {
   const isVideo = kind === "video";
   const box = el("div", { style: {
     background: C.bg2, border: `1px solid ${C.border}`, borderRadius: "6px",
@@ -167,7 +170,9 @@ function mediaRow(kind, entry, idx, files, ctx, state, onRefresh) {
   const del = el("button", { type: "button", text: "✕", title: "Remove", style: {
     cursor: "pointer", background: "transparent", color: C.muted, border: "none", fontSize: "10px" } });
   del.addEventListener("click", () => {
-    const list = isVideo ? state.refVideos : state.refAudios;
+    // ownList lets a per-clip override edit its own array; without it this row would
+    // always delete out of the common one, whichever list it was drawn from.
+    const list = ownList || (isVideo ? state.refVideos : state.refAudios);
     list.splice(idx, 1); ctx.persist(); onRefresh();
   });
   hdr.appendChild(del);
@@ -307,6 +312,9 @@ export function mountImagePanel(state, ctx) {
             if (name) { list[i] = name; } else { list.splice(i, 1); mpList.splice(i, 1); }
             state.refImages = list.filter(Boolean).slice(0, 9);
             state.refImagesMp = mpList.slice(0, 9);
+            // Prompt Edit reads the same pictures — mirror them so a brief can be written
+            // straight away instead of re-uploading the set in the same order.
+            syncImageLists(state, "ref");
             ctx.persist(); render();
           }, { box: 92 });
         const cell = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px", alignItems: "center" } }, [slot.el]);
@@ -338,15 +346,10 @@ export function mountImagePanel(state, ctx) {
         kids.push(el("div", { html: "⚠ <code>VHS_LoadVideo</code> (VideoHelperSuite) is not installed — reference videos are skipped.",
           style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
       }
-      vids.slice(0, 3).forEach((v, i) => kids.push(mediaRow("video", v, i, mediaFiles.videos, ctx, state, render)));
-      if (vids.length < 3) {
-        const add = el("button", { type: "button", text: "+ Add reference video", style: {
-          width: "100%", cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "6px",
-          borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
-        }});
-        add.addEventListener("click", () => { vids.push({ file: "", start: 0, end: 5, withAudio: true }); ctx.persist(); render(); });
-        kids.push(add);
-      }
+      // Same compact tiles Prompt Edit uses: a thumbnail you can preview, then the
+      // transport and trim under it. The old stacked forms had no preview at all and each
+      // one was taller than the whole image grid.
+      kids.push(buildClipMediaSlots("video", vids, ctx, render, onPick => openVideoGalleryPicker(onPick), state.missingAssets));
       kids.push(el("div", { html: "Frames are pulled at 24fps between <b>in</b> and <b>out</b>; the model was trained on ~2-15s references.",
         style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
     }
@@ -358,15 +361,7 @@ export function mountImagePanel(state, ctx) {
         kids.push(el("div", { html: "⚠ <code>TrimAudioDuration</code> missing — audio is used whole, in/out is ignored.",
           style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
       }
-      auds.slice(0, 3).forEach((a, i) => kids.push(mediaRow("audio", a, i, mediaFiles.audios, ctx, state, render)));
-      if (auds.length < 3) {
-        const add = el("button", { type: "button", text: "+ Add reference audio", style: {
-          width: "100%", cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "6px",
-          borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
-        }});
-        add.addEventListener("click", () => { auds.push({ file: "", start: 0, end: 5 }); ctx.persist(); render(); });
-        kids.push(add);
-      }
+      kids.push(buildClipMediaSlots("audio", auds, ctx, render, null, state.missingAssets));
     }
 
     kids.push(el("div", { html: "Prompt tags follow input order per type: <code>&lt;Picture i&gt;</code> · "

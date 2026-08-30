@@ -7,7 +7,7 @@ export const C = {
   warn: "#ffb347", err: "#ff6767", ok: "#5fd38d",
 };
 
-export const NODE_W       = 1000;
+export const NODE_W       = 1250;   // widened 25% from 1000 — the right column is flex:1, so the extra width goes to the preview
 export const PREVIEW_SIZE = 620;
 export const LEFT_W       = 320;
 export const PAD          = 12;
@@ -89,6 +89,19 @@ export function effectiveTurbo(state, avail) {
     return { mode: "larryvrh", fellBack: false };
   }
 
+  // PDD is the one turbo that is not a LoRA. The checkpoint carries a rank-64 trunk LoRA
+  // *plus* a bank of 32 per-interval output heads, and the apply node swaps the model's
+  // final projection for that bank and hands back the sigmas the heads were trained on.
+  // Loading it through an ordinary LoRA loader would drop the head bank and silently
+  // render nonsense, so a missing pack has to fall back rather than improvise.
+  if (want === "pdd") {
+    if (!pddFileForMode(state))
+      return { mode: "none", fellBack: true, reason: "No PDD Acc file set for this mode — turbo skipped." };
+    if (!installed("MiniMaxH3PDDAccApply"))
+      return { mode: "none", fellBack: true, reason: "ComfyUI-MiniMax-H3-PDD-Acc is not installed — PDD needs its apply node for the head bank." };
+    return { mode: "pdd", fellBack: false };
+  }
+
   // lightx2v is a plain LoRA, but without the SLA kernel it was distilled against it
   // contributes nothing but its own load time, so treat a missing SLA pack as a
   // fallback rather than quietly running a LoRA that can't pay off.
@@ -104,7 +117,27 @@ export function effectiveSteps(state, avail) {
   const t = effectiveTurbo(state, avail).mode;
   if (t === "larryvrh") return Math.max(1, Math.round(state.turboSteps ?? 4));
   if (t === "lightx2v") return Math.max(1, Math.round(state.slaTurboSteps ?? 6));
+  // PDD's step count is not a preference — it is how the 32-interval grid was partitioned
+  // during training, and the apply node emits exactly this many sigmas. Anything else is
+  // off the trained envelope and renders as noise, so it is a fixed list, not a number.
+  if (t === "pdd") return PDD_NFE_CHOICES.includes(String(state.pddNfe)) ? Number(state.pddNfe) : 8;
   return Math.max(1, Math.round(state.steps ?? 20));
+}
+
+/** The evaluation counts the released PDD checkpoints were partitioned for. */
+export const PDD_NFE_CHOICES = ["8", "4", "6"];
+
+/**
+ * The PDD Acc file for the current mode.
+ *
+ * The release is per-variant — Ref2VA for reference, FL2VA for first-last — and pairing a
+ * file with the wrong UNET is a silent quality failure rather than an error, so the two
+ * are kept in separate slots instead of one field the user has to remember to change.
+ */
+export function pddFileForMode(state) {
+  const isRef = (state.generationMode || "t2v") === "reference";
+  const pick = isRef ? state.pddFileReference : state.pddFile;
+  return (pick && pick !== "none") ? pick : "";
 }
 
 /**
@@ -149,6 +182,37 @@ export const IMAGE_BRIEF_MODES = [
 ];
 export function imageBriefMax(mode) {
   return (IMAGE_BRIEF_MODES.find(m => m.key === mode) || IMAGE_BRIEF_MODES[1]).max;
+}
+
+/**
+ * Keep the render's reference images and Prompt Edit's vision images in step.
+ *
+ * They used to be two independent uploads, so writing a prompt against pictures you had
+ * already attached meant attaching them a second time, in the same order, in the other
+ * panel. They are the same pictures — the only real difference is that the vision list is
+ * capped per brief mode while the reference list holds up to nine.
+ *
+ * Whichever panel was edited is the authority; the other is rewritten from it, truncated
+ * to its own cap rather than silently dropping the extras from both.
+ *
+ * @param from "ref" when the images panel was edited, "vision" for Prompt Edit.
+ */
+export function syncImageLists(state, from) {
+  const visionCap = imageBriefMax(state.ollamaImageMode);
+  if (from === "ref") {
+    const refs = (state.refImages || []).filter(Boolean);
+    state.ollamaImages = refs.slice(0, visionCap);
+  } else {
+    const vis = (state.ollamaImages || []).filter(Boolean);
+    // Anything the reference list holds beyond the vision cap is left alone: those slots
+    // were never visible to the panel being edited, so dropping them would be a deletion
+    // the user did not ask for.
+    const refs = (state.refImages || []).slice();
+    const tail = refs.slice(visionCap);
+    state.refImages = [...vis, ...tail].filter(Boolean).slice(0, 9);
+    const mp = (state.refImagesMp || []).slice();
+    state.refImagesMp = state.refImages.map((_, i) => mp[i] ?? 1.0);
+  }
 }
 
 /** { p, i } for every switched-on prompt, `i` = its original position (never renumbered). */
@@ -279,6 +343,7 @@ export const TURBO_MODES = [
   { key: "none",     label: "None" },
   { key: "larryvrh", label: "Turbo LoRA (larryvrh)", node: "MiniMaxH3TurboLoRA" },
   { key: "lightx2v", label: "SLA Turbo (lightx2v)",  node: "H3SLAAttention" },
+  { key: "pdd",      label: "PDD Acc (alibaba-pai)", node: "MiniMaxH3PDDAccApply" },
 ];
 export const ATTN_BACKENDS = [
   { key: "none",          label: "None",                   node: null,                   dense: true },
@@ -582,16 +647,32 @@ export function defaultState(saved) {
     // prompts — one entry per clip (blank entries reuse the last non-blank one).
     // header/footer are the parts every clip shares (style preamble, ambient/music tail);
     // they are stored apart so splitting into clips never throws them away.
-    // Each entry is { text, firstFrame, enabled } — pre-v1.11 saves/workflows stored plain
-    // strings, so a string entry is wrapped here on load (this is the one place that happens).
+    // Each entry is { text, firstFrame, enabled, override, ... } — pre-v1.11 saves stored
+    // plain strings, so a string entry is wrapped here (the one place that happens).
+    //
+    // `override` is the per-clip switch: off, the clip uses the panel's common references;
+    // on, it uses only its own. It is all-or-nothing on purpose — a per-asset mixture
+    // would leave no way to see, on screen, which set a clip is actually rendering with.
     prompts: (Array.isArray(saved.prompts) && saved.prompts.length ? saved.prompts : [""])
       .map(p => (typeof p === "string"
-        ? { text: p, firstFrame: "", enabled: true }
-        : { text: p?.text || "", firstFrame: p?.firstFrame || "", enabled: p?.enabled !== false })),
+        ? { text: p, firstFrame: "", enabled: true, override: false,
+            refImages: [], refImagesMp: [], lastFrame: "", refVideos: [], refAudios: [],
+            header: "", footer: "" }
+        : { text: p?.text || "", firstFrame: p?.firstFrame || "", enabled: p?.enabled !== false,
+            override: !!p?.override,
+            refImages:   Array.isArray(p?.refImages) ? p.refImages.slice(0, 9) : [],
+            refImagesMp: Array.isArray(p?.refImagesMp) ? p.refImagesMp.slice(0, 9) : [],
+            lastFrame:   p?.lastFrame || "",
+            refVideos:   Array.isArray(p?.refVideos) ? p.refVideos.map(v => ({ ...v })) : [],
+            refAudios:   Array.isArray(p?.refAudios) ? p.refAudios.map(a => ({ ...a })) : [],
+            // header/tail follow the override too - see clipFraming()
+            header:      p?.header || "",
+            footer:      p?.footer || "" })),
     // clips rendered per prompt (>1 continues the same description across chained clips)
     promptHeader: saved.promptHeader || "",
     promptFooter: saved.promptFooter || "",
     promptSuffix: saved.promptSuffix || "",
+    enhCollapsed: !!saved.enhCollapsed,
 
     // images
     firstFrameImage: saved.firstFrameImage || null,
@@ -679,7 +760,19 @@ export function defaultState(saved) {
     savedAt: typeof saved.savedAt === "number" ? saved.savedAt : 0,
     pipelineMigrated: saved.pipelineMigrated === true ? 1
                     : (saved.pipelineMigrated ?? (saved.accelMode == null ? PIPELINE_MIGRATION : 0)),
+    // RTX deblur pre-pass for the render path; "none" keeps the old behaviour exactly.
+    deblurStrength: saved.deblurStrength || "none",
     turboMode:   saved.turboMode   || "none",
+    // The user's own saved presets. Server-backed via the config route, but kept in
+    // state so the dropdown can render before that round-trip finishes.
+    userPresets: Array.isArray(saved.userPresets) ? saved.userPresets : [],
+    // PDD Acc — per-variant checkpoint, plus the two blend strengths its apply node takes.
+    // nfe is a string because it is a choice from a fixed list, not a free number.
+    pddFile:          saved.pddFile          || "none",
+    pddFileReference: saved.pddFileReference || "none",
+    pddNfe:           String(saved.pddNfe ?? "8"),
+    pddLoraStrength:  saved.pddLoraStrength  ?? 1.0,
+    pddHeadStrength:  saved.pddHeadStrength  ?? 1.0,
     attnBackend: saved.attnBackend || "sage",
     attnForward: saved.attnForward || "memeff_sage",
     blockCache:  saved.blockCache  || "none",
@@ -745,31 +838,20 @@ export function defaultState(saved) {
     previewQuality:  saved.previewQuality  ?? 85,
     previewTinyVae:  saved.previewTinyVae  || "none",
 
-    // Ollama prompt enhance — ollamaModel writes the brief (text only, never sees an
-    // image); ollamaVisionModel is the separate model that looks at uploaded images.
-    // A vision-capable brief writer would work fine too, but keeping the roles apart
-    // means any text model can write the brief, and a multi-image request never has to
-    // rely on a model attending to more than one image at once (see PART C0 — tested,
-    // that fails; images are analyzed one at a time and merged as text instead).
-    ollamaUrl:         saved.ollamaUrl         || "http://127.0.0.1:11434",
-    ollamaModel:       saved.ollamaModel       || "",
-    ollamaVisionModel: saved.ollamaVisionModel || "",
-    ollamaTemperature: saved.ollamaTemperature ?? 0.7,
-    ollamaTopP:        saved.ollamaTopP        ?? 0.9,
-    // Image → Brief source images. "fl" caps at 2 (first/last frame), "ref" at 8
+    // Image -> Brief source images. "fl" caps at 2 (first/last frame), "ref" at 8
     // (<Picture N> tags). Order is upload order and becomes the Image N numbering.
     ollamaImageMode:   saved.ollamaImageMode   || "ref",
     ollamaImages:      Array.isArray(saved.ollamaImages) ? saved.ollamaImages.slice()
                       : (saved.ollamaImage ? [saved.ollamaImage] : []),   // migrate the old single-image field
 
-    // Where Image → Brief's two calls (vision analysis, brief writing) actually run.
-    // "ollama" hits the external server, same as it always has. "native" batches the
-    // images through TextGenerate on a CLIP already loaded in ComfyUI — proven to
-    // attend to every image in the batch correctly, unlike Ollama's images[] array
-    // (see SPEC_MINIMAX_H3_NEXT_ROUND.md §C0 vs §C5) — and needs no separate server.
-    // Each role still gets its own model, same shape as the Ollama pair: a vision
-    // checkpoint and a brief-writing checkpoint, picked independently.
-    visionSource:    saved.visionSource    || "ollama",   // "ollama" | "native"
+    // Image -> Brief runs natively: the images go through TextGenerate on a CLIP already
+    // loaded in ComfyUI, which attends to every image in a batch correctly. The external
+    // Ollama path was removed on 2026-08-31 — it needed a second server, and its
+    // images[] array did not reliably see more than one image at a time (see
+    // SPEC_MINIMAX_H3_NEXT_ROUND.md C0 vs C5). `visionSource` is kept, pinned to
+    // "native", so a state saved while Ollama still existed does not select a backend
+    // that is gone.
+    visionSource:    "native",
     nativeVisionClip: saved.nativeVisionClip || "Qwen3\\qwen_3vl_8b_nvfp4.safetensors",
     nativeBriefClip:  saved.nativeBriefClip  || "LTX\\gemma4_e2b_it_bf16.safetensors",
 
@@ -878,7 +960,76 @@ export const promptFirstFrame = (p) => (typeof p === "string" ? "" : (p?.firstFr
 /** Whether a prompt entry is switched on (default true — plain-string/legacy entries are always on). */
 export const promptEnabled = (p) => (typeof p === "string" ? true : p?.enabled !== false);
 
-/** What actually gets sent for clip `i`: common header + that clip's shots + common tail. */
+/** Whether this clip supplies its own references instead of the panel's common ones. */
+export const promptOverrides = (p) => (typeof p === "string" ? false : !!p?.override);
+
+/**
+ * The reference set a clip actually renders with.
+ *
+ * One place decides this, so the render loop, the editor and the metadata can never
+ * disagree about which images a clip used — that disagreement is exactly what makes a
+ * wrong render expensive to notice.
+ */
+export function clipAssets(state, i) {
+  const p = (state.prompts || [])[i];
+  if (promptOverrides(p)) {
+    return {
+      own: true,
+      refImages:   (p.refImages || []).filter(Boolean),
+      refImagesMp: p.refImagesMp || [],
+      firstFrame:  p.firstFrame || "",
+      lastFrame:   p.lastFrame || "",
+      refVideos:   p.refVideos || [],
+      refAudios:   p.refAudios || [],
+    };
+  }
+  return {
+    own: false,
+    refImages:   (state.refImages || []).filter(Boolean),
+    refImagesMp: state.refImagesMp || [],
+    firstFrame:  promptFirstFrame(p) || state.firstFrameImage || "",
+    lastFrame:   state.lastFrameImage || "",
+    refVideos:   state.refVideos || [],
+    refAudios:   state.refAudios || [],
+  };
+}
+
+/**
+ * The header and sound/music tail a clip actually renders with.
+ *
+ * These follow the override for the same reason the images do: the header fixes the
+ * visual style and opening composition, and the tail fixes the ambience and score — both
+ * describe the scene the reference images establish. A clip that swapped its images to a
+ * different set but kept the common pair gets the previous shot's setting and score
+ * written over its new one, which is a silent wrong render, not a visible error.
+ *
+ * Same all-or-nothing rule as `clipAssets`: override on means the clip owns both fields,
+ * with no per-field fallback to the common pair.
+ */
+export function clipFraming(state, i) {
+  const p = (state.prompts || [])[i];
+  if (promptOverrides(p)) {
+    return { own: true, header: p.header || "", footer: p.footer || "" };
+  }
+  return { own: false, header: state.promptHeader || "", footer: state.promptFooter || "" };
+}
+
+/** What actually gets sent for clip `i`: header + that clip's shots + sound/music tail. */
+/**
+ * The one prompt that describes a stitched file.
+ *
+ * Each source clip was rendered from its own composed text — common header, that clip's
+ * body, common footer — and that composed text is what its metadata already holds. So the
+ * stitched prompt is those, in order, separated by a labelled divider: the divider is what
+ * lets a reader (or a later Reuse) see where one shot ended and the next began, which a
+ * bare blank line does not.
+ */
+export function composeStitchedPrompt(clipPrompts) {
+  const parts = (clipPrompts || []).map(t => String(t || "").trim()).filter(Boolean);
+  if (parts.length <= 1) return parts[0] || "";
+  return parts.map((t, i) => `[Clip ${i + 1}]\n${t}`).join("\n\n");
+}
+
 export function composeClipPrompt(state, i) {
   const list = state.prompts || [];
   let body = "";
@@ -886,7 +1037,8 @@ export function composeClipPrompt(state, i) {
     const t = promptText(list[k]).trim();
     if (t) { body = t; break; }
   }
-  return [state.promptHeader, body, state.promptFooter, loraTriggers(state), state.promptSuffix]
+  const { header, footer } = clipFraming(state, i);
+  return [header, body, footer, loraTriggers(state), state.promptSuffix]
     .map(s => (s || "").trim()).filter(Boolean).join("\n\n");
 }
 

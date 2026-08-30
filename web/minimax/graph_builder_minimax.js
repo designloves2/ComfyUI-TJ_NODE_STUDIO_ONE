@@ -7,7 +7,8 @@
 //
 // Optional third-party nodes are gated on `avail` (from /minimax_h3_one/node_availability):
 // a missing pack disables that one feature rather than failing the whole prompt.
-import { SUBFOLDER, FPS, resolveResolution, effectiveTurbo, effectiveSteps, turboLoraForMode, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES } from "./core_minimax.js";
+import { SUBFOLDER, FPS, resolveResolution, effectiveTurbo, effectiveSteps, turboLoraForMode, pddFileForMode, blockCacheBlockedReason, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES } from "./core_minimax.js";
+import { matchPreset } from "./presets_minimax.js";
 
 const N = {
   unet:   "MM:unet",
@@ -20,6 +21,7 @@ const N = {
   solSag: "MM:sol_sag",
   fusedMod: "MM:fused_mod",
   slaTurboLora: "MM:sla_turbo_lora",
+  pdd:    "MM:pdd_acc",
   sla:    "MM:sla",
   freeClipVram: "MM:free_clip_vram",
   torch:  "MM:torch",
@@ -41,6 +43,7 @@ const N = {
   upModel:"MM:upscale_model",
   upApply:"MM:upscale",
   rtx:    "MM:rtx",
+  deblurR:"MM:deblur",
   video:  "MM:video",
   save:   "MM:save_video",
   lastF:  "MM:last_frame",
@@ -264,10 +267,15 @@ function buildModelChain(g, state, avail) {
     m = [N.torch, 0];
   }
 
+  // PDD's heads are trained against a 12/3 shift and its wrapper refuses anything else —
+  // a hard error, but one that arrives minutes into sampling. The shift is part of the
+  // same trained contract as the sigmas and the sampler, so pin it here rather than let a
+  // changed slider turn into a failed render.
+  const pddShift = effectiveTurbo(state, avail).mode === "pdd";
   g[N.shift] = { class_type: "MiniMaxH3SigmaShift", inputs: {
     model: m,
-    shift_video: state.shiftVideo ?? 12,
-    shift_audio: state.shiftAudio ?? 3,
+    shift_video: pddShift ? 12 : (state.shiftVideo ?? 12),
+    shift_audio: pddShift ? 3  : (state.shiftAudio ?? 3),
   }};
   m = [N.shift, 0];
 
@@ -304,6 +312,22 @@ function buildModelChain(g, state, avail) {
       strength_model: state.slaTurboStrength ?? 1.0,
     }};
     m = [N.slaTurboLora, 0];
+  } else if (turbo === "pdd") {
+    // Not a LoRA load: the apply node swaps the model's final projection for the trained
+    // 32-interval head bank and returns the sigmas sitting on that bank's block
+    // boundaries. Those sigmas are the whole contract — evaluating the model anywhere
+    // else is off the trained grid, which is why on_off_grid is left at "error" rather
+    // than clamping a wrong schedule into something that renders as noise without saying
+    // so. The sampler reads them instead of BasicScheduler; see the sigmas wiring below.
+    g[N.pdd] = { class_type: "MiniMaxH3PDDAccApply", inputs: {
+      model: m,
+      pdd_file: pddFileForMode(state),
+      nfe: String(state.pddNfe ?? "8"),
+      lora_strength: state.pddLoraStrength ?? 1.0,
+      head_strength: state.pddHeadStrength ?? 1.0,
+      on_off_grid: "error",
+    }};
+    m = [N.pdd, 0];
   }
 
   // ── block-output cache ────────────────────────────────────────────────────
@@ -311,7 +335,15 @@ function buildModelChain(g, state, avail) {
   // just compounds the same approximation twice. (They wouldn't error — H3 Cache takes
   // the whole block loop while FirstBlockCache replaces individual blocks — which is
   // exactly why the UI has to be the thing keeping them apart.)
-  const cache = state.blockCache || "none";
+  //
+  // A turbo schedule rules the caches out entirely — a handful of steps never reaches the
+  // threshold they reuse at, and PDD's own release says not to stack step caching on it at
+  // all. The panel already refuses the combination and says so, but it can only do that
+  // once it has rendered; a graph built from state that has not been through it would
+  // otherwise carry a cache the run was never meant to have, and record it in the clip's
+  // metadata as though it had been chosen. Enforce it where the graph is actually made.
+  const cache = blockCacheBlockedReason(state.blockCache || "none", turbo)
+    ? "none" : (state.blockCache || "none");
   if (cache === "h3cache" && has(avail, "MiniMaxH3Cache")) {
     g[N.cache] = { class_type: "MiniMaxH3Cache", inputs: {
       model: m,
@@ -574,8 +606,20 @@ export function buildClipGraph(state, avail, opts = {}) {
   const steps = effectiveSteps(state, avail);
 
   g[N.noise] = { class_type: "RandomNoise", inputs: { noise_seed: seed ?? 0 } };
+  // Reported back in `meta` so the clip records the sampler that ran rather than the one
+  // the panel is showing. Turbo overrides both this and the step count, and a sidecar
+  // that quietly keeps the panel's values makes runs look comparable when they are not.
+  let samplerUsed = state.sampler || "er_sde";
   if (useTurboSampler) {
     g[N.sampSel] = { class_type: "MiniMaxH3TurboSampler", inputs: {} };
+    samplerUsed = "MiniMaxH3TurboSampler";
+  } else if (turboMode === "pdd") {
+    samplerUsed = "euler";
+    // PDD distils a mean velocity per block, which is what one Euler step over that
+    // block's boundaries consumes. An ancestral or multistep sampler would evaluate
+    // between boundaries — off the trained grid — so the sampler is not the user's to
+    // pick here, the same way the sigmas are not.
+    g[N.sampSel] = { class_type: "KSamplerSelect", inputs: { sampler_name: "euler" } };
   } else {
     g[N.sampSel] = { class_type: "KSamplerSelect", inputs: { sampler_name: state.sampler || "er_sde" } };
   }
@@ -608,9 +652,14 @@ export function buildClipGraph(state, avail, opts = {}) {
   // clip's head, so it goes on top of whatever Audio Lock already produced.
   const latentImage = buildOneTake(g, state, avail, clipIndex, prevCheckpointName, preOneTakeLatent);
 
+  // PDD supplies its own sigmas — the block boundaries of the grid its head bank was
+  // distilled on. BasicScheduler's curve would put the model on timesteps no head was
+  // trained for, so for PDD it is left unwired (ComfyUI only runs what an output needs)
+  // and the trained schedule goes straight to the sampler.
   g[N.sampler] = { class_type: "SamplerCustomAdvanced", inputs: {
     noise: [N.noise, 0], guider: [N.guider, 0],
-    sampler: [N.sampSel, 0], sigmas: [N.sched, 0],
+    sampler: [N.sampSel, 0],
+    sigmas: turboMode === "pdd" ? [N.pdd, 1] : [N.sched, 0],
     latent_image: latentImage,
   }};
   saveOneTakeCheckpoint(g, state, avail, checkpointName);
@@ -621,6 +670,15 @@ export function buildClipGraph(state, avail, opts = {}) {
 
   let images = [N.decode, 0];
   const up = state.upscaleMode || "none";
+  // Deblur runs on the decoded frames before any upscale, at their own resolution. It is
+  // independent of the upscale setting: Upscale = None still deblurs.
+  if (state.deblurStrength && state.deblurStrength !== "none" && has(avail, "TJ_RTXDeblur")) {
+    g[N.deblurR] = { class_type: "TJ_RTXDeblur", inputs: {
+      images, strength: state.deblurStrength,
+    }};
+    images = [N.deblurR, 0];
+  }
+
   if (up === "model" && state.upscaleModel && state.upscaleModel !== "none") {
     g[N.upModel] = { class_type: "UpscaleModelLoader", inputs: { model_name: state.upscaleModel } };
     g[N.upApply] = { class_type: "ImageUpscaleWithModel", inputs: {
@@ -646,9 +704,15 @@ export function buildClipGraph(state, avail, opts = {}) {
   g[N.video] = { class_type: "CreateVideo", inputs: {
     images, fps: FPS, audio: lockAudio ? [N.audioLock, 1] : [N.decodeA, 0],
   }};
+  // When the pipeline happens to be exactly one of the named combinations, put its number
+  // in the filename. The metadata sidecar already records it, but a benchmark produces
+  // dozens of clips that differ only in settings, and reading them back one sidecar at a
+  // time to find out which is which is the slow way. A run that matches nothing is left
+  // untagged rather than labelled something misleading.
+  const presetTag = (matchPreset(state) || {}).id;
   g[N.save] = { class_type: "SaveVideo", inputs: {
     video: [N.video, 0],
-    filename_prefix: `${folder}/${stem}_clip${clipTag}`,
+    filename_prefix: `${folder}/${stem}_clip${clipTag}${presetTag ? `_preset${presetTag}` : ""}`,
     format: "auto", codec: "auto",
   }};
 
@@ -676,7 +740,20 @@ export function buildClipGraph(state, avail, opts = {}) {
     }
   }
 
-  return { graph: g, meta: { width, height, frames, steps, seed, videoNode: N.save, lastFrameNode: N.saveLF } };
+  return { graph: g, meta: {
+    width, height, frames, steps, seed,
+    // What actually ran, for the clip's sidecar: `steps` above is already the effective
+    // count, and these two complete the picture a turbo run needs to be comparable.
+    samplerUsed,
+    turboUsed: turboMode,
+    turboFile:
+      turboMode === "larryvrh" ? (turboLoraForMode(state) || null)
+      : turboMode === "lightx2v" ? (state.slaTurboLora || null)
+      : turboMode === "pdd" ? (pddFileForMode(state) || null)
+      : null,
+    pddNfe: turboMode === "pdd" ? String(state.pddNfe ?? "8") : null,
+    videoNode: N.save, lastFrameNode: N.saveLF,
+  } };
 }
 
 export const NODE_IDS = N;
@@ -696,6 +773,7 @@ const P = {
   apply: "PP:upscale",
   rtx:   "PP:rtx",
   rife:  "PP:rife",
+  deblur:"PP:deblur",
   video: "PP:video",
   save:  "PP:save",
 };
@@ -712,7 +790,17 @@ const P = {
  * @param opts.stem        filename prefix
  */
 export function buildUpscaleGraph(opts, avail) {
-  const { inputFile, method, modelName, rtxScale, rtxQuality, folder, stem } = opts;
+  const {
+    inputFile, method, modelName, rtxScale, rtxQuality, folder, stem,
+    // Chunking: VHS_LoadVideo materializes every requested frame as a float32 array up
+    // front, so a full stitched video (thousands of frames) loaded whole can exceed
+    // available RAM. skipFirstFrames/frameLoadCap let the caller ask for one bounded
+    // slice at a time; 0/0 (the defaults) keeps the old whole-file behaviour.
+    skipFirstFrames = 0, frameLoadCap = 0,
+    // Lets a chunked caller name each piece distinctly instead of always "_upscaled".
+    saveSuffix = "_upscaled",
+    deblur = "none",
+  } = opts;
   const g = {};
 
   // force_rate 0 keeps the file's own timing; the frame count and audio come back
@@ -720,11 +808,25 @@ export function buildUpscaleGraph(opts, avail) {
   g[P.load] = { class_type: "VHS_LoadVideo", inputs: {
     video: inputFile, force_rate: 0,
     custom_width: 0, custom_height: 0,
-    frame_load_cap: 0, skip_first_frames: 0, select_every_nth: 1,
+    frame_load_cap: frameLoadCap, skip_first_frames: skipFirstFrames, select_every_nth: 1,
   }};
   let images = [P.load, 0];
 
-  if (method === "rtx") {
+  // Deblur is a pre-pass, not part of upscaling: it sharpens at the input's own
+  // resolution and runs whether or not an upscale follows. Keeping it as its own `if`
+  // rather than nesting it inside the upscale branch is what lets the caller ask for
+  // deblur alone — see method === "none" below.
+  if (deblur && deblur !== "none") {
+    if (!has(avail, "TJ_RTXDeblur"))
+      throw new Error("TJ_RTXDeblur is not installed — restart ComfyUI after updating this pack.");
+    g[P.deblur] = { class_type: "TJ_RTXDeblur", inputs: { images, strength: deblur } };
+    images = [P.deblur, 0];
+  }
+
+  if (method === "none") {
+    // deblur-only: nothing else touches the frames
+    if (!g[P.deblur]) throw new Error("Nothing to do — pick deblur, an upscale, or both.");
+  } else if (method === "rtx") {
     if (!has(avail, "RTXVideoSuperResolution"))
       throw new Error("RTXVideoSuperResolution is not installed.");
     g[P.rtx] = { class_type: "RTXVideoSuperResolution", inputs: {
@@ -750,7 +852,7 @@ export function buildUpscaleGraph(opts, avail) {
   }};
   g[P.save] = { class_type: "SaveVideo", inputs: {
     video: [P.video, 0],
-    filename_prefix: `${folder}/${stem}_upscaled`,
+    filename_prefix: `${folder}/${stem}${saveSuffix}`,
     format: "auto", codec: "auto",
   }};
   return { graph: g, saveNode: P.save };
@@ -771,7 +873,12 @@ export function buildUpscaleGraph(opts, avail) {
  * no longer line up.
  */
 export function buildInterpolateGraph(opts, avail) {
-  const { inputFile, sourceFps, targetFps, scale, batchSize, useFp16, modelName, folder, stem } = opts;
+  const {
+    inputFile, sourceFps, targetFps, scale, batchSize, useFp16, modelName, folder, stem,
+    // Chunking — see buildUpscaleGraph's note; same bounded-slice mechanism.
+    skipFirstFrames = 0, frameLoadCap = 0,
+    saveSuffix = null,
+  } = opts;
   if (!has(avail, "RIFEInterpolation")) throw new Error("RIFE Frame Interpolation is not installed.");
   const srcFps = Math.max(1, Number(sourceFps) || FPS);
   const dstFps = Math.max(srcFps, Number(targetFps) || srcFps * 2);
@@ -780,7 +887,7 @@ export function buildInterpolateGraph(opts, avail) {
   g[P.load] = { class_type: "VHS_LoadVideo", inputs: {
     video: inputFile, force_rate: 0,
     custom_width: 0, custom_height: 0,
-    frame_load_cap: 0, skip_first_frames: 0, select_every_nth: 1,
+    frame_load_cap: frameLoadCap, skip_first_frames: skipFirstFrames, select_every_nth: 1,
   }};
 
   g[P.rife] = { class_type: "RIFEInterpolation", inputs: {
@@ -800,7 +907,7 @@ export function buildInterpolateGraph(opts, avail) {
   }};
   g[P.save] = { class_type: "SaveVideo", inputs: {
     video: [P.video, 0],
-    filename_prefix: `${folder}/${stem}_${Math.round(dstFps)}fps`,
+    filename_prefix: `${folder}/${stem}${saveSuffix ?? `_${Math.round(dstFps)}fps`}`,
     format: "auto", codec: "auto",
   }};
   return { graph: g, saveNode: P.save };

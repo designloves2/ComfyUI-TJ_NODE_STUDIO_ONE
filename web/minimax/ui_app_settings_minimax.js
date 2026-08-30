@@ -1,9 +1,9 @@
 // ui_app_settings_minimax.js — Settings overlay for MiniMax H3 ONE STUDIO (TJ)
 // Tabs: Models · Sampling · Preview · Output. Everything here is set once and reused
 // by every clip; per-run choices live in the node's left panel instead.
-import { C, BRAND, el, clear, SUBFOLDER, SAMPLERS, SCHEDULERS } from "./core_minimax.js";
+import { C, BRAND, el, clear, SUBFOLDER } from "./core_minimax.js";
 import { panel, label, button, select, numberField, row, col } from "../klein/ui_common.js";
-import { getModels, getConfig, saveConfig, getNodeAvailability, getOllamaModels, listVideos } from "./api_minimax.js";
+import { getModels, getConfig, saveConfig, getNodeAvailability, listVideos } from "./api_minimax.js";
 
 function searchableSelect(options, value, onChange) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } });
@@ -74,7 +74,7 @@ export function createSettingsOverlay(state, ctx) {
   ov.appendChild(topRow);
 
   // ── tab bar ────────────────────────────────────────────────────────────────
-  const TABS = ["Models", "Sampling", "Preview", "Output"];
+  const TABS = ["Models", "LLM Setting", "Preview", "Output"];
   let activeTab = "Models";
   const tabBar = el("div", { style: { display: "flex", gap: "6px", flexShrink: "0" } });
   const bodyWrap = el("div", { style: { flex: "1", overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px", paddingRight: "4px" } });
@@ -150,132 +150,34 @@ export function createSettingsOverlay(state, ctx) {
 
   function samplingTab() {
     const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } });
+    // Sampler, scheduler, denoise and sigma shift now live in the node's left panel,
+    // under Sampling — they are judged alongside Steps, so splitting them across a modal
+    // meant going back and forth to change one thing. What is left here is the LLM config.
+    // One backend: Image -> Brief runs natively through a ComfyUI-loaded CLIP. The
+    // external Ollama server was removed on 2026-08-31 - it needed a second service, and
+    // a single call with several images attached was only ever seen to attend to one of
+    // them (SPEC_MINIMAX_H3_NEXT_ROUND.md C0), which the native batch path does correctly.
     wrap.appendChild(panel([
-      label("Steps & acceleration"),
-      el("div", { html: "Step counts and each acceleration mode's tuning knobs now live in the node's "
-        + "<b>left panel</b>, directly under the Acceleration dropdown — switching modes there doesn't "
-        + "require coming back here.", style: { fontSize: "11px", color: C.muted, lineHeight: "1.6" } }),
-    ]));
-    wrap.appendChild(panel([
-      label("Sampler"),
-      row([
-        col([label("Sampler (non-turbo)"), select(SAMPLERS.map(s => ({ value: s, label: s })), state.sampler || "er_sde", v => { state.sampler = v; ctx.persist(); })]),
-        col([label("Scheduler"), select(SCHEDULERS.map(s => ({ value: s, label: s })), state.scheduler || "simple", v => { state.scheduler = v; ctx.persist(); })]),
-      ]),
-      col([label("Denoise"), numField(state.denoise ?? 1.0, v => { state.denoise = v; ctx.persist(); })]),
-    ]));
-    wrap.appendChild(panel([
-      label("Sigma Shift (MiniMaxH3SigmaShift)"),
-      row([
-        col([label("shift_video"), numField(state.shiftVideo ?? 12, v => { state.shiftVideo = v; ctx.persist(); }, { step: "0.5" })]),
-        col([label("shift_audio"), numField(state.shiftAudio ?? 3,  v => { state.shiftAudio = v; ctx.persist(); }, { step: "0.5" })]),
-      ]),
-    ]));
-    wrap.appendChild(panel([
-      label("Ollama server"),
-      col([label("Server URL"), (() => {
-        const inp = el("input", { type: "text", placeholder: "http://127.0.0.1:11434", style: {
-          width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
-          border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px",
-          fontSize: "12px", fontFamily: "inherit", outline: "none",
-        }});
-        inp.value = state.ollamaUrl || "http://127.0.0.1:11434";
-        inp.addEventListener("input", () => { state.ollamaUrl = inp.value.trim(); ctx.persist(); });
-        return inp;
-      })()]),
-      row([
-        col([label("Temperature"), numField(state.ollamaTemperature ?? 0.7, v => { state.ollamaTemperature = v; ctx.persist(); })]),
-        col([label("Top P"),       numField(state.ollamaTopP ?? 0.9,        v => { state.ollamaTopP = v; ctx.persist(); })]),
-      ]),
-      el("div", { text: "Only read when Vision source below is set to Ollama.",
-        style: { fontSize: "10px", color: C.muted } }),
-    ]));
-
-    // Prompt Edit's Enhance button needs two roles either way — something that reads an
-    // image and something that writes the brief text — and now two ways to run them.
-    // Ollama hits the external server, same as always. Native batches images through
-    // TextGenerate on a ComfyUI-loaded CLIP: proven (SPEC §C5) to attend to every image
-    // in a batch correctly, where Ollama's `images` array was tested and only ever
-    // looked at one of them (§C0) — and it costs no separate server or model file, since
-    // the same CLIPLoader(type=minimax) family MiniMax H3 already loads for text can do
-    // vision too when it's a Qwen3-VL checkpoint.
-    wrap.appendChild(panel([
-      label("Image → Brief — vision source"),
+      label("Image -> Brief models"),
       (() => {
-        const srcRow = el("div", { style: { display: "flex", gap: "4px" } });
-        const SOURCES = [
-          { key: "ollama", label: "Ollama" },
-          { key: "native", label: "Native (CLIP, no server)" },
-        ];
-        function renderSrc() {
-          clear(srcRow);
-          SOURCES.forEach(s => {
-            const active = (state.visionSource || "ollama") === s.key;
-            const b = el("button", { type: "button", text: s.label, style: {
-              cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 10px",
-              borderRadius: "6px", fontWeight: active ? "700" : "400",
-              background: active ? BRAND : C.bg2, color: "#fff",
-              border: `1px solid ${active ? BRAND : C.border}`,
-            }});
-            b.addEventListener("click", () => { state.visionSource = s.key; ctx.persist(); renderModelPickers(); });
-            srcRow.appendChild(b);
-          });
-        }
-        renderSrc();
-        return srcRow;
-      })(),
-      (() => {
-        const pickWrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px", marginTop: "6px" } });
+        const pickWrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } });
         renderModelPickersInto = pickWrap;
         return pickWrap;
       })(),
     ]));
+
     renderModelPickers();
     return wrap;
   }
 
   // Two model pickers, swapped out by source. Declared at module scope inside
-  // ollamaTab() so the vision-source toggle above can trigger a re-render.
+  // the LLM tab so the model pickers can be re-rendered when availability arrives.
   let renderModelPickersInto = null;
   function renderModelPickers() {
     const wrap2 = renderModelPickersInto;
     if (!wrap2) return;
     clear(wrap2);
-    const source = state.visionSource || "ollama";
-
-    if (source === "ollama") {
-      const briefWrap = el("div"), visionWrap = el("div");
-      const statusRow = el("div", { style: { fontSize: "10px", color: C.muted } });
-      let models = [];
-      function renderPickers() {
-        clear(briefWrap); clear(visionWrap);
-        const opts = ["", ...models];
-        const mk = (val, onChange) => select(
-          opts.map(m => ({ value: m, label: m || "(none)" })),
-          models.includes(val) ? val : "", onChange);
-        briefWrap.appendChild(mk(state.ollamaModel, v => { state.ollamaModel = v; ctx.persist(); }));
-        visionWrap.appendChild(mk(state.ollamaVisionModel, v => { state.ollamaVisionModel = v; ctx.persist(); }));
-      }
-      (async () => {
-        statusRow.textContent = "connecting to Ollama…";
-        const d = await getOllamaModels(state.ollamaUrl);
-        models = d.models || [];
-        statusRow.textContent = d.ok
-          ? `${models.length} model${models.length === 1 ? "" : "s"} available`
-          : `⚠ ${String(d.error || "unreachable").slice(0, 80)}`;
-        statusRow.style.color = d.ok ? C.muted : C.warn;
-        renderPickers();
-      })().catch(() => { statusRow.textContent = "⚠ could not reach Ollama"; statusRow.style.color = C.warn; });
-      wrap2.append(
-        row([col([label("Brief model (writes the prompt)"), briefWrap]),
-             col([label("Vision model (reads images)"), visionWrap])]),
-        statusRow,
-        el("div", { text: "The brief writer never sees an image, so any text model works there. A single Ollama "
-          + "call with several images attached was tested and only one was ever attended to — images are analyzed "
-          + "one at a time and merged as text before the brief model sees them.",
-          style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-      );
-    } else {
+    {
       const missing = [];
       if (!availability.available?.TJ_MultiImageLoader)  missing.push("TJ_MultiImageLoader (TJ_NODE)");
       if (!availability.available?.TextGenerate)          missing.push("TextGenerate (ComfyUI core — update ComfyUI)");
@@ -421,7 +323,7 @@ export function createSettingsOverlay(state, ctx) {
 
   function renderBody() {
     clear(bodyWrap);
-    const fn = { Models: modelsTab, Sampling: samplingTab, Preview: previewTab, Output: outputTab }[activeTab];
+    const fn = { Models: modelsTab, "LLM Setting": samplingTab, Preview: previewTab, Output: outputTab }[activeTab];
     bodyWrap.appendChild(fn());
   }
 
@@ -474,6 +376,11 @@ export function createSettingsOverlay(state, ctx) {
       sla_turbo_lora:       state.slaTurboLora       || "",
       sla_turbo_strength:   state.slaTurboStrength   ?? 1.0,
       sla_turbo_steps:      state.slaTurboSteps      ?? 6,
+      pdd_file:             state.pddFile            || "",
+      pdd_file_reference:   state.pddFileReference   || "",
+      pdd_nfe:              String(state.pddNfe ?? "8"),
+      pdd_lora_strength:    state.pddLoraStrength    ?? 1.0,
+      pdd_head_strength:    state.pddHeadStrength    ?? 1.0,
       turbo_mode:           state.turboMode          || "none",
       attn_backend:         state.attnBackend        || "sage",
       attn_forward:         state.attnForward        || "memeff_sage",
@@ -494,12 +401,7 @@ export function createSettingsOverlay(state, ctx) {
       cache_start:      state.cacheStart     ?? 0.15,
       cache_end:        state.cacheEnd       ?? 0.9,
       cache_max_steps:  state.cacheMaxSteps  ?? 2,
-      ollama_url:            state.ollamaUrl         || "http://127.0.0.1:11434",
-      ollama_model:          state.ollamaModel       || "",
-      ollama_vision_model:   state.ollamaVisionModel || "",
-      ollama_temperature:    state.ollamaTemperature ?? 0.7,
-      ollama_top_p:          state.ollamaTopP        ?? 0.9,
-      vision_source:         state.visionSource      || "ollama",
+      vision_source:         "native",   // the Ollama backend was removed
       native_vision_clip:    state.nativeVisionClip  || "",
       filename_prefix:       state.filenamePrefix    || "MMH3",
       stitch_at_end:         state.stitchAtEnd       ?? true,
@@ -574,6 +476,12 @@ export function createSettingsOverlay(state, ctx) {
     take("slaTurboLora",       cfg.sla_turbo_lora);
     if (cfg.sla_turbo_strength != null)   state.slaTurboStrength  = cfg.sla_turbo_strength;
     if (cfg.sla_turbo_steps != null)      state.slaTurboSteps     = cfg.sla_turbo_steps;
+    if (Array.isArray(cfg.user_presets)) state.userPresets = cfg.user_presets;
+    take("pddFile",            cfg.pdd_file);
+    take("pddFileReference",   cfg.pdd_file_reference);
+    if (cfg.pdd_nfe != null)              state.pddNfe            = String(cfg.pdd_nfe);
+    if (cfg.pdd_lora_strength != null)    state.pddLoraStrength   = cfg.pdd_lora_strength;
+    if (cfg.pdd_head_strength != null)    state.pddHeadStrength   = cfg.pdd_head_strength;
     if (cfg.turbo_mode)                   state.turboMode         = cfg.turbo_mode;
     if (cfg.attn_backend)                 state.attnBackend       = cfg.attn_backend;
     if (cfg.attn_forward)                 state.attnForward       = cfg.attn_forward;
@@ -594,12 +502,6 @@ export function createSettingsOverlay(state, ctx) {
     if (cfg.cache_start != null)      state.cacheStart     = cfg.cache_start;
     if (cfg.cache_end != null)        state.cacheEnd       = cfg.cache_end;
     if (cfg.cache_max_steps != null)  state.cacheMaxSteps  = cfg.cache_max_steps;
-    if (cfg.ollama_url)               state.ollamaUrl         = cfg.ollama_url;
-    if (cfg.ollama_model)             state.ollamaModel       = cfg.ollama_model;
-    if (cfg.ollama_vision_model)      state.ollamaVisionModel = cfg.ollama_vision_model;
-    if (cfg.ollama_temperature != null) state.ollamaTemperature = cfg.ollama_temperature;
-    if (cfg.ollama_top_p != null)       state.ollamaTopP        = cfg.ollama_top_p;
-    if (cfg.vision_source)            state.visionSource     = cfg.vision_source;
     if (cfg.native_vision_clip)       state.nativeVisionClip = cfg.native_vision_clip;
     if (cfg.filename_prefix)          state.filenamePrefix   = cfg.filename_prefix;
     if (cfg.stitch_at_end != null)          state.stitchAtEnd        = cfg.stitch_at_end;

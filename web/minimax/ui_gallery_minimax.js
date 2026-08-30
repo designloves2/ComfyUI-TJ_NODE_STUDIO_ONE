@@ -3,11 +3,11 @@
 // The node's results are videos, so the shared PNG gallery doesn't apply: this lists the
 // mp4s written into the output subfolder and plays them full screen with the keyboard
 // shortcuts you'd expect from a review pass.
-import { C, BRAND, el, clear, SUBFOLDER, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES,
+import { composeStitchedPrompt, C, BRAND, el, clear, SUBFOLDER, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES,
          UPSCALE_MODES, FPS } from "./core_minimax.js";
 import { button, select, numberField } from "../klein/ui_common.js";
 import { listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage, getMediaFiles,
-         copyOutputToInput, discardInputCopy, queuePrompt } from "./api_minimax.js";
+         copyOutputToInput, discardInputCopy, getVideoInfo, queuePrompt } from "./api_minimax.js";
 import { buildUpscaleGraph, buildInterpolateGraph } from "./graph_builder_minimax.js";
 
 const STITCH_MAX = 10;
@@ -301,6 +301,18 @@ export function createGalleryOverlay(state, ctx) {
         fill.style.width = `${pct.toFixed(1)}%`;
         text.textContent = `${Math.round(pct)}% · ${v} / ${m}`;
       },
+      // Overall progress across a chunked job: chunk index plus how far the current
+      // chunk's own step got, so the bar advances smoothly instead of resetting to 0%
+      // at every chunk boundary.
+      chunkStep(idx, count, v, m) {
+        track.style.display = "block";
+        const within = m ? v / m : 0;
+        const pct = Math.max(0, Math.min(100, ((idx + within) / count) * 100));
+        fill.style.width = `${pct.toFixed(1)}%`;
+        text.textContent = count > 1
+          ? `chunk ${idx + 1}/${count} · ${Math.round(within * 100)}% (${Math.round(pct)}% overall)`
+          : `${Math.round(pct)}% · ${v} / ${m}`;
+      },
     };
   }
 
@@ -312,9 +324,10 @@ export function createGalleryOverlay(state, ctx) {
   const upProg = makeProgress();
   let upMethod = (state.upscaleMode && state.upscaleMode !== "none") ? state.upscaleMode : "model";
 
+  // None belongs here: with deblur beside it, "no upscale" is a real choice rather than
+  // an absence, and it is what makes the Upscale button able to run a deblur-only pass.
   const upMethodSel = el("select", { style: smallSelect("112px") },
-    UPSCALE_MODES.filter(m => m.key !== "none").map(m =>
-      el("option", { value: m.key, text: m.label })));
+    UPSCALE_MODES.map(m => el("option", { value: m.key, text: m.label })));
   upMethodSel.value = upMethod;
   const upModelSel = el("select", { style: smallSelect("172px") });
   const upModelWrap = el("label", { style: { display: "flex", alignItems: "center", gap: "4px", fontSize: "10.5px", color: C.text } });
@@ -333,6 +346,19 @@ export function createGalleryOverlay(state, ctx) {
       [el("span", { text: "quality" }), rtxQualSel]),
   );
 
+  // Deblur sharpens at the clip's own resolution and is a separate job from upscaling:
+  // its own button runs it alone, and the select also feeds the Upscale button so one
+  // pass can deblur then upscale without writing an intermediate file. Pressing one
+  // button never triggers the other's work.
+  const deblurSel = el("select", { style: smallSelect("96px") },
+    [{ v: "none", t: "off" }, { v: "LOW", t: "Low" }, { v: "MEDIUM", t: "Medium" },
+     { v: "HIGH", t: "High" }, { v: "ULTRA", t: "Ultra" }]
+      .map(o => el("option", { value: o.v, text: o.t })));
+  deblurSel.value = "none";
+  const deblurWrap = el("label", { style: { display: "flex", alignItems: "center", gap: "4px", fontSize: "10.5px", color: C.text } },
+    [el("span", { text: "deblur" }), deblurSel]);
+  const deblurGoBtn = button("✦ Deblur", () => runDeblur());
+
   function refreshUpModels() {
     const list = (ctx.availableModels?.upscale_models || []).filter(x => x && x !== "none");
     clear(upModelSel);
@@ -347,23 +373,36 @@ export function createGalleryOverlay(state, ctx) {
 
   function refreshUpBar() {
     const isRtx = upMethod === "rtx";
-    upModelWrap.style.display = isRtx ? "none" : "flex";
+    const isNone = upMethod === "none";
+    upModelWrap.style.display = (isRtx || isNone) ? "none" : "flex";
     rtxWrap.style.display     = isRtx ? "flex" : "none";
     const rtxOk = !!ctx.availability?.RTXVideoSuperResolution;
-    const ready = !!postPick && !postRunning && (isRtx ? rtxOk : !!upModelSel.value);
+    // With Upscale = None the button runs the deblur pass alone, so it needs deblur set
+    // rather than a model or the RTX node.
+    const ready = !!postPick && !postRunning &&
+      (noUpscale ? (deblurOn && deblurOk) : (isRtx ? rtxOk : !!upModelSel.value));
     upGoBtn.disabled = !ready;
     upGoBtn.style.opacity = ready ? "1" : "0.5";
+    const deblurOn = deblurSel.value !== "none";
+    const deblurOk = !!ctx.availability?.TJ_RTXDeblur;
+    const deblurReady = !!postPick && !postRunning && deblurOn && deblurOk;
+    const noUpscale = upMethod === "none";
+    deblurGoBtn.disabled = !deblurReady;
+    deblurGoBtn.style.opacity = deblurReady ? "1" : "0.5";
     if (postRunning) return;
-    if (isRtx && !rtxOk) upProg.idle("⚠ RTX VSR node is not installed.");
-    else if (!isRtx && !upModelSel.value) upProg.idle("⚠ No upscale model installed.");
+    if (deblurOn && !deblurOk) upProg.idle("⚠ RTX Deblur node is not installed — restart ComfyUI.");
+    else if (noUpscale && !deblurOn) upProg.idle("Pick a deblur strength, or an upscale method.");
+    else if (isRtx && !rtxOk) upProg.idle("⚠ RTX VSR node is not installed.");
+    else if (!isRtx && !isNone && !upModelSel.value) upProg.idle("⚠ No upscale model installed.");
     else if (!postPick) upProg.idle("Pick one clip to upscale.");
     else upProg.idle(pickName());
   }
   upMethodSel.addEventListener("change", () => { upMethod = upMethodSel.value; refreshUpBar(); });
   upModelSel.addEventListener("change", refreshUpBar);
+  deblurSel.addEventListener("change", refreshUpBar);
 
   const upGoBtn = button("⬆ Upscale", () => runUpscale(), "primary");
-  upBar.append(upProg.el, upMethodSel, upModelWrap, rtxWrap, upGoBtn);
+  upBar.append(upProg.el, deblurWrap, deblurGoBtn, upMethodSel, upModelWrap, rtxWrap, upGoBtn);
 
   // ── Interpolate ─────────────────────────────────────────────────────────────────
   // RIFEInterpolation takes a source/target fps pair, not a multiplier, so the options
@@ -426,11 +465,24 @@ export function createGalleryOverlay(state, ctx) {
   function pickName() { const v = pickedVideo(); return v ? v.filename : ""; }
   function refreshPostBars() { refreshUpBar(); refreshRifeBar(); }
 
+  // Every requested frame gets materialized as a float32 RGBA array by VHS_LoadVideo
+  // before any node touches it, so asking for a whole long/high-res clip in one shot can
+  // exceed available RAM — a "★ stitched" full run easily runs into the thousands of
+  // frames. The budget is per-chunk RAM, not resolution, so it scales the chunk length
+  // down automatically for a bigger frame: a 1088x736 clip and a 4K one both stay under
+  // roughly the same footprint per chunk.
+  const CHUNK_BUDGET_BYTES = 1.25 * 1024 ** 3;
+  const CHUNK_MIN_FRAMES = 8;
+  const CHUNK_MAX_FRAMES = 240;
+
   /**
-   * Shared run wrapper: copy the source into input/, queue the graph, reload the grid.
+   * Shared run wrapper: copy the source into input/, queue the graph (chunked if the
+   * source is long or large enough to risk exhausting RAM), reload the grid.
    *
-   * The result lands in the same output subfolder as everything else, so refresh() is all
-   * it takes for it to show up — no special-casing in the grid.
+   * `buildFn(inputFile, stem, chunkOpts)` returns `{ graph, saveNode }`; chunkOpts carries
+   * `{ folder, skipFirstFrames, frameLoadCap, saveSuffix }` when chunking, or is `{}` for
+   * a plain single-shot job — both graph builders default those to their old whole-file
+   * behaviour, so a caller that ignores chunkOpts still works.
    */
   async function runPost(prog, label, buildFn) {
     const v = pickedVideo();
@@ -439,15 +491,75 @@ export function createGalleryOverlay(state, ctx) {
     refreshPostBars();
     prog.busy(`Preparing ${v.filename}…`);
     let copied = null;
+    const chunkFiles = [];   // { filename, subfolder } written to the temp chunk folder
     try {
       // VHS_LoadVideo only lists ComfyUI's input folder, so the finished mp4 has to be
       // copied there first — copy_to_input is format-agnostic, it just moves bytes.
       const inputFile = await copyOutputToInput(v.filename, v.subfolder || "", "output");
       copied = inputFile;
       const stem = v.filename.replace(/\.[^.]+$/, "");
-      const { graph } = buildFn(inputFile, stem);
-      prog.busy(`${label}…`);
-      await queuePrompt(graph, { onProgress: (val, max) => prog.step(val, max) });
+      const outFolder = state.saveSubfolder || SUBFOLDER;
+
+      // Chunk sizing. If video_info can't be read (ffprobe missing, odd container), fall
+      // back to a single whole-file job rather than failing outright — that's exactly the
+      // old behaviour, so short clips are unaffected either way.
+      let chunkFrames = 0, totalFrames = 0;
+      try {
+        const info = await getVideoInfo(inputFile, "", "input");
+        const perFrameBytes = Math.max(1, (info.width || 0) * (info.height || 0) * 16);
+        chunkFrames = Math.max(CHUNK_MIN_FRAMES, Math.min(CHUNK_MAX_FRAMES,
+          Math.floor(CHUNK_BUDGET_BYTES / perFrameBytes)));
+        totalFrames = info.frames || 0;
+      } catch { /* handled below by chunkCount defaulting to 1 */ }
+      const chunkCount = (totalFrames > 0 && chunkFrames > 0)
+        ? Math.max(1, Math.ceil(totalFrames / chunkFrames)) : 1;
+
+      let outFile = null;   // what the job actually wrote, so its metadata can follow
+      if (chunkCount === 1) {
+        const { graph, saveNode } = buildFn(inputFile, stem, {});
+        prog.busy(`${label}…`);
+        const res = await queuePrompt(graph, { onProgress: (val, max) => prog.chunkStep(0, 1, val, max) });
+        const o = res.byNode[saveNode]?.images?.[0] || res.byNode[saveNode]?.gifs?.[0];
+        if (o) outFile = { filename: o.filename, subfolder: o.subfolder || outFolder };
+      } else {
+        // Same VHS_LoadVideo source, sliced by skip_first_frames/frame_load_cap — audio
+        // slices the same way (VHS derives its start/duration from those two fields), so
+        // each chunk's own soundtrack lines up with its frames. Chunks land in a scratch
+        // subfolder and get stream-copy concatenated afterward, then deleted.
+        const chunkSub = `${outFolder}/._post_chunks`;
+        for (let i = 0; i < chunkCount; i++) {
+          const skip = i * chunkFrames;
+          const cap = Math.min(chunkFrames, totalFrames - skip);
+          const { graph, saveNode } = buildFn(inputFile, `${stem}_c${String(i).padStart(3, "0")}`, {
+            folder: chunkSub, skipFirstFrames: skip, frameLoadCap: cap, saveSuffix: "",
+          });
+          prog.busy(`${label} — preparing chunk ${i + 1}/${chunkCount}…`);
+          const res = await queuePrompt(graph, {
+            onProgress: (val, max) => prog.chunkStep(i, chunkCount, val, max),
+          });
+          const out = res.byNode[saveNode]?.images?.[0] || res.byNode[saveNode]?.gifs?.[0];
+          if (!out) throw new Error(`chunk ${i + 1}/${chunkCount} produced no output`);
+          chunkFiles.push({ filename: out.filename, subfolder: out.subfolder || chunkSub });
+        }
+        prog.busy(`${label} — joining ${chunkCount} chunks…`);
+        // Every chunk shares the same codec, resolution, and fps, so this is a plain
+        // stream-copy concat (overlap/trim both 0) — no re-encode, no quality loss.
+        const joined = await stitchClips(chunkFiles, `${outFolder}/${stem}`, 0, 0, null);
+        if (joined?.filename) outFile = { filename: joined.filename, subfolder: joined.subfolder || outFolder };
+      }
+
+      // The new file is the same shot with the same settings — only the pixels changed.
+      // Without this it lands in the gallery with no prompt, no seed and no pipeline
+      // record, so Reuse cannot rebuild it and the clip looks like it came from nowhere.
+      if (outFile && v.meta) {
+        await saveMeta(outFile.filename, outFile.subfolder || "", {
+          ...v.meta,
+          created: Date.now(),
+          postProcess: label.toLowerCase(),      // "upscale" | "deblur" | "interpolation"
+          postSource: v.filename,
+        }).catch(() => {});
+      }
+
       prog.idle(`✓ ${label} done.`);
       ctx.showPopup?.(`${label} finished — the new file is at the top of the gallery.`, false);
       postPick = null;
@@ -457,8 +569,9 @@ export function createGalleryOverlay(state, ctx) {
       prog.idle(`✕ ${msg}`);
       ctx.showPopup?.(`${label} failed: ${msg}`, true);
     } finally {
-      // The copy exists only to get the file where VHS_LoadVideo can see it; once the
-      // graph has run it is dead weight, and copy_to_input names every one differently.
+      // Clean up in both the success and failure paths: whatever chunks did get written,
+      // and the source copy that only ever existed to feed VHS_LoadVideo.
+      for (const f of chunkFiles) await deleteImage(f.filename, f.subfolder).catch(() => {});
       await discardInputCopy(copied);
       postRunning = false;
       refreshPostBars();
@@ -466,25 +579,46 @@ export function createGalleryOverlay(state, ctx) {
   }
 
   function runUpscale() {
-    return runPost(upProg, "Upscale", (inputFile, stem) => buildUpscaleGraph({
+    return runPost(upProg, "Upscale", (inputFile, stem, chunkOpts) => buildUpscaleGraph({
       inputFile, stem,
-      folder: state.saveSubfolder || SUBFOLDER,
+      folder: chunkOpts.folder || (state.saveSubfolder || SUBFOLDER),
       method: upMethod,
       modelName: upModelSel.value,
       rtxScale: Math.max(1, Math.min(4, parseFloat(rtxScaleIn.value) || 2)),
       rtxQuality: rtxQualSel.value,
+      deblur: deblurSel.value,
+      skipFirstFrames: chunkOpts.skipFirstFrames,
+      frameLoadCap: chunkOpts.frameLoadCap,
+      saveSuffix: upMethod === "none" && chunkOpts.saveSuffix === "_upscaled"
+        ? "_deblur" : chunkOpts.saveSuffix,
+    }, ctx.availability || {}));
+  }
+
+  /** Deblur with no upscale: method "none" makes the graph builder skip both upscalers. */
+  function runDeblur() {
+    return runPost(upProg, "Deblur", (inputFile, stem, chunkOpts) => buildUpscaleGraph({
+      inputFile, stem,
+      folder: chunkOpts.folder || (state.saveSubfolder || SUBFOLDER),
+      method: "none",
+      deblur: deblurSel.value,
+      skipFirstFrames: chunkOpts.skipFirstFrames,
+      frameLoadCap: chunkOpts.frameLoadCap,
+      saveSuffix: chunkOpts.saveSuffix === "_upscaled" ? "_deblur" : chunkOpts.saveSuffix,
     }, ctx.availability || {}));
   }
 
   function runInterpolate() {
-    return runPost(rifeProg, "Interpolation", (inputFile, stem) => buildInterpolateGraph({
+    return runPost(rifeProg, "Interpolation", (inputFile, stem, chunkOpts) => buildInterpolateGraph({
       inputFile, stem,
-      folder: state.saveSubfolder || SUBFOLDER,
+      folder: chunkOpts.folder || (state.saveSubfolder || SUBFOLDER),
       sourceFps: FPS,
       targetFps: Number(rifeDstIn.value) || FPS * 2,
       scale: parseFloat(rifeScaleSel.value) || 1.0,
       batchSize: parseInt(rifeBatchIn.value, 10) || 8,
       useFp16: rifeFp16Cb.checked,
+      skipFirstFrames: chunkOpts.skipFirstFrames,
+      frameLoadCap: chunkOpts.frameLoadCap,
+      saveSuffix: chunkOpts.saveSuffix,
     }, ctx.availability || {}));
   }
 
@@ -569,11 +703,18 @@ export function createGalleryOverlay(state, ctx) {
       const known = picked.map(v => v.meta?.frames ? framesToSeconds(v.meta.frames) : null);
       const rawTotal = known.every(s => s != null) ? known.reduce((a, b) => a + b, 0) : null;
       const durationSeconds = rawTotal != null && overlapSec ? rawTotal - (picked.length - 1) * overlapSec : rawTotal;
+      // Carry the first clip's full metadata - resolution, steps, seed, every pipeline
+      // axis - rather than writing a thin record: the stitched file is the same run, and
+      // without this Reuse cannot rebuild the settings that produced it. `frames` is
+      // dropped because it is per-clip; durationSeconds describes the joined file.
+      const base = picked[0]?.meta ? { ...picked[0].meta } : { v: 1, node: "minimax_h3" };
+      delete base.frames;
       await saveMeta(out.filename, out.subfolder || "", {
-        v: 1, prompt: picked.map(v => v.prompt || "").filter(Boolean).join("\n\n"),
-        clips: picked.length, stitched: true, onetake: !!overlapSec,
-        node: "minimax_h3", created: Date.now(), durationSeconds,
+        ...base,
+        prompt: composeStitchedPrompt(picked.map(v => v.prompt || "")),
         prompts: picked.map(v => v.prompt || ""),
+        clips: picked.length, stitched: true, onetake: !!overlapSec,
+        created: Date.now(), durationSeconds,
       });
       ctx.showPopup?.(`Stitched ${picked.length} clips → ${out.filename}`, false);
       stitchOrder = [];

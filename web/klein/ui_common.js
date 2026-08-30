@@ -39,7 +39,11 @@ export function select(options, value, onChange) {
     const v = typeof opt === "string" ? opt : opt.value;
     const txt = typeof opt === "string" ? opt : opt.label;
     const dis = typeof opt === "object" && opt.disabled;
+    // `title` is optional and per-option: a list whose entries need explaining can hand
+    // the reader the detail on hover instead of growing the label until it truncates.
+    const tip = typeof opt === "object" && opt.title;
     return el("option", { value: v, text: txt,
+      ...(tip ? { title: tip } : {}),
       ...(dis ? { disabled: "disabled" } : {}),
       ...(v === value ? { selected: "selected" } : {}) });
   }));

@@ -1,6 +1,6 @@
 @echo off
-setlocal EnableDelayedExpansion
-chcp 65001 >nul
+setlocal EnableExtensions EnableDelayedExpansion
+rem chcp 65001 >nul
 
 echo ========================================================
 echo  Update every custom node (git pull)
@@ -105,7 +105,7 @@ if "!BEFORE!"=="!AFTER!" (
     set "UPDATED=!UPDATED! %D%"
 
     rem A new version can add or bump dependencies, so refresh them for anything that
-    rem actually moved. Unchanged packs are left alone — re-running pip across every
+    rem actually moved. Unchanged packs are left alone ? re-running pip across every
     rem folder would take far longer than the pulls themselves.
     call :REQS "%D%"
 )
@@ -128,7 +128,7 @@ if not "%RSZ%"=="0" (
     "%PYTHON_EXE%" -m pip install -r "%RF%" --quiet
     if errorlevel 1 (
         rem pip's isolated build environment does not inherit globally installed build
-        rem backends — wheel_stub, which the RTX nodes need — so retry without it.
+        rem backends ? wheel_stub, which the RTX nodes need ? so retry without it.
         "%PYTHON_EXE%" -m pip install -r "%RF%" --no-build-isolation --quiet
         if errorlevel 1 (
             echo   [WARN] some requirements failed - this pack may not load.

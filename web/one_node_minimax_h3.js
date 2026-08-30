@@ -17,14 +17,14 @@ import { api } from "../../scripts/api.js";
 import {
   C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, SUBFOLDER,
   el, clear, loadState, saveState, lastUsedAt, defaultState, randomSeed,
-  CLIP_LENGTHS, ASPECTS, UPSCALE_MODES,
-  TURBO_MODES, ATTN_BACKENDS, ATTN_FORWARDS, BLOCK_CACHES, FBC_MODES,
+  CLIP_LENGTHS, ASPECTS, UPSCALE_MODES, SAMPLERS, SCHEDULERS,
+  TURBO_MODES, ATTN_BACKENDS, ATTN_FORWARDS, BLOCK_CACHES, FBC_MODES, PDD_NFE_CHOICES,
   attnBlockedReason, attnForwardBlockedReason, attnForwardOverlapNote, blockCacheBlockedReason,
   effectiveTurbo, effectiveSteps, migrateLegacyAccel,
   continuityModesFor, generationModesFor, configIssues,
   clipPlan, formatDuration, formatClock, framesToSeconds, alignFrameCount, FPS, ONE_TAKE_OVERLAP_FRAMES, resolveResolution,
   parseBrief, groupShots, composeClipPrompt,
-  turboLoraForMode, explainGenerationError,
+  turboLoraForMode, pddFileForMode, clipAssets, explainGenerationError,
   promptText, promptFirstFrame, promptEnabled, activePrompts,
 } from "./minimax/core_minimax.js";
 import { panel, label, button, select, loraSelect, numberField, slider, row, col, modeBar, iconBtn, openVideoFullscreen }
@@ -33,8 +33,11 @@ import {
   queuePrompt, waitForHistory, interrupt, freeMemory, setLastResult, stitchClips,
   copyOutputToInput, getNodeAvailability, getModels, saveMeta, pickChainFrame, getLoraTriggers,
   getMediaFiles, uploadMedia, getVramStats,
+  saveConfig,
 } from "./minimax/api_minimax.js";
 import { buildClipGraph, NODE_IDS, previewNodeKey } from "./minimax/graph_builder_minimax.js";
+import { PIPELINE_PRESETS, allPresets, captureAxes, matchPreset, applyPreset } from "./minimax/presets_minimax.js";
+import { createPresetDialogs } from "./minimax/ui_presets_minimax.js";
 import { createSettingsOverlay } from "./minimax/ui_app_settings_minimax.js";
 import { mountImagePanel } from "./minimax/ui_images_minimax.js";
 import { createPromptEditOverlay } from "./minimax/ui_prompt_edit_minimax.js";
@@ -42,6 +45,7 @@ import { createCommonPromptOverlay } from "./minimax/ui_common_prompt_minimax.js
 import { createGalleryOverlay } from "./minimax/ui_gallery_minimax.js";
 import { resolvePipeOverrides, applyOverridesTemp } from "./shared/promptdb_pipe.js";
 import { attachNodeState, restoreNodeState } from "./shared/node_state.js";
+import { createNodeFullscreen } from "./shared/node_fullscreen.js";
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 const TOPBAR_H   = 40;
@@ -194,7 +198,7 @@ app.registerExtension({
           warnTag.style.display = "none";
         }
       }
-      let settingsOv, helpOv, promptEditOv, galleryOv, commonOv;
+      let settingsOv, helpOv, promptEditOv, galleryOv, commonOv, presetDlgs;
       topBar.appendChild(pillsWrap);
       topBar.appendChild(warnTag);
       topBar.appendChild(iconBtn("🗑", "Unload models / free VRAM", async () => {
@@ -202,6 +206,29 @@ app.registerExtension({
       }));
       topBar.appendChild(iconBtn("⚙", "Settings", () => settingsOv?.show()));
       topBar.appendChild(iconBtn("🖼", "Gallery — clips and stitched videos", () => galleryOv?.show()));
+      // Fills the monitor with this node alone, scaled but proportional. The button is the
+      // only way back out, and it inverts to white-on-black while the view is open so the
+      // mode is obvious at a glance.
+      // `fsBtn` further down is the preview player's own fullscreen control — this one is
+      // the node's, so it needs its own name.
+      const nodeFsBtn = iconBtn("⛶", "Fullscreen this node", () => fullscreen.toggle());
+      const nodeFsIdle = { fg: nodeFsBtn.style.color, bd: nodeFsBtn.style.border };
+      const paintFsBtn = (open) => {
+        nodeFsBtn.style.background = open ? "#ffffff" : "";
+        nodeFsBtn.style.color      = open ? "#000000" : nodeFsIdle.fg;
+        nodeFsBtn.style.border     = open ? "1px solid #ffffff" : nodeFsIdle.bd;
+      };
+      const fullscreen = createNodeFullscreen(root, NODE_W, ROOT_H, (open) => {
+        paintFsBtn(open);
+        nodeFsBtn.title = open ? "Exit fullscreen" : "Fullscreen this node";
+      });
+      // iconBtn assigns `style.background` directly on hover in and out, and a later
+      // inline assignment beats an earlier one whatever its priority — so the white had to
+      // be re-applied after those handlers rather than declared harder than them. These
+      // run second because they are registered second.
+      nodeFsBtn.addEventListener("mouseenter", () => { if (fullscreen.isOpen()) paintFsBtn(true); });
+      nodeFsBtn.addEventListener("mouseleave", () => { if (fullscreen.isOpen()) paintFsBtn(true); });
+      topBar.appendChild(nodeFsBtn);
       topBar.appendChild(iconBtn("?", "Help", () => helpOv?.show()));
       root.appendChild(topBar);
 
@@ -406,7 +433,7 @@ app.registerExtension({
       commonBtn.addEventListener("click", () => commonOv?.show());
       promptHdr.appendChild(commonBtn);
 
-      const editBtn = el("button", { type: "button", text: "📝 Prompt Edit", title: "Open the full prompt editor (with Ollama enhance)", style: {
+      const editBtn = el("button", { type: "button", text: "📝 Prompt Edit", title: "Open the full prompt editor (with local enhance)", style: {
         cursor: "pointer", fontFamily: "inherit", fontSize: "10px",
         padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text,
         border: `1px solid ${BRAND}`, fontWeight: "600",
@@ -841,6 +868,92 @@ app.registerExtension({
         ]));
         refreshPlan();
 
+        // preset — one entry per combination worth measuring, numbered to match the test
+        // matrix. It writes the pipeline axes below and nothing else: steps, seed, length
+        // and resolution are what a comparison is held constant against, so a preset that
+        // moved them would invalidate the run it was picked for.
+        //
+        // The current selection is derived from the axes rather than remembered. Change a
+        // dropdown further down by hand and this falls back to Custom on its own, instead
+        // of going on displaying the name of a combination that has been edited away.
+        {
+          const userPresets = Array.isArray(state.userPresets) ? state.userPresets : [];
+          const entries = allPresets(userPresets);
+          const activePreset = matchPreset(state, userPresets);
+          // Hovering an entry has to answer "what does this actually turn on", because the
+          // label can't: the whole point of a preset is that it sets six things at once,
+          // and a label long enough to list them would be truncated by the column anyway.
+          const presetTip = (p) => {
+            const nameOf = (list, key) => (list.find(x => x.key === key) || {}).label || key;
+            const attn = p.forward === "none"
+              ? nameOf(ATTN_BACKENDS, p.backend)
+              : `${nameOf(ATTN_BACKENDS, p.backend)} + ${nameOf(ATTN_FORWARDS, p.forward)}`;
+            return [
+              `Turbo:        ${nameOf(TURBO_MODES, p.turbo)}`,
+              `Attention:    ${attn}`,
+              `Block cache:  ${nameOf(BLOCK_CACHES, p.cache)}`,
+              `Spectrum:     ${p.spectrum ? "ON" : "OFF"}`,
+              `Torch + fp16: ${p.torch ? "ON" : "OFF"}`,
+              `Fused Mod:    ${p.fused ? "ON" : "OFF"}`,
+              "",
+              p.note,
+            ].join("\n");
+          };
+          leftPanel.appendChild(panel([
+            label("Preset"),
+            select(
+              [{ value: "", label: activePreset ? "— Custom —" : "— Custom (current settings) —",
+                 title: "The pipeline sections below, as you have them now." },
+               // Group headers, disabled so they cannot be picked. The User section is
+               // only drawn when there is something under it — a lone header over an
+               // empty group reads as a bug rather than as structure.
+               ...(userPresets.length
+                 ? [{ value: "", disabled: true, label: "────── User Preset ──────" }]
+                 : []),
+               ...entries.filter(p => p.user).map(p => ({
+                 value: String(p.id), label: `★ ${p.label}`, title: presetTip(p),
+               })),
+               { value: "", disabled: true, label: "───── System Preset ─────" },
+               ...entries.filter(p => !p.user).map(p => ({
+                 value: String(p.id),
+                 // The built-ins keep their benchmark number so they still match the report.
+                 label: `${p.id}. [${p.phase}] ${p.label}`,
+                 title: presetTip(p),
+               }))],
+              activePreset ? String(activePreset.id) : "",
+              v => {
+                if (!v) return;                        // Custom is a readout, not a command
+                const p = entries.find(x => String(x.id) === v);
+                if (!p) return;
+                applyPreset(state, p);
+                persist(); renderLeft();
+              }),
+            // Same total width as the dropdown above, split evenly: `row` lays its
+            // children out with flex but does not stretch them, so each button has to
+            // claim its half explicitly.
+            (() => {
+              const r = row([
+                ...[button("💾 Save", () => presetDlgs.openSave()),
+                    button("⚙ Setting", () => presetDlgs.openManage())]
+                  .map(b => { b.style.flex = "1"; b.style.minWidth = "0"; return b; }),
+              ]);
+              r.style.marginTop = "5px";   // the buttons sat flush against the dropdown
+              return r;
+            })(),
+            el("div", {
+              text: activePreset
+                ? (activePreset.note || "Your own saved preset.")
+                : "The pipeline sections below do not match any preset. Pick one to set them "
+                  + "all at once, or keep tuning by hand.",
+              style: { fontSize: "10px", color: C.muted, lineHeight: "1.5", marginTop: "4px" } }),
+            el("div", {
+              text: "Presets set Turbo, Attention, Block cache, Spectrum and the model patches "
+                + "only — steps, seed, length and resolution stay as you have them. Hover an "
+                + "entry to see everything it turns on.",
+              style: { fontSize: "10px", color: C.muted, lineHeight: "1.5", marginTop: "4px" } }),
+          ]));
+        }
+
         // pipeline options — each accel mode's knobs render right under the dropdown so
         // switching modes never means a round-trip through the Settings modal.
         // ── pipeline ──────────────────────────────────────────────────────────
@@ -910,6 +1023,37 @@ app.registerExtension({
                 checkboxRow("Low VRAM turbo load", !!state.turboLoraLowVram,
                   v => { state.turboLoraLowVram = v; rememberLora({ turbo_lora_low_vram: v }); }),
                 el("div", { text: "Runs a 4-step schedule, so sparse attention and the step caches are unavailable — their error has nowhere to average out.",
+                  style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+              );
+            } else if (turboMode === "pdd") {
+              const isRef = state.generationMode === "reference";
+              const pddOpts = ["none", ...((ctx.availableModels?.pdd_acc) || []).filter(x => x !== "none")];
+              rows.push(
+                col([label(`PDD Acc file (First-Last / Text)${isRef ? "" : " ●"}`),
+                  loraSelect(pddOpts, state.pddFile || "none",
+                    v => { state.pddFile = v; rememberLora({ pdd_file: v }); }).el]),
+                col([label(`PDD Acc file (Reference)${isRef ? " ●" : ""}`),
+                  loraSelect(pddOpts, state.pddFileReference || "none",
+                    v => { state.pddFileReference = v; rememberLora({ pdd_file_reference: v }); }).el]),
+                el("div", { text: "● The release is per-variant: pair Ref2VA with the reference UNET and "
+                    + "FL2VA with the first-last one. A mismatched pair does not error — it just renders badly.",
+                  style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+                row([
+                  col([label("nfe (steps)"), select(
+                    PDD_NFE_CHOICES.map(x => ({ value: x, label: x })),
+                    String(state.pddNfe ?? "8"),
+                    v => { state.pddNfe = v; persist(); renderLeft(); })]),
+                  col([label("lora strength"), numberField(state.pddLoraStrength ?? 1.0,
+                    v => { state.pddLoraStrength = v; persist(); }, 0.05)]),
+                ]),
+                col([label("head strength"), numberField(state.pddHeadStrength ?? 1.0,
+                  v => { state.pddHeadStrength = v; persist(); }, 0.05)]),
+                el("div", { text: "Not a LoRA: the file carries a rank-64 trunk LoRA plus 32 per-interval "
+                    + "output heads, and the sampler runs euler on the sigmas those heads were trained on — "
+                    + "so the sampler and schedule are fixed here. nfe is how that 32-step grid is "
+                    + "partitioned (8 and 4 are official); other counts fall off the trained grid. "
+                    + "CFG is already 1.0 on this pipeline, which is what PDD expects. Both strengths were "
+                    + "trained at 1.0.",
                   style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
               );
             } else if (turboMode === "lightx2v") {
@@ -1131,9 +1275,24 @@ app.registerExtension({
               : null,
           ]));
 
+        // Deblur and Upscale share one accordion because they run back to back on the same
+        // frames, but they are independent settings: either can be None. Deblur is listed
+        // first because that is the order they execute in.
+        const deblurNow = state.deblurStrength || "none";
+        const upNow = (UPSCALE_MODES.find(m => m.key === state.upscaleMode) || {}).label || "None";
         leftPanel.appendChild(accordion("upscale", "Upscale",
-          (UPSCALE_MODES.find(m => m.key === state.upscaleMode) || {}).label || "None",
+          deblurNow === "none" ? upNow : `Deblur ${deblurNow} → ${upNow}`,
           () => [
+            col([label("Deblur (before upscale)"), select(
+              [{ value: "none", label: "None" }, { value: "LOW", label: "Low" },
+               { value: "MEDIUM", label: "Medium" }, { value: "HIGH", label: "High" },
+               { value: "ULTRA", label: "Ultra" }],
+              deblurNow, v => { state.deblurStrength = v; persist(); renderLeft(); })]),
+            deblurNow !== "none" && !ctx.availability?.TJ_RTXDeblur
+              ? el("div", { html: "⚠ <code>TJ_RTXDeblur</code> not installed — restart ComfyUI after updating this pack.",
+                  style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } })
+              : el("div", { text: "Sharpens soft or motion-blurred frames at the clip's own resolution — it never changes the size. Runs before whichever upscale is set below, and works with Upscale set to None.",
+                  style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
             col([label("Upscale"), select(UPSCALE_MODES.map(m => ({ value: m.key, label: m.label })),
               state.upscaleMode, v => { state.upscaleMode = v; persist(); renderLeft(); })]),
             state.upscaleMode === "rtx" ? row([
@@ -1249,6 +1408,35 @@ app.registerExtension({
         // Generate. A turbo schedule supplies its own count, so the field goes read-only
         // rather than sitting there looking editable while something else decides.
         const turboNow = effectiveTurbo(state, ctx.availability).mode;
+
+        // Sampler / scheduler / sigma shift moved here from the Settings modal: they are
+        // read together with Steps when judging a run, and having half the sampler config
+        // behind a modal meant switching between the two to change one thing. Collapsed by
+        // default — the summary line carries the values, so the column still reads as a
+        // status list without expanding it.
+        leftPanel.appendChild(accordion("sampling", "Sampling",
+          `${state.sampler || "er_sde"} · ${state.scheduler || "simple"}`,
+          () => [
+            row([
+              col([label("Sampler"), select(SAMPLERS.map(x => ({ value: x, label: x })),
+                state.sampler || "er_sde", v => { state.sampler = v; persist(); renderLeft(); })]),
+              col([label("Scheduler"), select(SCHEDULERS.map(x => ({ value: x, label: x })),
+                state.scheduler || "simple", v => { state.scheduler = v; persist(); renderLeft(); })]),
+            ]),
+            col([label("Denoise"), numberField(state.denoise ?? 1.0,
+              v => { state.denoise = v; persist(); }, 0.05)]),
+            row([
+              col([label("shift_video"), numberField(state.shiftVideo ?? 12,
+                v => { state.shiftVideo = v; persist(); }, 0.5)]),
+              col([label("shift_audio"), numberField(state.shiftAudio ?? 3,
+                v => { state.shiftAudio = v; persist(); }, 0.5)]),
+            ]),
+            el("div", { text: turboNow === "pdd"
+                ? "PDD pins the sampler to euler and the shift to 12/3 — its heads were trained on that grid, so these are ignored for this run."
+                : "Sigma shift feeds MiniMaxH3SigmaShift.",
+              style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+          ]));
+
         leftPanel.appendChild(panel([
           label("Steps"),
           (() => {
@@ -1602,6 +1790,23 @@ app.registerExtension({
           blockCache:  st.blockCache,
           useSpectrum: !!st.useSpectrum,
           useFusedModulation: !!st.useFusedModulation,
+          // The Torch patch was missing here while every other pipeline axis was recorded,
+          // which left two clips that differ only by it indistinguishable after the fact —
+          // exactly the comparison the A/B presets exist to make.
+          useTorchPatch: st.useTorchPatch !== false,
+          fp16Accum: st.fp16Accum !== false,
+          // Which named combination produced this, when the axes match one. Saves reading
+          // six fields back to work out what a clip in the gallery actually was.
+          preset: (matchPreset(st) || {}).id ?? null,
+          // The images the clip was actually built from. Without these, Reuse restored the
+          // prompt and every setting but none of the pictures, so in Reference mode it
+          // could not reproduce the clip at all — the one thing it exists to do.
+          refImages:   Array.isArray(st.refImages) ? st.refImages.slice() : [],
+          refImagesMp: Array.isArray(st.refImagesMp) ? st.refImagesMp.slice() : [],
+          firstFrameImage: st.firstFrameImage || null,
+          lastFrameImage:  st.lastFrameImage  || null,
+          refVideos: Array.isArray(st.refVideos) ? st.refVideos.map(v => ({ ...v })) : [],
+          refAudios: Array.isArray(st.refAudios) ? st.refAudios.map(a => ({ ...a })) : [],
           seed: st.seed,
           node: "minimax_h3",
           created: Date.now(),
@@ -1635,6 +1840,13 @@ app.registerExtension({
        */
       function watchMemory(everyMs = 10000) {
         let vramFreeMin = Infinity, vramUsedMax = 0, ramFreeMin = Infinity, samples = 0;
+        // Temperature separates "this configuration is genuinely slow" from "this run was
+        // spilling the whole time", which elapsed seconds alone cannot. Measured on this
+        // card: idle sits at ~52C, real sampling runs 58-80C. So 58 is the floor of doing
+        // work, not 60 — a run held at 58-59C is computing, and calling that a spill would
+        // throw away a valid row.
+        const WORKING_C = 58;
+        let tempMax = 0, powerMax = 0, tempSamples = 0, tempIdle = 0;
         const tick = async () => {
           const d = await getVramStats();
           if (!d || !d.ok) return;
@@ -1642,6 +1854,12 @@ app.registerExtension({
           if (typeof d.vramFreeMiB === "number") vramFreeMin = Math.min(vramFreeMin, d.vramFreeMiB);
           if (typeof d.vramUsedMiB === "number") vramUsedMax = Math.max(vramUsedMax, d.vramUsedMiB);
           if (typeof d.ramFreeMiB === "number")  ramFreeMin  = Math.min(ramFreeMin, d.ramFreeMiB);
+          if (typeof d.gpuTempC === "number") {
+            tempSamples++;
+            tempMax = Math.max(tempMax, d.gpuTempC);
+            if (d.gpuTempC < WORKING_C) tempIdle++;
+          }
+          if (typeof d.gpuPowerW === "number") powerMax = Math.max(powerMax, d.gpuPowerW);
         };
         tick();
         const id = setInterval(tick, everyMs);
@@ -1653,6 +1871,12 @@ app.registerExtension({
               vramFreeMinMiB: Number.isFinite(vramFreeMin) ? vramFreeMin : null,
               vramUsedMaxMiB: vramUsedMax || null,
               ramFreeMinMiB:  Number.isFinite(ramFreeMin) ? ramFreeMin : null,
+              gpuTempMaxC:    tempMax || null,
+              gpuPowerMaxW:   powerMax || null,
+              // Share of the run spent below the temperature that means real compute.
+              // High here on a clip that still finished is the signature of a slow spill
+              // rather than a configuration that is simply expensive.
+              gpuIdlePct:     tempSamples ? Math.round((tempIdle / tempSamples) * 100) : null,
             };
           },
         };
@@ -1780,9 +2004,27 @@ app.registerExtension({
             let overridden = false;
             if (override) { firstFrame = override; refImages = []; overridden = true; }
 
+            // Per-clip reference override. One resolver decides which set a clip renders
+            // with (clipAssets), and its answer is written straight into the snapshot the
+            // graph builder reads — so the builder, the editor and the saved metadata can
+            // never disagree about which images a clip actually used.
+            const assets = clipAssets(rs, i);
+            if (assets.own && !continued) {
+              refImages = assets.refImages;
+              if (assets.firstFrame) { firstFrame = assets.firstFrame; overridden = true; }
+            }
+
             const modeForClip = (continued || overridden) ? "firstlast" : rs.generationMode;
 
             const clipState = { ...rs, generationMode: modeForClip };
+            if (assets.own) {
+              clipState.refImages      = assets.refImages;
+              clipState.refImagesMp    = assets.refImagesMp;
+              clipState.firstFrameImage = assets.firstFrame || null;
+              clipState.lastFrameImage  = assets.lastFrame || null;
+              clipState.refVideos      = assets.refVideos;
+              clipState.refAudios      = assets.refAudios;
+            }
             const restore = pipeOv ? applyOverridesTemp(clipState, pipeOv.overrides) : null;
             // One-Take: a checkpoint name unique to this node instance + prompt index, so
             // two MiniMax H3 nodes on the same canvas (or a re-run over old prompt indices)
@@ -1792,6 +2034,11 @@ app.registerExtension({
 
             let res;
             let mem = null;   // memory watcher for this clip; see watchMemory()
+            // What the graph builder actually wired — sampler, effective step count and the
+            // turbo weights. Turbo overrides the panel's sampler and steps, so recording the
+            // panel's copies makes two runs look like the same work when they were not. Left
+            // null on the resume path, where this clip's graph was built before the reload.
+            let ran = null;
             if (resume && pos === startPos && resume.inFlightPromptId) {
               // This exact clip was already queued before the reload — reconnect to it
               // instead of building and submitting a second copy.
@@ -1820,6 +2067,7 @@ app.registerExtension({
                   checkpointName,
                 });
               } finally { restore?.(); }
+              ran = built.meta;
 
               setStatus(`Clip ${curClip}/${totClip} · queued`);
               // Watch memory for the length of the clip. A render that runs out of VRAM
@@ -1859,6 +2107,13 @@ app.registerExtension({
                 // everything a full Reuse needs to reproduce this exact clip, plus the
                 // measured time it actually took (see refreshAvgFromHistory)
                 elapsedSec,
+                // What the graph actually ran, as opposed to what the panel was showing.
+                ...(ran ? {
+                  stepsEffective: ran.steps,
+                  samplerUsed:    ran.samplerUsed,
+                  turboFile:      ran.turboFile,
+                  pddNfe:         ran.pddNfe,
+                } : {}),
                 // Memory extremes over this clip. vramFreeMinMiB near zero is the
                 // signature of a spill: the step times balloon and nothing errors.
                 ...(memPeak || {}),
@@ -2063,8 +2318,14 @@ app.registerExtension({
         if (!parts.some(p => String(p || "").trim())) return false;
         state.prompts = parts.map(t => ({ text: String(t || ""), firstFrame: "", enabled: true }));
         if (Array.isArray(meta.prompts)) {
-          state.promptHeader = meta.promptHeader || "";
-          state.promptFooter = meta.promptFooter || "";
+          // A stitched file's stored prompts are each clip's *composed* text — that clip's
+          // own header and footer are already inside them, and the clips may not even
+          // share the same ones. Restoring a common header/footer on top would apply them
+          // a second time, so for a stitch the shared fields are cleared and each prompt
+          // stands alone. A normal clip stores the raw body instead, which does need the
+          // header and footer put back around it.
+          state.promptHeader = meta.stitched ? "" : (meta.promptHeader || "");
+          state.promptFooter = meta.stitched ? "" : (meta.promptFooter || "");
         }
         persist();
         refreshPlan();
@@ -2081,6 +2342,25 @@ app.registerExtension({
       // panel value with something that was never actually recorded.
       ctx.reuseAll = (meta) => {
         if (!ctx.reusePrompt(meta)) return false;
+        // Images first: they decide what the mode pills and reference panel show.
+        if (Array.isArray(meta.refImages)) {
+          state.refImages = meta.refImages.slice();
+          state.refImagesMp = Array.isArray(meta.refImagesMp)
+            ? meta.refImagesMp.slice()
+            : state.refImages.map(() => 1.0);
+        }
+        if (meta.firstFrameImage !== undefined) state.firstFrameImage = meta.firstFrameImage || null;
+        if (meta.lastFrameImage  !== undefined) state.lastFrameImage  = meta.lastFrameImage  || null;
+        if (Array.isArray(meta.refVideos)) state.refVideos = meta.refVideos.map(v => ({ ...v }));
+        if (Array.isArray(meta.refAudios)) state.refAudios = meta.refAudios.map(a => ({ ...a }));
+        // A restored set is worth showing — leaving its panel collapsed hides the fact
+        // that anything came back.
+        if (state.refImages?.length || state.refVideos?.length || state.refAudios?.length) {
+          state.refTypes = { ...(state.refTypes || {}),
+            images: !!state.refImages?.length || state.refTypes?.images !== false,
+            videos: !!state.refVideos?.length || !!state.refTypes?.videos,
+            audios: !!state.refAudios?.length || !!state.refTypes?.audios };
+        }
         if (meta.aspect) state.aspect = meta.aspect;
         if (meta.megapixels != null) state.megapixels = meta.megapixels;
         if (meta.frames) { state.clipFrames = meta.frames; state.clipLengthCustom = false; }
@@ -2097,6 +2377,10 @@ app.registerExtension({
           if (meta.blockCache)  state.blockCache  = meta.blockCache;
           if (meta.useSpectrum != null)        state.useSpectrum        = !!meta.useSpectrum;
           if (meta.useFusedModulation != null) state.useFusedModulation = !!meta.useFusedModulation;
+          // Clips written before these were recorded simply leave them alone, which keeps
+          // the panel's current values rather than inventing a default the clip never had.
+          if (meta.useTorchPatch != null)      state.useTorchPatch      = !!meta.useTorchPatch;
+          if (meta.fp16Accum != null)          state.fp16Accum          = !!meta.fp16Accum;
         } else if (meta.accel) {
           if (meta.accel === "turbo")         state.turboMode   = "larryvrh";
           else if (meta.accel === "spectrum") state.useSpectrum = true;
@@ -2119,6 +2403,19 @@ app.registerExtension({
         renderLeft();
         return true;
       };
+
+      // Preset save / manage dialogs. They persist through the same config route the
+      // model pickers use, so a saved preset is not lost with the browser's storage.
+      presetDlgs = createPresetDialogs(root, {
+        getUserPresets: () => (Array.isArray(state.userPresets) ? state.userPresets.slice() : []),
+        setUserPresets: (arr) => {
+          state.userPresets = arr;
+          persist();
+          saveConfig({ user_presets: arr }).catch(() => {});
+          renderLeft();
+        },
+        captureAxes: () => captureAxes(state),
+      });
 
       galleryOv = createGalleryOverlay(state, ctx);
       root.appendChild(galleryOv.el);

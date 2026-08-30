@@ -45,8 +45,8 @@ export const MMH3_OPTIONAL_NODES = [
   "ModelAttentionBackend", "H3SLAAttention", "TJ_FreeTextEncoderVRAM",
   // Saganaki22/ComfyUI-sol-attn — H3-specific sparse attention + AdaLN fusion
   "MiniMaxH3ScheduledSolAttentionPatch", "MiniMaxH3FusedModulation",
-  "MiniMaxH3TurboSampler", "MiniMaxH3TurboLoRA", "SolAttnPatch",
-  "SpectrumApplyMiniMaxH3", "RTXVideoSuperResolution",
+  "MiniMaxH3TurboSampler", "MiniMaxH3TurboLoRA", "MiniMaxH3PDDAccApply", "SolAttnPatch",
+  "SpectrumApplyMiniMaxH3", "RTXVideoSuperResolution", "TJ_RTXDeblur",
   // gallery post-processing — upscale / frame interpolation on a finished clip
   "UpscaleModelLoader", "ImageUpscaleWithModel", "RIFEInterpolation",
   // reference video / audio inputs
@@ -281,23 +281,6 @@ export async function stitchClips(clips, filenamePrefix, trimSeconds, overlapSec
   return d;
 }
 
-// ── Ollama prompt enhance (proxied through the node's backend) ────────────────
-// These routes were added after the node itself, so a ComfyUI that hasn't been
-// restarted since the update answers 404 — say so plainly rather than blaming Ollama.
-const RESTART_HINT = "restart ComfyUI to enable Ollama enhance (new backend route)";
-
-export async function getOllamaModels(serverUrl) {
-  try {
-    const q = serverUrl ? `?server_url=${encodeURIComponent(serverUrl)}` : "";
-    const r = await api.fetchApi(`${API}/llm/ollama_models${q}`);
-    if (r.status === 404) return { ok: false, models: [], error: RESTART_HINT, needsRestart: true };
-    return await r.json();
-  } catch (e) {
-    return { ok: false, models: [], error: String(e) };
-  }
-}
-
-/** The MiniMax H3 brief-writing instruction (from TJ_NODE when installed). */
 export async function getSystemPrompt(name = "minimax") {
   try {
     const r = await api.fetchApi(`${API}/llm/system_prompt?name=${encodeURIComponent(name)}`);
@@ -561,4 +544,25 @@ export async function writeBriefNative(clipName, systemPrompt, userPrompt) {
   const text = res.byNode?.out?.text?.[0];
   if (!text) throw new Error("native brief writer produced no text");
   return text;
+}
+
+
+/**
+ * Which of these input-folder filenames are gone.
+ *
+ * Asked as one request rather than a HEAD per file: a prompt set can reference a dozen
+ * assets across its clips, and a load should not cost a dozen round trips.
+ */
+export async function missingInputFiles(names) {
+  const list = [...new Set((names || []).filter(Boolean))];
+  if (!list.length) return [];
+  try {
+    const r = await api.fetchApi("/tj_shared/input_exists", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ names: list }),
+    });
+    if (!r.ok) return [];
+    return (await r.json()).missing || [];
+  } catch { return []; }
 }

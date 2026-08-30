@@ -6,9 +6,13 @@
 //
 // The brief-writing instruction is the same "Minimax H3 (Video)" system prompt TJ_NODE
 // ships, fetched from the backend (with a built-in fallback when TJ_NODE isn't present).
-import { C, BRAND, el, clear, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt, IMAGE_BRIEF_MODES, imageBriefMax, promptText, promptFirstFrame, promptEnabled } from "./core_minimax.js";
+import { C, BRAND, el, clear, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt, IMAGE_BRIEF_MODES, imageBriefMax, promptText, promptFirstFrame, promptEnabled, syncImageLists, clipAssets, clipFraming, promptOverrides } from "./core_minimax.js";
 import { panel, label, button, select, row, col } from "../klein/ui_common.js";
-import { getOllamaModels, getSystemPrompt, enhancePrompt, uploadImage, uploadMedia, analyzeImagesNative, writeBriefNative, listPromptSets, getPromptSet, savePromptSet, deletePromptSet } from "./api_minimax.js";
+import { buildClipMediaSlots } from "./ui_clip_media_slots.js";
+import { openVideoGalleryPicker } from "./ui_video_picker_minimax.js";
+import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
+import { ask } from "../shared/ui_ask.js";
+import { getMediaFiles, getSystemPrompt, uploadImage, uploadMedia, analyzeImagesNative, writeBriefNative, listPromptSets, getPromptSet, savePromptSet, deletePromptSet, missingInputFiles } from "./api_minimax.js";
 
 // A prompt entry may still arrive as a plain string (mid-migration data); normalize once.
 function normPrompt(p) {
@@ -28,10 +32,10 @@ export function createPromptEditOverlay(state, ctx, onApply) {
   }});
 
   let selected = 0;
+  // Filenames the loader nodes accept, for the per-clip video/audio pickers.
+  let mediaFiles = { videos: [], audios: [] };
   let systemPrompt = "";
   let systemPromptSource = "";
-  let ollamaModels = [];
-  let needsRestart = false;
   let busy = false;
 
   // ── undo ───────────────────────────────────────────────────────────────────
@@ -169,23 +173,69 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     }
   }
 
+  /**
+   * After a load, check every referenced file and say what is gone.
+   *
+   * Quietly leaving a blank slot loses the only record that something was ever there —
+   * you cannot tell a set that used three pictures from one that used none. So the names
+   * are kept, the tiles draw a ghost in place of the missing thumbnail, and the popup
+   * says how many and which.
+   */
+  async function reportMissingAssets(setName) {
+    const names = [];
+    const addMedia = (arr) => (arr || []).forEach(m => m && m.file && names.push(m.file));
+    names.push(...(state.refImages || []).filter(Boolean));
+    if (state.firstFrameImage) names.push(state.firstFrameImage);
+    if (state.lastFrameImage) names.push(state.lastFrameImage);
+    addMedia(state.refVideos); addMedia(state.refAudios);
+    (state.prompts || []).forEach(p => {
+      if (typeof p === "string") return;
+      names.push(...(p.refImages || []).filter(Boolean));
+      if (p.firstFrame) names.push(p.firstFrame);
+      if (p.lastFrame) names.push(p.lastFrame);
+      addMedia(p.refVideos); addMedia(p.refAudios);
+    });
+    const gone = await missingInputFiles(names);
+    state.missingAssets = gone;
+    renderImageRow(); ctx.refreshModes?.();
+    if (!gone.length) return;
+    const shown = gone.slice(0, 4).join(", ");
+    ctx.showPopup?.(
+      `"${setName}" refers to ${gone.length} file${gone.length > 1 ? "s" : ""} that are no longer in the input folder: ` +
+      `${shown}${gone.length > 4 ? `, and ${gone.length - 4} more` : ""}. ` +
+      `Their slots are marked — re-add them or clear the slot.`, true);
+  }
+
   setLoadBtn.addEventListener("click", async () => {
     const name = setsSel.value;
     if (!name) return;
     try {
       const s = await getPromptSet(name);
       snapshot(`load set: ${name}`);
+      // Whole entries, not three fields: dropping override/refImages here is what made a
+      // loaded set come back without its pictures.
       state.prompts = (Array.isArray(s.prompts) && s.prompts.length ? s.prompts : [{ text: "", firstFrame: "", enabled: true }])
-        .map(p => (typeof p === "string" ? { text: p, firstFrame: "", enabled: true }
-                                          : { text: p?.text || "", firstFrame: p?.firstFrame || "", enabled: p?.enabled !== false }));
+        .map(p => (typeof p === "string"
+          ? { text: p, firstFrame: "", enabled: true }
+          : { ...p, text: p?.text || "", firstFrame: p?.firstFrame || "", enabled: p?.enabled !== false }));
       state.promptHeader = s.promptHeader || "";
       state.promptFooter = s.promptFooter || "";
+      // Only restore the common assets when the set actually carries them, so an older
+      // set saved before this existed does not wipe what is on screen.
+      if (Array.isArray(s.refImages))   state.refImages   = s.refImages.slice();
+      if (Array.isArray(s.refImagesMp)) state.refImagesMp = s.refImagesMp.slice();
+      if (Array.isArray(s.refVideos))   state.refVideos   = s.refVideos.map(v => ({ ...v }));
+      if (Array.isArray(s.refAudios))   state.refAudios   = s.refAudios.map(a => ({ ...a }));
+      if (typeof s.firstFrameImage === "string") state.firstFrameImage = s.firstFrameImage;
+      if (typeof s.lastFrameImage === "string")  state.lastFrameImage  = s.lastFrameImage;
+      if (s.refTypes && typeof s.refTypes === "object") state.refTypes = { ...s.refTypes };
       selected = 0;
       ctx.persist();
       renderAll();
       const framesNote = (s.clipFrames && s.clipFrames !== state.clipFrames)
         ? ` — saved at a different clip length (${s.clipFrames} frames vs current ${state.clipFrames})` : "";
       ctx.showPopup?.(`Loaded "${name}"${framesNote}`, false);
+      reportMissingAssets(name);
     } catch (e) {
       ctx.showPopup?.(`Load failed: ${e.message || e}`, true);
     }
@@ -193,19 +243,37 @@ export function createPromptEditOverlay(state, ctx, onApply) {
 
   setSaveBtn.addEventListener("click", async () => {
     const existing = setsSel.value && setsSel.options.length && setsSel.value !== "" ? setsSel.value : "";
-    const name = window.prompt("Save this prompt set as:", existing || "");
+    // window.prompt / confirm are suppressed in ComfyUI's frontend: the handler stopped
+    // here and the button looked dead. These draw in the page instead.
+    const name = await ask(ov, {
+      title: "Save prompt set",
+      message: "Saves these prompts with their reference images, video and audio.",
+      initial: existing || "", okLabel: "Save",
+    });
     if (name == null) return;
     const trimmed = name.trim();
     if (!trimmed) { ctx.showPopup?.("Name can't be empty.", true); return; }
     const willOverwrite = [...setsSel.options].some(o => o.value === trimmed);
-    if (willOverwrite && !confirm(`"${trimmed}" already exists — overwrite it?`)) return;
+    if (willOverwrite && !(await ask(ov, {
+      title: "Overwrite prompt set?", message: `"${trimmed}" already exists.`,
+      kind: "confirm", okLabel: "Overwrite", danger: true }))) return;
     try {
+      // The pictures and clips are as much a part of a prompt set as the words: a set that
+      // restores the text but not the references reproduces nothing in Reference mode.
       await savePromptSet({
         name: trimmed,
         clipFrames: state.clipFrames,
         promptHeader: state.promptHeader || "",
         promptFooter: state.promptFooter || "",
         prompts: (state.prompts || []).map(p => (typeof p === "string" ? { text: p, firstFrame: "", enabled: true } : p)),
+        generationMode:  state.generationMode || "",
+        refTypes:        { ...(state.refTypes || {}) },
+        refImages:       (state.refImages || []).slice(),
+        refImagesMp:     (state.refImagesMp || []).slice(),
+        firstFrameImage: state.firstFrameImage || "",
+        lastFrameImage:  state.lastFrameImage || "",
+        refVideos:       (state.refVideos || []).map(v => ({ ...v })),
+        refAudios:       (state.refAudios || []).map(a => ({ ...a })),
       });
       await refreshSetsList(trimmed);
       ctx.showPopup?.(`Saved "${trimmed}".`, false);
@@ -217,7 +285,10 @@ export function createPromptEditOverlay(state, ctx, onApply) {
   setDelBtn.addEventListener("click", async () => {
     const name = setsSel.value;
     if (!name) return;
-    if (!confirm(`Delete "${name}"? This can't be undone.`)) return;
+    if (!(await ask(ov, {
+      title: "Delete prompt set", message: `"${name}" will be removed.
+This cannot be undone.`,
+      kind: "confirm", okLabel: "Delete", danger: true }))) return;
     try {
       await deletePromptSet(name);
       await refreshSetsList();
@@ -231,28 +302,59 @@ export function createPromptEditOverlay(state, ctx, onApply) {
   // These go into every clip, so they're edited once and kept out of the split.
   function commonField(placeholder, get, set) {
     const ta = el("textarea", { placeholder, style: {
-      width: "100%", boxSizing: "border-box", minHeight: "90px", maxHeight: "150px",
+      width: "100%", boxSizing: "border-box", flexShrink: "0",
+      minHeight: "104px", maxHeight: "320px",
       background: C.bg2, color: C.text, border: `1px solid ${C.border}`, borderRadius: "6px",
       padding: "6px 8px", fontSize: "11.5px", lineHeight: "1.5", fontFamily: "inherit",
-      outline: "none", resize: "vertical",
+      outline: "none", resize: "vertical", overflowY: "auto",
     }});
+    // Grow to the text instead of scrolling a fixed box. A header long enough to matter is
+    // the normal case here, and reading it four lines at a time through a scrollbar — while
+    // the empty tail box beside it sits the same size — was the actual complaint.
+    ta.autoSize = () => {
+      ta.style.height = "auto";
+      ta.style.height = Math.max(104, Math.min(320, ta.scrollHeight + 2)) + "px";
+    };
     ta.value = get() || "";
-    ta.addEventListener("input", () => { set(ta.value); ctx.persist(); refreshPreviewTag(); });
+    ta.addEventListener("input", () => { set(ta.value); ta.autoSize(); ctx.persist(); refreshPreviewTag(); });
     ta.addEventListener("focus", () => ta.style.borderColor = BRAND);
     ta.addEventListener("blur",  () => ta.style.borderColor = C.border);
     return ta;
   }
-  const headerTA = commonField("Common opening — visual style, grade, opening composition… (sent with every clip)",
-    () => state.promptHeader, v => state.promptHeader = v);
-  const footerTA = commonField("Common tail — Ambient sound: … / Music: … (sent with every clip)",
-    () => state.promptFooter, v => state.promptFooter = v);
+  // Both fields write to whichever pair the selected clip actually renders with: the
+  // common one, or that clip's own when its override is on. clipFraming() is the single
+  // resolver, so the editor cannot disagree with what composeClipPrompt() sends.
+  const ownFraming = () => promptOverrides((state.prompts || [])[selected]);
+  const framingTarget = () => (ownFraming() ? (state.prompts[selected]) : state);
+  const headerTA = commonField("Opening — visual style, grade, opening composition…",
+    () => clipFraming(state, selected).header,
+    v => { const t = framingTarget(); if (ownFraming()) t.header = v; else t.promptHeader = v; });
+  const footerTA = commonField("Tail — Ambient sound: … / Music: …",
+    () => clipFraming(state, selected).footer,
+    v => { const t = framingTarget(); if (ownFraming()) t.footer = v; else t.promptFooter = v; });
+
+  const headerLbl = el("div", { text: "COMMON — HEADER", style: { color: C.muted, fontSize: "9.5px", letterSpacing: "0.06em" } });
+  const footerLbl = el("div", { text: "COMMON — SOUND / MUSIC", style: { color: C.muted, fontSize: "9.5px", letterSpacing: "0.06em" } });
+
+  /** Repoint both boxes at the selected clip — call after switching clip or toggling override. */
+  function refreshFraming() {
+    const own = ownFraming();
+    headerTA.value = clipFraming(state, selected).header || "";
+    footerTA.value = clipFraming(state, selected).footer || "";
+    headerLbl.textContent = own ? "THIS CLIP — HEADER" : "COMMON — HEADER";
+    footerLbl.textContent = own ? "THIS CLIP — SOUND / MUSIC" : "COMMON — SOUND / MUSIC";
+    headerLbl.style.color = own ? BRAND : C.muted;
+    footerLbl.style.color = own ? BRAND : C.muted;
+    headerTA.autoSize(); footerTA.autoSize();
+    refreshPreviewTag();
+  }
 
   const commonWrap = el("div", { style: { flexShrink: "0", display: "flex", gap: "8px" } });
   commonWrap.append(
     el("div", { style: { flex: "1", display: "flex", flexDirection: "column", gap: "3px" } },
-      [el("div", { text: "COMMON — HEADER", style: { color: C.muted, fontSize: "9.5px", letterSpacing: "0.06em" } }), headerTA]),
+      [headerLbl, headerTA]),
     el("div", { style: { flex: "1", display: "flex", flexDirection: "column", gap: "3px" } },
-      [el("div", { text: "COMMON — SOUND / MUSIC", style: { color: C.muted, fontSize: "9.5px", letterSpacing: "0.06em" } }), footerTA]),
+      [footerLbl, footerTA]),
   );
 
   // ── body: clip list | editor ───────────────────────────────────────────────
@@ -399,7 +501,13 @@ export function createPromptEditOverlay(state, ctx, onApply) {
         if (selected >= state.prompts.length) selected = state.prompts.length - 1;
         ctx.persist(); renderList(); loadSelected();
       });
-      item.addEventListener("click", () => { selected = i; renderList(); loadSelected(); });
+      // renderImageRow too: the attach area belongs to whichever clip is selected, so
+      // switching clips has to swap which set it is showing and editing.
+      item.addEventListener("click", () => {
+        selected = i;
+        renderList(); loadSelected(); renderImageRow();
+        refreshFraming();   // the two boxes belong to the clip, not to the panel
+      });
       item.append(cb, num, prev, del);
       listBox.appendChild(item);
     });
@@ -423,9 +531,13 @@ export function createPromptEditOverlay(state, ctx, onApply) {
   });
 
   // ── Ollama enhance bar ─────────────────────────────────────────────────────
+  // Capped and scrolled rather than left to grow: with nine image slots plus the per-clip
+  // media pickers this block ran to a third of the panel, and every pixel it took came out
+  // of the clip editor above it — the one box the user is actually typing in.
   const enhWrap = el("div", { style: {
     flexShrink: "0", background: C.bg1, border: `1px solid ${C.border}`,
     borderRadius: "8px", padding: "9px 10px", display: "flex", flexDirection: "column", gap: "7px",
+    maxHeight: "330px", overflowY: "auto",
   }});
 
   const enhTop = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } });
@@ -456,6 +568,10 @@ export function createPromptEditOverlay(state, ctx, onApply) {
   const targetSel = select(
     [{ value: "one", label: "→ this clip" }, { value: "all", label: "→ split into all clips" }],
     "one", () => {});
+  // The shared select() is width:100%; here it shares one bar with the length field and
+  // the Enhance button, so it takes only what its label needs.
+  targetSel.style.width = "auto";
+  targetSel.style.flexShrink = "0";
   const enhBtn = el("button", { type: "button", style: {
     cursor: "pointer", fontFamily: "inherit", fontSize: "12px", padding: "7px 16px",
     borderRadius: "6px", background: BRAND, color: "#fff", border: "none", fontWeight: "700",
@@ -501,12 +617,49 @@ export function createPromptEditOverlay(state, ctx, onApply) {
   function renderImageRow() {
     clear(imgRow);
     imgRow.style.flexDirection = "column"; imgRow.style.alignItems = "stretch"; imgRow.style.gap = "6px";
-    imgRow.style.display = enhMode === "image" ? "flex" : "none";
+    imgRow._flow = enhMode === "image" ? "flex" : "none";
+    imgRow.style.display = state.enhCollapsed ? "none" : imgRow._flow;
     if (enhMode !== "image") return;
 
-    if (!state.ollamaImages) state.ollamaImages = [];
-    const max = imageBriefMax(state.ollamaImageMode);
-    if (state.ollamaImages.length > max) { state.ollamaImages.length = max; ctx.persist(); }
+    // One attach area, two possible owners. Unticked it edits the panel's common
+    // references - the set every other clip also renders with - and ticked it edits this
+    // clip's own. The heading says which, because an attach area that silently belongs to
+    // something else is how a whole run gets rendered with the wrong pictures.
+    const p = (state.prompts || [])[selected] || {};
+    const own = !!p.override;
+    const list = () => (own ? (p.refImages ||= []) : (state.refImages ||= []));
+    const mpList = () => (own ? (p.refImagesMp ||= []) : (state.refImagesMp ||= []));
+    const commit = () => {
+      if (!own) syncImageLists(state, "ref");
+      ctx.persist(); renderImageRow(); ctx.refreshModes?.();
+    };
+
+    const head = el("div", { style: { display: "flex", alignItems: "center", gap: "8px" } });
+    const chk = el("input", { type: "checkbox" });
+    chk.checked = own; chk.style.cursor = "pointer";
+    chk.addEventListener("change", () => {
+      p.override = chk.checked;
+      // Starting from the common set is the useful default: an override almost always
+      // means "these, but swap one", not "start from nothing".
+      if (chk.checked && !(p.refImages || []).length) {
+        p.refImages = (state.refImages || []).slice();
+        p.refImagesMp = (state.refImagesMp || []).slice();
+      }
+      // The header and the sound/music tail describe the scene the images establish, so
+      // they follow the override too — seeded from the common pair the first time, which
+      // gives the user something to edit rather than two empty boxes.
+      if (chk.checked && !p.header && !p.footer) {
+        p.header = state.promptHeader || "";
+        p.footer = state.promptFooter || "";
+      }
+      ctx.persist(); renderImageRow(); refreshFraming(); ctx.refreshModes?.();
+    });
+    head.append(
+      el("div", { text: own ? "This clip only" : "Common (shared by all clips)",
+        style: { fontSize: "11px", fontWeight: "700", color: own ? BRAND : C.text, flex: "1" } }),
+      el("label", { style: { display: "flex", alignItems: "center", gap: "5px", fontSize: "10.5px",
+        color: C.text, cursor: "pointer" } }, [chk, el("span", { text: "override for this clip" })]),
+    );
 
     const modeRow = el("div", { style: { display: "flex", gap: "4px" } });
     IMAGE_BRIEF_MODES.forEach(m => {
@@ -517,25 +670,52 @@ export function createPromptEditOverlay(state, ctx, onApply) {
         background: active ? BRAND : C.bg2, color: "#fff",
         border: `1px solid ${active ? BRAND : C.border}`,
       }});
-      b.addEventListener("click", () => {
-        state.ollamaImageMode = m.key;
-        const cap = imageBriefMax(m.key);
-        if (state.ollamaImages.length > cap) state.ollamaImages.length = cap;
-        ctx.persist(); renderImageRow();
-      });
+      b.addEventListener("click", () => { state.ollamaImageMode = m.key; ctx.persist(); renderImageRow(); });
       modeRow.appendChild(b);
     });
 
-    const grid = el("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } });
+    // One row, nine slots — wrapping put the tail of the set on a second line and pushed
+    // the media columns beside it down with it.
+    const grid = el("div", { style: { display: "flex", gap: "6px", flexWrap: "nowrap" } });
     function slot(i) {
-      const name = state.ollamaImages[i];
+      const name = list()[i];
       const box = el("div", { style: {
-        position: "relative", width: "54px", height: "54px", flexShrink: "0",
-        background: "#000", borderRadius: "6px", border: `1px solid ${C.border}`,
-        cursor: name ? "default" : "pointer", overflow: "hidden",
-        display: "flex", alignItems: "center", justifyContent: "center",
+        width: "54px", height: "54px", borderRadius: "6px", border: `1px solid ${C.border}`,
+        background: "#000", position: "relative", overflow: "hidden", cursor: "pointer",
+        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0",
       }});
-      if (name) {
+      const isGone = (state.missingAssets || []).includes(name);
+      if (name && isGone) {
+        // A ghost, not an empty slot: the set used a picture here and the only way to
+        // know that — and which one — is to keep saying so.
+        box.style.border = `1px dashed ${C.warn}`;
+        box.style.background = "#1a1206";
+        box.appendChild(el("div", { title: `Missing from the input folder:
+${name}`, style: {
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          gap: "1px", width: "100%", height: "100%", padding: "2px", boxSizing: "border-box",
+        }}, [
+          el("div", { text: "⚠", style: { fontSize: "13px", color: C.warn, lineHeight: "1" } }),
+          el("div", { text: name, style: {
+            fontSize: "6.5px", color: C.warn, lineHeight: "1.1", textAlign: "center",
+            overflow: "hidden", wordBreak: "break-all", maxHeight: "22px" } }),
+        ]));
+        box.appendChild(el("div", { text: String(i + 1), style: {
+          position: "absolute", top: "1px", left: "3px", fontSize: "9px", fontWeight: "700",
+          color: C.warn, textShadow: "0 0 3px #000", pointerEvents: "none" } }));
+        // Still removable: a ghost is a prompt to act, not a slot you are stuck with.
+        const gx = el("button", { type: "button", text: "✕", title: "Remove this missing entry", style: {
+          position: "absolute", top: "0", right: "0", cursor: "pointer", fontSize: "10px",
+          background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", padding: "1px 4px", zIndex: "3",
+        }});
+        gx.addEventListener("click", e => {
+          e.stopPropagation();
+          list().splice(i, 1); mpList().splice(i, 1);
+          state.missingAssets = (state.missingAssets || []).filter(x => x !== name);
+          commit();
+        });
+        box.appendChild(gx);
+      } else if (name) {
         box.appendChild(el("img", { src: `/view?filename=${encodeURIComponent(name)}&type=input&t=${Date.now()}`,
           style: { width: "100%", height: "100%", objectFit: "cover" } }));
         box.appendChild(el("div", { text: String(i + 1), style: {
@@ -545,16 +725,32 @@ export function createPromptEditOverlay(state, ctx, onApply) {
           position: "absolute", top: "0", right: "0", cursor: "pointer", fontSize: "10px",
           background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", padding: "1px 4px",
         }});
-        x.addEventListener("click", e => { e.stopPropagation(); state.ollamaImages.splice(i, 1); ctx.persist(); renderImageRow(); });
+        x.addEventListener("click", e => {
+          e.stopPropagation();
+          list().splice(i, 1); mpList().splice(i, 1);
+          commit();
+        });
         box.appendChild(x);
       } else {
         box.appendChild(el("div", { text: "+img", style: { color: C.muted, fontSize: "10px", pointerEvents: "none" } }));
         const inp = el("input", { type: "file", accept: "image/*", style: { display: "none" } });
-        async function take(f) {
-          if (!f) return;
-          const uploaded = await uploadImage(f);
-          state.ollamaImages[i] = uploaded; ctx.persist(); renderImageRow();
+        async function take(f, picked) {
+          if (!f && !picked) return;
+          const uploaded = picked || await uploadImage(f);
+          list()[i] = uploaded;
+          mpList()[i] = mpList()[i] ?? 1.0;
+          commit();
         }
+        const galBtn = el("button", { type: "button", text: "🖼", title: "Pick from a gallery", style: {
+          position: "absolute", bottom: "1px", left: "1px", zIndex: "3",
+          background: "rgba(0,0,0,0.7)", color: "#fff", border: "none", borderRadius: "3px",
+          width: "16px", height: "16px", cursor: "pointer", fontSize: "9px", padding: "0",
+        }});
+        galBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openImageGalleryPicker(async (filename) => { await take(null, filename); });
+        });
+        box.appendChild(galBtn);
         box.addEventListener("click", () => inp.click());
         inp.addEventListener("change", async () => { await take(inp.files[0]); inp.value = ""; });
         box.addEventListener("dragover",  e => { e.preventDefault(); box.style.borderColor = BRAND; });
@@ -564,91 +760,141 @@ export function createPromptEditOverlay(state, ctx, onApply) {
       }
       return box;
     }
-    // one slot per filled image, plus one empty slot to add the next — up to the cap
-    const filled = state.ollamaImages.length;
+    // Attach holds up to the render limit; the brief modes cap how many of them the
+    // vision model is shown, and it reads from the front of the list.
+    const filled = list().filter(Boolean).length;
     for (let i = 0; i < filled; i++) grid.appendChild(slot(i));
-    if (filled < max) grid.appendChild(slot(filled));
+    if (filled < 9) grid.appendChild(slot(filled));
 
+    const visionCap = imageBriefMax(state.ollamaImageMode);
     const note = el("div", { style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } });
     note.innerHTML = filled
-      ? `${filled}/${max} image${max > 1 ? "s" : ""} — analyzed one at a time by the <b>vision model</b>, then written into a brief by the <b>brief model</b> (both set in ⚙ Settings).`
-      : `Add up to ${max} image${max > 1 ? "s" : ""}. Needs a <b>vision model</b> set in ⚙ Settings.`;
+      ? `${filled}/9 images for this clip. Enhance reads the first `
+        + `<b>${Math.min(filled, visionCap)}</b> (brief mode cap: ${visionCap}).`
+      : `Add up to 9. Enhance reads the first ${visionCap}, per the brief mode above.`;
 
-    imgRow.append(modeRow, grid, note);
+    // The mode buttons sit inside the image column, and every media column's caption is
+    // the first row of its own column, all at this height — that is what puts each set of
+    // thumbnails on the same line. Declared here because the media builder below reads it.
+    const HEAD_H = "24px";
+
+    // Reference video / audio, override only. They are render inputs, never shown to the
+    // vision model: feeding clips to it would restrict which model can be used and cost
+    // far more time, for something that helps write a prompt rather than make the video.
+    const mediaRow = el("div", { style: {
+      display: own ? "flex" : "none", gap: "14px", alignItems: "flex-start", flexWrap: "wrap" } });
+    if (own) {
+      // The same slots the left panel uses, pointed at this clip's own arrays: file picker,
+      // upload, in/out seconds, source facts, soundtrack checkbox. A single dropdown could
+      // only ever hold one file and dropped the trim window the render actually needs.
+      const mk = (labelText, list, kind) => {
+        const wrap = el("div", { style: {
+          display: "flex", flexDirection: "column", gap: "5px", flex: "0 0 auto" } });
+        wrap.style.marginRight = "6px";
+        wrap.appendChild(el("div", { text: labelText, style: {
+          fontSize: "10px", color: C.muted, height: HEAD_H,
+          display: "flex", alignItems: "center" } }));
+        wrap.appendChild(buildClipMediaSlots(kind, list, ctx, renderImageRow,
+          kind === "video" ? (onPick => openVideoGalleryPicker(onPick)) : null,
+          state.missingAssets));
+        return wrap;
+      };
+      mediaRow.append(
+        mk("Reference video (this clip)", p.refVideos ||= [], "video"),
+        mk("Reference audio (this clip)", p.refAudios ||= [], "audio"),
+      );
+    }
+
+    // Images, reference video and reference audio share one horizontal band: the image
+    // grid is widest (it has to hold nine slots without wrapping), the two media columns
+    // take what is left. Stacking them made this block tall enough to push the clip
+    // editor off the panel.
+    const assetBand = el("div", { style: {
+      display: "flex", gap: "22px", alignItems: "stretch", width: "100%" } });
+    // Fixed to the full nine slots (9 x 54px + 8 x 6px gaps) rather than sized to how many
+    // images happen to be attached: otherwise the video and audio columns slide left and
+    // right every time a picture is added or removed, and nothing beside it holds still.
+    const imgCol = el("div", { style: {
+      display: "flex", flexDirection: "column", gap: "5px",
+      width: "534px", flex: "0 0 534px" } });
+    modeRow.style.height = HEAD_H;
+    modeRow.style.alignItems = "center";
+    // marginTop:auto pushes the model line to the foot of the column, so its baseline
+    // matches the "has audio" line at the foot of the media columns. Left in its own row
+    // underneath, it added height the panel did not have and clipped the buttons below.
+    modelSelWrap.style.marginTop = "auto";
+    modelSelWrap.style.paddingTop = "4px";
+    imgCol.append(modeRow, grid, note, modelSelWrap);
+    assetBand.append(imgCol);
+    if (own) assetBand.append(mediaRow);
+    imgRow.append(head, assetBand);
   }
 
-  const enhBottom = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } });
-  enhBottom.append(modelSelWrap, targetSel,
-    el("div", { text: "Length", style: { fontSize: "11px", color: C.muted } }), lenIn, lenTag,
-    enhBtn);
+
+  const enhBottom = el("div", { style: {
+    display: "flex", alignItems: "center", gap: "10px", flexWrap: "nowrap" } });
+  lenTag.style.flex = "1";          // takes the slack, so Enhance stays hard right
+  enhBtn.style.flexShrink = "0";
+  enhBottom.append(targetSel,
+    el("div", { text: "Length", style: { fontSize: "11px", color: C.muted, flexShrink: "0" } }),
+    lenIn, lenTag, enhBtn);
   enhWrap.append(enhTop, imgRow, enhBottom);
 
-  function isNativeSource() { return (state.visionSource || "ollama") === "native"; }
+  // ── collapse ───────────────────────────────────────────────────────────────
+  // Folded away, the whole block is one bar at the foot of the panel and every pixel it
+  // was using goes back to the editor above — which is the point of collapsing it while
+  // writing a long prompt. The state is remembered so it does not spring open each time.
+  const enhBody = [imgRow, enhBottom];
+  const collapseBtn = el("button", { type: "button", title: "Collapse / expand", style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "11px", lineHeight: "1",
+    padding: "2px 7px", borderRadius: "5px", background: "transparent", color: C.muted,
+    border: `1px solid ${C.border}`, flexShrink: "0",
+  }});
+  function applyEnhCollapsed() {
+    const off = !!state.enhCollapsed;
+    enhBody.forEach(nEl => { nEl.style.display = off ? "none" : (nEl === imgRow ? imgRow._flow : "flex"); });
+    collapseBtn.textContent = off ? "▸" : "▾";
+    // Released height goes to the editor, not to empty space under the block.
+    enhWrap.style.maxHeight = off ? "none" : "330px";
+    enhWrap.style.overflowY = off ? "visible" : "auto";
+  }
+  collapseBtn.addEventListener("click", () => {
+    state.enhCollapsed = !state.enhCollapsed;
+    ctx.persist(); applyEnhCollapsed();
+  });
+  enhTop.insertBefore(collapseBtn, enhTop.firstChild);
 
   function renderModelSel() {
     clear(modelSelWrap);
-    if (isNativeSource()) {
-      const needImage = enhMode === "image";
-      const briefOk = !!state.nativeBriefClip;
-      const visionOk = !needImage || !!state.nativeVisionClip;
-      if (!briefOk || !visionOk) {
-        modelSelWrap.appendChild(el("div", {
-          text: !briefOk ? "No brief CLIP set — pick one in ⚙ Settings → Sampling."
-                         : "No vision CLIP set — pick one in ⚙ Settings → Sampling.",
-          style: { fontSize: "10.5px", color: C.warn },
-        }));
-        return;
-      }
-      const line = needImage
-        ? `Brief: ${state.nativeBriefClip}  ·  Vision: ${state.nativeVisionClip}`
-        : `Brief: ${state.nativeBriefClip}`;
+    const needImage = enhMode === "image";
+    const briefOk = !!state.nativeBriefClip;
+    const visionOk = !needImage || !!state.nativeVisionClip;
+    if (!briefOk || !visionOk) {
       modelSelWrap.appendChild(el("div", {
-        text: line,
-        title: "Change these in ⚙ Settings → Sampling → Image → Brief — vision source",
-        style: { fontSize: "10px", color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
-      }));
-      return;
-    }
-    if (!ollamaModels.length) {
-      modelSelWrap.appendChild(el("div", {
-        text: needsRestart ? "restart ComfyUI to enable Enhance"
-                           : "no Ollama models — check the server URL in ⚙ Settings",
+        text: !briefOk ? "No brief CLIP set - pick one in Settings -> LLM Setting."
+                       : "No vision CLIP set - pick one in Settings -> LLM Setting.",
         style: { fontSize: "10.5px", color: C.warn },
       }));
       return;
     }
-    if (!state.ollamaModel || !ollamaModels.includes(state.ollamaModel)) state.ollamaModel = ollamaModels[0];
-    modelSelWrap.appendChild(select(
-      ollamaModels.map(m => ({ value: m, label: m })),
-      state.ollamaModel, v => { state.ollamaModel = v; ctx.persist(); }));
+    modelSelWrap.appendChild(el("div", {
+      text: needImage
+        ? `Brief: ${state.nativeBriefClip}  .  Vision: ${state.nativeVisionClip}`
+        : `Brief: ${state.nativeBriefClip}`,
+      title: "Change these in Settings -> LLM Setting",
+      style: { fontSize: "10px", color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+    }));
   }
 
-  // Prompt Edit must reflect whichever source Settings currently has picked — it used to
-  // always show the Ollama bar and model dropdown even with Native selected, which left no
-  // way to tell (or change) which pipeline Enhance would actually run.
+  // One backend now: the external Ollama server was removed on 2026-08-31, so there is no
+  // source to choose between and nothing to connect to before the bar can be drawn.
   function refreshSourceUI() {
-    const native = isNativeSource();
-    enhTitle.textContent = native ? "LOCAL ENHANCE (native CLIP)" : "OLLAMA ENHANCE";
-    if (native) {
-      statusTag.textContent = "runs through ComfyUI's own model loading — no external server";
-      statusTag.style.color = C.muted;
-      renderModelSel();
-    } else {
-      refreshOllama();
-    }
-  }
-
-  async function refreshOllama() {
-    statusTag.textContent = "connecting to Ollama…";
-    const d = await getOllamaModels(state.ollamaUrl);
-    ollamaModels = d.models || [];
-    needsRestart = !!d.needsRestart;
-    statusTag.textContent = d.ok
-      ? `${ollamaModels.length} model${ollamaModels.length === 1 ? "" : "s"} · ${d.server_url}`
-      : `⚠ ${String(d.error || "unreachable").slice(0, 80)}`;
-    statusTag.style.color = d.ok ? C.muted : C.warn;
+    enhTitle.textContent = "LOCAL ENHANCE (native CLIP)";
+    statusTag.textContent = "runs through ComfyUI's own model loading - no external server";
+    statusTag.style.color = C.muted;
     renderModelSel();
   }
+
 
   async function loadSystemPrompt() {
     const d = await getSystemPrompt("minimax");
@@ -744,16 +990,14 @@ export function createPromptEditOverlay(state, ctx, onApply) {
 
   enhBtn.addEventListener("click", async () => {
     if (busy) return;
-    const native = (state.visionSource || "ollama") === "native";
-    const images = enhMode === "image" ? (state.ollamaImages || []).filter(Boolean) : [];
-
-    if (native) {
-      if (!state.nativeBriefClip) { ctx.showPopup?.("No brief CLIP set — pick one in ⚙ Settings.", true); return; }
-      if (images.length && !state.nativeVisionClip) { ctx.showPopup?.("No vision CLIP set — pick one in ⚙ Settings.", true); return; }
-    } else {
-      if (!state.ollamaModel) { ctx.showPopup?.("No brief model set — pick one in ⚙ Settings.", true); return; }
-      if (images.length && !state.ollamaVisionModel) { ctx.showPopup?.("No vision model set — pick one in ⚙ Settings.", true); return; }
-    }
+    // Same resolver the render loop uses, so Enhance always looks at the pictures this
+    // clip will actually be made from — the override set when it has one.
+    const a = clipAssets(state, selected);
+    const images = enhMode === "image"
+      ? a.refImages.slice(0, imageBriefMax(state.ollamaImageMode))
+      : [];
+    if (!state.nativeBriefClip) { ctx.showPopup?.("No brief CLIP set - pick one in Settings.", true); return; }
+    if (images.length && !state.nativeVisionClip) { ctx.showPopup?.("No vision CLIP set - pick one in Settings.", true); return; }
 
     const target = targetSel.value;
     const base = (editor.value || "").trim();
@@ -766,58 +1010,20 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     try {
       let imageSummary = "";
       if (images.length) {
-        if (native) {
-          // One call, whole batch — this is the path that actually attends to every
-          // image at once (verified: SPEC_MINIMAX_H3_NEXT_ROUND.md §C5). The instruction
-          // asks for the images to stay separated in the answer since nothing downstream
-          // re-splits them the way the per-image Ollama loop naturally does.
-          progressStage(`Analyzing ${images.length} image${images.length > 1 ? "s" : ""} (native, one batch)…`);
-          const prompt = `${VISION_SYSTEM_PROMPT} There are ${images.length} images, in order. `
-            + `Describe each one separately, each on its own line starting with "Image N: ".`;
-          imageSummary = (await analyzeImagesNative(state.nativeVisionClip, images, prompt)).trim();
-        } else {
-          // One call per image, strictly sequential. A single Ollama call with several
-          // images attached was tested against the model actually in use and it only
-          // ever attended to one of them (§C0) — this loop is the workaround, not an
-          // optimization left undone.
-          const parts = [];
-          for (let i = 0; i < images.length; i++) {
-            progressStage(`Analyzing image ${i + 1}/${images.length}…`);
-            const b64 = await imageToB64(images[i]);
-            const d = await enhancePrompt({
-              server_url: state.ollamaUrl,
-              model: state.ollamaVisionModel,
-              system_prompt: VISION_SYSTEM_PROMPT,
-              user_prompt: "Describe this image.",
-              image_b64: b64,
-              temperature: state.ollamaTemperature ?? 0.7,
-              top_p: state.ollamaTopP ?? 0.9,
-              think: false,
-            });
-            parts.push(`Image ${i + 1}: ${(d.response || "").trim()}`);
-          }
-          imageSummary = parts.join("\n");
-        }
+        // One call, whole batch - this path attends to every image at once (verified:
+        // SPEC_MINIMAX_H3_NEXT_ROUND.md C5). The instruction asks for them to stay
+        // separated in the answer since nothing downstream re-splits them.
+        progressStage(`Analyzing ${images.length} image${images.length > 1 ? "s" : ""}...`);
+        const prompt = `${VISION_SYSTEM_PROMPT} There are ${images.length} images, in order. `
+          + `Describe each one separately, each on its own line starting with "Image N: ".`;
+        imageSummary = (await analyzeImagesNative(state.nativeVisionClip, images, prompt)).trim();
       }
 
-      progressStage("Writing brief…");
-      let text;
-      if (native) {
-        text = (await writeBriefNative(state.nativeBriefClip, systemPrompt, buildUserPrompt(base, imageSummary))).trim();
-      } else {
-        const d = await enhancePrompt({
-          server_url: state.ollamaUrl,
-          model: state.ollamaModel,
-          system_prompt: systemPrompt,
-          user_prompt: buildUserPrompt(base, imageSummary),
-          temperature: state.ollamaTemperature ?? 0.7,
-          top_p: state.ollamaTopP ?? 0.9,
-          think: false,
-        });
-        text = (d.response || "").trim();
-      }
+      progressStage("Writing brief...");
+      const text = (await writeBriefNative(state.nativeBriefClip, systemPrompt,
+        buildUserPrompt(base, imageSummary))).trim();
       if (!text) throw new Error("empty response");
-      // Never write straight in — show what came back and let the user decide.
+      // Never write straight in - show what came back and let the user decide.
       openReview(text, target);
       statusTag.textContent = "review the result";
       statusTag.style.color = C.ok;
@@ -1116,7 +1322,14 @@ export function createPromptEditOverlay(state, ctx, onApply) {
       ov.style.display = "flex";
       if (!state.prompts || !state.prompts.length) state.prompts = [{ text: "", firstFrame: "", enabled: true }];
       if (selected >= state.prompts.length) selected = 0;
-      renderModes(); renderImageRow(); renderAll();
+      // Open on the enhance mode the node is actually set up for. In Reference or
+      // First/Last Frame the clip already has images attached, so landing on Text -> Brief
+      // hid the whole attach area (and the override checkbox with it) behind an extra
+      // click. Text only has no images to show, so it stays on Text -> Brief.
+      enhMode = (state.generationMode === "t2v") ? "text" : "image";
+      renderModes(); renderImageRow(); renderAll(); refreshFraming(); applyEnhCollapsed();
+      if (!mediaFiles.videos.length && !mediaFiles.audios.length)
+        getMediaFiles().then(d => { mediaFiles = d; renderImageRow(); }).catch(() => {});
       if (!systemPrompt) loadSystemPrompt();
       refreshSourceUI();
       refreshSetsList();
@@ -1126,9 +1339,7 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     isOpen: () => ov.style.display !== "none",
     /** Pull header/footer back in after the Common Prompt popup edited them. */
     syncCommon() {
-      headerTA.value = state.promptHeader || "";
-      footerTA.value = state.promptFooter || "";
-      refreshPreviewTag();
+      refreshFraming();
     },
   };
 }
