@@ -6,14 +6,20 @@
 // the loader nodes can read from.
 import { C, BRAND, el, API } from "./core_minimax.js";
 import { api } from "../../../scripts/api.js";
+import { getClipLastFrame } from "./api_minimax.js";
 
 /**
- * Open the picker. `onPick(inputFilename)` receives the name of the copy in input/.
+ * Open the picker. `onPick(inputFilename, clipItem)` receives the name of the copy in
+ * input/ and the chosen clip's list entry.
+ *
+ * opts.mode: "video" (default) copies the whole clip as a reference video;
+ *            "frame" copies only the clip's last frame, to seed a continuation.
  *
  * Hover plays the clip muted — with a wall of near-identical takes, a still first frame
  * is not enough to tell them apart.
  */
-export function openVideoGalleryPicker(onPick) {
+export function openVideoGalleryPicker(onPick, opts = {}) {
+  const frameMode = opts.mode === "frame";
   const box = el("div", { style: {
     background: "#0e0e0e", border: `1px solid ${C.border}`, borderRadius: "10px",
     width: "860px", maxWidth: "94%", height: "80vh",
@@ -23,7 +29,7 @@ export function openVideoGalleryPicker(onPick) {
   const head = el("div", { style: {
     display: "flex", alignItems: "center", gap: "8px", padding: "10px 12px",
     borderBottom: `1px solid ${C.border}`, flexShrink: "0",
-  }}, [el("div", { text: "🎞 Pick a reference video", style: {
+  }}, [el("div", { text: frameMode ? "🖼 Pick a clip to continue from" : "🎞 Pick a reference video", style: {
     color: "#fff", fontSize: "13px", fontWeight: "700", flex: "1" } })]);
   const grid = el("div", { style: {
     padding: "12px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))",
@@ -81,17 +87,23 @@ export function openVideoGalleryPicker(onPick) {
         whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }));
 
       cell.addEventListener("click", async () => {
-        status.textContent = "copying to input…";
+        status.textContent = frameMode ? "reading last frame…" : "copying to input…";
         try {
-          const r = await api.fetchApi(`${API}/copy_to_input`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ filename: it.filename, subfolder: it.subfolder || "", type: "output" }),
-          });
-          const d = await r.json();
-          if (!r.ok || !d.filename) throw new Error(d.error || "copy failed");
+          let name;
+          if (frameMode) {
+            name = await getClipLastFrame(it.filename, it.subfolder || "");
+          } else {
+            const r = await api.fetchApi(`${API}/copy_to_input`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ filename: it.filename, subfolder: it.subfolder || "", type: "output" }),
+            });
+            const d = await r.json();
+            if (!r.ok || !d.filename) throw new Error(d.error || "copy failed");
+            name = d.filename;
+          }
           close();
-          onPick(d.filename);
+          onPick(name, it);
         } catch (e) {
           status.textContent = `Could not use that clip: ${e?.message || e}`;
         }

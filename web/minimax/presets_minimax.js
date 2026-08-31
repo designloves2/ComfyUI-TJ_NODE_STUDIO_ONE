@@ -17,9 +17,11 @@
 //   separate the survivors at all: one configuration run six times scored 3-5, so
 //   anything inside two points is measurement noise, and the choice comes down to speed.
 //
-// A preset only ever writes the pipeline axes. Steps, seed, length, resolution and the
-// model pickers are deliberately left alone — a preset that moved those would invalidate
-// the comparison someone picked it for.
+// A *built-in* preset only ever writes the pipeline axes. Steps, seed, length, resolution
+// and the model pickers are deliberately left alone — a preset that moved those would
+// invalidate the comparison someone picked it for. A preset the user saves themselves
+// also carries the sampling row and the turbo section's step counts / model files
+// (RECIPE_KEYS), since that is their own full recipe, not a benchmark row.
 
 /**
  * @typedef {object} Preset
@@ -70,8 +72,25 @@ export const PIPELINE_PRESETS = [
 
 
 /** The axes a preset owns, in the shape both built-in and user presets store them. */
+// The six built-in presets only ever carry the pipeline axes (see the note at the top).
+// A preset the *user* saves is meant to be their whole left-panel recipe, so it also
+// stores the sampling row and the turbo section's own step counts and model files — the
+// latter is what stops an applied "PDD" preset from silently falling back to normal steps
+// because the file it needs was never restored.
+const RECIPE_KEYS = [
+  "steps", "sampler", "scheduler", "denoise", "shiftVideo", "shiftAudio",
+  "turboSteps", "slaTurboSteps",
+  "turboLora", "turboLoraReference", "pddFile", "pddFileReference", "slaTurboLora",
+];
+
+function recipeOf(state) {
+  const out = {};
+  for (const k of RECIPE_KEYS) if (state[k] !== undefined) out[k] = state[k];
+  return out;
+}
+
 export function captureAxes(state) {
-  return axesOf(state);
+  return { ...axesOf(state), ...recipeOf(state) };
 }
 
 /**
@@ -140,4 +159,6 @@ export function applyPreset(state, preset) {
   // the patch at all; setting it unconditionally means toggling Torch back on by hand
   // lands on the same configuration the preset described.
   state.fp16Accum = true;
+  // Restore the user-recipe fields when the preset carries them (built-ins do not).
+  for (const k of RECIPE_KEYS) if (preset[k] !== undefined) state[k] = preset[k];
 }

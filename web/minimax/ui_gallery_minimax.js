@@ -7,7 +7,8 @@ import { composeStitchedPrompt, C, BRAND, el, clear, SUBFOLDER, framesToSeconds,
          UPSCALE_MODES, FPS } from "./core_minimax.js";
 import { button, select, numberField } from "../klein/ui_common.js";
 import { listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage, getMediaFiles,
-         copyOutputToInput, discardInputCopy, getVideoInfo, queuePrompt } from "./api_minimax.js";
+         copyOutputToInput, discardInputCopy, getVideoInfo, queuePrompt,
+         getClipLastFrame, getSystemPrompt, analyzeImagesNative, writeBriefNative } from "./api_minimax.js";
 import { buildUpscaleGraph, buildInterpolateGraph } from "./graph_builder_minimax.js";
 
 const STITCH_MAX = 10;
@@ -1023,6 +1024,9 @@ export function createGalleryOverlay(state, ctx) {
               .then(() => ctx.showPopup?.("Prompt copied.", false))
               .catch(() => ctx.showPopup?.("Copy failed.", true));
           }),
+          mini("⏭ Extend", "Add a continuation from this clip's last frame — the result is one longer, stitched video", () => {
+            openExtendPopup(v, promptText);
+          }),
         );
         meta.appendChild(bar);
       }
@@ -1041,6 +1045,121 @@ export function createGalleryOverlay(state, ctx) {
       videos = d.videos || [];
     } catch { videos = []; }
     renderGrid();
+  }
+
+  // ── Extend — one continuation clip from this clip's last frame, auto-stitched ──
+  async function extendBrief(seedFrame, rough) {
+    let sys = "";
+    try { sys = (await getSystemPrompt("minimax")).instruction || ""; } catch {}
+    let vision = "";
+    if (state.nativeVisionClip) {
+      try {
+        vision = (await analyzeImagesNative(state.nativeVisionClip, [seedFrame],
+          "Describe this frame factually and concisely. It is the final frame of a video clip "
+          + "and the starting point for what happens next.")).trim();
+      } catch {}
+    }
+    const user = (vision ? `The clip so far ends on this frame:\n${vision}\n\n` : "")
+      + `Continue the same shot. What happens next: ${rough}`;
+    return (await writeBriefNative(state.nativeBriefClip, sys, user)).trim();
+  }
+
+  function openExtendPopup(clip, sourcePrompt) {
+    if (!state.nativeBriefClip) { ctx.showPopup?.("Set a brief CLIP in ⚙ Settings → Models first.", true); return; }
+    let seedFrame = null, mode = "review", reviewed = false, busy = false;
+
+    const thumb = el("img", { style: {
+      width: "100%", height: "150px", objectFit: "contain", background: "#000",
+      borderRadius: "6px", border: `1px solid ${C.border}` } });
+    const ta = el("textarea", { placeholder: "What happens next — a rough line is enough.", style: {
+      width: "100%", minHeight: "70px", resize: "vertical", boxSizing: "border-box",
+      background: C.bg2, color: C.text, border: `1px solid ${C.border}`, borderRadius: "6px",
+      padding: "8px", fontSize: "12px", fontFamily: "inherit", outline: "none" } });
+    const modeRow = el("div", { style: { display: "flex", gap: "6px" } });
+    const modeBtns = {};
+    [["review", "LLM: Review"], ["auto", "LLM: Auto"]].forEach(([k, lbl]) => {
+      const b = el("button", { type: "button", text: lbl, style: {
+        flex: "1", cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "5px 0",
+        borderRadius: "5px", border: `1px solid ${C.border}`, background: C.bg2, color: C.text } });
+      b.addEventListener("click", () => { mode = k; reviewed = false; paintModes(); });
+      modeBtns[k] = b; modeRow.appendChild(b);
+    });
+    function paintModes() {
+      for (const k in modeBtns) {
+        const on = k === mode;
+        modeBtns[k].style.background = on ? BRAND : C.bg2;
+        modeBtns[k].style.color = on ? "#fff" : C.text;
+        modeBtns[k].style.fontWeight = on ? "700" : "400";
+      }
+      goBtn.textContent = (mode === "review" && !reviewed) ? "Enhance →"
+        : (mode === "review" && reviewed) ? "Extend" : "Extend";
+    }
+
+    const cancelBtn = el("button", { type: "button", text: "Cancel", style: {
+      cursor: "pointer", fontFamily: "inherit", fontSize: "12px", padding: "6px 12px",
+      borderRadius: "6px", border: `1px solid ${C.border}`, background: C.bg2, color: C.text } });
+    const goBtn = el("button", { type: "button", text: "Enhance →", style: {
+      cursor: "pointer", fontFamily: "inherit", fontSize: "12px", fontWeight: "700", padding: "6px 16px",
+      borderRadius: "6px", border: "1px solid transparent", background: BRAND, color: "#fff" } });
+
+    const box = el("div", { style: {
+      background: "#141414", border: `1px solid ${C.border}`, borderRadius: "10px",
+      width: "420px", maxWidth: "92%", padding: "16px", display: "flex", flexDirection: "column",
+      gap: "9px", boxShadow: "0 16px 50px rgba(0,0,0,0.65)" } }, [
+      el("div", { text: "Extend clip", style: { color: "#fff", fontSize: "13px", fontWeight: "700" } }),
+      thumb, ta,
+      el("div", { text: "LLM analyses the frame above + your line. Review shows the result first; "
+        + "Auto renders straight away.", style: { fontSize: "9.5px", color: C.muted, lineHeight: "1.5" } }),
+      modeRow,
+      el("div", { style: { display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "2px" } }, [cancelBtn, goBtn]),
+    ]);
+    const pop = el("div", { style: {
+      position: "fixed", inset: "0", zIndex: "100060", display: "flex",
+      alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.72)" } }, [box]);
+    const closePop = () => pop.remove();
+    cancelBtn.addEventListener("click", closePop);
+    pop.addEventListener("mousedown", e => { if (e.target === pop) closePop(); });
+    document.body.appendChild(pop);
+    paintModes();
+
+    (async () => {
+      try {
+        seedFrame = await getClipLastFrame(clip.filename, clip.subfolder || "");
+        thumb.src = `/view?filename=${encodeURIComponent(seedFrame)}&type=input&t=${Date.now()}`;
+      } catch (e) {
+        ctx.showPopup?.(`Could not read the last frame: ${e.message || e}`, true);
+        closePop();
+      }
+    })();
+
+    goBtn.addEventListener("click", async () => {
+      if (busy || !seedFrame) return;
+      const rough = ta.value.trim();
+      if (!rough) { ctx.showPopup?.("Write what happens next.", true); return; }
+      // Review, first click: enhance and show the result for editing.
+      if (mode === "review" && !reviewed) {
+        busy = true; goBtn.disabled = true; goBtn.textContent = "Enhancing…";
+        try {
+          ta.value = await extendBrief(seedFrame, rough);
+          reviewed = true;
+        } catch (e) { ctx.showPopup?.(`Enhance failed: ${e.message || e}`, true); }
+        busy = false; goBtn.disabled = false; paintModes();
+        return;
+      }
+      // Otherwise: resolve the final text and fire the run.
+      busy = true; goBtn.disabled = true; goBtn.textContent = "Working…";
+      let finalText = rough;
+      try {
+        if (mode === "auto") finalText = await extendBrief(seedFrame, rough);
+        else if (mode === "review") finalText = ta.value.trim() || rough;
+      } catch (e) {
+        ctx.showPopup?.(`Enhance failed: ${e.message || e}`, true);
+        busy = false; goBtn.disabled = false; paintModes(); return;
+      }
+      closePop();
+      hide();
+      ctx.runExtend?.({ sourceClip: clip, seedFrame, prompt: finalText, sourcePrompt });
+    });
   }
 
   function hide() {

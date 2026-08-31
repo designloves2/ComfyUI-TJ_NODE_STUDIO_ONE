@@ -2348,6 +2348,53 @@ async def mmh3_video_info(request):
     return web.json_response({"ok": True, "fps": fps, "width": width, "height": height, "frames": frames})
 
 
+@PromptServer.instance.routes.post("/minimax_h3_one/clip_last_frame")
+async def mmh3_clip_last_frame(request):
+    """Extract a rendered clip's last frame into input/ so it can seed a continuation.
+
+    Used by 'Continue generating the clip' (Prompt Edit) and gallery Extend. Prefers the
+    per-clip _last PNG the render already saved next to the clip; falls back to pulling the
+    final frame off the video with ffmpeg (covers stitched files and cleaned-up frames).
+    """
+    import uuid as _uuid
+    data = await request.json()
+    filename = data.get("filename", "")
+    subfolder = data.get("subfolder", "") or ""
+    output_dir = _get_output_dir()
+    try:
+        src = _safe_resolve_output_path(output_dir, subfolder, filename)
+    except ValueError:
+        return web.json_response({"ok": False, "error": "invalid path"}, status=400)
+    if not os.path.isfile(src):
+        return web.json_response({"ok": False, "error": "clip not found"}, status=404)
+
+    dst_name = f"mmh3_seed_{_uuid.uuid4().hex[:8]}.png"
+    dst = os.path.join(folder_paths.get_input_directory(), dst_name)
+
+    stem = os.path.splitext(os.path.basename(src))[0].rstrip("_")
+    tail = stem.rsplit("_", 1)
+    if len(tail) == 2 and tail[1].isdigit() and len(tail[1]) == 5:
+        stem = tail[0]                       # drop SaveVideo's trailing _NNNNN_ counter
+    cand = sorted(glob.glob(os.path.join(os.path.dirname(src), "frames", f"{stem}_last*.png")))
+    if cand:
+        shutil.copy2(cand[-1], dst)
+        return web.json_response({"ok": True, "filename": dst_name})
+
+    ffmpeg = _ffmpeg_exe()
+    if not ffmpeg:
+        return web.json_response({"ok": False, "error": "no saved last frame and ffmpeg not found"}, status=500)
+    try:
+        proc = subprocess.run(
+            [ffmpeg, "-y", "-sseof", "-1", "-i", src, "-update", "1", "-q:v", "2", dst],
+            capture_output=True, text=True, timeout=60,
+        )
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+    if not os.path.isfile(dst):
+        return web.json_response({"ok": False, "error": (proc.stderr or "ffmpeg produced no frame")[-300:]}, status=500)
+    return web.json_response({"ok": True, "filename": dst_name})
+
+
 @PromptServer.instance.routes.post("/minimax_h3_one/stitch")
 async def mmh3_stitch(request):
     """Concatenate the per-clip video files into one file (stream copy, no re-encode).
@@ -2427,15 +2474,34 @@ async def mmh3_stitch(request):
             # bundled 7.1 included) crash outright when a -filter_complex output label is mixed
             # with a raw N:a:0 stream -map in the same command, so keeping the graph audio-free
             # avoids that combination rather than working around it.
+            #
+            # concat requires every input to share resolution + SAR. A continuation rendered
+            # at a different size than the source (e.g. its meta was missing, so Extend fell
+            # back to a default megapixel value) would otherwise produce a 0-byte file, so
+            # every clip is scaled/padded to the first clip's frame here.
+            ffprobe0 = _ffprobe_exe()
+            base_w = base_h = 0
+            if ffprobe0:
+                try:
+                    pr = subprocess.run(
+                        [ffprobe0, "-v", "error", "-select_streams", "v:0",
+                         "-show_entries", "stream=width,height", "-of", "csv=p=0:s=x", paths[0]],
+                        capture_output=True, text=True, timeout=30)
+                    base_w, base_h = (int(x) for x in (pr.stdout or "").strip().split("x")[:2])
+                except Exception:
+                    base_w = base_h = 0
+            fit = (f"scale={base_w}:{base_h}:force_original_aspect_ratio=decrease,"
+                   f"pad={base_w}:{base_h}:(ow-iw)/2:(oh-ih)/2,setsar=1,"
+                   if base_w and base_h else "")
             filt = []
             labels = []
             for i, p in enumerate(paths):
                 if i == 0:
-                    filt.append(f"[{i}:v]setpts=PTS-STARTPTS[v{i}]")
+                    filt.append(f"[{i}:v]{fit}setpts=PTS-STARTPTS[v{i}]")
                     if not override_audio_path:
                         filt.append(f"[{i}:a]asetpts=PTS-STARTPTS[a{i}]")
                 else:
-                    filt.append(f"[{i}:v]trim=start={overlap:.3f},setpts=PTS-STARTPTS[v{i}]")
+                    filt.append(f"[{i}:v]trim=start={overlap:.3f},{fit}setpts=PTS-STARTPTS[v{i}]")
                     if not override_audio_path:
                         filt.append(f"[{i}:a]atrim=start={overlap:.3f},asetpts=PTS-STARTPTS[a{i}]")
                 labels.append(f"[v{i}]" if override_audio_path else f"[v{i}][a{i}]")
@@ -2586,6 +2652,25 @@ async def mmh3_llm_system_prompt(request):
 # The Ollama proxy routes (llm/ollama_models, llm/enhance) were removed on 2026-08-31.
 # Image -> Brief now runs natively inside ComfyUI; see analyzeImagesNative /
 # writeBriefNative on the frontend and the TextGenerate graph they submit.
+
+# Per-node record of the most recent clip/last-frame, read by TJ_H3_Output's get_output
+# when the graph is run from ComfyUI's RUN button. (Was referenced but never defined.)
+_mmh3_last: dict = {}
+
+
+def _mmh3_drop_stale_last_frame(old, new):
+    """Best-effort: delete the previous last-frame temp when it is being replaced."""
+    try:
+        if not isinstance(old, dict) or old.get("type") != "temp":
+            return
+        if old.get("filename") and old.get("filename") != (new or {}).get("filename"):
+            p = _safe_resolve_path(folder_paths.get_temp_directory(),
+                                   old.get("subfolder", "") or "", old["filename"])
+            if os.path.isfile(p):
+                os.remove(p)
+    except Exception:
+        pass
+
 
 @PromptServer.instance.routes.post("/minimax_h3_one/set_last_image")
 async def mmh3_set_last_image(request):

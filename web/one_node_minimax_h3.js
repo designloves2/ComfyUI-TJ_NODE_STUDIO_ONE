@@ -23,14 +23,14 @@ import {
   effectiveTurbo, effectiveSteps, migrateLegacyAccel,
   continuityModesFor, generationModesFor, configIssues,
   clipPlan, formatDuration, formatClock, framesToSeconds, alignFrameCount, FPS, ONE_TAKE_OVERLAP_FRAMES, resolveResolution,
-  parseBrief, groupShots, composeClipPrompt,
+  parseBrief, groupShots, composeClipPrompt, composeStitchedPrompt,
   turboLoraForMode, pddFileForMode, clipAssets, explainGenerationError,
   promptText, promptFirstFrame, promptEnabled, activePrompts,
 } from "./minimax/core_minimax.js";
 import { panel, label, button, select, loraSelect, numberField, slider, row, col, modeBar, iconBtn, openVideoFullscreen }
   from "./klein/ui_common.js";
 import {
-  queuePrompt, waitForHistory, interrupt, freeMemory, setLastResult, stitchClips,
+  queuePrompt, waitForHistory, interrupt, freeMemory, setLastResult, stitchClips, getVideoInfo,
   copyOutputToInput, getNodeAvailability, getModels, saveMeta, pickChainFrame, getLoraTriggers,
   getMediaFiles, uploadMedia, getVramStats,
   saveConfig,
@@ -2279,6 +2279,35 @@ app.registerExtension({
               setStatus(`Clips saved, One-Take stitch failed: ${e.message}`);
               showPopup(`One-Take stitch failed: ${e.message} — per-clip files are still on disk.`, true);
             }
+          } else if (rs._extendFrom && clipRecords.length === 1 && !stopRequested) {
+            // Gallery Extend: one continuation clip was rendered from the source's last
+            // frame — concat [source, continuation] into the extended video, trimming the
+            // one duplicated seed frame off the continuation's head. Read from the frozen
+            // snapshot: the live state is repainted back to the panel during the run.
+            const ext = rs._extendFrom;
+            setStatus("Stitching the extended clip…");
+            try {
+              const folder = (rs.saveSubfolder || SUBFOLDER).replace(/\\/g, "/");
+              const trimSec = framesToSeconds(alignFrameCount(1));
+              const out = await stitchClips(
+                [ext.clip, clipRecords[0]], `${folder}/${rs.filenamePrefix || "MMH3"}_full`, null, trimSec, null,
+              );
+              const url = `/view?filename=${encodeURIComponent(out.filename)}&subfolder=${encodeURIComponent(out.subfolder || "")}&type=output&t=${Date.now()}`;
+              const clipPrompts = [ext.sourcePrompt || "", promptForClip(0, rs)];
+              saveMeta(out.filename, out.subfolder || "", metaForVideo(
+                composeStitchedPrompt(clipPrompts),
+                { clips: 2, stitched: true, extended: true, frames: null, prompts: clipPrompts },
+                rs,
+              ));
+              showResultVideo(url, { final: true });
+              badge.textContent = "EXTENDED";
+              await setLastResult(self.id, { videoPath: out.path });
+              setStatus(`Done — extended → ${out.filename}`);
+              showPopup(`Extended: ${out.filename}`, false);
+            } catch (e) {
+              setStatus(`Continuation saved, stitch failed: ${e.message}`);
+              showPopup(`Extend stitch failed: ${e.message} — the new clip is on disk.`, true);
+            }
           } else if (clipRecords.length) {
             setStatus(stopRequested ? `Stopped — ${clipRecords.length} clip(s) saved.`
                                     : `Done — ${clipRecords.length} clip(s) saved.`);
@@ -2298,6 +2327,7 @@ app.registerExtension({
             if (why) console.warn("[MMH3] underlying error:", e.message);
           }
         } finally {
+          delete state._extendFrom;   // one-shot: never let a stale flag stitch a later run
           // ComfyUI keeps the models resident after a prompt, so a finished run would
           // otherwise sit on the whole card until the next one. The run is over here —
           // nothing in this node still needs the weights.
@@ -2475,6 +2505,42 @@ app.registerExtension({
         refreshPlan();
         renderLeft();
         return true;
+      };
+
+      // Gallery Extend — render one continuation clip from a finished clip's last frame,
+      // then auto-stitch [source, continuation] into one longer video. All render settings
+      // come from the source via reuseAll; the caller supplies only the new prompt + seed.
+      ctx.runExtend = async ({ sourceClip, seedFrame, prompt, sourcePrompt }) => {
+        if (running) { showPopup("A render is already running.", true); return; }
+        if (!sourceClip || !seedFrame || !String(prompt || "").trim()) {
+          showPopup("Extend needs a clip, a seed frame and a prompt.", true); return;
+        }
+        ctx.reuseAll(sourceClip.meta || sourceClip);   // best-effort; missing meta just leaves panel defaults
+        // The continuation must match the source's real size or the stitch concat fails.
+        // reuseAll covers it when the clip has meta; probe the file itself when it doesn't.
+        try {
+          const info = await getVideoInfo(sourceClip.filename, sourceClip.subfolder || "", "output");
+          if (info?.width && info?.height) {
+            state.megapixels = Math.max(0.1, Math.round(info.width * info.height / 1e4) / 100);
+            const r = info.width / info.height;
+            state.aspect = ASPECTS.reduce((best, a) =>
+              Math.abs(a.w / a.h - r) < Math.abs(best.w / best.h - r) ? a : best).label;
+          }
+        } catch {}
+        state.prompts = [{ text: String(prompt), firstFrame: seedFrame, enabled: true, override: false }];
+        state.promptHeader = ""; state.promptFooter = "";
+        state.generationMode = "firstlast";
+        state.continuityMode = "none";
+        if (!generationModesFor(state).find(m => m.key === "firstlast")?.enabled) {
+          showPopup("Set the First/Last UNET in ⚙ Settings → Models to use Extend.", true);
+          return;
+        }
+        state._extendFrom = {
+          clip: { filename: sourceClip.filename, subfolder: sourceClip.subfolder || "" },
+          sourcePrompt: sourcePrompt || "",
+        };
+        persist(); renderPills(); renderLeft(); renderPrompts();
+        runGeneration();
       };
 
       // Preset save / manage dialogs. They persist through the same config route the

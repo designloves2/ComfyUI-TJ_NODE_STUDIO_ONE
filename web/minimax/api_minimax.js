@@ -287,6 +287,19 @@ export async function stitchClips(clips, filenamePrefix, trimSeconds, overlapSec
   return d;
 }
 
+/** Copy a rendered clip's last frame into input/ (to seed a continuation). Returns the
+ *  input-folder filename. */
+export async function getClipLastFrame(filename, subfolder = "") {
+  const r = await api.fetchApi(`${API}/clip_last_frame`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename, subfolder }),
+  });
+  const d = await r.json();
+  if (!d.ok || !d.filename) throw new Error(d.error || "could not read the last frame");
+  return d.filename;
+}
+
 export async function getSystemPrompt(name = "minimax") {
   try {
     const r = await api.fetchApi(`${API}/llm/system_prompt?name=${encodeURIComponent(name)}`);

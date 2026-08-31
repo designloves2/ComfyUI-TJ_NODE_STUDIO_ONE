@@ -212,6 +212,7 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     try {
       const s = await getPromptSet(name);
       snapshot(`load set: ${name}`);
+      delete state._resumeSnapshot;   // a new prompt list — the old resume snapshot is meaningless
       // Whole entries, not three fields: dropping override/refImages here is what made a
       // loaded set come back without its pictures.
       state.prompts = (Array.isArray(s.prompts) && s.prompts.length ? s.prompts : [{ text: "", firstFrame: "", enabled: true }])
@@ -392,49 +393,59 @@ This cannot be undone.`,
     ctx.persist(); updateCount(); renderList();
   });
 
-  // ── per-prompt first-image override (A3) — thumbnail + upload + remove ──────
+  // ── continue this clip from a finished clip's last frame (planned resume) ────
+  // Picking a clip seeds THIS entry's first frame and, since a resume never re-renders
+  // what is already done, disables every earlier clip (their override checkbox greys out
+  // too) and enables this one onward. Clearing it restores the enabled states from the
+  // snapshot taken when the pick was made.
   const fiRow = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" } });
   const fiThumb = el("img", { style: {
     width: "34px", height: "34px", objectFit: "cover", borderRadius: "5px",
     border: `1px solid ${C.border}`, display: "none", cursor: "pointer",
   }});
-  const fiLabel = el("div", { text: "First-frame override: none — uses this mode's default", style: {
+  const fiLabel = el("div", { text: "▶ Continue generating the clip.", style: {
     fontSize: "10.5px", color: C.muted, flex: "1",
   }});
-  const fiUploadBtn = el("button", { type: "button", text: "⬆ Upload override", style: {
+  const fiGalleryBtn = el("button", { type: "button", text: "Select from the gallery", style: {
     cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "4px 9px",
     borderRadius: "5px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
   }});
-  const fiRemoveBtn = el("button", { type: "button", text: "✕", title: "Remove override", style: {
+  const fiRemoveBtn = el("button", { type: "button", text: "✕", title: "Stop continuing — restore all clips", style: {
     cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "4px 8px",
     borderRadius: "5px", background: "transparent", color: C.muted, border: `1px solid ${C.border}`,
     display: "none",
   }});
-  const fiFileInput = el("input", { type: "file", accept: "image/*", style: { display: "none" } });
-  fiUploadBtn.addEventListener("click", () => fiFileInput.click());
-  fiFileInput.addEventListener("change", async () => {
-    const file = fiFileInput.files?.[0];
-    fiFileInput.value = "";
-    if (!file) return;
-    try {
-      const filename = await uploadMedia(file);
-      state.prompts[selected] = normPrompt(state.prompts[selected]);
-      state.prompts[selected].firstFrame = filename;
-      ctx.persist(); renderFirstFrameRow();
-    } catch (e) {
-      ctx.showPopup?.(`Upload failed: ${e.message || e}`, true);
-    }
+  fiGalleryBtn.addEventListener("click", () => {
+    openVideoGalleryPicker((inputFilename, clip) => {
+      if (!Array.isArray(state._resumeSnapshot)) {
+        state._resumeSnapshot = (state.prompts || []).map(p => normPrompt(p).enabled !== false);
+      }
+      (state.prompts || []).forEach((raw, i) => {
+        state.prompts[i] = normPrompt(raw);
+        if (i === selected) state.prompts[i].firstFrame = inputFilename;
+        state.prompts[i].enabled = i >= selected;
+      });
+      ctx.persist(); renderFirstFrameRow(); renderList(); renderImageRow();
+      ctx.showPopup?.(`Continuing from ${clip?.filename || "the selected clip"} — clips before this are off.`, false);
+    }, { mode: "frame" });
   });
   fiRemoveBtn.addEventListener("click", () => {
     state.prompts[selected] = normPrompt(state.prompts[selected]);
     state.prompts[selected].firstFrame = "";
-    ctx.persist(); renderFirstFrameRow();
+    if (Array.isArray(state._resumeSnapshot)) {
+      (state.prompts || []).forEach((raw, i) => {
+        state.prompts[i] = normPrompt(raw);
+        state.prompts[i].enabled = state._resumeSnapshot[i] !== false;
+      });
+      delete state._resumeSnapshot;
+    }
+    ctx.persist(); renderFirstFrameRow(); renderList(); renderImageRow();
   });
-  fiRow.append(fiThumb, fiLabel, fiUploadBtn, fiRemoveBtn, fiFileInput);
+  fiRow.append(fiThumb, fiLabel, fiGalleryBtn, fiRemoveBtn);
   const fiHint = el("div", {
-    text: "Only FL2VA can take a first frame — a clip with an override renders as First/Last "
-        + "even in Reference mode (its reference images drop for that clip). To resume a stopped "
-        + "run, upload output/one_minimax_h3/frames/MMH3_clip0NN_last_*.png from the last clip you kept.",
+    text: "Resuming a multi-clip run: pick the last finished clip, then write the prompts "
+        + "for the clips that still need rendering. This clip starts from that clip's final "
+        + "frame (First/Last), the ones before it are switched off.",
     style: { fontSize: "9.5px", color: C.muted, lineHeight: "1.5", flexShrink: "0" },
   });
   function renderFirstFrameRow() {
@@ -443,11 +454,11 @@ This cannot be undone.`,
     if (ff) {
       fiThumb.src = `/view?filename=${encodeURIComponent(ff)}&type=input`;
       fiThumb.style.display = "block";
-      fiLabel.textContent = `First-frame override: ${ff}`;
+      fiLabel.textContent = `Continuing from: ${ff}`;
       fiRemoveBtn.style.display = "inline-block";
     } else {
       fiThumb.style.display = "none";
-      fiLabel.textContent = "First-frame override: none — uses this mode's default";
+      fiLabel.textContent = "▶ Continue generating the clip.";
       fiRemoveBtn.style.display = "none";
     }
   }
@@ -636,6 +647,8 @@ This cannot be undone.`,
     const head = el("div", { style: { display: "flex", alignItems: "center", gap: "8px" } });
     const chk = el("input", { type: "checkbox" });
     chk.checked = own; chk.style.cursor = "pointer";
+    // A clip switched off for a resume has nothing to override — grey it out.
+    if (!promptEnabled(p)) { chk.disabled = true; chk.style.cursor = "default"; }
     chk.addEventListener("change", () => {
       p.override = chk.checked;
       // Starting from the common set is the useful default: an override almost always
