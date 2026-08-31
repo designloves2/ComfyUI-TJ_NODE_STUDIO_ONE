@@ -184,36 +184,6 @@ export function imageBriefMax(mode) {
   return (IMAGE_BRIEF_MODES.find(m => m.key === mode) || IMAGE_BRIEF_MODES[1]).max;
 }
 
-/**
- * Keep the render's reference images and Prompt Edit's vision images in step.
- *
- * They used to be two independent uploads, so writing a prompt against pictures you had
- * already attached meant attaching them a second time, in the same order, in the other
- * panel. They are the same pictures — the only real difference is that the vision list is
- * capped per brief mode while the reference list holds up to nine.
- *
- * Whichever panel was edited is the authority; the other is rewritten from it, truncated
- * to its own cap rather than silently dropping the extras from both.
- *
- * @param from "ref" when the images panel was edited, "vision" for Prompt Edit.
- */
-export function syncImageLists(state, from) {
-  const visionCap = imageBriefMax(state.ollamaImageMode);
-  if (from === "ref") {
-    const refs = (state.refImages || []).filter(Boolean);
-    state.ollamaImages = refs.slice(0, visionCap);
-  } else {
-    const vis = (state.ollamaImages || []).filter(Boolean);
-    // Anything the reference list holds beyond the vision cap is left alone: those slots
-    // were never visible to the panel being edited, so dropping them would be a deletion
-    // the user did not ask for.
-    const refs = (state.refImages || []).slice();
-    const tail = refs.slice(visionCap);
-    state.refImages = [...vis, ...tail].filter(Boolean).slice(0, 9);
-    const mp = (state.refImagesMp || []).slice();
-    state.refImagesMp = state.refImages.map((_, i) => mp[i] ?? 1.0);
-  }
-}
 
 /** { p, i } for every switched-on prompt, `i` = its original position (never renumbered). */
 export function activePrompts(state) {
@@ -840,9 +810,9 @@ export function defaultState(saved) {
 
     // Image -> Brief source images. "fl" caps at 2 (first/last frame), "ref" at 8
     // (<Picture N> tags). Order is upload order and becomes the Image N numbering.
-    ollamaImageMode:   saved.ollamaImageMode   || "ref",
-    ollamaImages:      Array.isArray(saved.ollamaImages) ? saved.ollamaImages.slice()
-                      : (saved.ollamaImage ? [saved.ollamaImage] : []),   // migrate the old single-image field
+    // Named for the mode, not the backend: the Ollama path was removed on 2026-08-31 and
+    // the old key is still read so a saved state keeps the user's choice.
+    briefImageMode:    saved.briefImageMode || saved.ollamaImageMode || "ref",
 
     // Image -> Brief runs natively: the images go through TextGenerate on a CLIP already
     // loaded in ComfyUI, which attends to every image in a batch correctly. The external

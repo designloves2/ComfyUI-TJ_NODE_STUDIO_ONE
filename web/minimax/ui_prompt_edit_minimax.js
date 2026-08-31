@@ -6,7 +6,7 @@
 //
 // The brief-writing instruction is the same "Minimax H3 (Video)" system prompt TJ_NODE
 // ships, fetched from the backend (with a built-in fallback when TJ_NODE isn't present).
-import { C, BRAND, el, clear, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt, IMAGE_BRIEF_MODES, imageBriefMax, promptText, promptFirstFrame, promptEnabled, syncImageLists, clipAssets, clipFraming, promptOverrides } from "./core_minimax.js";
+import { C, BRAND, el, clear, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt, IMAGE_BRIEF_MODES, imageBriefMax, promptText, promptFirstFrame, promptEnabled, clipAssets, clipFraming, promptOverrides } from "./core_minimax.js";
 import { panel, label, button, select, row, col } from "../klein/ui_common.js";
 import { buildClipMediaSlots } from "./ui_clip_media_slots.js";
 import { openVideoGalleryPicker } from "./ui_video_picker_minimax.js";
@@ -630,7 +630,6 @@ This cannot be undone.`,
     const list = () => (own ? (p.refImages ||= []) : (state.refImages ||= []));
     const mpList = () => (own ? (p.refImagesMp ||= []) : (state.refImagesMp ||= []));
     const commit = () => {
-      if (!own) syncImageLists(state, "ref");
       ctx.persist(); renderImageRow(); ctx.refreshModes?.();
     };
 
@@ -663,14 +662,14 @@ This cannot be undone.`,
 
     const modeRow = el("div", { style: { display: "flex", gap: "4px" } });
     IMAGE_BRIEF_MODES.forEach(m => {
-      const active = state.ollamaImageMode === m.key;
+      const active = state.briefImageMode === m.key;
       const b = el("button", { type: "button", text: m.label, title: m.hint, style: {
         cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "3px 8px",
         borderRadius: "5px", fontWeight: active ? "700" : "400",
         background: active ? BRAND : C.bg2, color: "#fff",
         border: `1px solid ${active ? BRAND : C.border}`,
       }});
-      b.addEventListener("click", () => { state.ollamaImageMode = m.key; ctx.persist(); renderImageRow(); });
+      b.addEventListener("click", () => { state.briefImageMode = m.key; ctx.persist(); renderImageRow(); });
       modeRow.appendChild(b);
     });
 
@@ -766,7 +765,7 @@ ${name}`, style: {
     for (let i = 0; i < filled; i++) grid.appendChild(slot(i));
     if (filled < 9) grid.appendChild(slot(filled));
 
-    const visionCap = imageBriefMax(state.ollamaImageMode);
+    const visionCap = imageBriefMax(state.briefImageMode);
     const note = el("div", { style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } });
     note.innerHTML = filled
       ? `${filled}/9 images for this clip. Enhance reads the first `
@@ -924,7 +923,7 @@ ${name}`, style: {
       lines.push(`${state.refImages.length} reference image(s) are supplied; refer to them as <Picture 1>…<Picture ${state.refImages.length}>.`);
     }
     if (imageSummary) {
-      if (state.ollamaImageMode === "fl") {
+      if (state.briefImageMode === "fl") {
         lines.push("", "The following images were analyzed in order: image 1 is the STARTING frame, "
           + "the last one is the ENDING frame. Write the brief as a first/last-frame shot that moves "
           + "from the starting description to the ending one.", "", imageSummary);
@@ -994,7 +993,7 @@ ${name}`, style: {
     // clip will actually be made from — the override set when it has one.
     const a = clipAssets(state, selected);
     const images = enhMode === "image"
-      ? a.refImages.slice(0, imageBriefMax(state.ollamaImageMode))
+      ? a.refImages.slice(0, imageBriefMax(state.briefImageMode))
       : [];
     if (!state.nativeBriefClip) { ctx.showPopup?.("No brief CLIP set - pick one in Settings.", true); return; }
     if (images.length && !state.nativeVisionClip) { ctx.showPopup?.("No vision CLIP set - pick one in Settings.", true); return; }

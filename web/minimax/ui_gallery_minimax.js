@@ -484,7 +484,11 @@ export function createGalleryOverlay(state, ctx) {
    * a plain single-shot job — both graph builders default those to their old whole-file
    * behaviour, so a caller that ignores chunkOpts still works.
    */
-  async function runPost(prog, label, buildFn) {
+  // `finalSuffix` is what the single-shot path's builder would have appended on its own.
+  // The chunked path builds its chunks with saveSuffix:"" and joins them itself, so
+  // without this the joined file lands under the source's bare stem — colliding with the
+  // namespace of fresh, unprocessed renders.
+  async function runPost(prog, label, buildFn, finalSuffix) {
     const v = pickedVideo();
     if (!v || postRunning) return;
     postRunning = true;
@@ -544,7 +548,7 @@ export function createGalleryOverlay(state, ctx) {
         prog.busy(`${label} — joining ${chunkCount} chunks…`);
         // Every chunk shares the same codec, resolution, and fps, so this is a plain
         // stream-copy concat (overlap/trim both 0) — no re-encode, no quality loss.
-        const joined = await stitchClips(chunkFiles, `${outFolder}/${stem}`, 0, 0, null);
+        const joined = await stitchClips(chunkFiles, `${outFolder}/${stem}${finalSuffix || ""}`, 0, 0, null);
         if (joined?.filename) outFile = { filename: joined.filename, subfolder: joined.subfolder || outFolder };
       }
 
@@ -591,7 +595,7 @@ export function createGalleryOverlay(state, ctx) {
       frameLoadCap: chunkOpts.frameLoadCap,
       saveSuffix: upMethod === "none" && chunkOpts.saveSuffix === "_upscaled"
         ? "_deblur" : chunkOpts.saveSuffix,
-    }, ctx.availability || {}));
+    }, ctx.availability || {}), upMethod === "none" ? "_deblur" : "_upscaled");
   }
 
   /** Deblur with no upscale: method "none" makes the graph builder skip both upscalers. */
@@ -604,7 +608,7 @@ export function createGalleryOverlay(state, ctx) {
       skipFirstFrames: chunkOpts.skipFirstFrames,
       frameLoadCap: chunkOpts.frameLoadCap,
       saveSuffix: chunkOpts.saveSuffix === "_upscaled" ? "_deblur" : chunkOpts.saveSuffix,
-    }, ctx.availability || {}));
+    }, ctx.availability || {}), "_deblur");
   }
 
   function runInterpolate() {
@@ -619,7 +623,7 @@ export function createGalleryOverlay(state, ctx) {
       skipFirstFrames: chunkOpts.skipFirstFrames,
       frameLoadCap: chunkOpts.frameLoadCap,
       saveSuffix: chunkOpts.saveSuffix,
-    }, ctx.availability || {}));
+    }, ctx.availability || {}), `_${Math.round(Number(rifeDstIn.value) || FPS * 2)}fps`);
   }
 
   // Optional: swap the combined result's audio for a separate source file entirely (e.g. a

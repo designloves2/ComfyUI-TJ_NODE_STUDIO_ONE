@@ -8,7 +8,6 @@ import { buildClipMediaSlots } from "./ui_clip_media_slots.js";
 import { openVideoGalleryPicker } from "./ui_video_picker_minimax.js";
 import { panel, label, select, numberField, row, col } from "../klein/ui_common.js";
 import { uploadImage, getMediaFiles, uploadMedia, getMediaInfo } from "./api_minimax.js";
-import { syncImageLists } from "./core_minimax.js";
 import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
 
 export function imageSlot(labelText, initialFile, onSet, { box = 132 } = {}) {
@@ -314,7 +313,6 @@ export function mountImagePanel(state, ctx) {
             state.refImagesMp = mpList.slice(0, 9);
             // Prompt Edit reads the same pictures — mirror them so a brief can be written
             // straight away instead of re-uploading the set in the same order.
-            syncImageLists(state, "ref");
             ctx.persist(); render();
           }, { box: 92 });
         const cell = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px", alignItems: "center" } }, [slot.el]);
