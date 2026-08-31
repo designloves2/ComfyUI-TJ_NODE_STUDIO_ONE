@@ -8,8 +8,7 @@ import { composeStitchedPrompt, C, BRAND, el, clear, SUBFOLDER, framesToSeconds,
 import { button, select, numberField } from "../klein/ui_common.js";
 import { listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage, getMediaFiles,
          copyOutputToInput, discardInputCopy, getVideoInfo, queuePrompt,
-         getClipLastFrame, getSystemPrompt, analyzeImagesNative, writeBriefNative,
-         getVramStats } from "./api_minimax.js";
+         getClipLastFrame, getSystemPrompt, analyzeImagesNative, writeBriefNative } from "./api_minimax.js";
 import { buildUpscaleGraph, buildInterpolateGraph } from "./graph_builder_minimax.js";
 
 const STITCH_MAX = 10;
@@ -473,25 +472,18 @@ export function createGalleryOverlay(state, ctx) {
   // frames. The budget is per-chunk RAM, not resolution, so it scales the chunk length
   // down automatically for a bigger frame: a 1088x736 clip and a 4K one both stay under
   // roughly the same footprint per chunk.
+  const CHUNK_BUDGET_BYTES = 1.25 * 1024 ** 3;
   const CHUNK_MIN_FRAMES = 8;
   const CHUNK_MAX_FRAMES = 240;
 
-  // Per-chunk RAM ceiling. VHS_LoadVideo holds the whole loaded slice as float32 RGBA and
-  // the post-process output batch sits beside it before SaveVideo re-encodes, so the peak
-  // is roughly (input + scale-factor*input) per frame. Size the ceiling to a slice of
-  // *free* system RAM (from /vram_stats) rather than a fixed number: a short clip then
-  // stays single-shot on a 64 GB box, and a thousand-frame stitched run still chunks on
-  // a 16 GB one. Fixed 1.25 GB before this — safe everywhere but chunked 8s clips 3-4 ways
-  // on machines with room to spare.
-  async function chunkBudgetBytes() {
-    let freeGiB = 6;
-    try {
-      const s = await getVramStats();
-      const free = s?.ramFreeMiB ?? (s?.ramTotalMiB ? s.ramTotalMiB * 0.5 : 0);
-      if (free) freeGiB = free / 1024;
-    } catch { /* keep the fallback */ }
-    return Math.max(3, Math.min(32, freeGiB * 0.6)) * 1024 ** 3;
-  }
+  // Chunking is decided by the source's DURATION, per method (the user's rule):
+  //   RTX VSR / RTX-based Deblur : < 15s whole file, else 15s chunks
+  //   Upscale model              : < 10s whole file, else  5s chunks
+  //   Deblur + model together    : the model rule (stricter) wins
+  //   Interpolate                : no rule — falls through to the byte budget below
+  // `chunkPlan(durationSec)` returns the chunk length in seconds, or 0 for whole-file.
+  const RTX_PLAN   = (d) => (d < 15 ? 0 : 15);
+  const MODEL_PLAN = (d) => (d < 10 ? 0 : 5);
 
   /**
    * Shared run wrapper: copy the source into input/, queue the graph (chunked if the
@@ -506,7 +498,7 @@ export function createGalleryOverlay(state, ctx) {
   // The chunked path builds its chunks with saveSuffix:"" and joins them itself, so
   // without this the joined file lands under the source's bare stem — colliding with the
   // namespace of fresh, unprocessed renders.
-  async function runPost(prog, label, buildFn, finalSuffix, outPixelMult = 4) {
+  async function runPost(prog, label, buildFn, finalSuffix, chunkPlan) {
     const v = pickedVideo();
     if (!v || postRunning) return;
     postRunning = true;
@@ -528,14 +520,21 @@ export function createGalleryOverlay(state, ctx) {
       let chunkFrames = 0, totalFrames = 0;
       try {
         const info = await getVideoInfo(inputFile, "", "input");
-        // input frame + its post-processed output, both resident: (1 + scale-factor)
-        const perFrameBytes = Math.max(1, (info.width || 0) * (info.height || 0) * 16 * (1 + outPixelMult));
-        chunkFrames = Math.max(CHUNK_MIN_FRAMES, Math.min(CHUNK_MAX_FRAMES,
-          Math.floor((await chunkBudgetBytes()) / perFrameBytes)));
+        const fps = info.fps || FPS;
         totalFrames = info.frames || 0;
+        const durationSec = totalFrames > 0 ? totalFrames / fps : 0;
+        if (chunkPlan && durationSec > 0) {
+          const cs = chunkPlan(durationSec);                    // seconds per chunk, 0 = whole file
+          chunkFrames = cs > 0 ? Math.round(cs * fps) : 0;
+        } else {
+          // Interpolate / no rule: keep the RAM byte budget as the sizing fallback.
+          const perFrameBytes = Math.max(1, (info.width || 0) * (info.height || 0) * 16);
+          chunkFrames = Math.max(CHUNK_MIN_FRAMES, Math.min(CHUNK_MAX_FRAMES,
+            Math.floor(CHUNK_BUDGET_BYTES / perFrameBytes)));
+        }
       } catch { /* handled below by chunkCount defaulting to 1 */ }
-      const chunkCount = (totalFrames > 0 && chunkFrames > 0)
-        ? Math.max(1, Math.ceil(totalFrames / chunkFrames)) : 1;
+      const chunkCount = (totalFrames > 0 && chunkFrames > 0 && totalFrames > chunkFrames)
+        ? Math.ceil(totalFrames / chunkFrames) : 1;
 
       let outFile = null;   // what the job actually wrote, so its metadata can follow
       if (chunkCount === 1) {
@@ -615,9 +614,7 @@ export function createGalleryOverlay(state, ctx) {
       saveSuffix: upMethod === "none" && chunkOpts.saveSuffix === "_upscaled"
         ? "_deblur" : chunkOpts.saveSuffix,
     }, ctx.availability || {}), upMethod === "none" ? "_deblur" : "_upscaled",
-      upMethod === "none" ? 1
-        : upMethod === "model" ? 16
-        : Math.max(1, Math.round((Math.max(1, Math.min(4, parseFloat(rtxScaleIn.value) || 2))) ** 2)));
+      upMethod === "model" ? MODEL_PLAN : RTX_PLAN);
   }
 
   /** Deblur with no upscale: method "none" makes the graph builder skip both upscalers. */
@@ -630,7 +627,7 @@ export function createGalleryOverlay(state, ctx) {
       skipFirstFrames: chunkOpts.skipFirstFrames,
       frameLoadCap: chunkOpts.frameLoadCap,
       saveSuffix: chunkOpts.saveSuffix === "_upscaled" ? "_deblur" : chunkOpts.saveSuffix,
-    }, ctx.availability || {}), "_deblur", 1);
+    }, ctx.availability || {}), "_deblur", RTX_PLAN);
   }
 
   function runInterpolate() {
@@ -645,8 +642,8 @@ export function createGalleryOverlay(state, ctx) {
       skipFirstFrames: chunkOpts.skipFirstFrames,
       frameLoadCap: chunkOpts.frameLoadCap,
       saveSuffix: chunkOpts.saveSuffix,
-    }, ctx.availability || {}), `_${Math.round(Number(rifeDstIn.value) || FPS * 2)}fps`,
-      Math.max(1, (Number(rifeDstIn.value) || FPS * 2) / FPS));   // ~2x the frames, same resolution
+    }, ctx.availability || {}), `_${Math.round(Number(rifeDstIn.value) || FPS * 2)}fps`);
+    // no chunkPlan → interpolate keeps the RAM byte-budget sizing
   }
 
   // Optional: swap the combined result's audio for a separate source file entirely (e.g. a
