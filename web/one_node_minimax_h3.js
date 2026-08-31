@@ -1854,6 +1854,21 @@ app.registerExtension({
           frames: st.clipFrames,
           steps: st.steps,
           sampler: st.sampler,
+          scheduler: st.scheduler,
+          denoise: st.denoise,
+          shiftVideo: st.shiftVideo,
+          shiftAudio: st.shiftAudio,
+          // Turbo needs its own step count and its model file to actually engage — without
+          // these, Reuse restored `turboMode` alone and effectiveTurbo() fell back to none,
+          // so a PDD clip came back rendering at the normal step count.
+          turboSteps: st.turboSteps,
+          slaTurboSteps: st.slaTurboSteps,
+          slaTurboLora: st.slaTurboLora,
+          pddNfe: st.pddNfe,
+          pddFile: st.pddFile,
+          pddFileReference: st.pddFileReference,
+          turboLora: st.turboLora,
+          turboLoraReference: st.turboLoraReference,
           // The pipeline is one field per patch layer now. `accel` stays only so a clip
           // written today still says something to a reader that predates the split.
           accel: st.attnBackend,
@@ -2497,6 +2512,16 @@ app.registerExtension({
         if (meta.turboLoraReference) state.turboLoraReference = meta.turboLoraReference;
         if (meta.turboLoraStrength != null) state.turboLoraStrength = meta.turboLoraStrength;
         if (meta.turboLoraLowVram != null) state.turboLoraLowVram = meta.turboLoraLowVram;
+        if (meta.scheduler)  state.scheduler  = meta.scheduler;
+        if (meta.denoise != null)    state.denoise    = meta.denoise;
+        if (meta.shiftVideo != null) state.shiftVideo = meta.shiftVideo;
+        if (meta.shiftAudio != null) state.shiftAudio = meta.shiftAudio;
+        if (meta.turboSteps != null)    state.turboSteps    = meta.turboSteps;
+        if (meta.slaTurboSteps != null) state.slaTurboSteps = meta.slaTurboSteps;
+        if (meta.slaTurboLora)          state.slaTurboLora  = meta.slaTurboLora;
+        if (meta.pddNfe)                state.pddNfe            = meta.pddNfe;
+        if (meta.pddFile)              state.pddFile           = meta.pddFile;
+        if (meta.pddFileReference)     state.pddFileReference  = meta.pddFileReference;
         if (Array.isArray(meta.loras)) state.loras = meta.loras.map(l => ({
           name: l.name || "none", strength: l.strength ?? 1.0,
           triggerWord: l.triggerWord || "", enabled: l.enabled !== false,

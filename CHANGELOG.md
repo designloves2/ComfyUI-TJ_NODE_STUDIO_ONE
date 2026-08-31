@@ -2,6 +2,18 @@
 
 ---
 
+## v1.21.2 (2026-09-01)
+
+- **Reuse now reproduces a clip's turbo config.** `metaForVideo` recorded `turboMode`
+  but not the fields turbo needs to actually engage — the turbo/PDD model files, the
+  turbo step counts, `pddNfe` — nor `scheduler` / `denoise` / `shift`. So reusing a PDD
+  clip restored `turboMode="pdd"` with no file, `effectiveTurbo()` fell back to none, and
+  it re-rendered at the normal step count. All of these are saved and restored now.
+  (`reuseAll` already had the restore code for the turbo LoRA fields — it was dead because
+  nothing wrote them.)
+
+---
+
 ## v1.21.1 (2026-09-01)
 
 - **Extend keeps the source's accelerator.** Extend always renders First/Last, but a
