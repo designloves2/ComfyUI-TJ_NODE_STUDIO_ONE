@@ -573,13 +573,26 @@ export function createGalleryOverlay(state, ctx) {
       // The new file is the same shot with the same settings — only the pixels changed.
       // Without this it lands in the gallery with no prompt, no seed and no pipeline
       // record, so Reuse cannot rebuild it and the clip looks like it came from nowhere.
+      // The prompt / seed / pipeline are the SOURCE's (Reuse rebuilds the original, SPEC
+      // §5), but the geometry is the OUTPUT's — an upscale changes w/h, interpolate
+      // changes the frame count and fps — so probe the finished file and correct those.
       if (outFile && v.meta) {
-        await saveMeta(outFile.filename, outFile.subfolder || "", {
+        const patched = {
           ...v.meta,
           created: Date.now(),
           postProcess: label.toLowerCase(),      // "upscale" | "deblur" | "interpolation"
           postSource: v.filename,
-        }).catch(() => {});
+          sourceW: v.meta.w, sourceH: v.meta.h,
+        };
+        delete patched.elapsedSec;               // a different job's timing
+        try {
+          const oi = await getVideoInfo(outFile.filename, outFile.subfolder || "", "output");
+          if (oi?.width)  patched.w = oi.width;
+          if (oi?.height) patched.h = oi.height;
+          if (oi?.frames) { patched.frames = oi.frames; patched.durationSeconds = oi.frames / (oi.fps || FPS); }
+          if (oi?.fps)    patched.fps = oi.fps;
+        } catch { /* keep the source geometry rather than fail the whole run */ }
+        await saveMeta(outFile.filename, outFile.subfolder || "", patched).catch(() => {});
       }
 
       prog.idle(`✓ ${label} done.`);
@@ -924,8 +937,11 @@ export function createGalleryOverlay(state, ctx) {
       infoBtn.addEventListener("mouseenter", () => {
         const m = v.meta || {};
         const lines = [];
+        if (m.postProcess) {
+          lines.push(`⚙ ${m.postProcess}${m.sourceW ? ` (from ${m.sourceW}×${m.sourceH})` : ""}`);
+        }
         if (m.w && m.h) lines.push(`${m.w}×${m.h}`);
-        if (m.frames) lines.push(`${m.frames} frames`);
+        if (m.frames) lines.push(`${m.frames} frames${m.fps ? ` @ ${Math.round(m.fps)}fps` : ""}`);
         if (m.steps) lines.push(`${m.steps} steps`);
         if (m.sampler) lines.push(String(m.sampler));
         if (m.accel) lines.push(`accel: ${m.accel}`);
