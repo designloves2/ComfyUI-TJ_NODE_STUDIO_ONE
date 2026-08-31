@@ -2520,7 +2520,8 @@ async def mmh3_stitch(request):
                 cmd += ["-map", f"{audio_input_idx}:a:0", "-shortest"]
             else:
                 cmd += ["-map", "[outa]"]
-            cmd += ["-c:v", "libx264", "-crf", "18", "-preset", "medium", "-c:a", "aac", out_path]
+            cmd += ["-c:v", "libx264", "-crf", "18", "-preset", "medium", "-c:a", "aac",
+                    "-movflags", "+faststart", out_path]
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
             if proc.returncode != 0 or not os.path.isfile(out_path):
                 return web.json_response(
@@ -2557,7 +2558,9 @@ async def mmh3_stitch(request):
             cmd += ["-t", f"{trim:.3f}", "-c:v", "libx264", "-crf", "18", "-preset", "medium", "-c:a", "aac"]
         else:
             cmd += ["-c", "copy"]
-        cmd.append(out_path)
+        # moov before mdat — desktop browsers seek back for it, iOS Safari refuses to
+        # play the file over HTTP without it. faststart re-passes even with -c copy.
+        cmd += ["-movflags", "+faststart", out_path]
 
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
         try:
@@ -2575,7 +2578,7 @@ async def mmh3_stitch(request):
             cmd_re += ["-c:v", "libx264", "-crf", "18", "-preset", "medium", "-c:a", "aac"]
             if trim and trim > 0:
                 cmd_re += ["-t", f"{trim:.3f}"]
-            cmd_re.append(out_path)
+            cmd_re += ["-movflags", "+faststart", out_path]
             proc = subprocess.run(cmd_re, capture_output=True, text=True, timeout=3600)
             try:
                 os.remove(list_path)

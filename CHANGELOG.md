@@ -2,6 +2,18 @@
 
 ---
 
+## v1.21.3 (2026-09-01)
+
+- **Stitched videos now play on iOS Safari.** `mmh3_stitch` wrote the mp4 `moov` atom
+  after `mdat` in every branch — desktop browsers seek back for it, iOS Safari refuses to
+  play the file over HTTP (broken-play triangle in the fullscreen player). Added
+  `-movflags +faststart` to all three ffmpeg paths (stream-copy concat, trim/overlap
+  re-encode, audio-override). Affects One-Take auto-stitch, gallery Extend, manual Combine
+  and the chunked upscale/deblur/interpolate joins. Individual clips were already fine
+  (ComfyUI's SaveVideo faststarts them).
+
+---
+
 ## v1.21.2 (2026-09-01)
 
 - **Reuse now reproduces a clip's turbo config.** `metaForVideo` recorded `turboMode`
