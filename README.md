@@ -26,6 +26,27 @@
 
 ---
 
+## ⚠️ 설치 후 필수 단계 — 의존성 노드 설치
+## ⚠️ Required step after install — install the dependency nodes
+
+> **ComfyUI-Manager로 이 패키지를 설치하면 Python 패키지는 자동으로 설치되지만, 이 노드가 의존하는 다른 커스텀 노드 팩은 자동으로 설치되지 않습니다.** (Manager의 nightly/git 설치 경로에는 노드 팩을 자동 설치하는 기능이 없습니다.) 설치 직후 아래 스크립트를 **한 번** 실행한 뒤 ComfyUI를 재시작하세요. 실행하지 않으면 노드는 뜨지만 Face Redraw · Faceswap · ControlNet · RE-BG · Upscale · MiniMax H3 Reference 등 여러 모드가 로드에 실패합니다. 어떤 팩이 빠졌는지는 ComfyUI 시작 시 콘솔에 배너로 표시됩니다.
+>
+> **Windows:** 패키지 폴더의 `install_requirements.bat` 더블클릭
+> **Mac / Linux:** `bash install_requirements.sh`
+>
+> 자세한 목록은 [필수 커스텀 노드](#필수-커스텀-노드) 섹션 참고.
+>
+> ---
+>
+> **When you install this package via ComfyUI-Manager, the Python packages install automatically but the other custom-node packs this node depends on do NOT** (Manager's nightly/git install path has no mechanism for auto-installing node packs). Run the script below **once** right after install, then restart ComfyUI. Without it the node loads but several modes fail — Face Redraw, Faceswap, ControlNet, RE-BG, Upscale, MiniMax H3 Reference. The ComfyUI console prints a banner at startup listing exactly which packs are missing.
+>
+> **Windows:** double-click `install_requirements.bat` in the package folder
+> **Mac / Linux:** `bash install_requirements.sh`
+>
+> See [Required Custom Nodes](#필수-커스텀-노드) for the full list.
+
+---
+
 ## 🌐 웹 버전 — AI ONE STUDIO
 ## 🌐 Web Version — AI ONE STUDIO
 

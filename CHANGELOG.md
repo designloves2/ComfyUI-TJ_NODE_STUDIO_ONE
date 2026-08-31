@@ -2,6 +2,22 @@
 
 ---
 
+## v1.20.1 (2026-08-31)
+
+### 의존성 노드 누락을 시작 시 알립니다
+
+- ComfyUI-Manager는 이 패키지를 설치할 때 Python 패키지는 자동으로 깔지만, 이 노드가
+  의존하는 **다른 커스텀 노드 팩은 자동으로 설치하지 않습니다** (nightly/git 설치 경로에
+  해당 기능이 없음). 지금까지는 노드는 뜨는데 Face Redraw · Faceswap · ControlNet ·
+  RE-BG · Upscale · MiniMax H3 Reference 등이 조용히 로드에 실패했습니다.
+- ComfyUI 시작 시 콘솔에 **어떤 팩이 빠졌는지 배너로 표시**합니다 (`dependency_check.py`).
+  필수 팩과 선택 팩을 구분하고, `install_requirements.bat` / `.sh` 실행을 안내합니다.
+- 이 점검은 `custom_nodes/` 폴더의 **이름만** 읽습니다 — 파일 내용 · 쓰기 · 네트워크 ·
+  subprocess 없음. 실패해도 노드 로딩을 막지 않습니다.
+- README 상단에 같은 내용의 경고 섹션을 추가했습니다.
+
+---
+
 ## v1.20.0 (2026-08-31)
 
 ### MiniMax H3 — 클립별 레퍼런스 오버라이드
