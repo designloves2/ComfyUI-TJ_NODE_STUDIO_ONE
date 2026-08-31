@@ -2,6 +2,29 @@
 
 ---
 
+## v1.20.2 (2026-08-31)
+
+### 의존성 노드 누락 경고를 노드 화면에 직접 표시합니다
+
+- v1.20.1의 시작 로그 배너는 놓치기 쉽습니다. MiniMax H3 노드 상단에 **의존성 팩이
+  빠졌을 때 사라지지 않는 경고 스트립**을 추가했습니다. 필수 노드가 없으면 빨간색
+  (렌더 불가), 선택 노드만 없으면 주황색입니다.
+- 경고에 **실행할 파일의 전체 경로**를 함께 보여줍니다:
+  `<패키지 폴더>\install_requirements.bat` / `bash "<패키지 폴더>/install_requirements.sh"`.
+  세션 동안 `✕`로 닫을 수 있습니다.
+- Settings ⚙ → Third-party pack status 패널도 같은 경로·명령을 표시하고, 이제 누락된
+  **필수** 노드도 함께 알립니다.
+- `/minimax_h3_one/node_availability` 응답에 `install_dir` · 스크립트 이름 추가.
+
+### install_requirements가 ComfyUI-TJ_NODE도 설치합니다
+
+- `TJ_FreeTextEncoderVRAM` · `TJ_RTXDeblur` · H3 Audio Lock · One-Take · `TJ_MultiImageLoader`
+  등은 형제 팩 **ComfyUI-TJ_NODE**에 있는데, 설치 스크립트 목록에 빠져 있어서 스크립트를
+  돌려도 이 노드들이 계속 "not installed"로 남았습니다. 목록에 추가했습니다.
+- `MMH3_OPTIONAL_NODES`의 중복 항목(`TJ_FreeTextEncoderVRAM` 2회) 제거.
+
+---
+
 ## v1.20.1 (2026-08-31)
 
 ### 의존성 노드 누락을 시작 시 알립니다

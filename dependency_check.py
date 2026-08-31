@@ -26,6 +26,7 @@ _CORE = [
     ("comfyui_controlnet_aux",        (("comfyui_controlnet_aux",),                               "Z-Image ControlNet")),
     ("ComfyUI-SeedVR2_VideoUpscaler", (("comfyui-seedvr2_videoupscaler", "seedvr2_videoupscaler"), "Upscale mode (every ONE STUDIO node)")),
     ("ComfyUI-VideoHelperSuite",      (("comfyui-videohelpersuite",),                             "MiniMax H3 reference-video inputs")),
+    ("ComfyUI-TJ_NODE",               (("comfyui-tj_node", "comfyui-tj-node"),                    "LLM brief / vision, Free Text Encoder VRAM, RTX Deblur, H3 Audio Lock, One-Take")),
 ]
 
 # only needed for specific optional modes - listed, not shouted about

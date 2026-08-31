@@ -72,8 +72,11 @@ set REPOS[18]=https://github.com/PlagueKind/ComfyUI-PlagueKind-Nodes
 set REPOS[19]=https://github.com/Saganaki22/ComfyUI-sol-attn
 rem MiniMax-H3 PDD Acc: 8-step parallel-decoding LoRA (alibaba-pai weights).
 set REPOS[20]=https://github.com/Jalen-Brunson/ComfyUI-MiniMax-H3-PDD-Acc
+rem Sibling pack. Ships TJ_FreeTextEncoderVRAM, TJ_RTXDeblur, the H3 Audio Lock and
+rem One-Take latent-continuation nodes, TJ_MultiImageLoader, and the LLM / vision utils.
+set REPOS[21]=https://github.com/designloves2/ComfyUI-TJ_NODE
 
-set COUNT=21
+set COUNT=22
 set /a LAST=COUNT-1
 
 :: ComfyUI Manager는 저장소 이름이 아니라 pyproject의 name으로 폴더를 만든다. 그래서

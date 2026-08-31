@@ -122,11 +122,16 @@ function registryAvailability(names) {
 export async function getNodeAvailability() {
   const all = [...MMH3_CORE_NODES, ...MMH3_OPTIONAL_NODES];
   const local = registryAvailability(all);
-  let remote = {};
+  let remote = {}, install = {};
   try {
     const r = await api.fetchApi(`${API}/node_availability`);
     const d = await r.json();
     remote = d.available || {};
+    install = {
+      install_dir: d.install_dir || "",
+      install_script_win: d.install_script_win || "install_requirements.bat",
+      install_script_nix: d.install_script_nix || "install_requirements.sh",
+    };
   } catch { /* older backend or route missing — the registry still answers */ }
 
   const available = {};
@@ -138,6 +143,7 @@ export async function getNodeAvailability() {
     core_ok: missingCore.length === 0,
     missing_core: missingCore,
     missing_optional: missingOptional,
+    ...install,
   };
 }
 

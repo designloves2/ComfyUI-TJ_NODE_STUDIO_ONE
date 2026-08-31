@@ -140,11 +140,30 @@ export function createSettingsOverlay(state, ctx) {
     ]));
 
     const missing = availability.missing_optional || [];
-    const availNote = el("div", { style: { fontSize: "10px", lineHeight: "1.6", color: missing.length ? C.warn : C.ok } });
-    availNote.innerHTML = missing.length
-      ? `⚠ Not installed — the matching feature stays off: <code>${missing.join("</code>, <code>")}</code>`
+    const missCore = availability.missing_core || [];
+    const availNote = el("div", { style: { fontSize: "10px", lineHeight: "1.6", color: (missing.length || missCore.length) ? C.warn : C.ok } });
+    availNote.innerHTML = (missing.length || missCore.length)
+      ? (missCore.length ? `⛔ Required nodes missing — this node cannot render: <code>${missCore.join("</code>, <code>")}</code><br>` : "")
+        + (missing.length ? `⚠ Not installed — the matching feature stays off: <code>${missing.join("</code>, <code>")}</code>` : "")
       : "✓ All optional acceleration / preview / upscale packs are installed.";
-    wrap.appendChild(panel([label("Third-party pack status"), availNote]));
+    const kids = [label("Third-party pack status"), availNote];
+    if (missing.length || missCore.length) {
+      const dir = availability.install_dir || "the package folder";
+      const fix = el("div", { style: { fontSize: "10px", lineHeight: "1.6", color: C.muted, marginTop: "6px" } });
+      fix.innerHTML =
+        "ComfyUI-Manager installs this pack's Python requirements but <b>not</b> other node packs. "
+        + "Run this once, then restart ComfyUI:";
+      const cmd = el("div", { style: {
+        fontFamily: "ui-monospace, Consolas, monospace", fontSize: "10px", marginTop: "4px",
+        background: C.bg2, border: `1px solid ${C.border}`, borderRadius: "6px",
+        padding: "6px 8px", color: C.text, userSelect: "text", whiteSpace: "pre-wrap", wordBreak: "break-all",
+      }});
+      cmd.textContent =
+        `Windows:      ${dir}\\${availability.install_script_win || "install_requirements.bat"}\n` +
+        `Mac / Linux:  bash "${dir}/${availability.install_script_nix || "install_requirements.sh"}"`;
+      kids.push(fix, cmd);
+    }
+    wrap.appendChild(panel(kids));
     return wrap;
   }
 

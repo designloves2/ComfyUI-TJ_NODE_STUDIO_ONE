@@ -2235,9 +2235,6 @@ MMH3_OPTIONAL_NODES = [
     # analysis pass costs no separate server or model file. TJ_MultiImageLoader ships
     # with TJ_NODE; TextGenerate and TJStudioOneTextOutput are this package's own.
     "TJ_MultiImageLoader", "TextGenerate", "TJStudioOneTextOutput",
-    # Frees the text encoder's VRAM right after conditioning is computed, before the
-    # diffuse model samples (ships with ComfyUI-TJ_NODE). See SPEC_FREE_TEXT_ENCODER_VRAM_PORT.md.
-    "TJ_FreeTextEncoderVRAM",
 ]
 MMH3_CORE_NODES = [
     "MiniMaxH3ImageToVideo",
@@ -2264,6 +2261,11 @@ async def mmh3_node_availability(request):
         "core_ok": all(avail.get(n, False) for n in MMH3_CORE_NODES),
         "missing_core": [n for n in MMH3_CORE_NODES if not avail.get(n, False)],
         "missing_optional": [n for n in MMH3_OPTIONAL_NODES if not avail.get(n, False)],
+        # so the node can tell the user exactly what to run and where. The Manager
+        # nightly/git install does not pull in dependency node packs — this script does.
+        "install_dir": NODE_DIR,
+        "install_script_win": "install_requirements.bat",
+        "install_script_nix": "install_requirements.sh",
     })
 
 

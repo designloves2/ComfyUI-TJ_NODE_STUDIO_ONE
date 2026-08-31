@@ -89,6 +89,9 @@ REPOS=(
     "https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache"
     "https://github.com/PlagueKind/ComfyUI-PlagueKind-Nodes"
     "https://github.com/Saganaki22/ComfyUI-sol-attn"
+    # Sibling pack — TJ_FreeTextEncoderVRAM, TJ_RTXDeblur, the H3 Audio Lock and One-Take
+    # latent-continuation nodes, TJ_MultiImageLoader, and the LLM / vision utilities.
+    "https://github.com/designloves2/ComfyUI-TJ_NODE"
 )
 
 # ComfyUI Manager names a folder after the pack's pyproject `name`, which is often not

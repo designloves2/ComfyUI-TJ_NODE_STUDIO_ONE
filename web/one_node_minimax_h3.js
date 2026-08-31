@@ -232,6 +232,61 @@ app.registerExtension({
       topBar.appendChild(iconBtn("?", "Help", () => helpOv?.show()));
       root.appendChild(topBar);
 
+      // ── dependency banner ───────────────────────────────────────────────────
+      // ComfyUI-Manager installs this pack's Python requirements but not the other
+      // node packs it depends on. When some are missing the node still loads, so a
+      // startup console line is easy to miss — this strip stays on the node face
+      // until the user runs the installer (or dismisses it for the session).
+      let depDismissed = false;
+      const depBanner = el("div", { style: {
+        display: "none", flexDirection: "column", gap: "4px", flexShrink: "0",
+        marginBottom: `${PAD}px`, padding: "8px 10px", borderRadius: "8px",
+        fontSize: "11px", lineHeight: "1.5",
+      }});
+      function renderDepBanner(av) {
+        const mc = (av?.missing_core || []), mo = (av?.missing_optional || []);
+        if (depDismissed || (!mc.length && !mo.length)) { depBanner.style.display = "none"; return; }
+        const dir = av.install_dir || "the package folder";
+        const isCore = mc.length > 0;
+        depBanner.style.background = isCore ? "rgba(255,90,90,0.12)" : "rgba(255,179,71,0.12)";
+        depBanner.style.border = `1px solid ${isCore ? "#ff5a5a" : C.warn}`;
+        depBanner.style.color = isCore ? "#ff8a8a" : C.warn;
+        clear(depBanner);
+
+        const head = el("div", { style: { display: "flex", alignItems: "center", gap: "6px" } });
+        head.appendChild(el("span", { text: isCore
+          ? `⚠ Required node packs missing — this node cannot render (${mc.length}).`
+          : `⚠ ${mo.length} optional node pack${mo.length > 1 ? "s" : ""} not installed — the matching features stay off.` ,
+          style: { flex: "1", fontWeight: "700" } }));
+        const x = el("span", { text: "✕", title: "Dismiss until reload", style: { cursor: "pointer", padding: "0 4px" } });
+        x.addEventListener("click", () => { depDismissed = true; depBanner.style.display = "none"; });
+        head.appendChild(x);
+        depBanner.appendChild(head);
+
+        if (isCore) depBanner.appendChild(el("div", {
+          text: mc.join(", "),
+          style: { opacity: "0.9", wordBreak: "break-word" } }));
+
+        depBanner.appendChild(el("div", {
+          html: "Fix — run this once, then restart ComfyUI:",
+          style: { marginTop: "2px", color: C.text } }));
+        const cmd = el("div", { style: {
+          fontFamily: "ui-monospace, Consolas, monospace", fontSize: "10.5px",
+          background: C.bg2, border: `1px solid ${C.border}`, borderRadius: "6px",
+          padding: "5px 8px", color: C.text, userSelect: "text", whiteSpace: "pre-wrap", wordBreak: "break-all",
+        }});
+        cmd.textContent =
+          `Windows:      ${dir}\\${av.install_script_win || "install_requirements.bat"}\n` +
+          `Mac / Linux:  bash "${dir}/${av.install_script_nix || "install_requirements.sh"}"`;
+        depBanner.appendChild(cmd);
+        depBanner.appendChild(el("div", {
+          text: "Details: Settings ⚙ → Third-party pack status.",
+          style: { color: C.muted, fontSize: "10px" } }));
+
+        depBanner.style.display = "flex";
+      }
+      root.appendChild(depBanner);
+
       // ── main row ────────────────────────────────────────────────────────────
       const mainRow   = el("div", { style: { display: "flex", gap: `${PAD}px`, height: `${RIGHT_H}px`, flexShrink: "0" } });
       const leftOuter = el("div", { style: { width: `${LEFT_W}px`, flexShrink: "0", height: `${RIGHT_H}px`, display: "flex", flexDirection: "column" } });
@@ -2464,6 +2519,7 @@ app.registerExtension({
         ctx.availabilityInfo = av;
         // The panel gates options on this and rendered before it arrived, so redraw.
         renderLeft();
+        renderDepBanner(av);
         if (av.core_ok === false) {
           showPopup(`Missing core nodes: ${(av.missing_core || []).join(", ")}`, true);
         } else if ((av.missing_optional || []).length) {
