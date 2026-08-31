@@ -375,8 +375,9 @@ export async function interrupt() {
  */
 export function queuePrompt(promptGraph, { onProgress, onNode } = {}) {
   return new Promise(async (resolve, reject) => {
-    let promptId = null;
+    let promptId = null, settled = false;
     const outputs = {};
+    const finish = (fn, arg) => { if (settled) return; settled = true; cleanup(); fn(arg); };
 
     const onProgressEvt = (ev) => {
       if (!onProgress) return;
@@ -396,21 +397,39 @@ export function queuePrompt(promptGraph, { onProgress, onNode } = {}) {
     const onSuccess = (ev) => {
       const d = ev.detail || {};
       if (d.prompt_id && promptId && d.prompt_id !== promptId) return;
-      cleanup();
-      resolve({ byNode: outputs });
+      finish(resolve, { byNode: outputs });
     };
     const onExecError = (ev) => {
       const d = ev.detail || {};
       if (d.prompt_id && promptId && d.prompt_id !== promptId) return;
-      cleanup();
-      reject(new Error(d.exception_message || "generation failed"));
+      finish(reject, new Error(d.exception_message || "generation failed"));
     };
     const onCancelled = (ev) => {
       const d = ev.detail || {};
       if (d.prompt_id && promptId && d.prompt_id !== promptId) return;
-      cleanup();
-      reject(new Error("cancelled"));
+      finish(reject, new Error("cancelled"));
     };
+    // Safety net: on a flaky link (a backgrounded mobile tab over the tunnel) the
+    // websocket can drop mid-run, so execution_success never arrives even though the
+    // prompt finished. Poll /history for the same prompt and settle from there.
+    async function pollHistory() {
+      while (!settled) {
+        await new Promise(r => setTimeout(r, 5000));
+        if (settled || !promptId) continue;
+        try {
+          const r = await api.fetchApi(`/history/${promptId}`);
+          const entry = (await r.json())[promptId];
+          if (!entry || !entry.status) continue;
+          if (entry.status.status_str === "error") {
+            const msg = (entry.status.messages || [])
+              .map(m => Array.isArray(m) ? m.join(" ") : String(m)).join("; ");
+            finish(reject, new Error(msg || "generation failed"));
+          } else if (entry.status.completed) {
+            finish(resolve, { byNode: entry.outputs || outputs });
+          }
+        } catch { /* keep polling */ }
+      }
+    }
     function cleanup() {
       api.removeEventListener("progress",            onProgressEvt);
       api.removeEventListener("executed",            onExecutedEvt);
@@ -440,7 +459,8 @@ export function queuePrompt(promptGraph, { onProgress, onNode } = {}) {
         return;
       }
       promptId = data.prompt_id;
-    } catch (e) { cleanup(); reject(e); }
+      pollHistory();
+    } catch (e) { finish(reject, e); }
   });
 }
 
