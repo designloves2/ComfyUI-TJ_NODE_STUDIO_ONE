@@ -2531,6 +2531,11 @@ app.registerExtension({
         state.promptHeader = ""; state.promptFooter = "";
         state.generationMode = "firstlast";
         state.continuityMode = "none";
+        // Extend always renders First/Last. If the source ran in Reference mode its turbo
+        // files sit in the *reference* slots, which firstlast never reads — carry them over
+        // so the continuation keeps the same accelerator instead of silently dropping it.
+        if (!state.pddFile || state.pddFile === "none") state.pddFile = state.pddFileReference || state.pddFile;
+        if (!state.turboLora || state.turboLora === "none") state.turboLora = state.turboLoraReference || state.turboLora;
         if (!generationModesFor(state).find(m => m.key === "firstlast")?.enabled) {
           showPopup("Set the First/Last UNET in ⚙ Settings → Models to use Extend.", true);
           return;

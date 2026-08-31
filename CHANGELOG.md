@@ -2,6 +2,16 @@
 
 ---
 
+## v1.21.1 (2026-09-01)
+
+- **Extend keeps the source's accelerator.** Extend always renders First/Last, but a
+  source clip made in Reference mode keeps its turbo LoRA / PDD file in the *reference*
+  slots, which First/Last never reads — so the continuation quietly dropped to no
+  accelerator. `runExtend` now copies `pddFileReference` → `pddFile` and
+  `turboLoraReference` → `turboLora` when the First/Last slot is empty.
+
+---
+
 ## v1.21.0 (2026-09-01)
 
 ### MiniMax H3 — 이어서 생성 (Continue) + 갤러리 Extend
