@@ -64,6 +64,13 @@ else
 fi
 echo
 
+# Some packs (insightface, onnx, older RTX deps) drag numpy up or down. ComfyUI and a
+# lot of nodes still want numpy 1.x — record what is here now and put it back at the end
+# if something changed it.
+NUMPY_BEFORE=""
+[ -n "$PYTHON" ] && NUMPY_BEFORE="$("$PYTHON" -m pip show numpy 2>/dev/null | awk '/^Version:/{print $2}')"
+echo
+
 # ── repositories ──────────────────────────────────────────────────────────────
 REPOS=(
     "https://github.com/ltdrdata/ComfyUI-Impact-Pack"
@@ -225,6 +232,17 @@ echo "  failed          : $N_FAIL"
 if [ ${#DEPWARN[@]} -gt 0 ]; then
     echo "  dependency warnings (pack may not load):"
     printf '    - %s\n' "${DEPWARN[@]}"
+fi
+
+# Restore numpy if a pack moved it — ComfyUI and many nodes still need numpy 1.x.
+if [ -n "$NUMPY_BEFORE" ] && [ -n "$PYTHON" ]; then
+    NUMPY_AFTER="$("$PYTHON" -m pip show numpy 2>/dev/null | awk '/^Version:/{print $2}')"
+    if [ -n "$NUMPY_AFTER" ] && [ "$NUMPY_AFTER" != "$NUMPY_BEFORE" ]; then
+        echo
+        echo "  [numpy] a dependency changed numpy $NUMPY_BEFORE -> $NUMPY_AFTER — restoring $NUMPY_BEFORE"
+        "$PYTHON" -m pip install "numpy==$NUMPY_BEFORE" --quiet \
+            || echo "  [numpy] could not restore automatically — run: $PYTHON -m pip install numpy==$NUMPY_BEFORE"
+    fi
 fi
 echo
 echo " Restart ComfyUI to load the changes."

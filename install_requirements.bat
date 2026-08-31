@@ -44,6 +44,11 @@ rem 미리 깔아두는 것이 실제 해결책.
 "%PYTHON%" -m pip install wheel-stub --quiet
 echo [PIP] Done.
 :SKIP_PIP
+
+rem Some packs (insightface, onnx, older RTX deps) move numpy. ComfyUI and many nodes
+rem still need numpy 1.x - record it now and restore it at the end if it changed.
+set "NUMPY_BEFORE="
+if not "%PYTHON%"=="" for /f "tokens=2" %%v in ('"%PYTHON%" -m pip show numpy 2^>nul ^| findstr /b /c:"Version:"') do set "NUMPY_BEFORE=%%v"
 echo.
 
 :: ── 설치할 노드 목록 ─────────────────────────────────────────────────────────
@@ -119,6 +124,17 @@ echo   newly installed : !N_NEW!
 echo   updated         : !N_UPD!
 echo   already current : !N_CUR!
 echo   failed          : !N_FAIL!
+echo.
+
+rem Restore numpy if a pack moved it.
+if not "!NUMPY_BEFORE!"=="" if not "%PYTHON%"=="" (
+    set "NUMPY_AFTER="
+    for /f "tokens=2" %%v in ('"%PYTHON%" -m pip show numpy 2^>nul ^| findstr /b /c:"Version:"') do set "NUMPY_AFTER=%%v"
+    if not "!NUMPY_AFTER!"=="!NUMPY_BEFORE!" (
+        echo   [numpy] a dependency changed numpy !NUMPY_BEFORE! -^> !NUMPY_AFTER! - restoring !NUMPY_BEFORE!
+        "%PYTHON%" -m pip install "numpy==!NUMPY_BEFORE!" --quiet || echo   [numpy] could not restore - run: "%PYTHON%" -m pip install numpy==!NUMPY_BEFORE!
+    )
+)
 echo.
 echo  Restart ComfyUI to load the changes.
 echo ========================================================
