@@ -272,7 +272,7 @@ app.registerExtension({
           style: { marginTop: "2px", color: C.text } }));
 
         const winCmd = `${dir}\\${av.install_script_win || "install_requirements.bat"}`;
-        const nixCmd = `bash "${dir}/${av.install_script_nix || "install_requirements.sh"}"`;
+        const nixCmd = `${dir}/${av.install_script_nix || "install_requirements.sh"}`;
         for (const [os, line] of [["Windows", winCmd], ["Mac / Linux", nixCmd]]) {
           const rowEl = el("div", { style: { display: "flex", alignItems: "stretch", gap: "5px", marginTop: "3px" } });
           rowEl.appendChild(el("code", { text: line, style: {
@@ -280,7 +280,7 @@ app.registerExtension({
             background: C.bg2, border: `1px solid ${C.border}`, borderRadius: "6px",
             padding: "5px 8px", color: C.text, userSelect: "text", whiteSpace: "pre-wrap", wordBreak: "break-all",
           }}));
-          const copyBtn = el("button", { type: "button", text: "⧉ Copy", title: `Copy the ${os} command`, style: {
+          const copyBtn = el("button", { type: "button", text: "⧉ Copy", title: `Copy the ${os} path`, style: {
             flexShrink: "0", cursor: "pointer", fontFamily: "inherit", fontSize: "10px", fontWeight: "700",
             border: `1px solid ${C.border}`, borderRadius: "6px", background: C.bg2, color: C.text, padding: "0 9px",
           }});
@@ -290,63 +290,18 @@ app.registerExtension({
               try { document.execCommand("copy"); } catch {} t.remove(); }
             copyBtn.textContent = "✓ Copied";
             setTimeout(() => { copyBtn.textContent = "⧉ Copy"; }, 1500);
-            showDepInstructions(os, line);
+            showPopup("Path copied. Run this script from a terminal, then restart ComfyUI.", false);
           });
           rowEl.appendChild(copyBtn);
           depBanner.appendChild(rowEl);
         }
 
         depBanner.appendChild(el("div", {
-          text: "Details: Settings ⚙ → Third-party pack status.",
+          text: "Run the script for your OS from a terminal, then restart ComfyUI. "
+            + "Details: Settings ⚙ → Third-party pack status.",
           style: { color: C.muted, fontSize: "10px", marginTop: "3px" } }));
 
         depBanner.style.display = "flex";
-      }
-      // A persistent step-by-step popup after Copy — showPopup auto-fades in 4s, and
-      // the point here is that the user reads it while alt-tabbed to a terminal.
-      function showDepInstructions(os, line) {
-        root.querySelector(".mmh3-depmodal")?.remove();
-        const isWin = os === "Windows";
-        const box = el("div", { style: {
-          background: "#161616", border: `1px solid ${C.border}`, borderRadius: "10px",
-          width: "380px", maxWidth: "92%", padding: "16px", display: "flex",
-          flexDirection: "column", gap: "9px", boxShadow: "0 12px 40px rgba(0,0,0,0.6)",
-        }});
-        box.appendChild(el("div", { text: "Command copied — now run it", style: { color: "#fff", fontSize: "13px", fontWeight: "700" } }));
-        const steps = isWin
-          ? ["1. Press Win+R, type  cmd , press Enter.",
-             "2. Right-click in the black window to paste (or Ctrl+V).",
-             "3. Press Enter and wait for it to finish.",
-             "4. Restart ComfyUI."]
-          : ["1. Open a Terminal.",
-             "2. Paste the command (Cmd+V) and press Enter.",
-             "3. Wait for it to finish.",
-             "4. Restart ComfyUI."];
-        for (const s of steps) box.appendChild(el("div", { text: s, style: { fontSize: "11.5px", color: C.text, lineHeight: "1.55" } }));
-        box.appendChild(el("code", { text: line, style: {
-          fontFamily: "ui-monospace, Consolas, monospace", fontSize: "10px", background: C.bg2,
-          border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px 8px",
-          color: C.muted, userSelect: "text", wordBreak: "break-all",
-        }}));
-        const okRow = el("div", { style: { display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "2px" } });
-        const recopy = el("button", { type: "button", text: "Copy again", style: {
-          cursor: "pointer", fontFamily: "inherit", fontSize: "12px", padding: "6px 12px",
-          borderRadius: "6px", border: `1px solid ${C.border}`, background: C.bg2, color: C.text } });
-        recopy.addEventListener("click", () => { navigator.clipboard?.writeText(line).catch(() => {}); });
-        const ok = el("button", { type: "button", text: "Got it", style: {
-          cursor: "pointer", fontFamily: "inherit", fontSize: "12px", fontWeight: "700", padding: "6px 14px",
-          borderRadius: "6px", border: "1px solid transparent", background: BRAND, color: "#fff" } });
-        const ov = el("div", { style: {
-          position: "absolute", inset: "0", zIndex: "10060", display: "flex",
-          alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.6)", borderRadius: "inherit",
-        }}, [box]);
-        ov.className = "mmh3-depmodal";
-        const close = () => ov.remove();
-        ok.addEventListener("click", close);
-        ov.addEventListener("mousedown", (e) => { if (e.target === ov) close(); });
-        okRow.append(recopy, ok);
-        box.appendChild(okRow);
-        root.appendChild(ov);
       }
       root.appendChild(depBanner);
 
