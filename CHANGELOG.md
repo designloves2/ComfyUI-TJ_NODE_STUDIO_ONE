@@ -2,6 +2,18 @@
 
 ---
 
+## v1.22.4 (2026-09-01)
+
+- **`Sampling · step N/M` 총 스텝 수가 이제 정확합니다.** ComfyUI의 `progress` 이벤트는
+  `{value, max, node, prompt_id}`인데, 여기서 `node`를 안 보고 `max`만 읽어 진행률 콜백에
+  넘기고 있었습니다. 그래서 스텝 프리뷰 오버라이드·비디오 VAEDecode(라틴트 프레임 수만큼
+  틱)·업스케일/디블러 노드가 같은 판독값에 끼어들어 `38/60`, `7/8` 같은 엉뚱한 숫자가
+  떴습니다. `queuePrompt` / `waitForHistory`에 `samplerNode` 옵션을 추가해
+  `SamplerCustomAdvanced`(`MM:sampler`)의 틱만 통과시킵니다. 샘플러 id를 모르는 경우
+  (그래프 없는 재접속)엔 종전대로 전부 통과.
+
+---
+
 ## v1.22.3 (2026-09-01)
 
 - **설정 → Models의 PDD Acc file 저장이 실제로 유지됩니다.** `mmh3_save_config`는 값을

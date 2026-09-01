@@ -2134,6 +2134,7 @@ app.registerExtension({
               setStatus(`Clip ${curClip}/${totClip} · reconnecting to in-flight render…`);
               res = await waitForHistory(resume.inFlightPromptId, {
                 onProgress: (v, m) => setStepProgress(v, m),
+                samplerNode: NODE_IDS.sampler,
               });
             } else {
               let built;
@@ -2167,6 +2168,7 @@ app.registerExtension({
               try {
                 res = await queuePrompt(built.graph, {
                   onProgress: (v, m) => setStepProgress(v, m),
+                  samplerNode: NODE_IDS.sampler,
                 });
               } finally { mem.stop(); }
             }

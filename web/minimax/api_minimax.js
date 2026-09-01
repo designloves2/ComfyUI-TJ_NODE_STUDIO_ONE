@@ -373,16 +373,24 @@ export async function interrupt() {
  * Resolves with { images, videos, byNode } where `byNode` is the raw executed payload
  * keyed by node id — the relay loop needs specific nodes (clip video, last frame).
  */
-export function queuePrompt(promptGraph, { onProgress, onNode, onQueued } = {}) {
+export function queuePrompt(promptGraph, { onProgress, onNode, onQueued, samplerNode } = {}) {
   return new Promise(async (resolve, reject) => {
     let promptId = null, settled = false;
     const outputs = {};
     const finish = (fn, arg) => { if (settled) return; settled = true; cleanup(); fn(arg); };
 
+    // ComfyUI's `progress` payload is {value, max, node, prompt_id}. Every node with a
+    // progress bar — the per-step preview override, the video VAE decode (~one tick per
+    // latent frame), upscale/deblur/RIFE — emits on the same event, so without a node
+    // filter the "step N/M" readout jumps to bogus totals. Forward only the sampler's
+    // own ticks; if we don't know its id (reconnect with no graph) forward everything.
     const onProgressEvt = (ev) => {
       if (!onProgress) return;
       try {
-        const { value, max } = ev.detail || {};
+        const d = ev.detail || {};
+        if (d.prompt_id && promptId && d.prompt_id !== promptId) return;
+        if (samplerNode && d.node != null && d.node !== samplerNode) return;
+        const { value, max } = d;
         if (max) onProgress(value, max);
       } catch {}
     };
@@ -473,12 +481,13 @@ export function queuePrompt(promptGraph, { onProgress, onNode, onQueued } = {}) 
  * `{ byNode }` shape queuePrompt() resolves with, so callers don't need to care which one
  * actually ran.
  */
-export async function waitForHistory(promptId, { onProgress, pollMs = 1500 } = {}) {
+export async function waitForHistory(promptId, { onProgress, pollMs = 1500, samplerNode } = {}) {
   const onProgressEvt = (ev) => {
     if (!onProgress) return;
     try {
       const d = ev.detail || {};
       if (d.prompt_id && d.prompt_id !== promptId) return;
+      if (samplerNode && d.node != null && d.node !== samplerNode) return;
       const { value, max } = d;
       if (max) onProgress(value, max);
     } catch {}
