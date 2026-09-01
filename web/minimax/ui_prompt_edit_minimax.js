@@ -309,11 +309,8 @@ This cannot be undone.`,
       if (typeof ta.autoSize === "function") ta.autoSize();
       ctx.persist();
       if (typeof refreshPreviewTag === "function") refreshPreviewTag();
+      paint();
     };
-    ta.addEventListener("focus", () => {
-      if (stack[stack.length - 1] !== ta.value) stack.push(ta.value);
-      if (stack.length > 15) stack.shift();
-    });
     const mk = (txt, tip, fn) => {
       const b = el("button", { type: "button", text: txt, title: tip, style: {
         cursor: "pointer", fontFamily: "inherit", fontSize: "9px", padding: "2px 7px",
@@ -323,11 +320,23 @@ This cannot be undone.`,
       b.addEventListener("click", (e) => { e.preventDefault(); fn(); });
       return b;
     };
-    const row = el("div", { style: { display: "flex", gap: "4px", flexShrink: "0" } }, [
-      mk("Undo", "Undo this field's last change", () => { if (stack.length) apply(stack.pop()); }),
-      mk("Clear", "Empty this field", () => { stack.push(ta.value); apply(""); }),
-    ]);
-    row.resetStack = () => { stack.length = 0; };   // call on clip switch so undo stays within one clip
+    const undoB = mk("Undo", "Undo this field's last change", () => { if (stack.length) apply(stack.pop()); });
+    const clearB = mk("Clear", "Empty this field", () => { stack.push(ta.value); apply(""); });
+    // White while the button can actually do something, muted otherwise.
+    function paint() {
+      undoB.style.color  = stack.length ? "#fff" : C.muted;
+      clearB.style.color = ta.value ? "#fff" : C.muted;
+    }
+    ta.addEventListener("focus", () => {
+      if (stack[stack.length - 1] !== ta.value) stack.push(ta.value);
+      if (stack.length > 15) stack.shift();
+      paint();
+    });
+    ta.addEventListener("input", paint);
+    const row = el("div", { style: { display: "flex", gap: "4px", flexShrink: "0" } }, [undoB, clearB]);
+    row.resetStack = () => { stack.length = 0; paint(); };   // call on clip switch so undo stays within one clip
+    row.paint = paint;
+    paint();
     return row;
   }
 
@@ -379,20 +388,18 @@ This cannot be undone.`,
     headerLbl.style.color = own ? BRAND : C.muted;
     footerLbl.style.color = own ? BRAND : C.muted;
     headerTA.autoSize(); footerTA.autoSize();
+    headerUC?.paint?.(); footerUC?.paint?.();
     refreshPreviewTag();
   }
 
   headerLbl.style.flex = "1"; footerLbl.style.flex = "1";
-  const lblRow = (lbl, ta, write) => el("div", {
-    style: { display: "flex", alignItems: "center", gap: "6px" } }, [lbl, undoClearBtns(ta, write)]);
+  const headerUC = undoClearBtns(headerTA, v => { const t = framingTarget(); if (ownFraming()) t.header = v; else t.promptHeader = v; });
+  const footerUC = undoClearBtns(footerTA, v => { const t = framingTarget(); if (ownFraming()) t.footer = v; else t.promptFooter = v; });
+  const lblRow = (lbl, uc) => el("div", { style: { display: "flex", alignItems: "center", gap: "6px" } }, [lbl, uc]);
   const commonWrap = el("div", { style: { flexShrink: "0", display: "flex", gap: "8px" } });
   commonWrap.append(
-    el("div", { style: { flex: "1", display: "flex", flexDirection: "column", gap: "3px" } }, [
-      lblRow(headerLbl, headerTA, v => { const t = framingTarget(); if (ownFraming()) t.header = v; else t.promptHeader = v; }),
-      headerTA]),
-    el("div", { style: { flex: "1", display: "flex", flexDirection: "column", gap: "3px" } }, [
-      lblRow(footerLbl, footerTA, v => { const t = framingTarget(); if (ownFraming()) t.footer = v; else t.promptFooter = v; }),
-      footerTA]),
+    el("div", { style: { flex: "1", display: "flex", flexDirection: "column", gap: "3px" } }, [lblRow(headerLbl, headerUC), headerTA]),
+    el("div", { style: { flex: "1", display: "flex", flexDirection: "column", gap: "3px" } }, [lblRow(footerLbl, footerUC), footerTA]),
   );
 
   // ── body: clip list | editor ───────────────────────────────────────────────
@@ -1458,6 +1465,7 @@ ${name}`, style: {
   function renderAll() {
     headerTA.value = state.promptHeader || "";
     footerTA.value = state.promptFooter || "";
+    headerUC?.paint?.(); footerUC?.paint?.();
     renderList(); loadSelected(); refreshPlanTag(); refreshUndo();
   }
 
