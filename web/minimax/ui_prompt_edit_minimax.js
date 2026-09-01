@@ -299,6 +299,38 @@ This cannot be undone.`,
     }
   });
 
+  // Per-field Undo / Clear, sat at the top-right of a field's label row. `write(v)` puts
+  // the value through that field's real backing store. Undo steps back through values
+  // captured on focus (so "undo my edits to this box") and on Clear.
+  function undoClearBtns(ta, write) {
+    const stack = [];
+    const apply = (v) => {
+      ta.value = v; write(v);
+      if (typeof ta.autoSize === "function") ta.autoSize();
+      ctx.persist();
+      if (typeof refreshPreviewTag === "function") refreshPreviewTag();
+    };
+    ta.addEventListener("focus", () => {
+      if (stack[stack.length - 1] !== ta.value) stack.push(ta.value);
+      if (stack.length > 15) stack.shift();
+    });
+    const mk = (txt, tip, fn) => {
+      const b = el("button", { type: "button", text: txt, title: tip, style: {
+        cursor: "pointer", fontFamily: "inherit", fontSize: "9px", padding: "2px 7px",
+        borderRadius: "4px", background: C.bg2, color: C.muted,
+        border: `1px solid ${C.border}`, flexShrink: "0",
+      }});
+      b.addEventListener("click", (e) => { e.preventDefault(); fn(); });
+      return b;
+    };
+    const row = el("div", { style: { display: "flex", gap: "4px", flexShrink: "0" } }, [
+      mk("Undo", "Undo this field's last change", () => { if (stack.length) apply(stack.pop()); }),
+      mk("Clear", "Empty this field", () => { stack.push(ta.value); apply(""); }),
+    ]);
+    row.resetStack = () => { stack.length = 0; };   // call on clip switch so undo stays within one clip
+    return row;
+  }
+
   // ── shared header / footer ─────────────────────────────────────────────────
   // These go into every clip, so they're edited once and kept out of the split.
   function commonField(placeholder, get, set) {
@@ -350,12 +382,17 @@ This cannot be undone.`,
     refreshPreviewTag();
   }
 
+  headerLbl.style.flex = "1"; footerLbl.style.flex = "1";
+  const lblRow = (lbl, ta, write) => el("div", {
+    style: { display: "flex", alignItems: "center", gap: "6px" } }, [lbl, undoClearBtns(ta, write)]);
   const commonWrap = el("div", { style: { flexShrink: "0", display: "flex", gap: "8px" } });
   commonWrap.append(
-    el("div", { style: { flex: "1", display: "flex", flexDirection: "column", gap: "3px" } },
-      [headerLbl, headerTA]),
-    el("div", { style: { flex: "1", display: "flex", flexDirection: "column", gap: "3px" } },
-      [footerLbl, footerTA]),
+    el("div", { style: { flex: "1", display: "flex", flexDirection: "column", gap: "3px" } }, [
+      lblRow(headerLbl, headerTA, v => { const t = framingTarget(); if (ownFraming()) t.header = v; else t.promptHeader = v; }),
+      headerTA]),
+    el("div", { style: { flex: "1", display: "flex", flexDirection: "column", gap: "3px" } }, [
+      lblRow(footerLbl, footerTA, v => { const t = framingTarget(); if (ownFraming()) t.footer = v; else t.promptFooter = v; }),
+      footerTA]),
   );
 
   // ── body: clip list | editor ───────────────────────────────────────────────
@@ -381,7 +418,6 @@ This cannot be undone.`,
   const editHdr = el("div", { style: { display: "flex", alignItems: "center", gap: "6px" } });
   const editTitle = el("div", { text: "Clip 1", style: { color: C.text, fontSize: "12px", fontWeight: "600", flex: "1" } });
   const charCount = el("div", { style: { color: C.muted, fontSize: "10px" } });
-  editHdr.append(editTitle, charCount);
   const editor = el("textarea", { placeholder: "Describe this clip…", style: {
     flex: "1", minHeight: "0", boxSizing: "border-box", background: C.bg1, color: C.text,
     border: `1px solid ${C.border}`, borderRadius: "8px", padding: "12px",
@@ -392,6 +428,12 @@ This cannot be undone.`,
     state.prompts[selected].text = editor.value;
     ctx.persist(); updateCount(); renderList();
   });
+  const editorUndoClear = undoClearBtns(editor, v => {
+    state.prompts[selected] = normPrompt(state.prompts[selected]);
+    state.prompts[selected].text = v;
+    updateCount(); renderList();
+  });
+  editHdr.append(editTitle, charCount, editorUndoClear);
 
   // ── continue this clip from a finished clip's last frame (planned resume) ────
   // Picking a clip seeds THIS entry's first frame and, since a resume never re-renders
@@ -530,6 +572,7 @@ This cannot be undone.`,
     if (selected >= list.length) selected = 0;
     const p = normPrompt(list[selected]);
     editor.value = promptText(p);
+    editorUndoClear.resetStack?.();
     editTitle.textContent = `Clip ${selected + 1}`;
     updateCount();
     renderFirstFrameRow();
