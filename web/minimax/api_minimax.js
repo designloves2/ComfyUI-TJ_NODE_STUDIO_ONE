@@ -373,7 +373,7 @@ export async function interrupt() {
  * Resolves with { images, videos, byNode } where `byNode` is the raw executed payload
  * keyed by node id — the relay loop needs specific nodes (clip video, last frame).
  */
-export function queuePrompt(promptGraph, { onProgress, onNode } = {}) {
+export function queuePrompt(promptGraph, { onProgress, onNode, onQueued } = {}) {
   return new Promise(async (resolve, reject) => {
     let promptId = null, settled = false;
     const outputs = {};
@@ -459,6 +459,7 @@ export function queuePrompt(promptGraph, { onProgress, onNode } = {}) {
         return;
       }
       promptId = data.prompt_id;
+      try { onQueued?.(promptId); } catch {}
       pollHistory();
     } catch (e) { finish(reject, e); }
   });
@@ -501,6 +502,15 @@ export async function waitForHistory(promptId, { onProgress, pollMs = 1500 } = {
   } finally {
     api.removeEventListener("progress", onProgressEvt);
   }
+}
+
+/** Raw /history entry for a prompt, or null if ComfyUI has no record of it (never ran,
+ *  or the history was cleared). Used to decide whether a stashed job is still resumable. */
+export async function historyEntry(promptId) {
+  try {
+    const r = await api.fetchApi(`/history/${promptId}`);
+    return (await r.json())[promptId] || null;
+  } catch { return null; }
 }
 
 /**

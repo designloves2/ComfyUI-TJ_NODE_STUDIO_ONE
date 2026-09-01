@@ -7,7 +7,7 @@ import { composeStitchedPrompt, C, BRAND, el, clear, SUBFOLDER, framesToSeconds,
          UPSCALE_MODES, FPS } from "./core_minimax.js";
 import { button, select, numberField } from "../klein/ui_common.js";
 import { listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage, getMediaFiles,
-         copyOutputToInput, discardInputCopy, getVideoInfo, queuePrompt,
+         copyOutputToInput, discardInputCopy, getVideoInfo, queuePrompt, waitForHistory, historyEntry,
          getClipLastFrame, getSystemPrompt, analyzeImagesNative, writeBriefNative } from "./api_minimax.js";
 import { buildUpscaleGraph, buildInterpolateGraph } from "./graph_builder_minimax.js";
 
@@ -494,6 +494,69 @@ export function createGalleryOverlay(state, ctx) {
    * a plain single-shot job — both graph builders default those to their old whole-file
    * behaviour, so a caller that ignores chunkOpts still works.
    */
+  // A single-shot post-process is a minutes-long ComfyUI job whose meta is written by
+  // this client after it finishes. A page reload (or ComfyUI Manager reboot, which
+  // reloads the frontend) mid-job would leave the output file with no metadata. So the
+  // job is stashed on queue and picked up again when the gallery next opens — the same
+  // reattach the main render uses. Chunked jobs aren't resumable (the slicing loop would
+  // have to be replayed); the "keep this tab open" line covers those.
+  const POST_JOB_KEY = "mmh3_post_job";
+  const stashPostJob = (j) => { try { localStorage.setItem(POST_JOB_KEY, JSON.stringify(j)); } catch {} };
+  const clearPostJob = () => { try { localStorage.removeItem(POST_JOB_KEY); } catch {} };
+
+  // Copy the source clip's meta onto the post-processed file (§5 — Reuse rebuilds the
+  // original), but correct the geometry to what the job actually produced.
+  async function writePostMeta(outFile, srcMeta, srcFilename, label) {
+    if (!outFile || !srcMeta) return;
+    const patched = {
+      ...srcMeta, created: Date.now(),
+      postProcess: String(label).toLowerCase(), postSource: srcFilename,
+      sourceW: srcMeta.w, sourceH: srcMeta.h,
+    };
+    delete patched.elapsedSec;
+    try {
+      const oi = await getVideoInfo(outFile.filename, outFile.subfolder || "", "output");
+      if (oi?.width)  patched.w = oi.width;
+      if (oi?.height) patched.h = oi.height;
+      if (oi?.frames) { patched.frames = oi.frames; patched.durationSeconds = oi.frames / (oi.fps || FPS); }
+      if (oi?.fps)    patched.fps = oi.fps;
+    } catch { /* keep the source geometry rather than fail */ }
+    await saveMeta(outFile.filename, outFile.subfolder || "", patched).catch(() => {});
+  }
+
+  // Reattach to a single-shot post-process that was in flight when the tab went away.
+  async function resumePostJob() {
+    if (postRunning) return;
+    let job = null;
+    try { job = JSON.parse(localStorage.getItem(POST_JOB_KEY) || "null"); } catch {}
+    if (!job || !job.promptId) return;
+    const entry = await historyEntry(job.promptId);
+    if (!entry) { clearPostJob(); return; }          // ComfyUI has no record — nothing to resume
+    postRunning = true; refreshPostBars();
+    upProg.busy(`Reattaching to ${job.label}…`);
+    try {
+      const res = entry.status?.completed
+        ? { byNode: entry.outputs || {} }
+        : await waitForHistory(job.promptId, { onProgress: (v, m) => upProg.chunkStep(0, 1, v, m) });
+      const o = res.byNode?.[job.saveNode]?.images?.[0] || res.byNode?.[job.saveNode]?.gifs?.[0];
+      if (o) {
+        await writePostMeta({ filename: o.filename, subfolder: o.subfolder || job.outFolder }, job.srcMeta, job.src, job.label);
+        upProg.idle(`✓ ${job.label} done (resumed).`);
+        ctx.showPopup?.(`${job.label} finished while the tab was away — its settings were restored.`, false);
+      } else {
+        upProg.idle(`✕ ${job.label}: no output found on resume.`);
+      }
+    } catch (e) {
+      upProg.idle(`✕ ${job.label}: ${e?.message || e}`);
+    } finally {
+      await discardInputCopy(job.copied).catch(() => {});
+      clearPostJob();
+      postRunning = false;
+      refreshPostBars();
+      await refresh();
+    }
+  }
+
   // `finalSuffix` is what the single-shot path's builder would have appended on its own.
   // The chunked path builds its chunks with saveSuffix:"" and joins them itself, so
   // without this the joined file lands under the source's bare stem — colliding with the
@@ -503,7 +566,8 @@ export function createGalleryOverlay(state, ctx) {
     if (!v || postRunning) return;
     postRunning = true;
     refreshPostBars();
-    prog.busy(`Preparing ${v.filename}…`);
+    clearPostJob();
+    prog.busy(`Preparing ${v.filename}… — keep this tab open`);
     let copied = null;
     const chunkFiles = [];   // { filename, subfolder } written to the temp chunk folder
     try {
@@ -539,8 +603,14 @@ export function createGalleryOverlay(state, ctx) {
       let outFile = null;   // what the job actually wrote, so its metadata can follow
       if (chunkCount === 1) {
         const { graph, saveNode } = buildFn(inputFile, stem, {});
-        prog.busy(`${label}…`);
-        const res = await queuePrompt(graph, { onProgress: (val, max) => prog.chunkStep(0, 1, val, max) });
+        prog.busy(`${label}… — keep this tab open (this takes minutes)`);
+        const res = await queuePrompt(graph, {
+          onProgress: (val, max) => prog.chunkStep(0, 1, val, max),
+          onQueued: (pid) => stashPostJob({
+            promptId: pid, saveNode, label,
+            src: v.filename, srcMeta: v.meta, copied: inputFile, outFolder,
+          }),
+        });
         const o = res.byNode[saveNode]?.images?.[0] || res.byNode[saveNode]?.gifs?.[0];
         if (o) outFile = { filename: o.filename, subfolder: o.subfolder || outFolder };
       } else {
@@ -570,30 +640,9 @@ export function createGalleryOverlay(state, ctx) {
         if (joined?.filename) outFile = { filename: joined.filename, subfolder: joined.subfolder || outFolder };
       }
 
-      // The new file is the same shot with the same settings — only the pixels changed.
-      // Without this it lands in the gallery with no prompt, no seed and no pipeline
-      // record, so Reuse cannot rebuild it and the clip looks like it came from nowhere.
-      // The prompt / seed / pipeline are the SOURCE's (Reuse rebuilds the original, SPEC
-      // §5), but the geometry is the OUTPUT's — an upscale changes w/h, interpolate
-      // changes the frame count and fps — so probe the finished file and correct those.
-      if (outFile && v.meta) {
-        const patched = {
-          ...v.meta,
-          created: Date.now(),
-          postProcess: label.toLowerCase(),      // "upscale" | "deblur" | "interpolation"
-          postSource: v.filename,
-          sourceW: v.meta.w, sourceH: v.meta.h,
-        };
-        delete patched.elapsedSec;               // a different job's timing
-        try {
-          const oi = await getVideoInfo(outFile.filename, outFile.subfolder || "", "output");
-          if (oi?.width)  patched.w = oi.width;
-          if (oi?.height) patched.h = oi.height;
-          if (oi?.frames) { patched.frames = oi.frames; patched.durationSeconds = oi.frames / (oi.fps || FPS); }
-          if (oi?.fps)    patched.fps = oi.fps;
-        } catch { /* keep the source geometry rather than fail the whole run */ }
-        await saveMeta(outFile.filename, outFile.subfolder || "", patched).catch(() => {});
-      }
+      // The prompt / seed / pipeline copied here are the SOURCE's (Reuse rebuilds the
+      // original, SPEC §5); the geometry is corrected to the OUTPUT's inside writePostMeta.
+      await writePostMeta(outFile, v.meta, v.filename, label);
 
       prog.idle(`✓ ${label} done.`);
       ctx.showPopup?.(`${label} finished — the new file is at the top of the gallery.`, false);
@@ -608,6 +657,7 @@ export function createGalleryOverlay(state, ctx) {
       // and the source copy that only ever existed to feed VHS_LoadVideo.
       for (const f of chunkFiles) await deleteImage(f.filename, f.subfolder).catch(() => {});
       await discardInputCopy(copied);
+      clearPostJob();
       postRunning = false;
       refreshPostBars();
     }
@@ -1207,7 +1257,7 @@ export function createGalleryOverlay(state, ctx) {
   return {
     el: ov,
     playerEl: player,
-    show() { ov.style.display = "flex"; refresh(); },
+    show() { ov.style.display = "flex"; refresh(); resumePostJob(); },
     hide,
     isOpen: () => ov.style.display !== "none",
     isPlaying: () => player.style.display !== "none",
