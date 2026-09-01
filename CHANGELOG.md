@@ -2,6 +2,16 @@
 
 ---
 
+## v1.22.3 (2026-09-01)
+
+- **설정 → Models의 PDD Acc file 저장이 실제로 유지됩니다.** `mmh3_save_config`는 값을
+  `config_minimax_h3.json`에 쓰고 있었지만 `mmh3_get_config` 응답 딕셔너리에 `pdd_file` /
+  `pdd_file_reference` / `pdd_nfe` / `pdd_lora_strength` / `pdd_head_strength` 키가 빠져
+  있어, 새로고침하면 항상 `none`으로 되돌아갔습니다(localStorage 덕에 같은 세션에서만
+  유지되던 것). 다섯 키를 GET 응답에 추가.
+
+---
+
 ## v1.22.2 (2026-09-01)
 
 - 필드별 `Undo` / `Clear` 버튼 글씨 색이 상태를 따라갑니다: 지울 내용이 있으면 `Clear`가
