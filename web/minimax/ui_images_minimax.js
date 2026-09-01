@@ -325,6 +325,36 @@ export function mountImagePanel(state, ctx) {
           }, 0.1);
           mpIn.style.width = "60px"; mpIn.title = "Megapixels sent to the model (0 = send as uploaded)";
           cell.appendChild(mpIn);
+
+          // Drag to reorder — the number is the <Picture N> token position, so reordering
+          // actually changes what the prompt refers to as "1"/"2"/etc.
+          cell.draggable = true;
+          cell.addEventListener("dragstart", (e) => {
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", String(i));
+            cell.style.opacity = "0.4";
+          });
+          cell.addEventListener("dragend", () => { cell.style.opacity = "1"; });
+          cell.addEventListener("dragover", (e) => {
+            e.preventDefault(); e.dataTransfer.dropEffect = "move";
+            slot.el.style.outline = `2px solid ${BRAND}`;
+          });
+          cell.addEventListener("dragleave", () => { slot.el.style.outline = "none"; });
+          cell.addEventListener("drop", (e) => {
+            e.preventDefault();
+            slot.el.style.outline = "none";
+            const from = Number(e.dataTransfer.getData("text/plain"));
+            if (Number.isNaN(from) || from === i) return;
+            const list = (state.refImages || []).slice();
+            const mpList = (state.refImagesMp || []).slice();
+            const [movedImg] = list.splice(from, 1);
+            list.splice(i, 0, movedImg);
+            const [movedMp] = mpList.splice(from, 1);
+            mpList.splice(i, 0, movedMp);
+            state.refImages = list.slice(0, 9);
+            state.refImagesMp = mpList.slice(0, 9);
+            ctx.persist(); render();
+          });
         }
         grid.appendChild(cell);
       }

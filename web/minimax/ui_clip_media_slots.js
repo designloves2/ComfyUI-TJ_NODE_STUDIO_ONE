@@ -150,6 +150,29 @@ ${entry.file}`, style: {
     }});
     x.addEventListener("click", (e) => { e.stopPropagation(); list.splice(idx, 1); ctx.persist(); onRefresh(); });
     tile.appendChild(x);
+
+    // Drag to reorder — dropping onto another filled tile swaps this entry into its slot.
+    tile.draggable = true;
+    tile.addEventListener("dragstart", (e) => {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", String(idx));
+      tile.style.opacity = "0.4";
+    });
+    tile.addEventListener("dragend", () => { tile.style.opacity = "1"; });
+    tile.addEventListener("dragover", (e) => {
+      e.preventDefault(); e.dataTransfer.dropEffect = "move";
+      tile.style.outline = `2px solid ${BRAND}`;
+    });
+    tile.addEventListener("dragleave", () => { tile.style.outline = "none"; });
+    tile.addEventListener("drop", (e) => {
+      e.preventDefault();
+      tile.style.outline = "none";
+      const from = Number(e.dataTransfer.getData("text/plain"));
+      if (Number.isNaN(from) || from === idx || !list[from]) return;
+      const [moved] = list.splice(from, 1);
+      list.splice(idx, 0, moved);
+      ctx.persist(); onRefresh();
+    });
   } else {
     tile.appendChild(el("div", { text: isVideo ? "+vid" : "+aud", style: {
       color: C.muted, fontSize: "10px", pointerEvents: "none" } }));

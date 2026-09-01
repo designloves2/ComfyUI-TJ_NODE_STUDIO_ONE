@@ -528,6 +528,46 @@ app.registerExtension({
       promptList.className = "mmh3-lp";
       promptWrap.append(promptHdr, promptList);
 
+      // ══ PREVIEW RESIZE ══════════════════════════════════════════════════════
+      // The current preview height is the max the user can go back up to — dragging the
+      // handle only shrinks it, and whatever height it gives up goes straight to the
+      // prompt list below. RIGHT_H (and so the node's overall size) never changes; only
+      // the split between the two boxes does.
+      const PREVIEW_MIN_H = 220;
+      const PREVIEW_H_KEY = "mmh3_preview_h";
+      let previewH = Number(localStorage.getItem(PREVIEW_H_KEY)) || PREVIEW_SIZE;
+      function applyPreviewH(h) {
+        previewH = Math.min(PREVIEW_SIZE, Math.max(PREVIEW_MIN_H, h));
+        previewBox.style.height = `${previewH}px`;
+        promptWrap.style.height = `${PROMPT_H + (PREVIEW_SIZE - previewH)}px`;
+      }
+      applyPreviewH(previewH);
+
+      const previewResizeHandle = el("div", { title: "Drag to resize the preview", style: {
+        position: "absolute", left: "0", right: "0", bottom: "0", height: "8px",
+        cursor: "ns-resize", zIndex: "7", display: "flex", alignItems: "center", justifyContent: "center",
+      }});
+      const previewResizeGrip = el("div", { style: {
+        width: "40px", height: "3px", borderRadius: "2px", background: "rgba(255,255,255,0.35)",
+        pointerEvents: "none",
+      }});
+      previewResizeHandle.appendChild(previewResizeGrip);
+      previewResizeHandle.addEventListener("mouseenter", () => { previewResizeGrip.style.background = BRAND; });
+      previewResizeHandle.addEventListener("mouseleave", () => { previewResizeGrip.style.background = "rgba(255,255,255,0.35)"; });
+      previewResizeHandle.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        const startY = e.clientY, startH = previewH;
+        const onMove = (ev) => applyPreviewH(startH + (ev.clientY - startY));
+        const onUp = () => {
+          window.removeEventListener("mousemove", onMove);
+          window.removeEventListener("mouseup", onUp);
+          localStorage.setItem(PREVIEW_H_KEY, String(previewH));
+        };
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+      });
+      previewBox.appendChild(previewResizeHandle);
+
       function normPrompt(p) {
         return typeof p === "string" ? { text: p, firstFrame: "", enabled: true } : p;
       }

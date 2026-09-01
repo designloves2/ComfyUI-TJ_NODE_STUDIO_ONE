@@ -527,7 +527,7 @@ This cannot be undone.`,
       const active = i === selected;
       const on = promptEnabled(p);
       const item = el("div", { style: {
-        display: "flex", gap: "4px", alignItems: "center", cursor: "pointer",
+        display: "flex", gap: "4px", alignItems: "center", cursor: "grab",
         background: active ? C.bg3 : C.bg1, border: `1px solid ${active ? BRAND : C.border}`,
         borderRadius: "6px", padding: "6px 7px", opacity: on ? "1" : "0.5",
       }});
@@ -541,13 +541,10 @@ This cannot be undone.`,
         state.prompts[i].enabled = cb.checked;
         ctx.persist(); renderList();
       });
-      const num = el("div", { text: String(i + 1), style: {
-        width: "16px", flexShrink: "0", textAlign: "center", fontSize: "10px",
-        fontWeight: "700", color: active ? BRAND : C.muted,
-      }});
-      const prev = el("div", {
-        text: promptText(p).trim().slice(0, 42) || "(empty — reuses previous)",
-        style: { flex: "1", fontSize: "10.5px", color: promptText(p).trim() ? C.text : C.muted,
+      const rowLabel = el("div", {
+        text: `${i + 1} - Clip Prompt #${i + 1}`,
+        style: { flex: "1", fontSize: "10.5px", color: active ? C.text : C.muted,
+                 fontWeight: active ? "700" : "400",
                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
       });
       const del = el("button", { type: "button", text: "✕", title: "Remove", style: {
@@ -568,7 +565,35 @@ This cannot be undone.`,
         renderList(); loadSelected(); renderImageRow();
         refreshFraming();   // the two boxes belong to the clip, not to the panel
       });
-      item.append(cb, num, prev, del);
+
+      // Drag to reorder the clip list. Whichever clip is selected stays selected — its
+      // index just follows the move — so a mid-reorder click still edits the right clip.
+      item.draggable = true;
+      item.addEventListener("dragstart", e => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", String(i));
+        item.style.opacity = "0.4";
+      });
+      item.addEventListener("dragend", () => { item.style.opacity = on ? "1" : "0.5"; });
+      item.addEventListener("dragover", e => {
+        e.preventDefault(); e.dataTransfer.dropEffect = "move";
+        item.style.borderTop = `2px solid ${BRAND}`;
+      });
+      item.addEventListener("dragleave", () => { item.style.borderTop = ""; });
+      item.addEventListener("drop", e => {
+        e.preventDefault();
+        item.style.borderTop = "";
+        const from = Number(e.dataTransfer.getData("text/plain"));
+        if (Number.isNaN(from) || from === i || !state.prompts[from]) return;
+        const [moved] = state.prompts.splice(from, 1);
+        state.prompts.splice(i, 0, moved);
+        if (selected === from) selected = i;
+        else if (from < selected && i >= selected) selected--;
+        else if (from > selected && i <= selected) selected++;
+        ctx.persist(); renderList(); loadSelected(); renderImageRow(); refreshFraming();
+      });
+
+      item.append(cb, rowLabel, del);
       listBox.appendChild(item);
     });
     refreshOnCountTag(onCount, (state.prompts || []).length);
@@ -793,6 +818,32 @@ ${name}`, style: {
           commit();
         });
         box.appendChild(x);
+
+        // Drag to reorder — the number badge is the <Picture N> token position.
+        box.draggable = true;
+        box.addEventListener("dragstart", e => {
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", String(i));
+          box.style.opacity = "0.4";
+        });
+        box.addEventListener("dragend", () => { box.style.opacity = "1"; });
+        box.addEventListener("dragover", e => {
+          e.preventDefault(); e.dataTransfer.dropEffect = "move";
+          box.style.outline = `2px solid ${BRAND}`;
+        });
+        box.addEventListener("dragleave", () => { box.style.outline = "none"; });
+        box.addEventListener("drop", e => {
+          e.preventDefault();
+          box.style.outline = "none";
+          const from = Number(e.dataTransfer.getData("text/plain"));
+          if (Number.isNaN(from) || from === i || !list()[from]) return;
+          const l = list(), mp = mpList();
+          const [movedImg] = l.splice(from, 1);
+          l.splice(i, 0, movedImg);
+          const [movedMp] = mp.splice(from, 1);
+          mp.splice(i, 0, movedMp);
+          commit();
+        });
       } else {
         box.appendChild(el("div", { text: "+img", style: { color: C.muted, fontSize: "10px", pointerEvents: "none" } }));
         const inp = el("input", { type: "file", accept: "image/*", style: { display: "none" } });
