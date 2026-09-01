@@ -1942,6 +1942,31 @@ app.registerExtension({
         };
       }
 
+      // metaForVideo()'s w/h come from resolveResolution() — the pre-decode size. An inline
+      // deblur/upscale (or a stitch re-encode) makes the real file differ, so probe what
+      // actually landed and correct w/h/fps in place. On a size change the pre-op size is
+      // kept as sourceW/H — the same shape the gallery post-process (writePostMeta) writes,
+      // so the ⓘ tooltip and Reuse read one field set either way. `keepFrames` is for the
+      // One-Take path, whose durationSeconds is computed with the overlap trim already.
+      async function reconcileGeometry(meta, file, { keepFrames = false } = {}) {
+        try {
+          const oi = await getVideoInfo(file.filename, file.subfolder || "", file.type || "output");
+          if (!oi || (!oi.width && !oi.height && !oi.frames)) return meta;
+          if ((oi.width && oi.width !== meta.w) || (oi.height && oi.height !== meta.h)) {
+            meta.sourceW = meta.w;
+            meta.sourceH = meta.h;
+          }
+          if (oi.width)  meta.w = oi.width;
+          if (oi.height) meta.h = oi.height;
+          if (oi.fps)    meta.fps = oi.fps;
+          if (!keepFrames && oi.frames) {
+            meta.frames = oi.frames;
+            meta.durationSeconds = oi.frames / (oi.fps || FPS);
+          }
+        } catch { /* keep the computed geometry rather than fail the run */ }
+        return meta;
+      }
+
       // SaveVideo / SaveImage report through `ui.PreviewVideo` / images — both land in
       // output.images, so one extractor covers them.
       function firstOutput(byNode, nodeKey) {
@@ -2227,7 +2252,7 @@ app.registerExtension({
               clipRecords.push(vid);
               // every clip carries the prompt it was actually rendered from, so the
               // gallery can put that exact text back into the editor
-              saveMeta(vid.filename, vid.subfolder || "", metaForVideo(promptForClip(i, rs), {
+              const clipMeta = metaForVideo(promptForClip(i, rs), {
                 clip: curClip, clips: plan.count, seed: seedForClip(i, rs), mode: modeForClip,
                 // the editable source text, so "reuse" restores the editor exactly
                 prompts: [promptText(rs.prompts?.[i])],
@@ -2243,6 +2268,9 @@ app.registerExtension({
                   samplerUsed:    ran.samplerUsed,
                   turboFile:      ran.turboFile,
                   pddNfe:         ran.pddNfe,
+                  // Post-decode frame ops wired into this clip's graph (null when not run).
+                  deblur:  ran.deblur  || null,
+                  upscale: ran.upscale || null,
                 } : {}),
                 // Memory extremes over this clip. vramFreeMinMiB near zero is the
                 // signature of a spill: the step times balloon and nothing errors.
@@ -2253,7 +2281,11 @@ app.registerExtension({
                   name: l.name || "none", strength: l.strength ?? 1.0,
                   triggerWord: l.triggerWord || "", enabled: l.enabled !== false,
                 })),
-              }, rs));
+              }, rs);
+              // An inline upscale changes the frame size metaForVideo() can't predict, so
+              // re-probe the file. Deblur alone never resizes — skip the round trip for it.
+              if (ran?.upscale) await reconcileGeometry(clipMeta, vid);
+              saveMeta(vid.filename, vid.subfolder || "", clipMeta);
               showResultVideo(`/view?filename=${encodeURIComponent(vid.filename)}&subfolder=${encodeURIComponent(vid.subfolder || "")}&type=${vid.type || "output"}&t=${Date.now()}`);
               badge.textContent = `CLIP ${curClip}/${totClip} done`;
             }
@@ -2320,13 +2352,16 @@ app.registerExtension({
               // per-clip value from being misread as this file's own.
               const totalSeconds = clipRecords.length * framesToSeconds(rs.clipFrames || 192)
                 - (clipRecords.length - 1) * overlapSec;
-              saveMeta(out.filename, out.subfolder || "", metaForVideo(
+              const oneTakeMeta = metaForVideo(
                 active.map(({ i }) => promptForClip(i, rs)).join("\n\n"),
                 { clips: clipRecords.length, stitched: true, onetake: true, overlapSeconds: overlapSec,
                   frames: null, durationSeconds: totalSeconds,
                   prompts: (rs.prompts || []).map(promptText) },
                 rs,
-              ));
+              );
+              // Clips may have been upscaled inline — the stitched file inherits that size.
+              await reconcileGeometry(oneTakeMeta, out, { keepFrames: true });
+              saveMeta(out.filename, out.subfolder || "", oneTakeMeta);
               showResultVideo(url, { final: true });
               badge.textContent = `FULL · ${clipRecords.length} clips (One-Take)`;
               await setLastResult(self.id, { videoPath: out.path });
@@ -2351,11 +2386,13 @@ app.registerExtension({
               );
               const url = `/view?filename=${encodeURIComponent(out.filename)}&subfolder=${encodeURIComponent(out.subfolder || "")}&type=output&t=${Date.now()}`;
               const clipPrompts = [ext.sourcePrompt || "", promptForClip(0, rs)];
-              saveMeta(out.filename, out.subfolder || "", metaForVideo(
+              const extendMeta = metaForVideo(
                 composeStitchedPrompt(clipPrompts),
                 { clips: 2, stitched: true, extended: true, frames: null, prompts: clipPrompts },
                 rs,
-              ));
+              );
+              await reconcileGeometry(extendMeta, out);
+              saveMeta(out.filename, out.subfolder || "", extendMeta);
               showResultVideo(url, { final: true });
               badge.textContent = "EXTENDED";
               await setLastResult(self.id, { videoPath: out.path });
@@ -2564,6 +2601,23 @@ app.registerExtension({
         if (meta.pddNfe)                state.pddNfe            = meta.pddNfe;
         if (meta.pddFile)              state.pddFile           = meta.pddFile;
         if (meta.pddFileReference)     state.pddFileReference  = meta.pddFileReference;
+        // Inline deblur / upscale the clip was made with — reproduce it. Only for a clip
+        // whose pass ran INLINE at generation time: a gallery post-processed file
+        // (meta.postProcess set) carries the SOURCE's meta, and §5 Reuse rebuilds that
+        // un-processed original, not the upscale-again.
+        if (!meta.postProcess) {
+          if (meta.deblur !== undefined) state.deblurStrength = meta.deblur || "none";
+          if (meta.upscale === null) {
+            state.upscaleMode = "none";
+          } else if (meta.upscale && meta.upscale.method === "rtx") {
+            state.upscaleMode = "rtx";
+            if (meta.upscale.scale != null)   state.rtxScale   = meta.upscale.scale;
+            if (meta.upscale.quality)         state.rtxQuality = meta.upscale.quality;
+          } else if (meta.upscale && meta.upscale.method === "model") {
+            state.upscaleMode = "model";
+            if (meta.upscale.model)           state.upscaleModel = meta.upscale.model;
+          }
+        }
         if (Array.isArray(meta.loras)) state.loras = meta.loras.map(l => ({
           name: l.name || "none", strength: l.strength ?? 1.0,
           triggerWord: l.triggerWord || "", enabled: l.enabled !== false,

@@ -2,6 +2,29 @@
 
 ---
 
+## v1.23.1 (2026-09-02)
+
+- **생성 시점에 인라인 deblur / upscale를 건 클립의 메타가 실제 결과를 반영합니다.**
+  - `buildClipGraph`가 그래프에 실제로 배선한 프레임 후처리를 메타에 기록: `deblur`
+    (강도 문자열 | null), `upscale` (`{method:"model",model}` | `{method:"rtx",scale,quality}`
+    | null).
+  - 생성 저장 경로: upscale가 걸렸을 때 출력 파일을 재프로브(`getVideoInfo`)해서
+    `w/h/frames/fps`를 실제 값으로 덮어쓰고, upscale 전 크기를 `sourceW/sourceH`로 보존.
+    deblur는 크기를 안 바꾸므로 프로브 생략. One-Take·Extend 스티치 출력에도 동일 적용
+    (One-Take는 오버랩 계산된 durationSeconds 유지).
+  - `reuseAll`: 인라인 pass로 만든 클립을 Reuse하면 `deblurStrength` / `upscaleMode` /
+    `upscaleModel` / `rtxScale` / `rtxQuality`까지 복원. 갤러리 후처리 파일(`postProcess`
+    있음)은 §5대로 원본을 복원.
+- **갤러리 후처리 메타가 어떤 단계가 돌았는지 명시적으로 기록.** deblur→upscale 결합
+  실행이 이제 `postProcess: "deblur + upscale"`로 남고, `deblur` / `upscale` /
+  `interpolate` 구조화 필드도 함께 기록됩니다(전엔 `"upscale"` 하나로 뭉개져 deblur 정보
+  유실). `sourceW/sourceH`는 실제로 크기가 바뀐 경우에만 기록.
+- **갤러리 썸네일 좌하단 뱃지.** `⇪` = 업스케일됨, `✧` = 디블러됨(둘 다 표시 가능).
+  생성 시 인라인이든 갤러리 후처리든 동일한 메타 키를 읽으므로 두 경로가 똑같이 보입니다.
+  ⓘ 툴팁도 인라인 pass를 인식하도록 보강.
+
+---
+
 ## v1.23.0 (2026-09-02)
 
 - **Prompt Edit — 클립 순서를 드래그로 바꿀 수 있습니다.** CLIPS 목록의 각 행을 드래그해서

@@ -670,6 +670,11 @@ export function buildClipGraph(state, avail, opts = {}) {
 
   let images = [N.decode, 0];
   const up = state.upscaleMode || "none";
+  // What the frame pipeline actually did, for the clip's sidecar — resolveResolution()
+  // below only knows the pre-decode size, so the gallery needs these to badge an
+  // inline-deblurred / upscaled clip and to show its real dimensions.
+  let deblurUsed = null;
+  let upscaleUsed = null;
   // Deblur runs on the decoded frames before any upscale, at their own resolution. It is
   // independent of the upscale setting: Upscale = None still deblurs.
   if (state.deblurStrength && state.deblurStrength !== "none" && has(avail, "TJ_RTXDeblur")) {
@@ -677,6 +682,7 @@ export function buildClipGraph(state, avail, opts = {}) {
       images, strength: state.deblurStrength,
     }};
     images = [N.deblurR, 0];
+    deblurUsed = state.deblurStrength;
   }
 
   if (up === "model" && state.upscaleModel && state.upscaleModel !== "none") {
@@ -685,6 +691,7 @@ export function buildClipGraph(state, avail, opts = {}) {
       upscale_model: [N.upModel, 0], image: images,
     }};
     images = [N.upApply, 0];
+    upscaleUsed = { method: "model", model: state.upscaleModel };
   } else if (up === "rtx" && has(avail, "RTXVideoSuperResolution")) {
     g[N.rtx] = { class_type: "RTXVideoSuperResolution", inputs: {
       images,
@@ -694,6 +701,7 @@ export function buildClipGraph(state, avail, opts = {}) {
       quality: state.rtxQuality || "ULTRA",
     }};
     images = [N.rtx, 0];
+    upscaleUsed = { method: "rtx", scale: state.rtxScale ?? 2.0, quality: state.rtxQuality || "ULTRA" };
   }
 
   // ── outputs ────────────────────────────────────────────────────────────────
@@ -752,6 +760,10 @@ export function buildClipGraph(state, avail, opts = {}) {
       : turboMode === "pdd" ? (pddFileForMode(state) || null)
       : null,
     pddNfe: turboMode === "pdd" ? String(state.pddNfe ?? "8") : null,
+    // null when the pipeline didn't run it; the save path re-probes the output only when
+    // upscaleUsed is set (deblur alone never changes the size).
+    deblur: deblurUsed,
+    upscale: upscaleUsed,
     videoNode: N.save, lastFrameNode: N.saveLF,
   } };
 }
