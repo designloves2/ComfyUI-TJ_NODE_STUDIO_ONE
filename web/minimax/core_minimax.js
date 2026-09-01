@@ -855,7 +855,14 @@ export function randomSeed() { return Math.floor(Math.random() * 1e15); }
 // "Ambient sound:" / "Music:" paragraphs. The preamble and tail apply to every clip, so
 // they are kept aside and re-attached at queue time instead of being split away.
 const SHOT_LINE_RE = /^[ \t]*\[(?:Shot|SHOT|샷)[ \t]*\d+\][^\n]*$/gm;
-const TAIL_RE = /^[ \t]*(?:Ambient sound|Ambience|Sound|Music|Soundtrack|배경음|음악|사운드)[ \t]*:/i;
+// The brief model ends with an audio section. It has two output styles: the simple one
+// ("Ambient sound:" / "Music:") and the structured one ("overall_soundscape:" /
+// "non_diegetic_music:", sometimes markdown-bolded). Match both, plus the underscore and
+// hyphen spellings the model actually emits.
+const TAIL_RE = /^[ \t>*_-]*(?:Ambient[ _]?sound|Ambience|Sound(?:[ _]?design|scape)?|Music|Soundtrack|Score|overall[ _]?soundscape|non[ _-]?diegetic[ _]?music|diegetic[ _]?sound|SFX|Foley|Audio|배경음|음악|사운드|효과음)[ \t_*]*:/i;
+// The model sometimes echoes its own instructions / the vision analysis back at the end
+// of a block. Everything from the first such line to the end of that block is dropped.
+const ECHO_RE = /^[ \t>*_-]*(?:Target duration|Write exactly|The following images?|USER REQUEST|Structure:|Output ONLY|Refer to media|Image \d+\s*:)/i;
 
 /** Split a brief into { header, shots[], footer }. Never loses text. */
 export function parseBrief(text) {
@@ -890,7 +897,16 @@ export function parseBrief(text) {
     blocks[blocks.length - 1] = lines.slice(0, cut).join("\n").trim();
     footer = lines.slice(cut).join("\n").trim();
   }
-  return { header, shots: blocks.filter(Boolean), footer };
+  const stripEcho = (s) => {
+    const ls = s.split("\n");
+    const cutAt = ls.findIndex(l => ECHO_RE.test(l));
+    return (cutAt >= 0 ? ls.slice(0, cutAt) : ls).join("\n").trim();
+  };
+  return {
+    header: stripEcho(header),
+    shots: blocks.map(stripEcho).filter(Boolean),
+    footer: stripEcho(footer),
+  };
 }
 
 /**
