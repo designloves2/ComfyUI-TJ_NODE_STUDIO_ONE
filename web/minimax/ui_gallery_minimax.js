@@ -378,16 +378,16 @@ export function createGalleryOverlay(state, ctx) {
     upModelWrap.style.display = (isRtx || isNone) ? "none" : "flex";
     rtxWrap.style.display     = isRtx ? "flex" : "none";
     const rtxOk = !!ctx.availability?.RTXVideoSuperResolution;
+    const deblurOn = deblurSel.value !== "none";
+    const deblurOk = !!ctx.availability?.TJ_RTXDeblur;
+    const noUpscale = upMethod === "none";
     // With Upscale = None the button runs the deblur pass alone, so it needs deblur set
     // rather than a model or the RTX node.
     const ready = !!postPick && !postRunning &&
       (noUpscale ? (deblurOn && deblurOk) : (isRtx ? rtxOk : !!upModelSel.value));
     upGoBtn.disabled = !ready;
     upGoBtn.style.opacity = ready ? "1" : "0.5";
-    const deblurOn = deblurSel.value !== "none";
-    const deblurOk = !!ctx.availability?.TJ_RTXDeblur;
     const deblurReady = !!postPick && !postRunning && deblurOn && deblurOk;
-    const noUpscale = upMethod === "none";
     deblurGoBtn.disabled = !deblurReady;
     deblurGoBtn.style.opacity = deblurReady ? "1" : "0.5";
     if (postRunning) return;
@@ -1019,6 +1019,7 @@ export function createGalleryOverlay(state, ctx) {
         const ppLabel = m.postProcess || [
           (m.deblur && m.deblur !== "none") ? "deblur" : null,
           m.upscale ? (m.upscale.method === "rtx" ? "rtx upscale" : "upscale") : null,
+          m.interpolate ? "interpolation" : null,
         ].filter(Boolean).join(" + ");
         if (ppLabel) {
           lines.push(`⚙ ${ppLabel}${m.sourceW ? ` (from ${m.sourceW}×${m.sourceH})` : ""}`);
@@ -1056,7 +1057,7 @@ export function createGalleryOverlay(state, ctx) {
 
       // Post-decode frame ops, bottom-left — set the same way whether the pass ran inline
       // at generation time (buildClipGraph meta) or afterward from this gallery
-      // (writePostMeta). ⇪ = upscaled, ✧ = deblurred; both can show.
+      // (writePostMeta). ⇪ = upscaled, ✧ = deblurred, ⇄ = interpolated; any can show.
       {
         const m = v.meta || {};
         const marks = [];
@@ -1064,6 +1065,7 @@ export function createGalleryOverlay(state, ctx) {
           ? `Upscaled — RTX VSR ×${m.upscale.scale} (${m.upscale.quality})`
           : `Upscaled — ${String(m.upscale.model || "model").split(/[\\/]/).pop()}`]);
         if (m.deblur && m.deblur !== "none") marks.push(["✧", `Deblurred — strength ${m.deblur}`]);
+        if (m.interpolate) marks.push(["⇄", `Interpolated${m.interpolate.targetFps ? ` — ${Math.round(m.interpolate.targetFps)}fps` : ""}`]);
         if (marks.length) {
           const bar = el("div", { style: {
             position: "absolute", bottom: "4px", left: "4px", zIndex: "3",

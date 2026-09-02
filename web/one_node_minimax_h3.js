@@ -1413,6 +1413,14 @@ app.registerExtension({
               col([label("Quality"), select(["LOW","MEDIUM","HIGH","ULTRA"].map(q => ({ value: q, label: q })),
                 state.rtxQuality || "ULTRA", v => { state.rtxQuality = v; persist(); })]),
             ]) : null,
+            // Only meaningful once deblur or upscale is actually doing something — off it
+            // just saves the final clip, on it saves the raw decode as a second file too.
+            (deblurNow !== "none" || state.upscaleMode !== "none")
+              ? checkboxRow("Also save the clip before deblur / upscale",
+                  !!state.saveUnprocessed,
+                  v => { state.saveUnprocessed = v; persist(); },
+                  { title: "Keeps the un-processed clip as a separate `_raw` file in the gallery. It never joins a stitch or the last-frame chain." })
+              : null,
           ]));
 
         leftPanel.appendChild(accordion("continuity", "Continuity",
@@ -1948,11 +1956,13 @@ app.registerExtension({
       // kept as sourceW/H — the same shape the gallery post-process (writePostMeta) writes,
       // so the ⓘ tooltip and Reuse read one field set either way. `keepFrames` is for the
       // One-Take path, whose durationSeconds is computed with the overlap trim already.
-      async function reconcileGeometry(meta, file, { keepFrames = false } = {}) {
+      async function reconcileGeometry(meta, file, { keepFrames = false, noSource = false } = {}) {
         try {
           const oi = await getVideoInfo(file.filename, file.subfolder || "", file.type || "output");
           if (!oi || (!oi.width && !oi.height && !oi.frames)) return meta;
-          if ((oi.width && oi.width !== meta.w) || (oi.height && oi.height !== meta.h)) {
+          // noSource: the file IS the original (the "_raw" un-processed clip) — record its
+          // real dimensions, never treat a difference from meta.w as a pre-op size.
+          if (!noSource && ((oi.width && oi.width !== meta.w) || (oi.height && oi.height !== meta.h))) {
             meta.sourceW = meta.w;
             meta.sourceH = meta.h;
           }
@@ -2286,6 +2296,25 @@ app.registerExtension({
               // re-probe the file. Deblur alone never resizes — skip the round trip for it.
               if (ran?.upscale) await reconcileGeometry(clipMeta, vid);
               saveMeta(vid.filename, vid.subfolder || "", clipMeta);
+
+              // "Save the un-processed clip too" — the second file the graph wrote straight
+              // off the decode. Its own sidecar (no deblur/upscale marker, its own real
+              // size), shown in the gallery like any clip, but it never joins the stitch or
+              // the last-frame chain — the processed clip above stays the real one.
+              const rawVid = ran?.rawVideoNode ? firstOutput(res.byNode, ran.rawVideoNode) : null;
+              if (rawVid) {
+                const rawMeta = { ...clipMeta,
+                  deblur: null, upscale: null, unprocessed: true,
+                  processedSibling: vid.filename,
+                };
+                // clipMeta was reconciled to the UPSCALED size — the raw clip is the
+                // decode's own resolution, no pre-op size.
+                delete rawMeta.sourceW; delete rawMeta.sourceH;
+                const rr = resolveResolution(rs.aspect, rs.megapixels);
+                rawMeta.w = rr.width; rawMeta.h = rr.height;
+                await reconcileGeometry(rawMeta, rawVid, { noSource: true });
+                saveMeta(rawVid.filename, rawVid.subfolder || "", rawMeta);
+              }
               showResultVideo(`/view?filename=${encodeURIComponent(vid.filename)}&subfolder=${encodeURIComponent(vid.subfolder || "")}&type=${vid.type || "output"}&t=${Date.now()}`);
               badge.textContent = `CLIP ${curClip}/${totClip} done`;
             }

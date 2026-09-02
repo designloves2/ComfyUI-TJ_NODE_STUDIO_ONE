@@ -2,6 +2,25 @@
 
 ---
 
+## v1.23.2 (2026-09-02)
+
+- **"Also save the clip before deblur / upscale" (왼쪽 패널 Upscale 아코디언).** 인라인
+  deblur/upscale를 걸었을 때, 후처리 전 원본 클립을 `_raw` 파일로 하나 더 저장할지 선택.
+  체크 시 그래프에 두 번째 SaveVideo를 붙여 디코드 직후 프레임을 그대로 저장하고, 그
+  사이드카는 `unprocessed: true` + `processedSibling`(최종본 파일명) + 자기 해상도만
+  기록합니다(`sourceW/H` 없음, 뱃지 없음). 스티치·라스트프레임 체인에는 절대 안 들어가고
+  최종본이 계속 "진짜 클립"입니다. deblur/upscale 둘 다 None이면 옵션 자체가 안 보임.
+- **갤러리 썸네일에 인터폴레이션 뱃지 `⇄` 추가.** 좌하단 뱃지가 이제 `⇪`(업스케일) /
+  `✧`(디블러) / `⇄`(인터폴레이션) 세 종류. ⓘ 툴팁의 `⚙` 줄도 인터폴레이션을 포함합니다.
+- **버그 수정 — 갤러리 `⬆ Upscale` 버튼이 계속 비활성.** `refreshUpBar`에서 `ready`가
+  `noUpscale` / `deblurOn` / `deblurOk`를 선언보다 먼저 참조(TDZ) → 매 호출마다
+  `ReferenceError`로 던져 버튼 `disabled`가 영영 안 풀렸습니다(v1.20.0부터). 선언 순서
+  교정. (Deblur 전용 `✦ Deblur` 버튼도 같은 함수라 함께 정상화.)
+- 인라인 `_raw` 저장 시 `reconcileGeometry`에 `noSource` 옵션 추가 — 원본 클립은 그 자체가
+  원본이므로 재프로브한 크기 차이를 `sourceW/H`로 기록하지 않습니다.
+
+---
+
 ## v1.23.1 (2026-09-02)
 
 - **생성 시점에 인라인 deblur / upscale를 건 클립의 메타가 실제 결과를 반영합니다.**

@@ -46,6 +46,8 @@ const N = {
   deblurR:"MM:deblur",
   video:  "MM:video",
   save:   "MM:save_video",
+  videoRaw: "MM:video_raw",
+  saveRaw:  "MM:save_video_raw",
   lastF:  "MM:last_frame",
   saveLF: "MM:save_last_frame",
   tailF:  "MM:tail_frames",
@@ -669,6 +671,9 @@ export function buildClipGraph(state, avail, opts = {}) {
   g[N.decodeA] = { class_type: "VAEDecodeAudio", inputs: { samples: [N.sampler, 0], vae: [N.vaeA, 0] } };
 
   let images = [N.decode, 0];
+  // The decoded frames as they are, before any deblur/upscale — kept so the run loop can
+  // also save the un-processed clip when the panel asks for it.
+  const preProcImages = [N.decode, 0];
   const up = state.upscaleMode || "none";
   // What the frame pipeline actually did, for the clip's sidecar — resolveResolution()
   // below only knows the pre-decode size, so the gallery needs these to badge an
@@ -724,6 +729,22 @@ export function buildClipGraph(state, avail, opts = {}) {
     format: "auto", codec: "auto",
   }};
 
+  // "Save the un-processed clip too" — a second file straight off the decode, before
+  // deblur/upscale touched it. Only worth writing when something actually ran; the run
+  // loop saves its sidecar and drops it into the gallery, but it never joins the stitch
+  // or the last-frame chain — the processed clip stays the real one.
+  const saveRawToo = !!state.saveUnprocessed && !!(deblurUsed || upscaleUsed);
+  if (saveRawToo) {
+    g[N.videoRaw] = { class_type: "CreateVideo", inputs: {
+      images: preProcImages, fps: FPS, audio: lockAudio ? [N.audioLock, 1] : [N.decodeA, 0],
+    }};
+    g[N.saveRaw] = { class_type: "SaveVideo", inputs: {
+      video: [N.videoRaw, 0],
+      filename_prefix: `${folder}/${stem}_clip${clipTag}${presetTag ? `_preset${presetTag}` : ""}_raw`,
+      format: "auto", codec: "auto",
+    }};
+  }
+
   // Final frame is saved as a PNG so the next clip can continue from it (and so the node
   // has an IMAGE to hand downstream).
   if (saveLastFrame) {
@@ -765,6 +786,7 @@ export function buildClipGraph(state, avail, opts = {}) {
     deblur: deblurUsed,
     upscale: upscaleUsed,
     videoNode: N.save, lastFrameNode: N.saveLF,
+    rawVideoNode: saveRawToo ? N.saveRaw : null,
   } };
 }
 
