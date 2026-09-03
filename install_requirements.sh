@@ -13,6 +13,11 @@
 # a summary at the end.
 set -uo pipefail
 
+# Force Python's text I/O to UTF-8 regardless of the OS locale, so a package whose
+# setup.py reads a non-ASCII file with the system default encoding does not crash with
+# UnicodeDecodeError (e.g. groundingdino-py, pulled in by ComfyUI-RMBG).
+export PYTHONUTF8=1
+
 echo "========================================================"
 echo " TJ NODE ONE - Custom Nodes Installer / Updater"
 echo " (Z-Image / Klein / QE2511 / Krea2 / SDXL / Anima / MiniMax H3)"

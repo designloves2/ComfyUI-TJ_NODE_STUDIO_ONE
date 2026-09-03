@@ -1,6 +1,12 @@
 @echo off
 setlocal EnableDelayedExpansion
 
+rem Force Python's text I/O to UTF-8 regardless of the OS code page. Without this,
+rem some packages' setup.py read a non-ASCII file with the system default (cp949 on
+rem Korean Windows) and crash with UnicodeDecodeError - groundingdino-py, pulled in by
+rem ComfyUI-RMBG, is the one that hits it here.
+set "PYTHONUTF8=1"
+
 echo ========================================================
 echo  TJ NODE ONE - Custom Nodes Installer / Updater
 echo  (Z-Image / Klein / QE2511 / Krea2 / SDXL / Anima / MiniMax H3)

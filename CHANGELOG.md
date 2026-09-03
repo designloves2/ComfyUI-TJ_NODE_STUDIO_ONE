@@ -2,6 +2,17 @@
 
 ---
 
+## v1.23.5 (2026-09-03)
+
+- **`install_requirements.bat` / `.sh` set `PYTHONUTF8=1`.** On a non-UTF-8 OS
+  (cp949 Korean Windows) `groundingdino-py`'s `setup.py` — pulled in by
+  `ComfyUI-RMBG` — reads a file with the system code page and dies with
+  `UnicodeDecodeError`, so RMBG's requirements never finish. Forcing Python's text
+  I/O to UTF-8 for the whole run fixes it. Verified end to end against a ComfyUI
+  Desktop `.venv`.
+
+---
+
 ## v1.23.4 (2026-09-03)
 
 - **`install_requirements.bat` — numpy version read no longer errors on ComfyUI Desktop.**
