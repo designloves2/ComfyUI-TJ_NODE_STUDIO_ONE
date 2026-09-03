@@ -2,6 +2,20 @@
 
 ---
 
+## v1.23.6 (2026-09-03)
+
+- **`ComfyUI-VFI` (GACLove) added to the installer + dependency check.** The gallery's
+  "Interpolate a finished clip" post-process uses `RIFEInterpolation`, which comes from
+  `ComfyUI-VFI` — that pack was in neither `install_requirements.*` nor
+  `dependency_check.py`, so a fresh install always showed frame interpolation as missing.
+  (`MMH3_OPTIONAL_NODES` already checked for `RIFEInterpolation` — only the how-to-get-it
+  was absent.)
+- Note: the `ComfyUI-sol-attn` Sol Attention patches need the Triton runtime, which comes
+  with SageAttention — install SageAttention (portable EZi Add-On or a Sage/Triton
+  one-shot) and those node classes appear.
+
+---
+
 ## v1.23.5 (2026-09-03)
 
 - **`install_requirements.bat` / `.sh` set `PYTHONUTF8=1`.** On a non-UTF-8 OS

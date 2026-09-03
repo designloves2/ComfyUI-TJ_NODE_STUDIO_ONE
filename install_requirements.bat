@@ -142,8 +142,10 @@ set REPOS[20]=https://github.com/Jalen-Brunson/ComfyUI-MiniMax-H3-PDD-Acc
 rem Sibling pack. Ships TJ_FreeTextEncoderVRAM, TJ_RTXDeblur, the H3 Audio Lock and
 rem One-Take latent-continuation nodes, TJ_MultiImageLoader, and the LLM / vision utils.
 set REPOS[21]=https://github.com/designloves2/ComfyUI-TJ_NODE
+rem RIFEInterpolation - the gallery's "Interpolate a finished clip" post-process.
+set REPOS[22]=https://github.com/GACLove/ComfyUI-VFI
 
-set COUNT=22
+set COUNT=23
 set /a LAST=COUNT-1
 
 :: ComfyUI Manager names a folder after the pack's pyproject "name", not the repo name.
@@ -153,6 +155,7 @@ set /a LAST=COUNT-1
 set "ALT[3]=seedvr2_videoupscaler"
 set "ALT[14]=comfyui_nvidia_rtx_nodes"
 set "ALT[17]=minimax-h3-firstblockcache"
+set "ALT[22]=rife_comfyui_wrapper"
 
 set /a N_NEW=0, N_UPD=0, N_CUR=0, N_FAIL=0
 

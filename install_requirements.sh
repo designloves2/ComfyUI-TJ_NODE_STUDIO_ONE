@@ -151,6 +151,8 @@ REPOS=(
     # Sibling pack - TJ_FreeTextEncoderVRAM, TJ_RTXDeblur, the H3 Audio Lock and One-Take
     # latent-continuation nodes, TJ_MultiImageLoader, and the LLM / vision utilities.
     "https://github.com/designloves2/ComfyUI-TJ_NODE"
+    # RIFEInterpolation - the gallery's "Interpolate a finished clip" post-process.
+    "https://github.com/GACLove/ComfyUI-VFI"
 )
 
 # ComfyUI Manager names a folder after the pack's pyproject `name`, which is often not
@@ -165,6 +167,7 @@ alt_folder_for() {
         ComfyUI-SeedVR2_VideoUpscaler)     printf 'seedvr2_videoupscaler' ;;
         Nvidia_RTX_Nodes_ComfyUI)          printf 'comfyui_nvidia_rtx_nodes' ;;
         ComfyUI-MiniMaxH3-FirstBlockCache) printf 'minimax-h3-firstblockcache' ;;
+        ComfyUI-VFI)                       printf 'rife_comfyui_wrapper' ;;
         *) printf '' ;;
     esac
 }
