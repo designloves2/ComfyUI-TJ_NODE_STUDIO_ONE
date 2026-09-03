@@ -2,6 +2,17 @@
 
 ---
 
+## v1.23.4 (2026-09-03)
+
+- **`install_requirements.bat` — numpy version read no longer errors on ComfyUI Desktop.**
+  `for /f %%v in ('"%PYTHON%" -m pip show numpy ^| findstr ...')` mangles under `cmd /c`
+  when the first token is a quoted path (a `.venv\Scripts\python.exe`), printing
+  "The filename, directory name, or volume label syntax is incorrect" and leaving the
+  numpy guard disabled. Now goes through a temp file + a `:GET_NUMPY_VER` subroutine
+  whose first token is unquoted `findstr`.
+
+---
+
 ## v1.23.3 (2026-09-03)
 
 - **`install_requirements.bat` / `.sh` now find the right Python on ComfyUI Desktop.**

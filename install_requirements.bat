@@ -103,8 +103,8 @@ echo [PIP] Done.
 
 rem Some packs (insightface, onnx, older RTX deps) move numpy. ComfyUI and many nodes
 rem still need numpy 1.x - record it now and restore it at the end if it changed.
-set "NUMPY_BEFORE="
-if not "%PYTHON%"=="" for /f "tokens=2" %%v in ('"%PYTHON%" -m pip show numpy 2^>nul ^| findstr /b /c:"Version:"') do set "NUMPY_BEFORE=%%v"
+call :GET_NUMPY_VER
+set "NUMPY_BEFORE=!_NPVER!"
 echo.
 
 :: -- node repositories ------------------------------------------------------
@@ -185,10 +185,9 @@ echo.
 
 rem Restore numpy if a pack moved it.
 if not "!NUMPY_BEFORE!"=="" if not "%PYTHON%"=="" (
-    set "NUMPY_AFTER="
-    for /f "tokens=2" %%v in ('"%PYTHON%" -m pip show numpy 2^>nul ^| findstr /b /c:"Version:"') do set "NUMPY_AFTER=%%v"
-    if not "!NUMPY_AFTER!"=="!NUMPY_BEFORE!" (
-        echo   [numpy] a dependency changed numpy !NUMPY_BEFORE! -^> !NUMPY_AFTER! - restoring !NUMPY_BEFORE!
+    call :GET_NUMPY_VER
+    if not "!_NPVER!"=="!NUMPY_BEFORE!" (
+        echo   [numpy] a dependency changed numpy !NUMPY_BEFORE! -^> !_NPVER! - restoring !NUMPY_BEFORE!
         "%PYTHON%" -m pip install "numpy==!NUMPY_BEFORE!" --quiet || echo   [numpy] could not restore - run: "%PYTHON%" -m pip install numpy==!NUMPY_BEFORE!
     )
 )
@@ -220,6 +219,20 @@ echo    models\loras\            : minimax_h3 turbo LoRA ^(optional, for Turbo^)
 echo  Select them once in the node's Settings ^> Models tab.
 echo ========================================================
 pause
+exit /b 0
+
+
+:: -- read the installed numpy version into _NPVER (empty if none) -----------
+:: A temp file, not  for /f ('"%PYTHON%" ... ^| findstr ...')  -- cmd /c mangles
+:: a piped command whose FIRST token is a quoted path (a .venv python.exe), and
+:: fails with "The filename, directory name, or volume label syntax is incorrect".
+:GET_NUMPY_VER
+set "_NPVER="
+if "%PYTHON%"=="" exit /b 0
+set "_NPTMP=%TEMP%\tj_numpy_%RANDOM%.txt"
+"%PYTHON%" -m pip show numpy > "!_NPTMP!" 2>nul
+for /f "tokens=2" %%v in ('findstr /b /c:"Version:" "!_NPTMP!" 2^>nul') do set "_NPVER=%%v"
+del "!_NPTMP!" >nul 2>&1
 exit /b 0
 
 
