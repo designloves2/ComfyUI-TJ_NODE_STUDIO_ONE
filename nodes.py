@@ -2204,6 +2204,9 @@ MMH3_OPTIONAL_NODES = [
     "MiniMaxH3Cache",
     "ApplyMiniMaxH3FirstBlockCache",
     "ModelAttentionBackend",
+    # H3-Optimizations (Zironic) — backend-preserving VRAM + optional sparse attention
+    "H3MemoryOptimization",
+    "H3SparseAttention",
     "H3SLAAttention",
     # Frees the text encoder right after conditioning is built, before sampling starts
     # (ships with TJ_NODE) — see SPEC_FREE_TEXT_ENCODER_VRAM_PORT.md

@@ -18,8 +18,9 @@ import {
   C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, SUBFOLDER,
   el, clear, loadState, saveState, lastUsedAt, defaultState, randomSeed,
   CLIP_LENGTHS, ASPECTS, UPSCALE_MODES, SAMPLERS, SCHEDULERS,
-  TURBO_MODES, ATTN_BACKENDS, ATTN_FORWARDS, BLOCK_CACHES, FBC_MODES, PDD_NFE_CHOICES,
+  TURBO_MODES, ATTN_BACKENDS, ATTN_FORWARDS, BLOCK_CACHES, H3_OPTIMIZERS, FBC_MODES, PDD_NFE_CHOICES,
   attnBlockedReason, attnForwardBlockedReason, attnForwardOverlapNote, blockCacheBlockedReason,
+  h3OptimizerBlockedReason, h3OptimizerOverlapNote,
   effectiveTurbo, effectiveSteps, migrateLegacyAccel,
   continuityModesFor, generationModesFor, configIssues,
   clipPlan, formatDuration, formatClock, framesToSeconds, alignFrameCount, FPS, ONE_TAKE_OVERLAP_FRAMES, resolveResolution,
@@ -928,6 +929,12 @@ app.registerExtension({
           state.blockCache = "none";
           persist();
         }
+        if ((reason = h3OptimizerBlockedReason(state.h3Optimizer, state.turboMode, state.attnBackend, state.attnForward))) {
+          // Only the sparse stage is ever blocked — fall back to plain Memory Opt, not off.
+          force("H3 optimizer", state.h3Optimizer, "memory", reason);
+          state.h3Optimizer = "memory";
+          persist();
+        }
         if (forced.length) {
           console.warn("[MMH3] pipeline selections overruled:\n  " + forced.join("\n  "));
           showPopup("Pipeline changed automatically — " + forced.join(" · "), true);
@@ -1189,8 +1196,13 @@ app.registerExtension({
         const attnLabel = (ATTN_BACKENDS.find(a => a.key === state.attnBackend) || {}).label || "None";
         const fwdLabel  = (ATTN_FORWARDS.find(a => a.key === state.attnForward) || {}).label || "None";
         leftPanel.appendChild(accordion("attn", "Attention",
-          state.attnForward === "none" ? attnLabel
-            : `${shortLabel(attnLabel)} + ${shortLabel(fwdLabel).replace("H3 ", "")}`,
+          (() => {
+            let s = state.attnForward === "none" ? attnLabel
+              : `${shortLabel(attnLabel)} + ${shortLabel(fwdLabel).replace("H3 ", "")}`;
+            if (state.h3Optimizer === "memory") s += " · MemOpt";
+            else if (state.h3Optimizer === "memory_sparse") s += " · MemOpt+Sparse";
+            return s;
+          })(),
           () => {
             const rows = [
               col([label("Attention backend"), gatedSelect(ATTN_BACKENDS, state.attnBackend,
@@ -1280,6 +1292,43 @@ app.registerExtension({
                     : "Runs on strided views of the fused qkv projection — no q/k/v copies.",
                   style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
               );
+            }
+
+            // ── H3-Optimizations (Zironic): backend-preserving VRAM / sparse ──
+            rows.push(
+              col([label("H3 optimizer (VRAM / sparse)"), gatedSelect(H3_OPTIMIZERS, state.h3Optimizer || "none",
+                k => h3OptimizerBlockedReason(k, turboMode, state.attnBackend, state.attnForward),
+                v => { state.h3Optimizer = v; persist(); renderLeft(); })]),
+              warn((H3_OPTIMIZERS.find(o => o.key === (state.h3Optimizer || "none")) || {}).node));
+            const h3OptNote = h3OptimizerOverlapNote(state.h3Optimizer, state.attnForward);
+            if (h3OptNote) rows.push(hint(h3OptNote));
+            if (state.h3Optimizer === "memory" || state.h3Optimizer === "memory_sparse") {
+              rows.push(
+                row([
+                  col([label("precision"), select(
+                    ["Auto", "BF16", "Preserve native", "Force quant"].map(x => ({ value: x, label: x })),
+                    state.h3MemPrecision || "Auto", v => { state.h3MemPrecision = v; persist(); })]),
+                  col([label("qkv streaming"), select(
+                    ["Auto", "Off", "Forced"].map(x => ({ value: x, label: x })),
+                    state.h3MemQkvStreaming || "Auto", v => { state.h3MemQkvStreaming = v; persist(); })]),
+                ]),
+                checkboxRow("Lower VRAM (slower attention V handling)", !!state.h3MemLowVram,
+                  v => { state.h3MemLowVram = v; persist(); },
+                  { title: "Two-pass attention V handling — trims peak memory further at a speed cost." }),
+                el("div", { text: ctx.availability?.H3MemoryOptimization
+                    ? "Wraps the selected dense backend (Sage / Comfy Kitchen / stock) with chunked QKV/MLP/FinalLayer — the backend still runs. This is how to get a memory-efficient CK."
+                    : "Requires the H3-Optimizations pack — run install_requirements.",
+                  style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
+            }
+            if (state.h3Optimizer === "memory_sparse"
+                && !h3OptimizerBlockedReason("memory_sparse", turboMode, state.attnBackend, state.attnForward)) {
+              rows.push(
+                col([label("video attention budget"), numberField(state.h3SparseBudget ?? 0.15,
+                  v => { state.h3SparseBudget = Math.min(1, Math.max(0.01, v)); persist(); }, 0.05)]),
+                checkboxRow("Denser early/late steps (>= 50% for first & last 20%)", state.h3SparseDenserEdges !== false,
+                  v => { state.h3SparseDenserEdges = v; persist(); }),
+                el("div", { text: "Sparse attention changes the result — no budget is lossless for every prompt. 0.15 is the pack default; raise it if motion or prompt adherence degrades. H3 is most sensitive in the early steps.",
+                  style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
             }
             return rows;
           }));
@@ -1923,6 +1972,8 @@ app.registerExtension({
           turboMode:   st.turboMode,
           attnBackend: st.attnBackend,
           attnForward: st.attnForward,
+          h3Optimizer: st.h3Optimizer || "none",
+          h3SparseBudget: (st.h3Optimizer === "memory_sparse") ? (st.h3SparseBudget ?? 0.15) : null,
           blockCache:  st.blockCache,
           useSpectrum: !!st.useSpectrum,
           useFusedModulation: !!st.useFusedModulation,
@@ -2600,6 +2651,8 @@ app.registerExtension({
           if (meta.turboMode)   state.turboMode   = meta.turboMode;
           if (meta.attnBackend) state.attnBackend = meta.attnBackend;
           if (meta.attnForward) state.attnForward = meta.attnForward;
+          if (meta.h3Optimizer) state.h3Optimizer = meta.h3Optimizer;
+          if (meta.h3SparseBudget != null) state.h3SparseBudget = meta.h3SparseBudget;
           if (meta.blockCache)  state.blockCache  = meta.blockCache;
           if (meta.useSpectrum != null)        state.useSpectrum        = !!meta.useSpectrum;
           if (meta.useFusedModulation != null) state.useFusedModulation = !!meta.useFusedModulation;

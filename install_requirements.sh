@@ -153,6 +153,8 @@ REPOS=(
     "https://github.com/designloves2/ComfyUI-TJ_NODE"
     # RIFEInterpolation - the gallery's "Interpolate a finished clip" post-process.
     "https://github.com/GACLove/ComfyUI-VFI"
+    # H3-Optimizations (Zironic) - backend-preserving VRAM optimizer + H3 Sparse Attention.
+    "https://github.com/Zironic/H3-Optimizations"
 )
 
 # ComfyUI Manager names a folder after the pack's pyproject `name`, which is often not
@@ -168,6 +170,7 @@ alt_folder_for() {
         Nvidia_RTX_Nodes_ComfyUI)          printf 'comfyui_nvidia_rtx_nodes' ;;
         ComfyUI-MiniMaxH3-FirstBlockCache) printf 'minimax-h3-firstblockcache' ;;
         ComfyUI-VFI)                       printf 'rife_comfyui_wrapper' ;;
+        H3-Optimizations)                  printf 'h3-optimizations' ;;
         *) printf '' ;;
     esac
 }

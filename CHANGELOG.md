@@ -2,6 +2,33 @@
 
 ---
 
+## v1.24.0 (2026-09-03)
+
+- **MiniMax H3: new "H3 optimizer" axis (H3-Optimizations / Zironic).** Attention accordion
+  gains a third control below the H3 forward patch:
+  - **H3 Memory Opt** — `H3MemoryOptimization`. Unlike the KJ MemEff Sage forward patch
+    (which hard-swaps the blocks' attention to a sage-fixed kernel), this *preserves* the
+    selected dense backend — Sage, **Comfy Kitchen (CK)**, or stock — and wraps it with
+    chunked QKV/MLP/FinalLayer and early embedding release. It is the way to run a
+    memory-efficient CK. **Never blocked** — H3-Optimizations detects a foreign
+    `attn.forward` patch and steps aside for that block (no overwrite, no error), so it
+    composes with every backend, every turbo mode, and every H3 forward patch, keeping its
+    MLP / FinalLayer / embedding savings. With a forward patch on it shows a note saying so.
+    Sub-controls: precision (Auto / BF16 / Preserve native / Force quant), QKV streaming
+    (Auto / Off / Forced), Lower VRAM toggle.
+  - **H3 Memory Opt + Sparse** — adds `H3SparseAttention` after it (video attention budget,
+    denser early/late steps). The Sparse stage *is* the attention, so it is refused wherever
+    it can't own `attn.forward`: under any turbo schedule, when the backend is already sparse
+    (SolAttn kijai / SLA), and **when an H3 forward patch is set** (that patch keeps
+    `attn.forward` and the sparse routing goes inert). Falls back to plain Memory Opt with
+    the reason inline.
+- `H3MemoryOptimization` / `H3SparseAttention` added to `MMH3_OPTIONAL_NODES`,
+  `install_requirements.bat` / `.sh` (`https://github.com/Zironic/H3-Optimizations`, alt
+  folder `h3-optimizations`, no pip deps), and `dependency_check.py`.
+- Clip metadata records `h3Optimizer` (+ `h3SparseBudget` when sparse); Reuse restores it.
+
+---
+
 ## v1.23.6 (2026-09-03)
 
 - **`ComfyUI-VFI` (GACLove) added to the installer + dependency check.** The gallery's

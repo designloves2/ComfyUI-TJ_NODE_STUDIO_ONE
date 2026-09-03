@@ -332,6 +332,16 @@ export const BLOCK_CACHES = [
   { key: "h3cache", label: "H3 Cache",               node: "MiniMaxH3Cache" },
   { key: "fbcache", label: "H3 FirstBlockCache",     node: "ApplyMiniMaxH3FirstBlockCache" },
 ];
+// H3-Optimizations (Zironic) — a backend-preserving axis. `memory` wraps whatever dense
+// backend is selected (Sage / Comfy Kitchen / stock) with chunked QKV/MLP/FinalLayer and
+// early embedding release; it is the way to get a memory-efficient CK, which the KJ MemEff
+// forward patch cannot do (that one hard-swaps the blocks' attention to a sage kernel).
+// `memory_sparse` adds H3 Sparse Attention after it — a real attention approximation.
+export const H3_OPTIMIZERS = [
+  { key: "none",          label: "None",                   node: null },
+  { key: "memory",        label: "H3 Memory Opt",          node: "H3MemoryOptimization" },
+  { key: "memory_sparse", label: "H3 Memory Opt + Sparse", node: "H3SparseAttention" },
+];
 export const FBC_MODES = [
   "H3 Safe — 0.08 / max 2", "H3 Fast — 0.10 / max 2",
   "H3 Aggressive — 0.12 / max 2", "Custom — manual values",
@@ -391,6 +401,44 @@ export function blockCacheBlockedReason(key, turboMode) {
   if (turboMode !== "none")
     return "A turbo schedule is only a handful of steps, which never reaches the threshold these caches reuse steps at";
   return "";
+}
+
+/**
+ * H3-Optimizations axis.
+ *
+ * Plain Memory Opt is pure VRAM/execution and yields gracefully to anything that already
+ * patched the attention (H3-Optimizations detects a foreign `blocks[i].attn.forward` and
+ * skips that block — never overwrites, never errors), keeping its MLP / FinalLayer / embedding
+ * savings. So it is never blocked.
+ *
+ * The Sparse stage IS the attention, so it can only work when it owns `attn.forward`:
+ *  - out under any turbo schedule (too few steps to average its approximation away),
+ *  - not stacked on a backend that is already sparse,
+ *  - not stacked on an H3 forward patch — that patch keeps `attn.forward` and the sparse
+ *    routing goes inert on every block. Fall back to plain Memory Opt.
+ */
+export function h3OptimizerBlockedReason(key, turboMode, attnBackend, attnForward) {
+  if (!key || key === "none" || key === "memory") return "";
+  if (key === "memory_sparse") {
+    if (turboMode && turboMode !== "none")
+      return "The Sparse stage approximates attention — a few-step turbo schedule can't absorb that. Use plain H3 Memory Opt.";
+    if (attnBackend === "solattn_kijai" || attnBackend === "sla")
+      return "The attention backend is already sparse — H3 Sparse on top double-sparsifies. Use plain H3 Memory Opt.";
+    if (attnForward && attnForward !== "none")
+      return "An H3 attention-forward patch keeps the blocks' attention — H3 Sparse can't route around it. Use plain H3 Memory Opt.";
+  }
+  return "";
+}
+
+/**
+ * Not a block — a note. Plain Memory Opt with an H3 attention-forward patch on: the forward
+ * patch owns blocks[i].attn.forward, so the optimizer's attention/QKV-streaming step self-
+ * defers (its status reports the conflict) while its MLP / FinalLayer / embedding savings
+ * still apply. This is the benchmarked "Sage + chunked MLP/FinalLayer" stack.
+ */
+export function h3OptimizerOverlapNote(key, attnForward) {
+  if (key !== "memory" || !attnForward || attnForward === "none") return "";
+  return "The H3 forward patch keeps the blocks' attention — the optimizer still adds its MLP / FinalLayer / embedding savings on top.";
 }
 
 /**

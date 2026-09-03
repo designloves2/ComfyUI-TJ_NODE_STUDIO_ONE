@@ -144,8 +144,10 @@ rem One-Take latent-continuation nodes, TJ_MultiImageLoader, and the LLM / visio
 set REPOS[21]=https://github.com/designloves2/ComfyUI-TJ_NODE
 rem RIFEInterpolation - the gallery's "Interpolate a finished clip" post-process.
 set REPOS[22]=https://github.com/GACLove/ComfyUI-VFI
+rem H3-Optimizations (Zironic) - backend-preserving VRAM optimizer + H3 Sparse Attention.
+set REPOS[23]=https://github.com/Zironic/H3-Optimizations
 
-set COUNT=23
+set COUNT=24
 set /a LAST=COUNT-1
 
 :: ComfyUI Manager names a folder after the pack's pyproject "name", not the repo name.
@@ -156,6 +158,7 @@ set "ALT[3]=seedvr2_videoupscaler"
 set "ALT[14]=comfyui_nvidia_rtx_nodes"
 set "ALT[17]=minimax-h3-firstblockcache"
 set "ALT[22]=rife_comfyui_wrapper"
+set "ALT[23]=h3-optimizations"
 
 set /a N_NEW=0, N_UPD=0, N_CUR=0, N_FAIL=0
 

@@ -7,7 +7,7 @@
 //
 // Optional third-party nodes are gated on `avail` (from /minimax_h3_one/node_availability):
 // a missing pack disables that one feature rather than failing the whole prompt.
-import { SUBFOLDER, FPS, resolveResolution, effectiveTurbo, effectiveSteps, turboLoraForMode, pddFileForMode, blockCacheBlockedReason, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES } from "./core_minimax.js";
+import { SUBFOLDER, FPS, resolveResolution, effectiveTurbo, effectiveSteps, turboLoraForMode, pddFileForMode, blockCacheBlockedReason, h3OptimizerBlockedReason, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES } from "./core_minimax.js";
 import { matchPreset } from "./presets_minimax.js";
 
 const N = {
@@ -29,6 +29,8 @@ const N = {
   cache:  "MM:cache",
   fbcache:"MM:fbcache",
   sol:     "MM:solattn",
+  h3mem:   "MM:h3_mem",
+  h3sparse:"MM:h3_sparse",
   spectrum:"MM:spectrum",
   turbo:   "MM:turbo_lora",
   preview:"MM:preview",
@@ -367,6 +369,42 @@ function buildModelChain(g, state, avail) {
       temporal_guard: !!state.fbcTemporalGuard,
     }};
     m = [N.fbcache, 0];
+  }
+
+  // ── H3-Optimizations (Zironic): VRAM + optional sparse, backend-preserving ─
+  // Unlike the KJ forward patch, H3 Memory Optimization does NOT replace the blocks'
+  // attention — it wraps the selected dense backend (sage / comfy kitchen / stock) with
+  // chunked QKV/MLP/FinalLayer and early embedding release, so it is how you get a
+  // memory-efficient CK. Its nodes are order-independent and reconcile at the
+  // prepare-sampling boundary, so placement here (after the caches, inside Spectrum's
+  // wrapper) is safe. The Sparse stage is gated exactly like the sparse backends.
+  const h3opt = state.h3Optimizer || "none";
+  if ((h3opt === "memory" || h3opt === "memory_sparse") && has(avail, "H3MemoryOptimization")) {
+    g[N.h3mem] = { class_type: "H3MemoryOptimization", inputs: {
+      model: m,
+      // Legacy serialized slots — ignored by execution but kept as required inputs.
+      fused_qkv: "auto",
+      preserve_precision: true,
+      embedding_memory_mode: "Auto",
+      // Authoritative controls.
+      mlp_memory: "auto",
+      chunk_rows: Math.round(state.h3MemChunkRows ?? 4096),
+      precision_mode: state.h3MemPrecision || "Auto",
+      qkv_streaming_mode: state.h3MemQkvStreaming || "Auto",
+      kitchen_v_memory_mode: state.h3MemLowVram ? "Lower VRAM (slower)" : "Standard",
+    }};
+    m = [N.h3mem, 0];
+  }
+  if (h3opt === "memory_sparse"
+      && !h3OptimizerBlockedReason("memory_sparse", turbo, state.attnBackend, state.attnForward)
+      && has(avail, "H3SparseAttention")) {
+    g[N.h3sparse] = { class_type: "H3SparseAttention", inputs: {
+      model: m,
+      video_budget: state.h3SparseBudget ?? 0.15,
+      denser_early_late_steps: state.h3SparseDenserEdges !== false,
+      layer_video_budgets: state.h3SparseLayerBudgets || "",
+    }};
+    m = [N.h3sparse, 0];
   }
 
   // ── Spectrum (latent-level step forecasting) ──────────────────────────────
