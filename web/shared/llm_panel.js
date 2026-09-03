@@ -33,8 +33,11 @@ async function fetchModels() {
   return { gguf: [], mmproj: [], vision_tasks: [], _notInstalled: true };
 }
 
-// ── Not-installed banner with install button ─────────────────────────────────
-function makeNotInstalledBanner(onInstalled) {
+// ── Not-installed banner — points at the installer / Manager ─────────────────
+// v1.24.1: the one-click "install" button (which hit a server route that ran
+// git clone + pip install) was removed. TJ_NODE is a normal dependency now —
+// the batch installer pulls it, or install it from ComfyUI-Manager.
+function makeNotInstalledBanner() {
   const wrap = document.createElement("div");
   Object.assign(wrap.style, {
     display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
@@ -53,53 +56,29 @@ function makeNotInstalledBanner(onInstalled) {
   desc.textContent = t("llm_not_installed_desc");
   Object.assign(desc.style, { color: "#888", fontSize: "11px", lineHeight: "1.6", whiteSpace: "pre-line" });
 
+  const cmd = document.createElement("code");
+  cmd.textContent = "git clone " + TJ_NODE_GITHUB;
+  Object.assign(cmd.style, {
+    display: "block", background: "#111", color: "#9fe0a0", border: "1px solid #333",
+    borderRadius: "6px", padding: "8px 12px", fontSize: "11px", fontFamily: "monospace",
+    userSelect: "all", cursor: "text", maxWidth: "100%", overflowX: "auto",
+  });
+
+  const hint = document.createElement("div");
+  hint.textContent = t("llm_install_hint");
+  Object.assign(hint.style, { color: "#777", fontSize: "10px", lineHeight: "1.6", whiteSpace: "pre-line" });
+
   const link = document.createElement("a");
   link.href = TJ_NODE_GITHUB; link.target = "_blank"; link.rel = "noopener";
   link.textContent = t("llm_github_link");
   Object.assign(link.style, { color: "#7e9eff", fontSize: "11px", textDecoration: "underline" });
 
-  const btnInstall = document.createElement("button");
-  btnInstall.textContent = t("llm_btn_install");
-  Object.assign(btnInstall.style, {
-    background: "#1e4a1e", color: "#7eff7e", border: "1px solid #3a7a3a",
-    borderRadius: "6px", padding: "10px 24px", cursor: "pointer",
-    fontSize: "13px", fontWeight: "700", marginTop: "4px",
-  });
-
-  const statusEl = document.createElement("div");
-  Object.assign(statusEl.style, { color: "#aaa", fontSize: "11px", minHeight: "18px" });
-
-  btnInstall.onclick = async () => {
-    btnInstall.disabled = true;
-    btnInstall.textContent = t("llm_installing");
-    statusEl.textContent = t("llm_install_progress");
-    try {
-      const r = await fetch("/tj_studio_one/llm/install_tj_node", { method: "POST" });
-      const d = await r.json();
-      if (d.ok) {
-        statusEl.textContent = "✅ " + t("llm_install_done");
-        btnInstall.textContent = t("llm_install_done");
-        btnInstall.style.background = "#1a3a2a";
-        _modelCache = null; _tjNodeAvailable = null;
-        if (onInstalled) onInstalled();
-      } else {
-        statusEl.textContent = "❌ " + (d.error || "error");
-        btnInstall.disabled = false;
-        btnInstall.textContent = t("llm_btn_retry");
-      }
-    } catch (e) {
-      statusEl.textContent = "❌ " + t("llm_err_network") + e.message;
-      btnInstall.disabled = false;
-      btnInstall.textContent = t("llm_btn_retry");
-    }
-  };
-
   wrap.appendChild(icon);
   wrap.appendChild(title);
   wrap.appendChild(desc);
+  wrap.appendChild(cmd);
+  wrap.appendChild(hint);
   wrap.appendChild(link);
-  wrap.appendChild(btnInstall);
-  wrap.appendChild(statusEl);
   return wrap;
 }
 
@@ -735,10 +714,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
 
   function _showNotInstalledInPanel(panel) {
     panel.innerHTML = "";
-    panel.appendChild(makeNotInstalledBanner(() => {
-      // After install button success, allow re-checking on next open
-      _modelsLoaded = false;
-    }));
+    panel.appendChild(makeNotInstalledBanner());
   }
 
   function populateSelects(d) {

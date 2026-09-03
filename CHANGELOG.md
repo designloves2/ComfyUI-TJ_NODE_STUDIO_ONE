@@ -2,6 +2,26 @@
 
 ---
 
+## v1.24.1 (2026-09-03)
+
+- **Removed the `POST /tj_studio_one/llm/install_tj_node` route.** It ran `git clone`
+  + `pip install` on the server in response to an HTTP call — a self-installing pattern
+  that a security scanner (correctly) treats as high-risk, and the prime suspect for the
+  Comfy Registry auto-flag (the sibling `ComfyUI-TJ_NODE`, which has no such route, is
+  `Active`). The LLM panel's "not installed" state now just shows the `git clone` command
+  + a link + a pointer to `install_requirements.bat` / ComfyUI-Manager. TJ_NODE has been a
+  normal `install_requirements` dependency (REPOS[21]) for several releases, so nothing is
+  lost. Frontend: `web/shared/llm_panel.js`, `web/shared/i18n.js` (dropped the
+  install-button strings).
+- **`POST /tj_studio_one/llm/download_image` — SSRF guard.** The URL is now pre-flighted:
+  http(s) only, and the host must not resolve to a loopback / private / link-local /
+  reserved address (blocks `169.254.169.254` and friends); redirects are refused so a 30x
+  can't smuggle the request to an internal address; 64 MB read ceiling. Public image URLs
+  are unaffected. (Defence-in-depth — kept in parity with `ComfyUI-TJ_NODE`'s
+  `/tj_node/download_url`, which gets the same guard.)
+
+---
+
 ## v1.24.0 (2026-09-03)
 
 - **MiniMax H3: new "H3 optimizer" axis (H3-Optimizations / Zironic).** Attention accordion

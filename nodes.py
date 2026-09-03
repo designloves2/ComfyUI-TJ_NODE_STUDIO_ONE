@@ -1436,19 +1436,45 @@ def _try_import_tj_llm():
     return None, None, None
 
 
-TJ_NODE_REPO = "https://github.com/designloves2/ComfyUI-TJ_NODE"
-TJ_NODE_FOLDER = "ComfyUI-TJ_NODE"
+def _assert_public_url(url):
+    """Reject anything that isn't a plain http(s) URL pointing at a public host.
+
+    Blocks the SSRF shapes a scanner (and an attacker on the LAN) cares about:
+    non-http schemes, and hosts that resolve to loopback / private / link-local /
+    reserved ranges (incl. the cloud metadata address).
+    """
+    import ipaddress, socket
+    from urllib.parse import urlparse
+    p = urlparse(url)
+    if p.scheme not in ("http", "https"):
+        raise ValueError("only http(s) URLs are allowed")
+    host = p.hostname
+    if not host:
+        raise ValueError("no host in URL")
+    try:
+        infos = socket.getaddrinfo(host, p.port or (443 if p.scheme == "https" else 80), proto=socket.IPPROTO_TCP)
+    except socket.gaierror as e:
+        raise ValueError(f"cannot resolve host: {e}")
+    for *_, sockaddr in infos:
+        ip = ipaddress.ip_address(sockaddr[0])
+        if (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast
+                or ip.is_reserved or ip.is_unspecified):
+            raise ValueError("host resolves to a non-public address")
 
 
 @PromptServer.instance.routes.post("/tj_studio_one/llm/download_image")
 async def studio_llm_download_image(request):
-    """Download an image from a URL, save to input/download/, return base64 preview."""
+    """Download an image from a public URL, save to input/download/, return base64 preview."""
     import asyncio, base64, urllib.request, urllib.error
     from io import BytesIO
     data = await request.json()
     url = (data.get("url") or "").strip()
     if not url:
         return web.json_response({"ok": False, "error": "No URL provided"})
+    try:
+        _assert_public_url(url)
+    except ValueError as e:
+        return web.json_response({"ok": False, "error": f"Blocked URL: {e}"})
     try:
         download_dir = os.path.join(folder_paths.get_input_directory(), "download")
         os.makedirs(download_dir, exist_ok=True)
@@ -1460,10 +1486,16 @@ async def studio_llm_download_image(request):
         safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in raw_name)
         dest_path = os.path.join(download_dir, safe_name)
 
+        class _NoRedirect(urllib.request.HTTPRedirectHandler):
+            # A 30x to an internal address would sidestep the pre-flight check.
+            def redirect_request(self, *a, **k):
+                raise urllib.error.URLError("redirects are not allowed")
+
         def _fetch():
+            opener = urllib.request.build_opener(_NoRedirect)
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                return resp.read()
+            with opener.open(req, timeout=30) as resp:
+                return resp.read(64 * 1024 * 1024)  # 64 MB ceiling
 
         loop = asyncio.get_event_loop()
         img_bytes = await loop.run_in_executor(None, _fetch)
@@ -1487,36 +1519,9 @@ async def studio_llm_download_image(request):
         return web.json_response({"ok": False, "error": str(e)})
 
 
-@PromptServer.instance.routes.post("/tj_studio_one/llm/install_tj_node")
-async def studio_llm_install(request):
-    import asyncio
-    custom_nodes_dir = os.path.dirname(NODE_DIR)
-    target = os.path.join(custom_nodes_dir, TJ_NODE_FOLDER)
-    if os.path.isdir(target):
-        return web.json_response({"ok": True, "msg": "Already installed"})
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "git", "clone", "--depth=1", TJ_NODE_REPO, target,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
-        if proc.returncode == 0:
-            # Run pip install if requirements.txt exists
-            req = os.path.join(target, "requirements.txt")
-            if os.path.isfile(req):
-                import sys
-                pip_proc = await asyncio.create_subprocess_exec(
-                    sys.executable, "-m", "pip", "install", "-r", req, "--quiet",
-                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                )
-                await asyncio.wait_for(pip_proc.communicate(), timeout=180)
-            return web.json_response({"ok": True, "msg": "Installed. Please restart ComfyUI."})
-        else:
-            return web.json_response({"ok": False, "error": stderr.decode("utf-8", errors="replace")})
-    except asyncio.TimeoutError:
-        return web.json_response({"ok": False, "error": "Timeout during installation"})
-    except Exception as e:
-        return web.json_response({"ok": False, "error": str(e)})
+# NOTE: the old POST /tj_studio_one/llm/install_tj_node route (git clone + pip install
+# over HTTP) was removed in v1.24.1. TJ_NODE is installed by install_requirements.bat /
+# .sh (it is REPOS[21]) or from ComfyUI-Manager — the panel now just links there.
 
 
 @PromptServer.instance.routes.get("/tj_studio_one/llm/models")

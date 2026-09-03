@@ -545,14 +545,9 @@ Model Override — ⚙ Settings에서 활성화 시 외부 모델/CLIP/VAE 노�
   llm_err_no_image:        "이미지를 먼저 업로드하세요.",
   llm_err_prefix:          "LLM 오류: ",
   llm_not_installed_title: "TJ_NODE가 필요합니다",
-  llm_not_installed_desc:  "LLM 기능을 사용하려면 TJ_NODE 확장을 설치해야 합니다.\n설치 후 ComfyUI를 재시작하면 자동으로 활성화됩니다.",
+  llm_not_installed_desc:  "LLM / 이미지→브리프 기능은 형제 확장 TJ_NODE에 들어 있습니다.\n이 팩의 install_requirements.bat 한 번이면 스튜디오 원 패밀리에 필요한 의존성·노드가 전부(TJ_NODE 포함) 설치됩니다.",
+  llm_install_hint:        "또는 ComfyUI-Manager에서 \"ComfyUI-TJ_NODE\" 검색 후 설치,\n혹은 custom_nodes 폴더에서 아래 명령 실행. 설치 후 ComfyUI 재시작.",
   llm_github_link:         "GitHub: designloves2/ComfyUI-TJ_NODE",
-  llm_btn_install:         "⬇ 지금 설치하기",
-  llm_installing:          "⏳ 설치 중… (git clone)",
-  llm_install_progress:    "네트워크 상태에 따라 1~2분 소요될 수 있습니다.",
-  llm_install_done:        "✅ 설치 완료 — ComfyUI를 재시작하세요",
-  llm_btn_retry:           "⬇ 다시 시도",
-  llm_err_network:         "네트워크 오류: ",
 };
 
 const EN = {
@@ -1076,14 +1071,9 @@ Model Override — Enable in ⚙ Settings to connect external model/CLIP/VAE nod
   llm_err_no_image:        "Please upload an image first.",
   llm_err_prefix:          "LLM error: ",
   llm_not_installed_title: "TJ_NODE Required",
-  llm_not_installed_desc:  "TJ_NODE extension must be installed to use LLM features.\nRestart ComfyUI after installation to activate automatically.",
+  llm_not_installed_desc:  "The LLM / Image-to-Brief features live in the sibling extension TJ_NODE.\nOne run of this pack's install_requirements.bat installs every Studio One family dependency and node, TJ_NODE included.",
+  llm_install_hint:        "Or install \"ComfyUI-TJ_NODE\" from ComfyUI-Manager,\nor run the command below in your custom_nodes folder. Restart ComfyUI afterwards.",
   llm_github_link:         "GitHub: designloves2/ComfyUI-TJ_NODE",
-  llm_btn_install:         "⬇ Install Now",
-  llm_installing:          "⏳ Installing… (git clone)",
-  llm_install_progress:    "This may take 1–2 minutes depending on network speed.",
-  llm_install_done:        "✅ Installed — please restart ComfyUI",
-  llm_btn_retry:           "⬇ Retry",
-  llm_err_network:         "Network error: ",
 };
 
 const STRINGS = { ko: KO, en: EN };
