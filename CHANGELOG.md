@@ -2,6 +2,24 @@
 
 ---
 
+## v1.23.3 (2026-09-03)
+
+- **`install_requirements.bat` / `.sh` now find the right Python on ComfyUI Desktop.**
+  - Accepts the ComfyUI folder as the first argument
+    (`install_requirements.bat "D:\ComfyUI-Desktop\ComfyUI"`); without one it derives the
+    folder from where the script sits, as before. A `main.py` check rejects a wrong path.
+  - Python discovery order: `<ComfyUI>\venv` / `.venv` (ComfyUI Desktop runs from a uv
+    `.venv` whose base is `standalone-env` — packages must land in the `.venv`, not the
+    bare `standalone-env`), then `<base>\venv` / `.venv` / `standalone-env`, then
+    `python_embeded` in or beside ComfyUI (portable). `<base>` = the folder above ComfyUI.
+  - The system-Python fallback is **no longer automatic** — if none of the above is
+    found it names the system Python and asks Y/N; anything but Yes skips every pip step
+    (node repos are still cloned). Silently using the system Python was the actual
+    Desktop bug: deps went to the wrong interpreter and ComfyUI never saw them.
+- Both scripts are ASCII-only now (no code-page-dependent characters).
+
+---
+
 ## v1.23.2 (2026-09-02)
 
 - **"Also save the clip before deblur / upscale" (왼쪽 패널 Upscale 아코디언).** 인라인

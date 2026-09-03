@@ -1,6 +1,5 @@
 @echo off
 setlocal EnableDelayedExpansion
-chcp 65001 >nul
 
 echo ========================================================
 echo  TJ NODE ONE - Custom Nodes Installer / Updater
@@ -12,35 +11,92 @@ echo  the ones already present. Models are NOT downloaded - they are
 echo  listed at the end and go in by hand.
 echo.
 
-:: custom_nodes 폴더 = 이 스크립트의 한 단계 위
-set "CUSTOM_NODES=%~dp0.."
-cd /d "%CUSTOM_NODES%"
-echo [INFO] Custom nodes folder: %CUSTOM_NODES%
+:: ComfyUI folder. First argument wins ("install_requirements.bat C:\path\to\ComfyUI");
+:: otherwise it is derived from where this script sits (custom_nodes\<this pack>\ -> up 2).
+:: Passing the path lets you run this from anywhere and covers unusual install layouts.
+if not "%~1"=="" (
+    for %%D in ("%~1") do set "COMFY_DIR=%%~fD"
+) else (
+    for %%D in ("%~dp0..\..") do set "COMFY_DIR=%%~fD"
+)
+if not exist "!COMFY_DIR!\" (
+    echo [FATAL] ComfyUI folder not found: !COMFY_DIR!
+    echo         Pass it as the first argument, e.g.  install_requirements.bat "C:\ComfyUI"
+    pause
+    exit /b 1
+)
+if not exist "!COMFY_DIR!\main.py" (
+    echo [FATAL] "!COMFY_DIR!" does not look like a ComfyUI folder ^(no main.py^).
+    echo         Pass the ComfyUI folder itself, e.g.  install_requirements.bat "C:\ComfyUI"
+    pause
+    exit /b 1
+)
+:: BASE_DIR = the folder above ComfyUI (portable root / Desktop base dir).
+for %%D in ("!COMFY_DIR!\..") do set "BASE_DIR=%%~fD"
+
+set "CUSTOM_NODES=!COMFY_DIR!\custom_nodes"
+if not exist "!CUSTOM_NODES!\" md "!CUSTOM_NODES!"
+cd /d "!CUSTOM_NODES!"
+echo [INFO] ComfyUI folder     : !COMFY_DIR!
+echo [INFO] Custom nodes folder : !CUSTOM_NODES!
 echo.
 
-:: Python 경로 탐색 (ComfyUI 자체 환경 우선)
+:: Python discovery. A real venv wins over any base interpreter: ComfyUI Desktop runs
+:: from <ComfyUI>\.venv (a uv venv whose home points at ..\standalone-env), and that is
+:: where its packages must land - installing straight into standalone-env would leave
+:: ComfyUI unable to see them, same as using the system Python.
+::   <ComfyUI>\venv | .venv \Scripts\python.exe   - manual venv / ComfyUI Desktop
+::   <base>\venv | .venv \Scripts\python.exe       - venv beside ComfyUI
+::   <base>\standalone-env\python.exe              - Desktop base interpreter (only if no .venv)
+::   <ComfyUI>\python_embeded\python.exe           - embedded python inside ComfyUI
+::   <base>\python_embeded\python.exe              - portable build (python_embeded beside ComfyUI)
+:: Only if none of those exist do we touch "where python" (system Python) - and warn.
 set "PYTHON="
-if exist "%~dp0..\..\venv\Scripts\python.exe" (
-    set "PYTHON=%~dp0..\..\venv\Scripts\python.exe"
-) else if exist "%~dp0..\..\python_embeded\python.exe" (
-    set "PYTHON=%~dp0..\..\python_embeded\python.exe"
-) else if exist "%~dp0..\..\..\python_embeded\python.exe" (
-    set "PYTHON=%~dp0..\..\..\python_embeded\python.exe"
-) else (
+for %%P in (
+    "!COMFY_DIR!\venv\Scripts\python.exe"
+    "!COMFY_DIR!\.venv\Scripts\python.exe"
+    "!BASE_DIR!\venv\Scripts\python.exe"
+    "!BASE_DIR!\.venv\Scripts\python.exe"
+    "!BASE_DIR!\standalone-env\python.exe"
+    "!COMFY_DIR!\python_embeded\python.exe"
+    "!BASE_DIR!\python_embeded\python.exe"
+) do if not defined PYTHON if exist "%%~P" set "PYTHON=%%~P"
+
+if not defined PYTHON (
     where python >nul 2>&1 && set "PYTHON=python"
+    if defined PYTHON (
+        echo.
+        echo [WARNING] No ComfyUI Python environment found for:
+        echo             !COMFY_DIR!
+        echo           Falling back to the system Python on PATH - dependencies would be
+        echo           installed there, NOT into ComfyUI, and ComfyUI will not see them.
+        echo           Pass the ComfyUI folder as the first argument, e.g.
+        echo             install_requirements.bat "D:\ComfyUI-Desktop\ComfyUI"
+        echo           (ComfyUI Desktop: inside the base folder you chose at install,
+        echo            the one that also holds "standalone-env\")
+        echo.
+        choice /c YN /m "Continue with the system Python anyway"
+        if errorlevel 2 (
+            set "PYTHON="
+            echo [INFO] Skipping all dependency installs - no ComfyUI Python to use.
+            goto SKIP_PIP
+        )
+    )
 )
 
-if "%PYTHON%"=="" goto SKIP_PIP
-echo [INFO] Python: %PYTHON%
-rem 오래된 pip은 최신 wheel 태그/메타데이터를 몰라서 조용히 소스 빌드로 넘어가고,
-rem 컴파일러가 없어 실패한다 - "내 PC에서만 안 된다"의 가장 흔한 원인이라 먼저 갱신한다.
+if not defined PYTHON goto SKIP_PIP
+echo [INFO] Python: !PYTHON!
+rem An outdated pip is the most common cause of "it only fails on my machine": it
+rem predates current wheel tags/metadata, quietly falls back to a source build, and
+rem then dies for want of a compiler. Update it first.
 echo [PIP] Updating pip / setuptools / wheel...
 "%PYTHON%" -m pip install --upgrade pip --quiet
 "%PYTHON%" -m pip install --upgrade setuptools wheel --quiet
-rem wheel-stub(import 이름 wheel_stub)은 일반 "wheel" 패키지와 무관한, NVIDIA가 배포하는
-rem 별도의 빌드 백엔드다. RTX 노드의 의존성이 이걸 build-backend로 선언하는데 pip이 선언된
-rem 백엔드를 항상 자동으로 받아오지는 않아서 "Cannot import 'wheel_stub.buildapi'"가 난다.
-rem 미리 깔아두는 것이 실제 해결책.
+rem wheel-stub (imported as wheel_stub) is a separate NVIDIA-published build backend,
+rem unrelated to the ordinary "wheel" package. The RTX nodes' dependency declares it as
+rem its build-backend, and pip does not always fetch a declared backend on its own,
+rem which is what produces "Cannot import 'wheel_stub.buildapi'". Installing it up front
+rem is the actual fix.
 "%PYTHON%" -m pip install wheel-stub --quiet
 echo [PIP] Done.
 :SKIP_PIP
@@ -51,7 +107,7 @@ set "NUMPY_BEFORE="
 if not "%PYTHON%"=="" for /f "tokens=2" %%v in ('"%PYTHON%" -m pip show numpy 2^>nul ^| findstr /b /c:"Version:"') do set "NUMPY_BEFORE=%%v"
 echo.
 
-:: ── 설치할 노드 목록 ─────────────────────────────────────────────────────────
+:: -- node repositories ------------------------------------------------------
 set REPOS[0]=https://github.com/ltdrdata/ComfyUI-Impact-Pack
 set REPOS[1]=https://github.com/ltdrdata/ComfyUI-Impact-Subpack
 set REPOS[2]=https://github.com/kijai/ComfyUI-KJNodes
@@ -84,18 +140,19 @@ set REPOS[21]=https://github.com/designloves2/ComfyUI-TJ_NODE
 set COUNT=22
 set /a LAST=COUNT-1
 
-:: ComfyUI Manager는 저장소 이름이 아니라 pyproject의 name으로 폴더를 만든다. 그래서
-:: Manager로 이미 설치된 팩을 저장소 이름으로 또 clone하면 같은 노드가 두 벌 등록되어
-:: 팩이 깨진다. 이름이 다른 것들만 여기 적어두고 설치 전에 함께 확인한다.
+:: ComfyUI Manager names a folder after the pack's pyproject "name", not the repo name.
+:: Cloning under the repo name next to a Manager install would register the same nodes
+:: twice and break the pack. Only the packs whose two names differ are listed here, and
+:: checked alongside the repo name before installing.
 set "ALT[3]=seedvr2_videoupscaler"
 set "ALT[14]=comfyui_nvidia_rtx_nodes"
 set "ALT[17]=minimax-h3-firstblockcache"
 
 set /a N_NEW=0, N_UPD=0, N_CUR=0, N_FAIL=0
 
-:: ── 설치 / 업데이트 루프 ────────────────────────────────────────────────────
-:: 상한은 목록 개수에서 계산한다 - 예전에는 숫자가 박혀 있어서 목록에 항목을 추가해도
-:: 뒤쪽 저장소가 그냥 설치되지 않고 넘어갔다.
+:: -- install / update loop --------------------------------------------------
+:: The upper bound is computed from the list length - it used to be a literal number,
+:: so adding an entry left the last repos silently uninstalled.
 for /L %%i in (0,1,!LAST!) do (
     set "URL=!REPOS[%%i]!"
     set "ALTNAME=!ALT[%%i]!"
@@ -166,7 +223,7 @@ pause
 exit /b 0
 
 
-:: ── 신규 설치 ───────────────────────────────────────────────────────────────
+:: -- fresh install ----------------------------------------------------------
 :INSTALL_ONE
 set "U=%~1"
 set "F=%~2"
@@ -183,7 +240,7 @@ call :INSTALL_REQS "%F%"
 exit /b 0
 
 
-:: ── 기존 설치 업데이트 ──────────────────────────────────────────────────────
+:: -- update an existing install ---------------------------------------------
 :UPDATE_ONE
 set "F=%~1"
 if not exist "%F%\.git\" (
@@ -215,7 +272,7 @@ call :INSTALL_REQS "%F%"
 exit /b 0
 
 
-:: ── 의존성 설치 ─────────────────────────────────────────────────────────────
+:: -- requirements for one pack ----------------------------------------------
 :INSTALL_REQS
 set "F=%~1"
 if "%PYTHON%"=="" exit /b 0
@@ -225,18 +282,19 @@ echo [PIP] Checking requirements...
 set "REQ_FILE=%F%\requirements.txt"
 set "REQ_FILTERED=%TEMP%\tj_req_%RANDOM%.txt"
 
-rem dlib은 소스 빌드에 cmake/C++ 컴파일러가 필요해 실패하는 주 원인이므로 걸러내고
-rem 아래에서 사전 컴파일된 wheel(dlib-bin)로 대체 설치한다.
+rem dlib builds from source and needs cmake plus a C++ toolchain - the usual reason
+rem this script "fails" for people. Filter it out and install the prebuilt wheel
+rem (dlib-bin) below instead.
 findstr /v /i /r "^dlib" "%REQ_FILE%" > "%REQ_FILTERED%"
 
 for %%A in ("%REQ_FILTERED%") do set "REQSIZE=%%~zA"
 if not "%REQSIZE%"=="0" (
     "%PYTHON%" -m pip install -r "%REQ_FILTERED%" --quiet
     if errorlevel 1 (
-        rem pip은 패키지마다 격리된 빌드 환경을 만드는데, 그 환경은 위에서 전역으로 깐
-        rem 빌드 도구를 물려받지 않는다. 그래서 wheel_stub이 전역에 있어도 격리 환경
-        rem 안에서는 없다며 실패한다. 격리를 끄면 전역 도구를 쓰게 되고, 이것이 RTX
-        rem 노드가 설치되게 만드는 부분이다.
+        rem pip builds each package in an isolated environment that does NOT inherit the
+        rem build tools installed above, so a package needing wheel_stub fails there even
+        rem though it is present globally. Dropping the isolation lets it use them - this
+        rem is what makes the RTX nodes install.
         echo [PIP] Retrying with --no-build-isolation...
         "%PYTHON%" -m pip install -r "%REQ_FILTERED%" --no-build-isolation --quiet
         if errorlevel 1 (
