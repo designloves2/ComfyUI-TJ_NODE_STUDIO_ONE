@@ -30,7 +30,10 @@ function playableAudioUrl(t) {
   const ext = String(t.filename || "").split(".").pop().toLowerCase();
   const mime = _MIME[ext];
   try {
-    if (mime && new Audio().canPlayType(mime)) return viewURL(t);
+    const can = mime ? new Audio().canPlayType(mime) : "";
+    // iOS Safari returns "maybe" for FLAC but can't actually decode it — demand
+    // "probably" for FLAC; "maybe" is fine for the lossy formats it really supports.
+    if (ext === "flac" ? can === "probably" : !!can) return viewURL(t);
   } catch {}
   return `/music_one/download?filename=${encodeURIComponent(t.filename)}&subfolder=${encodeURIComponent(t.subfolder || "")}`;
 }
@@ -566,10 +569,15 @@ app.registerExtension({
         if (t.seconds) cover.appendChild(el("div", { className: "mmm-dur", text: fmtDur(t.seconds) }));
         attachSensitiveToggle(cover, cover, mediaKey(t.filename, t.subfolder || SUB()), "tl");
         const mid = el("div", { style: { flex: "1", minWidth: 0 }});
-        let clickT = null;
-        const title = el("div", { className: "mmm-tt", text: t.title || t.filename, title: "Click to play/pause · double-click to restart" });
-        title.onclick = () => { clearTimeout(clickT); clickT = setTimeout(() => togglePlay(i), 200); };
-        title.ondblclick = () => { clearTimeout(clickT); restartPlay(i); };
+        // Synchronous play on tap — iOS Safari only honours <audio>.play() inside the
+        // user-gesture callstack, so no setTimeout debounce. A quick second tap = restart.
+        let lastTap = 0;
+        const title = el("div", { className: "mmm-tt", text: t.title || t.filename, title: "Tap to play/pause · quick double-tap to restart" });
+        title.onclick = () => {
+          const now = Date.now();
+          if (now - lastTap < 280) { lastTap = 0; restartPlay(i); }
+          else { lastTap = now; togglePlay(i); }
+        };
         const trow = el("div", { className: "mmm-trow" });
         const acts = el("div", { className: "mmm-acts" });
         acts.appendChild(el("button", { className: "mmm-ib", title: "Reuse settings", text: "↺", onclick: (e) => { e.stopPropagation(); reuse(t); }}));
