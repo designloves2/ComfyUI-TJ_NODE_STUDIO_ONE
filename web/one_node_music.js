@@ -978,6 +978,7 @@ app.registerExtension({
       }
 
       function renderCompose() {
+        const keepScroll = compose.scrollTop;   // a toggle/add/remove rebuilds the panel — don't jump to the top
         clear(compose);
         engSel?._sync?.(state.engine);   // keep the topbar engine pill in sync (reuse can change it)
 
@@ -1186,6 +1187,8 @@ app.registerExtension({
         }
 
         renderFixed();
+        compose.scrollTop = keepScroll;
+        requestAnimationFrame(() => { compose.scrollTop = keepScroll; });
       }
 
       // Pinned bottom block: LLM/status text · seed · Generate/Stop (never scrolls).
