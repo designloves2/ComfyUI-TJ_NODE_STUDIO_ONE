@@ -203,7 +203,8 @@ def _png_read_meta(png_path):
 
 
 def _read_json_meta(image_path):
-    _VALID = ("v", "prompt", "w", "h", "mode", "favorite", "favourite")
+    _VALID = ("v", "prompt", "w", "h", "mode", "favorite", "favourite",
+              "engine", "caption", "lyrics", "seconds")   # music / audio meta signatures
     if image_path.lower().endswith('.png') and os.path.exists(image_path):
         meta = _png_read_meta(image_path)
         if meta and isinstance(meta, dict) and any(k in meta for k in _VALID):
@@ -3247,6 +3248,697 @@ class TJ_RTXDeblur:
         return (out,)
 
 
+# ================================================================================
+# MusicMaker ONE STUDIO (TJ) -- 3rd family axis: music. One node, two engines
+# (MiniMax Music 3 / Ace-Step 1.5). See SPEC_MUSICMAKER.md
+# ================================================================================
+
+MUSIC_SUBFOLDER       = "one_music"
+MUSIC_CONFIG_PATH     = os.path.join(NODE_DIR, "config_music.json")
+MUSIC_LYRICS_SETS_DIR = os.path.join(NODE_DIR, "music_lyrics_sets")
+MUSIC_STYLE_SETS_DIR  = os.path.join(NODE_DIR, "music_style_sets")
+MUSIC_LLM_PROMPT_DIR  = os.path.join(NODE_DIR, "web", "music", "llm_prompts")
+MUSIC_AUDIO_EXT       = (".flac", ".mp3", ".wav", ".opus", ".m4a", ".ogg")
+
+# Core nodes, per engine. All ship with ComfyUI 0.34.x / installed audio packs.
+MUSIC_CORE_NODES = [
+    "UNETLoader", "VAELoader", "VAEDecodeAudio", "SaveAudioAdvanced",
+    # engine: minimax
+    "CLIPLoader", "MiniMaxMusic3TextEncode", "EmptyMiniMaxMusic3LatentAudio",
+    "ConditioningZeroOut", "KSampler",
+    # engine: acestep
+    "DualCLIPLoader", "TextEncodeAceStepAudio1.5", "EmptyAceStep1.5LatentAudio",
+    "ModelSamplingAuraFlow", "KSamplerSelect", "BasicScheduler", "SamplerCustom", "CLIPTextEncode",
+]
+MUSIC_OPTIONAL_NODES = [
+    "VAEDecodeAudioTiled",         # low-VRAM tiled decode (minimax)
+    "LoraLoaderModelOnly",         # LoRA slots (both engines)
+    "TJ_MultiImageLoader", "TextGenerate",   # LLM (ComfyUI-TJ_NODE)
+]
+
+
+def _music_playlist(request):
+    output_dir = _get_output_dir()
+    try:
+        offset = max(0, int(request.query.get("offset", 0)))
+    except Exception:
+        offset = 0
+    try:
+        limit = min(max(1, int(request.query.get("limit", 30))), 300)
+    except Exception:
+        limit = 30
+    fav_only = request.query.get("favonly", "0") == "1"
+    sort = request.query.get("sort", "newest")
+    sub = (request.query.get("subfolder", "").strip()
+           or _load_config(MUSIC_CONFIG_PATH).get("save_subfolder")
+           or MUSIC_SUBFOLDER)
+    try:
+        base = _safe_resolve_output_path(output_dir, sub)
+    except ValueError:
+        return web.json_response({"tracks": [], "total": 0, "offset": offset, "limit": limit}, status=400)
+    fav_names = _load_favorites("music")
+    files = []
+    if os.path.isdir(base):
+        for ext in MUSIC_AUDIO_EXT:
+            files += glob.glob(os.path.join(base, "**", "*" + ext), recursive=True)
+    files = sorted(set(files))
+    if sort == "title":
+        files.sort(key=lambda f: os.path.basename(f).lower())
+    else:
+        files.sort(key=os.path.getmtime, reverse=(sort != "oldest"))
+    rows = []
+    for f in files:
+        fname = os.path.basename(f)
+        rel = os.path.relpath(os.path.dirname(f), output_dir)
+        sub = "" if rel == "." else rel.replace(os.sep, "/")
+        if fav_only and fname not in fav_names:
+            continue
+        meta = _read_json_meta(f) or {}
+        rows.append({
+            "filename": fname, "subfolder": sub, "mtime": os.path.getmtime(f),
+            "has_meta": os.path.exists(_meta_path(f)), "favorite": fname in fav_names,
+            "title": meta.get("title") or os.path.splitext(fname)[0],
+            "seconds": meta.get("seconds"), "instrumental": bool(meta.get("instrumental")),
+            "cover": meta.get("coverImage") or "", "engine": meta.get("engine") or "",
+            "badge": meta.get("_badge") or "",
+            "caption": meta.get("caption") or meta.get("captionBrief") or "",
+        })
+    return web.json_response({"tracks": rows[offset:offset + limit], "total": len(rows), "offset": offset, "limit": limit})
+
+
+async def _music_delete(request):
+    try:
+        data = await request.json()
+        names = data.get("filenames")
+        if not names:
+            one = data.get("filename")
+            names = [one] if one else []
+        sub = data.get("subfolder", "") or MUSIC_SUBFOLDER
+        output_dir = _get_output_dir()
+        removed = 0
+        for fname in names:
+            try:
+                vpath = _safe_resolve_output_path(output_dir, sub, fname)
+            except ValueError:
+                continue
+            for p in (vpath, _meta_path(vpath)):
+                if os.path.isfile(p):
+                    os.remove(p)
+                    if p == vpath:
+                        removed += 1
+            _favorites_remove("music", fname)
+        return web.json_response({"ok": True, "removed": removed})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+
+async def _music_download(request):
+    """Deliver the track as an MP3 with cover art + lyrics + metadata embedded (ID3v2)."""
+    import re
+    fname = request.query.get("filename", "")
+    sub = request.query.get("subfolder", "") or MUSIC_SUBFOLDER
+    output_dir = _get_output_dir()
+    try:
+        src = _safe_resolve_output_path(output_dir, sub, fname)
+    except ValueError:
+        return web.Response(status=400, text="bad filename")
+    if not os.path.isfile(src):
+        return web.Response(status=404, text="not found")
+
+    meta = _read_json_meta(src) or {}
+    title = (meta.get("title") or os.path.splitext(os.path.basename(fname))[0]).strip()
+    caption = (meta.get("caption") or meta.get("captionBrief") or "").strip()
+    lyrics = (meta.get("lyrics") or "").strip()
+    engine = "Ace-Step 1.5" if meta.get("engine") == "acestep" else "MiniMax Music 3"
+
+    cover = ""
+    if meta.get("coverImage"):
+        try:
+            c = _safe_resolve_output_path(output_dir, MUSIC_SUBFOLDER + "/covers", meta["coverImage"])
+            if os.path.isfile(c):
+                cover = c
+        except ValueError:
+            pass
+
+    exp_dir = os.path.join(os.path.dirname(src), ".export")
+    os.makedirs(exp_dir, exist_ok=True)
+    safe_title = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", title)[:120] or "track"
+    out = os.path.join(exp_dir, safe_title + ".mp3")
+
+    newest_in = max([os.path.getmtime(p) for p in (src, _meta_path(src), cover) if p and os.path.isfile(p)] or [0])
+    if not (os.path.isfile(out) and os.path.getmtime(out) >= newest_in):
+        ffmpeg = _ffmpeg_exe()
+        if not ffmpeg:
+            return web.Response(status=500, text="ffmpeg not found (install imageio-ffmpeg)")
+        cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", src]
+        if cover:
+            cmd += ["-i", cover]
+        cmd += ["-map", "0:a"]
+        if cover:
+            cmd += ["-map", "1:v", "-c:v", "mjpeg", "-disposition:v", "attached_pic",
+                    "-metadata:s:v", "title=Album cover", "-metadata:s:v", "comment=Cover (front)"]
+        cmd += ["-c:a", "libmp3lame", "-q:a", "2", "-id3v2_version", "3",
+                "-metadata", f"title={title}",
+                "-metadata", "artist=AI ONE STUDIO",
+                "-metadata", "album=MusicMaker",
+                "-metadata", f"comment={caption}",
+                "-metadata", f"encoded_by={engine}"]
+        if lyrics:
+            cmd += ["-metadata", f"lyrics={lyrics}"]
+        if meta.get("seed") is not None:
+            cmd += ["-metadata", f"MMM_SEED={meta.get('seed')}"]
+        cmd += [out]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+        if proc.returncode != 0 or not os.path.isfile(out):
+            return web.Response(status=500, text=(proc.stderr or "ffmpeg failed")[-400:])
+
+    return web.FileResponse(out, headers={
+        "Content-Disposition": f'attachment; filename="{safe_title}.mp3"',
+        "Content-Type": "audio/mpeg",
+    })
+
+
+PromptServer.instance.routes.get("/music_one/playlist")(_music_playlist)
+PromptServer.instance.routes.get("/music_one/download")(_music_download)
+PromptServer.instance.routes.get("/music_one/meta")(_make_meta_get_handler())
+PromptServer.instance.routes.post("/music_one/save_meta")(_make_save_meta_handler("music"))
+PromptServer.instance.routes.post("/music_one/update_meta")(_make_update_meta_handler("music"))
+PromptServer.instance.routes.post("/music_one/open_folder")(_make_open_folder_handler())
+PromptServer.instance.routes.post("/music_one/delete")(_music_delete)
+
+
+def _music_env_path():
+    return os.path.join(NODE_DIR, ".env")
+
+
+def _env_read(name):
+    """Read one KEY=value from this node's .env (quotes stripped)."""
+    p = _music_env_path()
+    try:
+        if os.path.isfile(p):
+            for line in open(p, "r", encoding="utf-8"):
+                line = line.strip()
+                if line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                if k.strip() == name:
+                    return v.strip().strip('"').strip("'")
+    except Exception:
+        pass
+    return ""
+
+
+def _env_write(name, value):
+    """Create / update one KEY=value line in this node's .env, leaving the rest intact."""
+    p = _music_env_path()
+    value = (value or "").strip()
+    lines, found = [], False
+    try:
+        if os.path.isfile(p):
+            lines = open(p, "r", encoding="utf-8").read().splitlines()
+    except Exception:
+        lines = []
+    out = []
+    for line in lines:
+        if line.strip() and not line.strip().startswith("#") and "=" in line and line.split("=", 1)[0].strip() == name:
+            out.append(f"{name}={value}")
+            found = True
+        else:
+            out.append(line)
+    if not found:
+        out.append(f"{name}={value}")
+    with open(p, "w", encoding="utf-8") as f:
+        f.write("\n".join(out) + "\n")
+
+
+def _write_openrouter_key(key):
+    """Persist the key to this node's .env (OPENROUTER_API_KEY). Also mirror to the
+    ComfyUI-Openrouter_node json so its own nodes keep working."""
+    key = (key or "").strip()
+    _env_write("OPENROUTER_API_KEY", key)
+    try:
+        p = os.path.join(os.path.dirname(NODE_DIR), "ComfyUI-Openrouter_node", "openrouter_api_key.json")
+        if os.path.isdir(os.path.dirname(p)):
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump({"api_key": key}, f)
+    except Exception:
+        pass
+
+
+@PromptServer.instance.routes.get("/music_one/config")
+async def music_get_config(request):
+    cfg = _load_config(MUSIC_CONFIG_PATH)
+    return web.json_response({
+        "engine": cfg.get("engine", "minimax"),
+        "dit":  cfg.get("dit",  ""),
+        "clip": cfg.get("clip", ""),
+        "dav":  cfg.get("dav",  ""),
+        "ace_unet":  cfg.get("ace_unet",  ""),
+        "ace_clip1": cfg.get("ace_clip1", ""),
+        "ace_clip2": cfg.get("ace_clip2", ""),
+        "ace_vae":   cfg.get("ace_vae",   ""),
+        "ace_sampler_name": cfg.get("ace_sampler_name", "jkass_quality"),
+        "ace_scheduler":    cfg.get("ace_scheduler", "sgm_uniform"),
+        "ace_shift":        cfg.get("ace_shift", 3),
+        "save_subfolder": cfg.get("save_subfolder") or MUSIC_SUBFOLDER,
+        "steps":     cfg.get("steps", 30),
+        "cfg":       cfg.get("cfg", 1.7),
+        "cfg_scale": cfg.get("cfg_scale", 1.7),
+        "top_k":     cfg.get("top_k", 50),
+        "sampler":   cfg.get("sampler", "euler"),
+        "scheduler": cfg.get("scheduler", "simple"),
+        "format":    cfg.get("format", "flac"),
+        "llm_backend": cfg.get("llm_backend", "local"),
+        "llm_model":   cfg.get("llm_model", ""),
+        "llm_or_model": cfg.get("llm_or_model", ""),
+        "llm_clip":    cfg.get("llm_clip", ""),
+        "llm_clip_type": cfg.get("llm_clip_type", "qwen_image"),
+        # never return the key itself — just whether one is set + a masked hint
+        # (first 2 + last 4 chars, rest asterisks) so the UI can show "a key exists"
+        "openrouter_key_set": bool(_openrouter_api_key()),
+        "openrouter_key_hint": _mask_secret(_openrouter_api_key()),
+    })
+
+
+def _mask_secret(s):
+    s = (s or "").strip()
+    if not s:
+        return ""
+    if len(s) <= 6:
+        return "*" * len(s)
+    return s[:2] + "*" * max(4, len(s) - 6) + s[-4:]
+
+
+@PromptServer.instance.routes.post("/music_one/config")
+async def music_save_config(request):
+    """Batch save from the Settings 'Save All' — both engines' models + LLM + the
+    OpenRouter key in one call."""
+    try:
+        patch = await request.json()
+        if not isinstance(patch, dict):
+            return web.json_response({"ok": False, "error": "invalid payload"}, status=400)
+        patch = dict(patch)
+        or_key = patch.pop("openrouter_key", None)
+        if or_key is not None:
+            _write_openrouter_key(or_key)
+        cfg = _load_config(MUSIC_CONFIG_PATH)
+        cfg.update(patch)
+        _save_config(MUSIC_CONFIG_PATH, cfg)
+        return web.json_response({"ok": True})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+
+@PromptServer.instance.routes.get("/music_one/models")
+async def music_get_models(request):
+    def _s(k):
+        try:
+            return _scan(k)
+        except Exception:
+            return ["none"]
+    return web.json_response({
+        "diffusion_models": _s("diffusion_models"),
+        "text_encoders":    _s("text_encoders"),
+        "vaes":             _s("vae"),
+        "loras":            _s("loras"),
+    })
+
+
+@PromptServer.instance.routes.get("/music_one/node_availability")
+async def music_node_availability(request):
+    try:
+        import nodes as comfy_nodes
+        registered = comfy_nodes.NODE_CLASS_MAPPINGS
+    except Exception:
+        registered = {}
+    avail = {n: (n in registered) for n in (MUSIC_CORE_NODES + MUSIC_OPTIONAL_NODES)}
+    return web.json_response({
+        "ok": True, "available": avail, "registered_count": len(registered),
+        "missing_core": [n for n in MUSIC_CORE_NODES if not avail.get(n, False)],
+        "missing_optional": [n for n in MUSIC_OPTIONAL_NODES if not avail.get(n, False)],
+        "install_dir": NODE_DIR,
+    })
+
+
+def _music_set_path(base_dir, name):
+    safe = _safe_prompt_set_name(name)
+    os.makedirs(base_dir, exist_ok=True)
+    return _safe_resolve_path(base_dir, "", f"{safe}.json")
+
+
+def _music_preset_routes(kind, base_dir):
+    async def _list(request):
+        out = []
+        try:
+            os.makedirs(base_dir, exist_ok=True)
+            for fn in sorted(os.listdir(base_dir)):
+                if not fn.endswith(".json"):
+                    continue
+                try:
+                    with open(os.path.join(base_dir, fn), "r", encoding="utf-8") as f:
+                        d = json.load(f)
+                    out.append({"name": d.get("name") or fn[:-5], "saved": d.get("saved")})
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        out.sort(key=lambda x: x.get("saved") or 0, reverse=True)
+        return web.json_response({"sets": out})
+
+    async def _get(request):
+        try:
+            path = _music_set_path(base_dir, request.query.get("name", ""))
+        except ValueError:
+            return web.json_response({"error": "invalid name"}, status=400)
+        if not os.path.isfile(path):
+            return web.json_response({"error": "not found"}, status=404)
+        with open(path, "r", encoding="utf-8") as f:
+            return web.json_response(json.load(f))
+
+    async def _save(request):
+        try:
+            data = await request.json()
+            name = data.get("name", "")
+            path = _music_set_path(base_dir, name)
+            payload = dict(data)
+            payload["name"] = name.strip()
+            payload["saved"] = int(time.time() * 1000)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            return web.json_response({"ok": True})
+        except ValueError:
+            return web.json_response({"ok": False, "error": "invalid name"}, status=400)
+        except Exception as e:
+            return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+    async def _delete(request):
+        try:
+            data = await request.json()
+            path = _music_set_path(base_dir, data.get("name", ""))
+            if os.path.isfile(path):
+                os.remove(path)
+            return web.json_response({"ok": True})
+        except ValueError:
+            return web.json_response({"ok": False, "error": "invalid name"}, status=400)
+        except Exception as e:
+            return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+    PromptServer.instance.routes.get(f"/music_one/{kind}_presets")(_list)
+    PromptServer.instance.routes.get(f"/music_one/{kind}_presets/get")(_get)
+    PromptServer.instance.routes.post(f"/music_one/{kind}_presets/save")(_save)
+    PromptServer.instance.routes.post(f"/music_one/{kind}_presets/delete")(_delete)
+
+
+_music_preset_routes("lyrics", MUSIC_LYRICS_SETS_DIR)
+_music_preset_routes("style",  MUSIC_STYLE_SETS_DIR)
+
+
+@PromptServer.instance.routes.get("/music_one/llm/prompts")
+async def music_llm_prompts(request):
+    out = {}
+    try:
+        for fn in os.listdir(MUSIC_LLM_PROMPT_DIR):
+            if fn.endswith(".md"):
+                with open(os.path.join(MUSIC_LLM_PROMPT_DIR, fn), "r", encoding="utf-8") as f:
+                    out[fn[:-3]] = f.read()
+    except Exception:
+        pass
+    return web.json_response({"prompts": out})
+
+
+def _openrouter_api_key():
+    """Precedence: this node's .env (set in Settings) → ComfyUI-Openrouter_node json
+    → LLM_KEY / OPENROUTER_API_KEY process env."""
+    k = _env_read("OPENROUTER_API_KEY")
+    if k:
+        return k
+    p = os.path.join(os.path.dirname(NODE_DIR), "ComfyUI-Openrouter_node", "openrouter_api_key.json")
+    try:
+        if os.path.isfile(p):
+            k = (json.load(open(p, "r", encoding="utf-8")).get("api_key") or "").strip()
+            if k:
+                return k
+    except Exception:
+        pass
+    return (os.environ.get("LLM_KEY") or os.environ.get("OPENROUTER_API_KEY") or "").strip()
+
+
+def _strip_thinking(text):
+    """Local/abliterated reasoning GGUFs (huihui-qwen3.5 etc.) ignore /no_think and
+    dump their chain-of-thought as the answer. Remove <think> blocks; if the reply is
+    a reasoning monologue that ends with a quoted final draft, keep the draft."""
+    import re as _re
+    t = str(text or "")
+    # 1) always drop explicit <think> blocks
+    t = _re.sub(r"<think(ing)?>.*?</think(ing)?>", "", t, flags=_re.I | _re.S)
+    t = _re.sub(r"^\s*<think(ing)?>.*?(?=\n\S|$)", "", t, flags=_re.I | _re.S)
+    stripped = t.strip()
+    # 2) only rescue a monologue that OPENS with an unmistakable reasoning tell
+    opens = _re.match(
+        r"(let me |okay,? (let|i'?ll|so)|first,? i|i'?ll (analyze|start|think)|i need to|"
+        r"let'?s (break|think)|looking at the (input|brief)|analysis:)",
+        stripped[:60], flags=_re.I)
+    if opens:
+        quoted = _re.findall(r'[\"“]([^\"“”]{60,})[\"”]', stripped, flags=_re.S)
+        if quoted:
+            return quoted[-1].strip()
+        m = _re.search(
+            r"\n\s*(?:final (?:caption|title|answer|version)|here'?s? the (?:final|caption|title))"
+            r"\s*[:\-]?\s*\n+(.+?)(?:\n\n\*\*|$)",
+            stripped, flags=_re.I | _re.S)
+        if m and len(m.group(1).strip()) > 20:
+            return m.group(1).strip().strip('"“”*').strip()
+    return stripped
+
+
+def _openrouter_chat(system_prompt, user_text, model, temperature=0.7, max_tokens=1600):
+    import urllib.request, urllib.error
+    key = _openrouter_api_key()
+    if not key:
+        raise RuntimeError("OpenRouter API key 없음 — LLM_KEY 환경변수 또는 "
+                           "custom_nodes/ComfyUI-Openrouter_node/openrouter_api_key.json 설정")
+    body = json.dumps({
+        "model": model or "google/gemini-2.5-flash",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_text},
+        ],
+        "temperature": float(temperature),
+        # reasoning models (deepseek-*-flash, o*, etc.) burn the whole budget on hidden
+        # thinking and return empty content at 1600 — give them room, and drop the
+        # reasoning tokens from the response so we get the actual answer.
+        "max_tokens": max(int(max_tokens), 8000),
+        "reasoning": {"exclude": True},
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions", data=body,
+        headers={
+            "Authorization": f"Bearer {key}", "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE",
+            "X-Title": "MusicMaker ONE STUDIO",
+        }, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            d = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as he:
+        detail = ""
+        try:
+            detail = json.loads(he.read().decode("utf-8")).get("error", {}).get("message", "")
+        except Exception:
+            pass
+        raise RuntimeError(f"OpenRouter {he.code}: {detail or he.reason}")
+    if isinstance(d, dict) and d.get("error"):
+        err = d["error"]
+        raise RuntimeError(err.get("message") if isinstance(err, dict) else str(err))
+    choices = d.get("choices") or []
+    ch0 = choices[0] if choices else {}
+    msg = ch0.get("message") or {}
+    content = msg.get("content")
+    if isinstance(content, list):   # some models return content as parts
+        content = "".join(p.get("text", "") for p in content if isinstance(p, dict))
+    # reasoning models sometimes leave content empty and put the answer in reasoning
+    if not content:
+        content = msg.get("reasoning") or msg.get("reasoning_content") or ""
+    if not content:
+        fr = ch0.get("finish_reason") or ""
+        raise RuntimeError(f"OpenRouter returned no text (finish_reason={fr or 'unknown'}) — try a non-reasoning model.")
+    return content.strip()
+
+
+@PromptServer.instance.routes.get("/music_one/openrouter_models")
+async def music_openrouter_models(request):
+    import urllib.request
+    try:
+        with urllib.request.urlopen("https://openrouter.ai/api/v1/models", timeout=20) as resp:
+            d = json.loads(resp.read().decode("utf-8"))
+        ids = sorted(m.get("id") for m in d.get("data", []) if m.get("id"))
+        return web.json_response({"models": ids})
+    except Exception as e:
+        return web.json_response({"models": [], "error": str(e)})
+
+
+@PromptServer.instance.routes.post("/music_one/llm/run")
+async def music_llm_run(request):
+    """Run one LLM role: bundled system prompt + composed context. backend = local
+    (ComfyUI-TJ_NODE prompt enhancer) or openrouter (cloud, better for the demanding
+    caption / lyrics work)."""
+    try:
+        data = await request.json()
+        role = data.get("role", "")
+        user = data.get("input", "")
+        extra = data.get("context", {}) or {}
+        _cfg = _load_config(MUSIC_CONFIG_PATH)
+        backend = data.get("backend") or _cfg.get("llm_backend", "local")
+        if backend == "openrouter":
+            model = data.get("model") or _cfg.get("llm_or_model", "") or "google/gemini-2.5-flash"
+        else:
+            model = data.get("model") or _cfg.get("llm_model", "")
+        sys_path = os.path.join(MUSIC_LLM_PROMPT_DIR, f"{role}.md")
+        if not os.path.isfile(sys_path):
+            return web.json_response({"ok": False, "error": f"unknown role: {role}"}, status=400)
+        with open(sys_path, "r", encoding="utf-8") as f:
+            system_prompt = f.read()
+        ctx_lines = [f"{k}: {v}" for k, v in extra.items() if v]
+        composed = (("\n".join(ctx_lines) + "\n\n") if ctx_lines else "") + str(user or "")
+        temp = float(data.get("temperature", 0.7))
+        max_toks = int(data.get("max_tokens", 1600))
+
+        if backend == "openrouter":
+            import asyncio as _aio
+            text = await _aio.get_event_loop().run_in_executor(
+                None, _openrouter_chat, system_prompt, composed, model, temp, max_toks)
+            return web.json_response({"ok": True, "text": _strip_thinking(text), "role": role, "backend": "openrouter"})
+
+        if backend == "comfy":
+            clip_name = (data.get("clip") or _load_config(MUSIC_CONFIG_PATH).get("llm_clip", "")).strip()
+            clip_type = (data.get("clip_type") or _load_config(MUSIC_CONFIG_PATH).get("llm_clip_type", "qwen_image")).strip()
+            if not clip_name:
+                return web.json_response({"ok": False, "error": "Set a CLIP/GGUF model for the ComfyUI TextGenerate backend in Settings."})
+            import asyncio as _aio
+            def _run_textgen():
+                import nodes as cn
+                ncm = cn.NODE_CLASS_MAPPINGS
+                if "TextGenerate" not in ncm:
+                    raise RuntimeError("TextGenerate node not available (update ComfyUI).")
+                is_gguf = clip_name.lower().endswith(".gguf")
+                LoaderCls = ncm.get("CLIPLoaderGGUF") if is_gguf else None
+                LoaderCls = LoaderCls or ncm.get("CLIPLoader")
+                if LoaderCls is None:
+                    raise RuntimeError("No CLIPLoader available.")
+                loader = LoaderCls()
+                clip_obj = getattr(loader, LoaderCls.FUNCTION)(clip_name=clip_name, type=clip_type)[0]
+                tg = ncm["TextGenerate"]()
+                prompt_text = (system_prompt.strip() + "\n\n---\n\n" + composed).strip()
+                kw = dict(clip=clip_obj, prompt=prompt_text, max_length=max_toks,
+                          thinking=False, use_default_template=True)
+                try:
+                    res = getattr(tg, ncm["TextGenerate"].FUNCTION)(
+                        sampling_mode="on", temperature=temp, top_k=64, top_p=0.95,
+                        min_p=0.05, repetition_penalty=1.05, seed=int(data.get("seed", 0) or 0), **kw)
+                except TypeError:
+                    res = getattr(tg, ncm["TextGenerate"].FUNCTION)(sampling_mode="off", **kw)
+                return res[0] if isinstance(res, (list, tuple)) else res
+            try:
+                text = await _aio.get_event_loop().run_in_executor(None, _run_textgen)
+            except Exception as e:
+                return web.json_response({"ok": False, "error": f"TextGenerate: {e}"})
+            return web.json_response({"ok": True, "text": _strip_thinking(text), "role": role, "backend": "comfy"})
+
+        TJ_PromptEnhancer, _, _ = _try_import_tj_llm()
+        if TJ_PromptEnhancer is None:
+            return web.json_response({
+                "ok": False,
+                "error": "Local LLM (ComfyUI-TJ_NODE) not installed — run install_requirements, or use the OpenRouter / ComfyUI TextGenerate backend.",
+            })
+        if not model:
+            return web.json_response({"ok": False, "error": "Pick a GGUF model for the Local backend in Settings."})
+        import asyncio as _aio2
+        # Reasoning GGUFs ignore /no_think — lock the output format hard, and give
+        # enough tokens that the answer is not truncated mid-monologue.
+        local_sys = (system_prompt.rstrip()
+                     + "\n\n## OUTPUT FORMAT (strict)\n"
+                     "Reply with ONLY the final result — the finished text and nothing else. "
+                     "No analysis, no reasoning, no preamble, no explanation, no markdown "
+                     "headings, no bullet lists, no quotation marks around the whole thing, "
+                     "no 'Caption:' / 'Title:' label. First character of your reply is the "
+                     "first character of the answer.")
+        local_max = max(int(max_toks), 2200)
+        def _run_local():
+            out = TJ_PromptEnhancer().enhance(
+                get_name="(none)", set_name="music_one",
+                raw_prompt=composed,
+                model_backend="GGUF / llama.cpp",
+                gguf_model=model,
+                mmproj_file="none", text_encoder_name="", clip_loader_type="Auto",
+                purpose="Text", model_format="Universal Natural Language",
+                aesthetic="None (no aesthetic injection)", extra_instructions="",
+                system_prompt_override=local_sys,
+                append_no_think=True, n_gpu_layers=-1, n_ctx=8192,
+                max_tokens=local_max, temperature=min(float(temp), 0.4), top_p=0.9,
+                repeat_penalty=1.12,
+                seed=int(data.get("seed", 0) or 0), lock_in=False,
+                raw_prompt_input=None, clip=None)
+            return out[0] if isinstance(out, (list, tuple)) else out
+        try:
+            text = await _aio2.get_event_loop().run_in_executor(None, _run_local)
+        except Exception as e:
+            return web.json_response({"ok": False, "error": f"Local LLM: {e}"})
+        return web.json_response({"ok": True, "text": _strip_thinking(text), "role": role, "backend": "local"})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+
+_music_last_audio: dict = {}
+
+
+@PromptServer.instance.routes.post("/music_one/set_last_audio")
+async def music_set_last_audio(request):
+    data = await request.json()
+    uid = str(data.get("unique_id", ""))
+    if uid:
+        _music_last_audio[uid] = data.get("audio", {})
+    return web.json_response({"ok": True})
+
+
+class MusicMakerOneTJNode:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {},
+            "optional": {
+                "pipe": ("TJ_PROMPT_PIPE", {
+                    "tooltip": "PromptDB pipe (TJ_NODE). Present fields override this node's settings at generation.",
+                }),
+            },
+            "hidden": {"unique_id": "UNIQUE_ID"},
+        }
+    RETURN_TYPES = ("AUDIO",)
+    RETURN_NAMES = ("audio",)
+    FUNCTION = "get_output_audio"
+    CATEGORY = " ✨ TJ_Node/Generator"
+    OUTPUT_NODE = True
+
+    def get_output_audio(self, unique_id=None, **kwargs):
+        uid = str(unique_id) if unique_id else ""
+        info = _music_last_audio.get(uid, {})
+        try:
+            filename = info.get("filename")
+            if filename:
+                import torchaudio
+                sub = info.get("subfolder", "") or ""
+                base = _get_output_dir()
+                path = os.path.join(base, sub, filename) if sub else os.path.join(base, filename)
+                wav, sr = torchaudio.load(path)
+                return ({"waveform": wav.unsqueeze(0), "sample_rate": sr},)
+        except Exception as e:
+            print(f"[MusicMaker] output slot error: {e}")
+        return ({"waveform": torch.zeros((1, 2, 1)), "sample_rate": 44100},)
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return float("nan")
+
+
 NODE_CLASS_MAPPINGS = {
     "TJ_RTXDeblur":                TJ_RTXDeblur,
     "Flux2KleinOneTJNode":         Flux2KleinOneTJNode,
@@ -3255,6 +3947,7 @@ NODE_CLASS_MAPPINGS = {
     "QwenImageEdit2511OneTJNode":  QwenImageEdit2511OneTJNode,
     "SDXLOneTJNode":               SDXLOneTJNode,
     "MiniMaxH3OneTJNode":          MiniMaxH3OneTJNode,
+    "MusicMakerOneTJNode":         MusicMakerOneTJNode,
     "TJStudioOneTextOutput":       TJStudioOneTextOutput,
     "AnimaOneTJNode":              AnimaOneTJNode,
 }
@@ -3265,6 +3958,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "QwenImageEdit2511OneTJNode":  "Qwen Image Edit 2511 ONE STUDIO (TJ)",
     "SDXLOneTJNode":               "SDXL ONE STUDIO (TJ)",
     "MiniMaxH3OneTJNode":          "MiniMax H3 ONE STUDIO (TJ)",
+    "MusicMakerOneTJNode":         "MusicMaker ONE STUDIO (TJ)",
     "TJ_RTXDeblur":                "RTX Deblur (TJ)",
     "TJStudioOneTextOutput":       "TJ Studio ONE — Text Output",
     "AnimaOneTJNode":              "Anima ONE STUDIO (TJ)",

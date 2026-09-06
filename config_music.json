@@ -1,0 +1,14 @@
+{
+  "dit": "Minimax-Music\\minimax_music3_dit_fp16.safetensors",
+  "clip": "minimax_music3_text_encoder_pruned_bf16.safetensors",
+  "dav": "minimax_music3_dav.safetensors",
+  "ace_unet": "ACE\\acestep_v1.5_merge_sft_turbo_ta_0.5.safetensors",
+  "ace_clip1": "Ace15\\qwen_0.6b_ace15.safetensors",
+  "ace_clip2": "Ace15\\qwen_4b_ace15.safetensors",
+  "ace_vae": "ace_1.5_vae.safetensors",
+  "llm_model": "LLM\\Gamma\\Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q8_K_P.gguf",
+  "llm_backend": "openrouter",
+  "llm_clip": "LTX\\gemma4_e4b_it_fp8_scaled.safetensors",
+  "llm_clip_type": "lumina2",
+  "llm_or_model": "deepseek/deepseek-v4-flash-0731"
+}
