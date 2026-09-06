@@ -182,7 +182,7 @@ function buildAceStepGraph(state, opts) {
   const r = resolveCommon(state, opts);
   const P = "ACE";
   const allStages = (state.aceStages && state.aceStages.length ? state.aceStages
-                  : [{ steps: 30, cfg: 0 }, { steps: 20, cfg: 1 }, { steps: 15, cfg: 1 }]);
+                  : [{ steps: 30, cfg: 1 }, { steps: 20, cfg: 1 }, { steps: 15, cfg: 1 }]);
   // stage 1 always; 2 & 3 are sequential — stage 3 only runs if stage 2 does
   const stages = [];
   allStages.forEach((st, i) => {
@@ -217,7 +217,7 @@ function buildAceStepGraph(state, opts) {
       model: M, scheduler: sched, steps: Math.max(1, Math.round(st.steps || 20)), denoise: 1.0,
     }};
     g[`${P}:s${i}`] = { class_type: "SamplerCustom", inputs: {
-      model: M, add_noise: true, noise_seed: r.seed, cfg: st.cfg ?? (i === 0 ? 0 : 1),
+      model: M, add_noise: true, noise_seed: r.seed, cfg: st.cfg ?? 1,
       positive: [`${P}:pos`, 0], negative: [`${P}:neg`, 0], sampler: [`${P}:sel`, 0],
       sigmas: [`${P}:sched${i}`, 0], latent_image: latIn,
     }};
