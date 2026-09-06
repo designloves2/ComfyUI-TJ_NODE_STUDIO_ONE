@@ -803,7 +803,7 @@ app.registerExtension({
         return t;
       }
 
-      async function runLLM(role, input, context, apply, busyWrap, busyLabel) {
+      async function runLLM(role, input, context, apply, busyWrap, busyLabel, throwOnFail) {
         statusEl.textContent = `LLM · ${role} …`;
         const done = llmBusy(busyWrap, busyLabel);
         try {
@@ -817,8 +817,12 @@ app.registerExtension({
             text = stripThinking(d.text);
           }
           if (text) { apply(text); statusEl.textContent = "LLM ✓"; }
+          else if (throwOnFail) throw new Error("empty response");
           else statusEl.textContent = "LLM: empty response";
-        } catch (e) { statusEl.textContent = "LLM: " + e.message; }
+        } catch (e) {
+          statusEl.textContent = "LLM: " + e.message;
+          if (throwOnFail) throw e;
+        }
         finally { done(); }
       }
 
@@ -1213,7 +1217,7 @@ app.registerExtension({
 
       async function llmOnce(role, input, context) {
         let out = "";
-        await runLLM(role, input, context, (t) => { out = String(t || ""); }, null, null);
+        await runLLM(role, input, context, (t) => { out = String(t || ""); }, null, null, true);
         return out.trim();
       }
 
@@ -1301,9 +1305,10 @@ app.registerExtension({
           const li = lyricsIntent(st.lyricsInput);
           if ((li === "brief" || li === "hook") && st.lyricsInput) {
             job.stage = "Writing lyrics…"; paintJob(job);
-            const lx = await llmOnce("lyrics_from_theme", st.lyricsInput,
+            // LLM failure must stop the job, not silently fall through to the raw
+            // brief — llmOnce throws on empty, processJob's catch paints it red.
+            st.lyrics = await llmOnce("lyrics_from_theme", st.lyricsInput,
               { engine: st.engine, language: st.language, duration_seconds: effectiveDuration(st), style_caption: st.caption });
-            st.lyrics = lx || st.lyricsInput;
           } else {
             st.lyrics = st.lyricsInput;
           }
@@ -1370,7 +1375,9 @@ app.registerExtension({
           job.stage = "Finishing…"; job.pct = 100; paintJob(job);
           if (!st.titleTouched || !meta.title) {
             meta.title = "";
-            const tt = await llmOnce("title", st.caption || st.captionBrief || "", { lyrics: st.lyrics || "" });
+            // the audio already exists — a title-LLM failure must not fail the job
+            let tt = "";
+            try { tt = await llmOnce("title", st.caption || st.captionBrief || "", { lyrics: st.lyrics || "" }); } catch {}
             const c = cleanTitle(tt);
             meta.title = (c && c !== "Untitled") ? c : (cleanTitle(st.lyrics || st.caption || "") || "Untitled");
           }

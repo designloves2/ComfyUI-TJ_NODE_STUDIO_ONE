@@ -116,7 +116,7 @@ function resolveCommon(state, opts) {
 
 function commonMeta(state, r) {
   return {
-    engine: state.engine || "minimax",
+    engine: state.engine || "acestep",
     caption: r.caption, captionBrief: state.captionBrief || "", styleChips: state.styleChips || [],
     lyrics: r.lyrics, lyricsInput: state.lyricsInput || "", instrumental: !!state.instrumental || !r.lyrics,
     seconds: r.seconds, seed: r.seed, seedMode: state.seedMode || "random",

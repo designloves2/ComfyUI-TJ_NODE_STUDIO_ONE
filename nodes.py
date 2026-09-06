@@ -3489,7 +3489,7 @@ def _write_openrouter_key(key):
 async def music_get_config(request):
     cfg = _load_config(MUSIC_CONFIG_PATH)
     return web.json_response({
-        "engine": cfg.get("engine", "minimax"),
+        "engine": cfg.get("engine", "acestep"),
         "dit":  cfg.get("dit",  ""),
         "clip": cfg.get("clip", ""),
         "dav":  cfg.get("dav",  ""),

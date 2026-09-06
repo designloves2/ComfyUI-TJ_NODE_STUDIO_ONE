@@ -21,8 +21,8 @@ export const LS_KEY    = "music_one_state_v1";
 // playlist/player are shared; loaders + text-encode + sampler chain + the extra
 // musical params branch on this.
 export const ENGINES = [
-  { key: "minimax", label: "MiniMax Music 3" },
   { key: "acestep", label: "Ace-Step 1.5" },
+  { key: "minimax", label: "MiniMax Music 3" },
 ];
 export const ACE_LANGUAGES = ["en", "ko", "ja", "zh", "es", "fr", "de", "auto"];
 export const ACE_KEYSCALES = [
@@ -114,7 +114,7 @@ export function saveState(s) {
 export function defaultState(saved) {
   saved = saved || {};
   return {
-    engine: saved.engine || "minimax",   // "minimax" | "acestep"
+    engine: saved.engine || "acestep",   // "acestep" | "minimax"
 
     // MiniMax Music 3 models — set once in ⚙ Settings
     dit:  saved.dit  || "",
