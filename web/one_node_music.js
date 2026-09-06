@@ -12,6 +12,7 @@ import {
   VOCAL_GENDER, VOCAL_STYLE, VOICE_TONE,
 } from "./music/core_music.js";
 import { buildMusicGraph, effectiveDuration } from "./music/graph_builder_music.js";
+import { attachSensitiveToggle, mediaKey } from "./shared/ui_sensitive_media.js";
 
 // Match MiniMax H3's outer node size exactly (see one_node_minimax_h3.js NODE_MW/NODE_MH).
 const NODE_MW = 1280;
@@ -550,6 +551,7 @@ app.registerExtension({
         if (t.cover) cover.style.backgroundImage = coverURL(t.cover);
         else cover.appendChild(coverPlaceholder(t));
         if (t.seconds) cover.appendChild(el("div", { className: "mmm-dur", text: fmtDur(t.seconds) }));
+        attachSensitiveToggle(cover, cover, mediaKey(t.filename, t.subfolder || SUB()), "br");
         const mid = el("div", { style: { flex: "1", minWidth: 0 }});
         let clickT = null;
         const title = el("div", { className: "mmm-tt", text: t.title || t.filename, title: "Click to play/pause · double-click to restart" });
