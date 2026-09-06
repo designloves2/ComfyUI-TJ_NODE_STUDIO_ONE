@@ -1,8 +1,8 @@
 # TJ NODE STUDIO ONE (통합 패키지)
 # TJ NODE STUDIO ONE (Integrated Package)
 
-> **ComfyUI 올인원 이미지 생성 UI 패키지** — Z-Image ONE STUDIO, Flux.2 Klein ONE STUDIO, Qwen Image Edit 2511 ONE STUDIO, Krea 2 ONE STUDIO, **SDXL ONE STUDIO**, Minimax H3 ONE STUDIO, **Anima ONE STUDIO** 일곱 가지 노드를 단일 패키지로 제공합니다.  
-> **ComfyUI all-in-one image generation UI package** — Z-Image ONE STUDIO, Flux.2 Klein ONE STUDIO, Qwen Image Edit 2511 ONE STUDIO, Krea 2 ONE STUDIO, **SDXL ONE STUDIO**, Minimax H3 ONE STUDIO, **Anima ONE STUDIO** — seven nodes in a single package.
+> **ComfyUI 올인원 생성 UI 패키지** — Z-Image ONE STUDIO, Flux.2 Klein ONE STUDIO, Qwen Image Edit 2511 ONE STUDIO, Krea 2 ONE STUDIO, **SDXL ONE STUDIO**, Minimax H3 ONE STUDIO, **Anima ONE STUDIO**, **MusicMaker ONE STUDIO** 여덟 가지 노드를 단일 패키지로 제공합니다.  
+> **ComfyUI all-in-one generation UI package** — Z-Image ONE STUDIO, Flux.2 Klein ONE STUDIO, Qwen Image Edit 2511 ONE STUDIO, Krea 2 ONE STUDIO, **SDXL ONE STUDIO**, Minimax H3 ONE STUDIO, **Anima ONE STUDIO**, **MusicMaker ONE STUDIO** — eight nodes in a single package.
 >
 > 워크플로우 배선 없이 노드 하나에서 T2I · I2I · Inpaint · Outpaint · ControlNet · Edit · Faceswap · ANGLE · Upscale(SeedVR2) 등 다양한 모드를 전환합니다.
 > switch between modes in a single node without workflow wiring T2I · I2I · Inpaint · Outpaint · ControlNet · Edit · Faceswap · ANGLE · Upscale(SeedVR2) etc. switch between various modes.
@@ -14,6 +14,18 @@
 > 미니맥스 H3 노드가 새롭게 추가 되었습니다. FL2VA / REF2VA / Turbo Lora / Cache와 멀티 프롬포트로 동시에 여러개의 클립을 생성하거나 이전 클립의 라스트 프레임을 다음 클립의 퍼스트 프레임으로 받아서 연속적인 영상을 만들수 있습니다. 여러개 클립의 생성시 최종 클립이 완료되면 모든 영상을 스티치하여 하나의 영상으로 생성도 가능합니다.
 >
 > The MiniMax H3 node has been added. Using FL2VA, REF2VA, Turbo Lora, and Cache, along with multi-port functionality, you can create multiple clips simultaneously or use the last frame of the previous clip as the first frame of the next clip to generate a continuous video. When creating multiple clips, once the final clip is complete, you can stitch all the clips together to create a single video.
+>
+> 🆕 **MusicMaker ONE STUDIO가 새롭게 추가되었습니다.** 노드 하나에서 두 엔진 — **Ace-Step 1.5**(48 kHz, 3-스테이지 순차 샘플링, 기본값)과 **MiniMax Music 3** — 으로 노래·연주곡을 생성합니다. SUNO식 2-패널 레이아웃(스타일·가사·보컬·BPM/키/박자 / 인라인 플레이어가 붙은 플레이리스트), H3식 **대기 큐**(카드별 취소), 태그드-MP3 다운로드, Krea2 앨범 커버, 캡션·가사 LLM(로컬 GGUF / **OpenRouter** / ComfyUI TextGenerate). 노래/연주곡 토글, 저장 폴더 지정.
+>
+> 🆕 **MusicMaker ONE STUDIO has been added.** One node, two engines — **Ace-Step 1.5** (48 kHz, 3-stage progressive sampling, default) and **MiniMax Music 3** — for songs and instrumentals. SUNO-style two-pane layout (style · lyrics · vocals · BPM/key/time-sig, and a playlist with an inline player), an H3-style **generation queue** (per-card cancel), tagged-MP3 download, Krea2 album covers, and a caption + lyrics LLM (Local GGUF / **OpenRouter** / ComfyUI TextGenerate). Song/Instrumental toggle, configurable save folder.
+>
+> 🆕 **이미지 노드 · MiniMax H3의 LLM에 OpenRouter 백엔드가 추가되었습니다.** Enhance / Image → Prompt 패널(Krea2 · Z-Image · Flux.2 Klein · Qwen 2511 · SDXL)과 MiniMax H3의 Image → Brief에서 로컬 GGUF 대신 OpenRouter 클라우드 모델을 선택할 수 있습니다. 키는 노드의 `.env` 하나에 저장되어 세 계열이 공유하며 Settings에서 마스킹 표시됩니다.
+>
+> 🆕 **OpenRouter LLM backend for the image nodes and MiniMax H3.** The Enhance / Image → Prompt panel (Krea2 · Z-Image · Flux.2 Klein · Qwen 2511 · SDXL) and MiniMax H3's Image → Brief can now use an OpenRouter cloud model instead of a local GGUF. One key in the node's `.env`, shared by all three, shown masked in Settings.
+>
+> 🆕 **갤러리 눈가리기.** 모든 노드 갤러리(+ MusicMaker 플레이리스트)의 각 썸네일에 👁 토글이 생겨 가릴 수 있고, 가린 목록은 서버에 한 곳으로 저장되어 노드와 AI ONE STUDIO 웹앱이 동기화됩니다.
+>
+> 🆕 **Per-thumbnail blur (눈가리기).** Every node gallery (and the MusicMaker playlist) gets a 👁 toggle on each thumbnail; the hidden list is stored server-side in one place and stays in sync between the nodes and the AI ONE STUDIO web app.
 >
 > 🧪 **SDXL ONE STUDIO는 현재 테스트 버전입니다.** 기능은 동작하지만 일부 옵션이 변경될 수 있습니다.  
 > 🧪 **SDXL ONE STUDIO is currently a test/beta version.** Core features are functional but some options may change.
@@ -85,10 +97,12 @@
 9. [Common Features](#공통-기능)
 10. [MiniMax H3 ONE STUDIO — 기능 상세 🧪](#minimax-h3-one-studio--기능-상세-)
 10. [MiniMax H3 ONE STUDIO — Feature Details 🧪](#minimax-h3-one-studio--기능-상세-)
-11. [버그 수정 이력](#버그-수정-이력)
-11. [Bug Fix History](#버그-수정-이력)
-12. [라이선스](#라이선스)
-12. [License](#라이선스)
+11. [MusicMaker ONE STUDIO — 기능 상세 🧪](#musicmaker-one-studio--기능-상세-)
+11. [MusicMaker ONE STUDIO — Feature Details 🧪](#musicmaker-one-studio--기능-상세-)
+12. [버그 수정 이력](#버그-수정-이력)
+12. [Bug Fix History](#버그-수정-이력)
+13. [라이선스](#라이선스)
+13. [License](#라이선스)
 
 ---
 
@@ -104,6 +118,7 @@
 | **SDXL ONE STUDIO (TJ)** 🧪 | SDXL Checkpoint / Separate UNET 모델<br><sub>SDXL Checkpoint / Separate UNET model</sub>| T2I · I2I · Inpaint · Outpaint · Upscale *(테스트 버전 / Test Version)* |
 | **MiniMax H3 ONE STUDIO (TJ)** 🧪 | MiniMax H3 영상+오디오 생성 모델<br><sub>MiniMax H3 video + audio model</sub>| Text / First-Last / Reference · **클립 릴레이 + 자동 합본** · 라이브 프리뷰 *(실험적 / Experimental)* |
 | **Anima ONE STUDIO (TJ)** 🆕 | Anima (ComfyUI 네이티브 애니메이션풍 이미지 모델)<br><sub>Anima (ComfyUI-native anime-style image model)</sub>| T2I · Inpainting · Any Control to Image · Depth Control to Image · **Turbo LoRA** · **인라인 마스크 페인터**<br><sub>T2I · Inpainting · Any Control to Image · Depth Control to Image · **Turbo LoRA** · **inline mask painter**</sub>|
+| **MusicMaker ONE STUDIO (TJ)** 🆕🧪 | Ace-Step 1.5 · MiniMax Music 3 (음악 생성)<br><sub>Ace-Step 1.5 / MiniMax Music 3 music model</sub>| 노래 / 연주곡 · 2 엔진 · **대기 큐** · 캡션·가사 LLM (로컬 / OpenRouter / TextGenerate) · 태그드-MP3<br><sub>song / instrumental · 2 engines · **generation queue** · caption+lyric LLM (local / OpenRouter / TextGenerate) · tagged MP3</sub>|
 
 > **언어 지원**: 모든 노드의 Settings에서 한국어 / English 전환 가능
 > **Language Support**: Korean / English can be selected in Settings for every node
@@ -196,6 +211,8 @@ chmod +x install_requirements.sh
 | [ComfyUI-Spectrum-MiniMax-H3](https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3) 🧪 | Spectrum 가속<br><sub>Spectrum acceleration</sub>| MiniMax H3 Accel=Spectrum |
 | [ComfyUI-VideoHelperSuite](https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite) 🧪 | 레퍼런스 **비디오** 입력<br><sub>reference video inputs</sub>| MiniMax H3 Reference 모드<br><sub>Reference mode</sub>|
 | [Nvidia RTX Nodes](https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI) 🧪 | RTX Video Super Resolution | MiniMax H3 Upscale=RTX VSR |
+| [JK-AceStep-Nodes](https://github.com/jeankassio/JK-AceStep-Nodes) 🧪 | JKASS 품질 샘플러 (`jkass_quality`)<br><sub>JKASS quality sampler</sub>| MusicMaker Ace-Step 엔진<br><sub>MusicMaker Ace-Step engine</sub>|
+| [ComfyUI-Openrouter_node](https://github.com/gabe-init/ComfyUI-Openrouter_node) | OpenRouter LLM 키 저장소<br><sub>OpenRouter LLM key store</sub>| MusicMaker · 이미지 노드 · H3 의 OpenRouter LLM 백엔드 (선택)<br><sub>optional — OpenRouter LLM backend for MusicMaker / image nodes / H3</sub>|
 
 ---
 
@@ -618,6 +635,65 @@ only `BasicGuider` (positive-only), like MiniMax H3, don't have this problem.
 
 ---
 
+## MusicMaker ONE STUDIO — 기능 상세 🧪
+## MusicMaker ONE STUDIO — Feature Details 🧪
+
+> 🧪 실험적 — 음악(노래·연주곡) 생성 노드. 노드 하나에서 두 엔진을 전환합니다.
+> 🧪 Experimental — a music (song / instrumental) node. One node switches between two engines.
+
+**엔진 / Engines**
+
+| 엔진<br><sub>Engine</sub>| 그래프<br><sub>Graph</sub>| 특징<br><sub>Notes</sub>|
+| --- | --- | --- |
+| **Ace-Step 1.5** *(기본값 / default)* | `DualCLIPLoader(ace)` + `ModelSamplingAuraFlow` + `KSamplerSelect` + **3-스테이지 `SamplerCustom`** (progressive refine) + `VAEDecodeAudio` | 48 kHz, 깨끗한 고역. `TextEncodeAceStepAudio1.5`가 BPM·키·박자·언어를 **구조화된 입력**으로 받음. JKASS 품질 샘플러(`jkass_quality`) 사용 → `JK-AceStep-Nodes` 필요<br><sub>48 kHz, clean highs. BPM / key / time-sig / language are structured inputs. Uses the JKASS quality sampler → needs `JK-AceStep-Nodes`</sub>|
+| **MiniMax Music 3** | `CLIPLoader(minimax)` + `MiniMaxMusic3TextEncode` + `KSampler` 1회 + `ConditioningZeroOut` 네거티브 + `VAEDecodeAudio(Tiled)` | 구조화된 필드 없음 — BPM·키·박자·보컬은 캡션 텍스트에 녹여 전달. 오디오 VAE가 ~16.5 kHz에서 브릭월, 5–12 kHz를 광대역 노이즈로 렌더 → 보컬이 "바람 소리"처럼 들릴 수 있음(모델 특성, cfg 문제 아님)<br><sub>no structured fields — BPM / key / vocals are folded into the caption text. The audio VAE brick-walls at ~16.5 kHz and renders 5–12 kHz as broadband noise, so vocals can sound "windy" (a model trait, not a cfg artifact)</sub>|
+
+**작곡 패널 / Compose panel**
+
+- **Style** — 스타일 캡션(짧게 쓰면 ✨로 확장) + 스타일 칩. **Reroll**로 다른 표현 재작성.
+- **Lyrics** — `[Verse]`/`[Chorus]` 태그 가사. 비어 있으면 제목·브리프에서 ✨로 작성. **Song / Instrumental 토글** — Instrumental이면 가사·보컬 섹션이 숨겨지고 가사 없이 렌더.
+- **Vocals** — gender / delivery / tone. `auto`가 아니면 캡션에 반영(✨나 Reroll 안 눌러도 그래프 빌드 시 적용).
+- **BPM · key · time signature · Length** — Ace-Step은 구조화 입력, MiniMax는 캡션 힌트. 브리프에 `3:00` / `3분`이 있으면 슬라이더보다 우선.
+- **Advanced** — MiniMax: steps · sampler cfg · **guidance (cfg_scale, 텍스트 인코더 별도 노브)** · top_k · tiled decode. Ace-Step: cfg_scale · temperature · top_p / min_p / top_k · shift · **샘플링 스테이지**(1 항시, 2·3 체크박스 — 3은 2가 켜져야 활성, 끄면 이후 캐스케이드).
+- **LoRA** — 최대 3개 (`LoraLoaderModelOnly` 체인, 두 엔진 공용).
+
+**대기 큐 / Generation queue**
+
+- ▶ Generate → 패널 전체를 스냅샷하고 플레이리스트 상단에 잡 카드 추가. 워커 1개가 FIFO로 소진(ComfyUI가 실제 실행을 직렬화).
+- 카드별 ✕ — 대기 중이면 큐에서 제거, 실행 중이면 `/interrupt` 후 다음 잡으로. **Stop**은 큐 전체 비움.
+- 클릭 후 패널을 수정해도 이미 스냅샷된 잡에는 반영되지 않음.
+
+**LLM (캡션 · 가사) / LLM**
+
+- 백엔드 3종: **Local GGUF**(`ComfyUI-TJ_NODE`), **OpenRouter**(클라우드), **ComfyUI TextGenerate**. Settings에서 선택.
+- 가사 작성 시 실제 곡 길이를 전달하고, 프롬프트에 길이별 구조표가 들어 있어 3분 곡이 20초짜리 가사로 나오지 않음.
+- OpenRouter는 reasoning 모델이 `finish_reason=length`로 빈 응답을 주면 토큰 2배 + reasoning 포함으로 1회 재시도 후 답을 추출. reasoning 모델이 계속 실패하면 non-reasoning 모델 추천 메시지.
+
+**플레이리스트 / Playlist**
+
+- 인라인 플레이어(재생/일시정지, 다음/이전, single/continuous 토글), 즐겨찾기, 트랙별 **Info**(엔진·길이·시드·사용 LLM·파라미터) / **Reuse**.
+- **↓ Download** — `/music_one/download`가 ffmpeg로 MP3 트랜스코드 + ID3(커버 아트, 제목·아티스트·앨범, 스타일 캡션, 전체 가사, 시드)를 심어 `.export/`에 캐시.
+- **커버** — `Auto-generate album cover (Krea2)` 기본 ON. `⋯ → Regenerate cover`로 Auto(제목+가사) / Prompt(직접 설명 → LLM → Krea2 프롬프트) 선택.
+- **저장 폴더** — Settings에서 지정, 저장 위치와 플레이리스트 스캔 둘 다에 반영.
+- **눈가리기** — 각 커버에 👁 토글(서버 공유 목록).
+- **iOS Safari** — 탭 시 동기 재생(제스처 스코프), FLAC은 브라우저가 못 읽으면 `/music_one/download` MP3로 대체.
+
+**필수 · 선택 노드 / Required & Optional Custom Nodes**
+
+| 노드<br><sub>Node</sub>| 용도<br><sub>Purpose</sub>| 없으면<br><sub>If missing</sub>|
+| --- | --- | --- |
+| ComfyUI 코어<br><sub>ComfyUI core</sub>| `MiniMaxMusic3TextEncode` · `EmptyMiniMaxMusic3LatentAudio` · `TextEncodeAceStepAudio1.5` · `EmptyAceStep1.5LatentAudio` · `ModelSamplingAuraFlow` · `KSamplerSelect` · `BasicScheduler` · `SamplerCustom` · `VAEDecodeAudio` · `SaveAudioAdvanced` | **필수** (최신 ComfyUI 필요)<br><sub>required (recent ComfyUI)</sub>|
+| [JK-AceStep-Nodes](https://github.com/jeankassio/JK-AceStep-Nodes)| JKASS 품질 샘플러 (`jkass_quality`)<br><sub>JKASS quality sampler</sub>| Ace-Step 엔진의 기본 샘플러 실패 — Settings에서 다른 샘플러로 바꾸거나 설치<br><sub>the Ace-Step engine's default sampler fails — pick another in Settings, or install it</sub>|
+| [ComfyUI-Openrouter_node](https://github.com/gabe-init/ComfyUI-Openrouter_node)| OpenRouter LLM 키 저장소 (선택)<br><sub>OpenRouter LLM key store (optional)</sub>| OpenRouter LLM 백엔드만 비활성 (로컬·TextGenerate는 정상)<br><sub>only the OpenRouter LLM backend is disabled</sub>|
+| ComfyUI-TJ_NODE| 로컬 GGUF LLM · `TextGenerate` · `TJ_MultiImageLoader`<br><sub>local GGUF LLM path</sub>| 로컬 LLM 백엔드만 비활성 (OpenRouter는 정상)<br><sub>only the local LLM backend is disabled</sub>|
+
+**필수 모델 / Required Models**
+
+Ace-Step 1.5 / MiniMax Music 3 모델은 각자 배포처에서 받아 `models/` 아래에 놓고 Settings에서 지정합니다 (Diffusion / Text Encoder(들) / Audio VAE). 어떤 엔진을 쓰느냐에 따라 필요한 파일이 다릅니다.
+Download the Ace-Step 1.5 / MiniMax Music 3 model files from their own distributions, place them under `models/`, and pick them in Settings (Diffusion / Text Encoder(s) / Audio VAE). Which files you need depends on the engine.
+
+---
+
 ## 버그 수정 이력
 ## Bug Fix History
 
@@ -788,8 +864,11 @@ TJ_NODEWhen TJ_NODE is installed **all four nodes**prompt expansion window(`🔍
 | 탭<br><sub>Tab</sub>| 기능<br><sub>Feature</sub>|
 |---|---|
 | **✏️ Edit** | 기존 전체화면 텍스트 편집 (변경 없음)<br><sub>existing full-screen text editor (unchanged)</sub>|
-| **✨ Enhance** | 현재 프롬프트를 GGUF LLM으로 강화. Model Format · Aesthetic · Extra Instructions 설정 지원<br><sub>enhance the current prompt with a GGUF LLM. Model Format · Aesthetic · Extra Instructions supports settings</sub>|
+| **✨ Enhance** | 현재 프롬프트를 LLM으로 강화. Model Format · Aesthetic · Extra Instructions 설정 지원<br><sub>enhance the current prompt with an LLM. Model Format · Aesthetic · Extra Instructions supports settings</sub>|
 | **🖼 Image→Prompt** | 이미지 업로드 또는 **URL 다운로드** → 비전 LLM으로 프롬프트 생성 → 현재 모드에 전송<br><sub>upload an image or **download from a URL** → generate a prompt with a vision LLM → send it to the current mode</sub>|
+
+> **v1.25+**: Enhance / Image→Prompt 패널에 **Backend 선택**이 생겼습니다 — *Local GGUF*(TJ_NODE) 또는 **OpenRouter**(클라우드). OpenRouter를 고르면 OR 모델 선택 + 마스킹된 키 필드가 나오고, 키는 노드의 `.env` 하나에 저장되어 MusicMaker·MiniMax H3와 공유됩니다. TJ_NODE 미설치 시 자동으로 OpenRouter로 폴백합니다.
+> **v1.25+**: the Enhance / Image→Prompt panels gained a **Backend** selector — *Local GGUF* (TJ_NODE) or **OpenRouter** (cloud). Under OpenRouter you get an OR model picker + a masked key field; the key lives in the node's `.env`, shared with MusicMaker and MiniMax H3. If TJ_NODE isn't installed the panel falls back to OpenRouter automatically.
 
 - GGUF 모델·설정이 **자동 기억**되어 매번 다시 선택할 필요 없음 (4개 노드 공유)
 - GGUF models and settings are **remembered automatically**so they do not need to be selected every time (shared by all four nodes)
@@ -913,6 +992,8 @@ chmod +x install_requirements.sh
 | **ComfyUI-MiniMax-H3-Turbo** 🧪 | Turbo LoRA · Turbo 샘플러 (FL2VA 전용)<br><sub>turbo LoRA + sampler, FL2VA only</sub>| MiniMax H3 | [Larryvrh/ComfyUI-MiniMax-H3-Turbo](https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo) |
 | **ComfyUI-VideoHelperSuite** 🧪 | 레퍼런스 **비디오** 입력 (`VHS_LoadVideo`)<br><sub>reference video inputs</sub>| MiniMax H3 · Reference | [Kosinkadink/ComfyUI-VideoHelperSuite](https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite) |
 | **Nvidia RTX Nodes** 🧪 | RTX Video Super Resolution | MiniMax H3 · Upscale | [Comfy-Org/Nvidia_RTX_Nodes_ComfyUI](https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI) |
+| **JK-AceStep-Nodes** 🧪 | JKASS 품질 샘플러 (`jkass_quality`)<br><sub>JKASS quality sampler</sub>| MusicMaker · Ace-Step | [jeankassio/JK-AceStep-Nodes](https://github.com/jeankassio/JK-AceStep-Nodes) |
+| **ComfyUI-Openrouter_node** | OpenRouter LLM 키 저장소<br><sub>OpenRouter LLM key store</sub>| MusicMaker · 이미지 노드 · H3 (OpenRouter LLM) | [gabe-init/ComfyUI-Openrouter_node](https://github.com/gabe-init/ComfyUI-Openrouter_node) |
 
 > MiniMax H3용 노드는 **모두 선택 사항**입니다. 없으면 해당 기능만 꺼지고 나머지는 정상 동작하며, 노드 설정 화면에 상태가 표시됩니다.
 > Every MiniMax H3 pack is optional — a missing one only switches its own feature off, and Settings shows the status.
@@ -1342,6 +1423,25 @@ One prompt is one clip; total length follows from `clips × clip length` rather 
 - **Prompt Edit / COMMON Prompt** — 클립별 프롬프트 편집 팝업, 공통 머리말·꼬리말 분리 편집, Ollama LLM으로 브리프 확장(결과는 팝업으로 먼저 검토)
 - **스티치 On/Off** — 합본 여부를 왼쪽 패널에서 선택. 개별 클립은 항상 저장됩니다
 - **VRAM** — 클립 사이(선택)와 **실행 종료 시(항상)** 자동 해제
+
+---
+
+### MusicMaker ONE STUDIO (TJ) 🧪
+
+> 🧪 실험적 — 음악(노래·연주곡) 생성. 노드 하나에 Ace-Step 1.5 / MiniMax Music 3 두 엔진.
+> 🧪 Experimental — music (song / instrumental). One node, two engines: Ace-Step 1.5 / MiniMax Music 3.
+
+| 항목<br><sub>Item</sub>| 설명<br><sub>Description</sub>|
+| --- | --- |
+| **엔진 / Engine** | **Ace-Step 1.5**(기본, 48 kHz, 3-스테이지 샘플링, BPM/키/박자 구조화 입력) · **MiniMax Music 3**(단일 KSampler, 캡션에 힌트 녹임)<br><sub>Ace-Step 1.5 (default) / MiniMax Music 3</sub>|
+| **Song / Instrumental** | 명시적 토글. Instrumental은 가사·보컬 섹션을 숨기고 가사 없이 렌더<br><sub>explicit toggle</sub>|
+| **캡션·가사 LLM / LLM** | Local GGUF · **OpenRouter** · ComfyUI TextGenerate 중 선택. 가사 작성 시 실제 곡 길이 반영<br><sub>pick a backend; the lyric writer gets the real target length</sub>|
+| **대기 큐 / Queue** | ▶ Generate가 패널을 스냅샷 → 플레이리스트에 잡 카드. 카드별 취소, Stop으로 전체 비움<br><sub>H3-style queue with per-card cancel</sub>|
+| **플레이리스트 / Playlist** | 인라인 플레이어, 즐겨찾기, Info/Reuse, 태그드-MP3 다운로드, Krea2 앨범 커버(기본 ON, Auto/Prompt 재생성)<br><sub>inline player, tagged-MP3 download, Krea2 covers</sub>|
+| **저장 폴더 / Save folder** | Settings에서 지정 — 저장 위치 + 플레이리스트 스캔<br><sub>configurable, drives save + scan</sub>|
+
+자세한 내용은 [MusicMaker ONE STUDIO — 기능 상세](#musicmaker-one-studio--기능-상세-) 참고.
+See [MusicMaker ONE STUDIO — Feature Details](#musicmaker-one-studio--기능-상세-) for the full breakdown.
 
 ---
 

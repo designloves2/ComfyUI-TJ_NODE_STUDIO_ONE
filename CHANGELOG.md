@@ -2,6 +2,97 @@
 
 ---
 
+## v1.25.0 (2026-09-06)
+
+### 🆕 MusicMaker ONE STUDIO (TJ) — new node (8th) 🧪
+
+- **Song / instrumental generation, one node, two engines.** **Ace-Step 1.5** (48 kHz,
+  DualCLIP + AuraFlow + a 3-stage progressive `SamplerCustom` chain — the default) and
+  **MiniMax Music 3** (`MiniMaxMusic3TextEncode` + `KSampler`). SUNO-style two-pane
+  layout: a compose panel (style caption, lyrics, vocal gender / delivery / tone,
+  BPM / key / time-sig, per-engine advanced params, LoRA slots) and a playlist with an
+  inline player, favorites, per-track Info / Reuse, tagged-MP3 download, and Krea2 album
+  covers.
+- **Generation queue** — every ▶ Generate snapshots the whole panel and appends a job
+  card to the playlist; one worker drains the queue FIFO (ComfyUI serialises the real
+  runs). Per-card cancel (queued → drop, running → `/interrupt` + move to next), Stop
+  clears everything. Editing the panel after clicking never leaks into an in-flight job.
+- **Caption + lyrics LLM — three backends**: Local GGUF (`ComfyUI-TJ_NODE`), **OpenRouter**
+  (cloud), and ComfyUI `TextGenerate`. Roles: `lyrics_from_theme` / `_from_title` /
+  `_enhance`, `caption_*`, `title`, `cover_prompt`. The lyric writer now receives the real
+  target length (a `3:00` / `3분` in the brief wins over the slider) and the prompts carry
+  a mandatory structure-by-length table, so a 3-minute song no longer comes back as a
+  20-second lyric.
+- **Explicit Song / Instrumental toggle** (replaces the old "empty lyrics box = instrumental"
+  guess), **Auto-generate album cover default ON**, and a **configurable save folder**
+  (drives both the save location and the playlist scan).
+- **Ace-Step sampling stages are sequential opt-in** — stage 1 always runs; stages 2 & 3
+  are checkboxes (stage 3's is disabled until stage 2 is on; turning a stage off cascades
+  to every later stage). The graph builds the `SamplerCustom` chain from the enabled
+  prefix only.
+- **MiniMax `cfg_scale`** (`MiniMaxMusic3TextEncode` prompt-adherence) is now its own field,
+  separate from the `KSampler` `cfg`. Note: MiniMax's "windy / breathy vocals" are a
+  model + codec characteristic (VAE brick-walls at ~16.5 kHz, renders 5–12 kHz as
+  broadband noise haze), not a cfg artifact — Ace-Step is clean 48 kHz.
+- **iOS Safari playback** — the playlist tap plays synchronously inside the user-gesture
+  callstack (no `setTimeout` debounce, which iOS silently blocks), and FLAC falls back to
+  the `/music_one/download` MP3 transcode when `canPlayType('audio/flac') !== "probably"`.
+- Node classes registered as core vs. optional in `MUSIC_CORE_NODES` / `MUSIC_OPTIONAL_NODES`;
+  `GET /music_one/node_availability` reports what's missing.
+
+### OpenRouter LLM backend for the image nodes + MiniMax H3
+
+- The shared **Enhance / Image → Prompt** panel (Krea2 · Z-Image · Flux.2 Klein · Qwen 2511
+  · SDXL) gains a **Backend** selector — *Local GGUF* or *OpenRouter* — with an OR model
+  picker and a masked key field. New `_openrouter_vision` handles Image → Prompt.
+  `/tj_studio_one/llm/{enhance,image_to_prompt}` branch on `backend`; a new
+  `POST /tj_studio_one/llm/config` stores the model. When `ComfyUI-TJ_NODE`'s local LLM
+  isn't installed the panel now falls back to OpenRouter instead of a dead "not installed"
+  banner.
+- **MiniMax H3 → Settings → LLM** gains the same *Native (ComfyUI CLIP)* / *OpenRouter*
+  toggle. Under OpenRouter, Image → Brief routes the reference images and the brief writer
+  through `POST /minimax_h3_one/llm/{analyze,write_brief}` (multi-image vision in one
+  message), and the CLIP pickers hide.
+- **One shared key.** `OPENROUTER_API_KEY` lives in the node's gitignored `.env`, is entered
+  once in any Settings panel, and is shown masked (`sk**……4340`, first 2 + last 4). All
+  OpenRouter calls floor `max_tokens` at 8000 and, on an empty `finish_reason=length`
+  reply from a reasoning model, retry once at 2× tokens with the reasoning stream included
+  and salvage the answer.
+
+### 눈가리기 — per-thumbnail blur, one shared server-side list
+
+- Every gallery — Krea2, SDXL, Flux.2 Klein, Z-Image, Qwen 2511, Anima, the MiniMax H3
+  clip gallery (its hover-preview video too), and the MusicMaker playlist — gets a 👁
+  toggle that blurs a thumbnail. The hidden set lives once at
+  `GET/POST /tj_shared/sensitive_media` → `NODE_DIR/sensitive_media.json` (gitignored):
+  `{items:[…]}` replaces, `{add:[…]}` unions, `{key,on}` toggles one. The node galleries
+  and the AI ONE STUDIO web app read and write the same list, so hiding an item anywhere
+  hides it everywhere. `web/shared/ui_sensitive_media.js` is the node-side helper
+  (route-backed, optimistic, repaints every live tile on change).
+
+### MiniMax H3
+
+- **Reference audio / Audio Lock source from the MusicMaker playlist** — the three
+  reference-audio slots (left panel + per-clip override) and the Audio Lock file picker
+  gain a 🎵 button that opens the MusicMaker playlist (cover · title · engine · length ·
+  inline preview). The chosen track is copied into `input/` via the existing
+  `/minimax_h3_one/copy_to_input` route.
+
+### Installer
+
+- `ComfyUI-Openrouter_node` (`REPOS[24]`) — the shared cloud LLM backend above.
+- `JK-AceStep-Nodes` (`REPOS[25]`, Manager folder `comfyui-ace-step-ksampler`) — the JKASS
+  quality sampler that MusicMaker's Ace-Step engine defaults to. Both added to
+  `install_requirements.bat` / `.sh` and `dependency_check.py`.
+
+### Headless (AI-ONE-STUDIO repo)
+
+- `music-headless/` — a zero-dependency Node package that reproduces `buildMusicGraph`
+  (both engines) for server-side automation (Hermes). Finished caption + lyrics in, raw
+  `SaveAudioAdvanced` file out.
+
+---
+
 ## v1.24.1 (2026-09-03)
 
 - **Removed the `POST /tj_studio_one/llm/install_tj_node` route.** It ran `git clone`
