@@ -9,6 +9,7 @@ import { openVideoGalleryPicker } from "./ui_video_picker_minimax.js";
 import { panel, label, select, numberField, row, col } from "../klein/ui_common.js";
 import { uploadImage, getMediaFiles, uploadMedia, getMediaInfo } from "./api_minimax.js";
 import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
+import { openAudioGalleryPicker } from "../shared/ui_audio_gallery_picker.js";
 
 export function imageSlot(labelText, initialFile, onSet, { box = 132 } = {}) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "3px", alignItems: "center" } });
@@ -389,7 +390,7 @@ export function mountImagePanel(state, ctx) {
         kids.push(el("div", { html: "⚠ <code>TrimAudioDuration</code> missing — audio is used whole, in/out is ignored.",
           style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
       }
-      kids.push(buildClipMediaSlots("audio", auds, ctx, render, null, state.missingAssets));
+      kids.push(buildClipMediaSlots("audio", auds, ctx, render, (onPick) => openAudioGalleryPicker(onPick), state.missingAssets));
     }
 
     kids.push(el("div", { html: "Prompt tags follow input order per type: <code>&lt;Picture i&gt;</code> · "

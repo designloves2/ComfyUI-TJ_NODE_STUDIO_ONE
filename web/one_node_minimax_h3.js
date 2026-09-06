@@ -47,6 +47,7 @@ import { createGalleryOverlay } from "./minimax/ui_gallery_minimax.js";
 import { resolvePipeOverrides, applyOverridesTemp } from "./shared/promptdb_pipe.js";
 import { attachNodeState, restoreNodeState } from "./shared/node_state.js";
 import { createNodeFullscreen } from "./shared/node_fullscreen.js";
+import { openAudioGalleryPicker } from "./shared/ui_audio_gallery_picker.js";
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 const TOPBAR_H   = 40;
@@ -708,7 +709,16 @@ app.registerExtension({
             persist(); loadAudioFiles(); renderLeft();
           } catch (e) { showPopup(e.message, true); up.textContent = '⬆'; }
         });
-        return col([row([col([sel]), up, inp]), state.lockAudioFile ? audioPreviewPlayer(state.lockAudioFile) : null]);
+        const mm = el('button', { type: 'button', text: '🎵', title: 'Pick from the MusicMaker playlist', style: {
+          cursor: 'pointer', fontFamily: 'inherit', fontSize: '10px', padding: '4px', width: '26px',
+          borderRadius: '5px', background: C.bg3, color: C.text, border: `1px solid ${C.border}`, flexShrink: '0',
+        }});
+        mm.addEventListener('click', () => openAudioGalleryPicker((name) => {
+          state.lockAudioFile = name;
+          ctx.audioFiles = null;
+          persist(); loadAudioFiles(); renderLeft();
+        }));
+        return col([row([col([sel]), up, mm, inp]), state.lockAudioFile ? audioPreviewPlayer(state.lockAudioFile) : null]);
       }
 
       // Playback + trim controls for the locked audio file. Playback/seek stay confined to

@@ -202,8 +202,9 @@ ${entry.file}`, style: {
   tile.addEventListener("click", () => fileInp.click());
   wrap.append(tile, fileInp);
 
-  if (isVideo && onPickFromGallery) {
-    const gal = el("button", { type: "button", text: "🖼", title: "Pick from the gallery", style: {
+  if (onPickFromGallery) {
+    const gal = el("button", { type: "button", text: isVideo ? "🖼" : "🎵",
+      title: isVideo ? "Pick from the gallery" : "Pick from the MusicMaker playlist", style: {
       position: "absolute", bottom: "1px", left: "1px", zIndex: "3",
       background: "rgba(0,0,0,0.7)", color: "#fff", border: "none", borderRadius: "3px",
       width: "16px", height: "16px", cursor: "pointer", fontSize: "9px", padding: "0",

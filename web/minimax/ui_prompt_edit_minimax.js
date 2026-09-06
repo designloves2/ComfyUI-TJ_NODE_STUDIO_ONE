@@ -11,6 +11,7 @@ import { panel, label, button, select, row, col } from "../klein/ui_common.js";
 import { buildClipMediaSlots } from "./ui_clip_media_slots.js";
 import { openVideoGalleryPicker } from "./ui_video_picker_minimax.js";
 import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
+import { openAudioGalleryPicker } from "../shared/ui_audio_gallery_picker.js";
 import { ask } from "../shared/ui_ask.js";
 import { getMediaFiles, getSystemPrompt, uploadImage, uploadMedia, analyzeImagesNative, writeBriefNative, listPromptSets, getPromptSet, savePromptSet, deletePromptSet, missingInputFiles } from "./api_minimax.js";
 
@@ -908,7 +909,7 @@ ${name}`, style: {
           fontSize: "10px", color: C.muted, height: HEAD_H,
           display: "flex", alignItems: "center" } }));
         wrap.appendChild(buildClipMediaSlots(kind, list, ctx, renderImageRow,
-          kind === "video" ? (onPick => openVideoGalleryPicker(onPick)) : null,
+          kind === "video" ? (onPick => openVideoGalleryPicker(onPick)) : (onPick => openAudioGalleryPicker(onPick)),
           state.missingAssets));
         return wrap;
       };
