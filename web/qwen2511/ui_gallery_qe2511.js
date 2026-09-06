@@ -1,6 +1,7 @@
 // ui_gallery_qe2511.js — Gallery overlay for Qwen Image Edit 2511 ONE (TJ)
 import { C, el, clear, SUBFOLDER, BRAND } from "./core_qwen2511.js";
 import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, copyOutputToInput } from "./api_qwen2511.js";
+import { attachSensitiveToggle, mediaKey } from "../shared/ui_sensitive_media.js";
 
 const SEND_TARGETS = [
   { mode: "i2i",      field: "i2iImage",        label: "→ I2I" },
@@ -174,6 +175,7 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
     });
 
     cell.appendChild(im); cell.appendChild(star); cell.appendChild(del);
+    attachSensitiveToggle(cell, im, mediaKey(img.filename, img.subfolder || ""));
     return cell;
   }
 

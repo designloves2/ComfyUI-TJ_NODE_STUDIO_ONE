@@ -10,6 +10,7 @@ import { listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage, get
          copyOutputToInput, discardInputCopy, getVideoInfo, queuePrompt, waitForHistory, historyEntry,
          getClipLastFrame, getSystemPrompt, analyzeImagesNative, writeBriefNative } from "./api_minimax.js";
 import { buildUpscaleGraph, buildInterpolateGraph } from "./graph_builder_minimax.js";
+import { attachSensitiveToggle, mediaKey, isBlurred } from "../shared/ui_sensitive_media.js";
 
 const STITCH_MAX = 10;
 
@@ -1055,6 +1056,12 @@ export function createGalleryOverlay(state, ctx) {
       infoBtn.addEventListener("mouseleave", () => { infoPopup?.remove(); infoPopup = null; });
       thumbWrap.appendChild(infoBtn);
 
+      // 눈가리기 — blur this clip's thumbnail (and its hover-preview video) if hidden.
+      const sensKey = mediaKey(v.filename, v.subfolder || "");
+      attachSensitiveToggle(thumbWrap, thumb, sensKey, "br", () => {
+        if (hoverVideo.parentNode === thumbWrap) hoverVideo.style.filter = isBlurred(sensKey) ? "blur(14px)" : "";
+      });
+
       // Post-decode frame ops, bottom-left — set the same way whether the pass ran inline
       // at generation time (buildClipGraph meta) or afterward from this gallery
       // (writePostMeta). ⇪ = upscaled, ✧ = deblurred, ⇄ = interpolated; any can show.
@@ -1083,6 +1090,7 @@ export function createGalleryOverlay(state, ctx) {
       thumbWrap.addEventListener("mouseenter", () => {
         stopGridVideos();               // only ever one card previewing at a time
         hoverVideo.src = viewURL(v);
+        hoverVideo.style.filter = isBlurred(sensKey) ? "blur(14px)" : "";
         thumbWrap.appendChild(hoverVideo);
         hoverVideo.currentTime = 0; hoverVideo.play?.().catch(() => {});
       });

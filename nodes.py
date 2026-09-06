@@ -2171,6 +2171,58 @@ async def tj_shared_input_exists(request):
     return web.json_response({"missing": missing})
 
 
+# ── Sensitive media (눈가리기) — one shared hidden-thumbnail list ─────────────
+# The gallery 👁 toggle blurs a thumbnail. The list of blurred items is stored here,
+# server-side, so the node galleries and the web twin see the exact same set (the web
+# used to keep its own copy in localStorage — now both read/write this route).
+_SENSITIVE_PATH = os.path.join(NODE_DIR, "sensitive_media.json")
+
+
+def _sensitive_load():
+    try:
+        with open(_SENSITIVE_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return set(x for x in data if isinstance(x, str)) if isinstance(data, list) else set()
+    except Exception:
+        return set()
+
+
+def _sensitive_save(keys):
+    try:
+        with open(_SENSITIVE_PATH, "w", encoding="utf-8") as f:
+            json.dump(sorted(keys), f, ensure_ascii=False, indent=1)
+    except Exception as e:
+        print(f"[TJ_NODE_ONE] sensitive_media save error: {e}")
+
+
+@PromptServer.instance.routes.get("/tj_shared/sensitive_media")
+async def tj_shared_sensitive_get(request):
+    return web.json_response({"ok": True, "items": sorted(_sensitive_load())})
+
+
+@PromptServer.instance.routes.post("/tj_shared/sensitive_media")
+async def tj_shared_sensitive_set(request):
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "bad request"}, status=400)
+    # {items:[...]} replaces the whole set; {key, on} toggles one (merge-safe — re-read
+    # first so a second client can't clobber entries added elsewhere).
+    if isinstance(data.get("items"), list):
+        keys = set(x for x in data["items"] if isinstance(x, str) and x)
+    else:
+        key = data.get("key")
+        if not isinstance(key, str) or not key:
+            return web.json_response({"ok": False, "error": "key required"}, status=400)
+        keys = _sensitive_load()
+        if data.get("on"):
+            keys.add(key)
+        else:
+            keys.discard(key)
+    _sensitive_save(keys)
+    return web.json_response({"ok": True, "items": sorted(keys)})
+
+
 @PromptServer.instance.routes.get("/minimax_h3_one/models")
 async def mmh3_get_models(request):
     def scan(key, ext=None):

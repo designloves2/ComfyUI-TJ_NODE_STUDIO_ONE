@@ -2,6 +2,7 @@
 import { C, el, clear, SUBFOLDER } from "./core_klein.js";
 import { button, row } from "./ui_common.js";
 import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, copyOutputToInput } from "./api_klein.js";
+import { attachSensitiveToggle, mediaKey } from "../shared/ui_sensitive_media.js";
 
 const SEND_TARGETS = [
   { mode: "i2i",      field: "i2iImage",       label: "→ I2I" },
@@ -160,6 +161,7 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
     });
 
     cell.appendChild(im); cell.appendChild(star); cell.appendChild(del);
+    attachSensitiveToggle(cell, im, mediaKey(img.filename, img.subfolder || ""));
     return cell;
   }
 

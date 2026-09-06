@@ -1,6 +1,7 @@
 // ui_gallery_krea2.js — Gallery overlay for Krea 2 ONE STUDIO (TJ)
 import { C, el, clear, SUBFOLDER, BRAND } from "./core_krea2.js";
 import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, copyOutputToInput } from "./api_krea2.js";
+import { attachSensitiveToggle, mediaKey } from "../shared/ui_sensitive_media.js";
 
 const SEND_TARGETS = [
   { mode: "i2i",     field: "i2iImage",    label: "→ I2I"     },
@@ -169,6 +170,7 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
     });
 
     cell.appendChild(im); cell.appendChild(star); cell.appendChild(del);
+    attachSensitiveToggle(cell, im, mediaKey(img.filename, img.subfolder || ""));
     return cell;
   }
 

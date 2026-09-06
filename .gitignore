@@ -219,3 +219,7 @@ __marimo__/
 
 # comfy node publish artifact
 node.zip
+
+# runtime user state (per-machine, not source)
+sensitive_media.json
+studio_llm.json

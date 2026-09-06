@@ -1,6 +1,7 @@
 // ui_gallery_anima.js — Gallery overlay for Anima ONE STUDIO (TJ)
 import { C, el, clear, SUBFOLDER, BRAND } from "./core_anima.js";
 import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, copyOutputToInput } from "./api_anima.js";
+import { attachSensitiveToggle, mediaKey } from "../shared/ui_sensitive_media.js";
 
 function btn(text, onClick, variant) {
   const b = el("button", { type: "button", text, style: {
@@ -180,6 +181,7 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
     });
 
     cell.appendChild(im); cell.appendChild(star); cell.appendChild(del);
+    attachSensitiveToggle(cell, im, mediaKey(img.filename, img.subfolder || ""));
     return cell;
   }
 
