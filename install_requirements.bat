@@ -146,8 +146,15 @@ rem RIFEInterpolation - the gallery's "Interpolate a finished clip" post-process
 set REPOS[22]=https://github.com/GACLove/ComfyUI-VFI
 rem H3-Optimizations (Zironic) - backend-preserving VRAM optimizer + H3 Sparse Attention.
 set REPOS[23]=https://github.com/Zironic/H3-Optimizations
+rem OpenRouter LLM node - cloud LLM backend shared by MusicMaker (lyrics / style),
+rem the image nodes' Enhance / Image-to-Prompt panel, and MiniMax H3 Image-to-Brief.
+set REPOS[24]=https://github.com/gabe-init/ComfyUI-Openrouter_node
+rem MusicMaker ONE STUDIO (music). Ace-Step 1.5 + MiniMax Music 3 encode/sampler nodes
+rem ship with ComfyUI core; JK-AceStep-Nodes adds the JKASS quality sampler that the
+rem Ace-Step engine's KSamplerSelect defaults to (sampler_name "jkass_quality").
+set REPOS[25]=https://github.com/jeankassio/JK-AceStep-Nodes
 
-set COUNT=24
+set COUNT=26
 set /a LAST=COUNT-1
 
 :: ComfyUI Manager names a folder after the pack's pyproject "name", not the repo name.
@@ -159,6 +166,7 @@ set "ALT[14]=comfyui_nvidia_rtx_nodes"
 set "ALT[17]=minimax-h3-firstblockcache"
 set "ALT[22]=rife_comfyui_wrapper"
 set "ALT[23]=h3-optimizations"
+set "ALT[25]=comfyui-ace-step-ksampler"
 
 set /a N_NEW=0, N_UPD=0, N_CUR=0, N_FAIL=0
 

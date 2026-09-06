@@ -155,6 +155,13 @@ REPOS=(
     "https://github.com/GACLove/ComfyUI-VFI"
     # H3-Optimizations (Zironic) - backend-preserving VRAM optimizer + H3 Sparse Attention.
     "https://github.com/Zironic/H3-Optimizations"
+    # OpenRouter LLM node - cloud LLM backend shared by MusicMaker (lyrics / style), the
+    # image nodes' Enhance / Image-to-Prompt panel, and MiniMax H3 Image-to-Brief.
+    "https://github.com/gabe-init/ComfyUI-Openrouter_node"
+    # MusicMaker ONE STUDIO (music). Ace-Step 1.5 + MiniMax Music 3 encode/sampler nodes
+    # ship with ComfyUI core; JK-AceStep-Nodes adds the JKASS quality sampler that the
+    # Ace-Step engine's KSamplerSelect defaults to (sampler_name "jkass_quality").
+    "https://github.com/jeankassio/JK-AceStep-Nodes"
 )
 
 # ComfyUI Manager names a folder after the pack's pyproject `name`, which is often not
@@ -171,6 +178,7 @@ alt_folder_for() {
         ComfyUI-MiniMaxH3-FirstBlockCache) printf 'minimax-h3-firstblockcache' ;;
         ComfyUI-VFI)                       printf 'rife_comfyui_wrapper' ;;
         H3-Optimizations)                  printf 'h3-optimizations' ;;
+        JK-AceStep-Nodes)                  printf 'comfyui-ace-step-ksampler' ;;
         *) printf '' ;;
     esac
 }

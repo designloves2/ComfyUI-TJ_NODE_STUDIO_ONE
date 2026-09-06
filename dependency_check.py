@@ -41,6 +41,8 @@ _OPTIONAL = [
     ("ComfyUI-sol-attn",                  ("comfyui-sol-attn",)),
     ("ComfyUI-VFI",                       ("comfyui-vfi", "rife_comfyui_wrapper")),
     ("H3-Optimizations",                  ("h3-optimizations",)),
+    ("ComfyUI-Openrouter_node",           ("comfyui-openrouter_node", "comfyui-openrouter-node")),
+    ("JK-AceStep-Nodes",                  ("jk-acestep-nodes", "comfyui-ace-step-ksampler")),
     ("Nvidia_RTX_Nodes_ComfyUI",          ("nvidia_rtx_nodes_comfyui", "comfyui_nvidia_rtx_nodes")),
     ("comfyui-krea2-controlnet",          ("comfyui-krea2-controlnet",)),
     ("comfyui-krea2edit",                 ("comfyui-krea2edit",)),
