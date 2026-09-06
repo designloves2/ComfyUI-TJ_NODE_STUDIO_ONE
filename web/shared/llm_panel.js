@@ -29,8 +29,22 @@ async function fetchModels() {
     const d = await r.json();
     if (d.ok) { _tjNodeAvailable = true; _modelCache = d; return d; }
     _tjNodeAvailable = false;
+    // local backend unavailable — still hand back the OpenRouter fields so that path works
+    return { gguf: [], mmproj: [], vision_tasks: [], _notInstalled: true,
+             openrouter_key_hint: d.openrouter_key_hint || "", or_model: d.or_model || "" };
   } catch { _tjNodeAvailable = false; }
   return { gguf: [], mmproj: [], vision_tasks: [], _notInstalled: true };
+}
+
+let _orModelsCache = null;
+async function fetchOrModels() {
+  if (_orModelsCache) return _orModelsCache;
+  try {
+    const r = await fetch("/music_one/openrouter_models");
+    const d = await r.json();
+    _orModelsCache = Array.isArray(d.models) ? d.models : [];
+  } catch { _orModelsCache = []; }
+  return _orModelsCache;
 }
 
 // ── Not-installed banner — points at the installer / Manager ─────────────────
@@ -227,6 +241,8 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   // ── Persist LLM settings across sessions ──────────────────────────────────
   const cfg = loadLLMSettings();
   const llm = {
+    backend:            cfg.backend             || "local",   // "local" | "openrouter"
+    or_model:           cfg.or_model            || "",
     gguf_model:         cfg.gguf_model         || "",
     mmproj_file:        cfg.mmproj_file         || "none",
     vision_task:        cfg.vision_task         || "Caption (plain description)",
@@ -241,6 +257,79 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     seed:               cfg.seed                ?? 0,
   };
   function saveLLM() { saveLLMSettings(llm); }
+
+  // ── Backend selector (Local GGUF | OpenRouter) — one instance per panel, both
+  //    share llm.backend / llm.or_model. The key itself goes to the server .env.
+  const _backendBlocks = [];
+  function pushOrModel() {
+    fetch("/tj_studio_one/llm/config", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ or_model: llm.or_model }),
+    }).catch(() => {});
+  }
+  function syncBackendBlocks() {
+    for (const b of _backendBlocks) { b._syncFromState(); }
+  }
+  function makeBackendBlock() {
+    const wrap = document.createElement("div");
+    Object.assign(wrap.style, { display: "flex", flexDirection: "column", gap: "6px", marginBottom: "2px" });
+
+    const beSel = makeSelect(["Local GGUF", "OpenRouter"],
+      llm.backend === "openrouter" ? "OpenRouter" : "Local GGUF",
+      (v) => { llm.backend = v === "OpenRouter" ? "openrouter" : "local"; saveLLM(); syncBackendBlocks(); });
+    wrap.appendChild(labelRow("Backend", beSel));
+
+    const orGroup = document.createElement("div");
+    Object.assign(orGroup.style, { display: "flex", flexDirection: "column", gap: "6px" });
+    const orSel = makeSelect([llm.or_model || "Loading…"], llm.or_model,
+      (v) => { llm.or_model = v; saveLLM(); pushOrModel(); syncBackendBlocks(); });
+    orGroup.appendChild(labelRow("OpenRouter model", orSel));
+
+    const keyInp = document.createElement("input");
+    keyInp.type = "password";
+    keyInp.placeholder = "sk-or-… (stored in .env)";
+    Object.assign(keyInp.style, {
+      background: "#1a1a1a", color: "#ddd", border: "1px solid #444",
+      borderRadius: "4px", padding: "3px 5px", fontSize: "11px", width: "100%", boxSizing: "border-box",
+    });
+    keyInp.addEventListener("blur", () => {
+      const v = keyInp.value.trim();
+      if (!v || v.includes("*")) return;
+      fetch("/tj_studio_one/llm/config", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ openrouter_key: v }),
+      }).then(() => { keyInp.value = ""; keyInp.placeholder = "✓ key saved to .env"; });
+    });
+    orGroup.appendChild(labelRow("OpenRouter API key", keyInp));
+    wrap.appendChild(orGroup);
+
+    wrap._localOnly = [];   // labelRows only meaningful for the local backend
+    wrap._syncFromState = () => {
+      beSel.value = llm.backend === "openrouter" ? "OpenRouter" : "Local GGUF";
+      orSel.value = llm.or_model;
+      const or = llm.backend === "openrouter";
+      orGroup.style.display = or ? "flex" : "none";
+      for (const row of wrap._localOnly) row.style.display = or ? "none" : "flex";
+    };
+    wrap._fill = (orModels, keyHint) => {
+      if (orModels && orModels.length) {
+        orSel.innerHTML = "";
+        for (const m of orModels) {
+          const o = document.createElement("option");
+          o.value = m; o.textContent = m;
+          if (m === llm.or_model) o.selected = true;
+          orSel.appendChild(o);
+        }
+        if (!llm.or_model) {
+          llm.or_model = orModels.find((m) => /gemini-2\.5-flash/.test(m)) || orModels[0];
+          saveLLM(); orSel.value = llm.or_model;
+        }
+      }
+      if (keyHint) keyInp.placeholder = keyHint + "  — click to replace";
+    };
+    _backendBlocks.push(wrap);
+    return wrap;
+  }
 
   // ── Restructure existing expand overlay ───────────────────────────────────
   // promptExpandEl currently: flex column, has pxHdr child + pxTA child
@@ -315,15 +404,21 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     borderRight: "1px solid #333",
   });
 
+  const enhBackend = makeBackendBlock();
+  enhLeft.appendChild(enhBackend);
+
   // GGUF model select (populated after fetch)
   const ggufSelE = makeSelect([llm.gguf_model || "Loading…"], llm.gguf_model, v => { llm.gguf_model = v; saveLLM(); });
-  enhLeft.appendChild(labelRow(t("llm_lbl_gguf"), ggufSelE));
+  const rowGgufE = labelRow(t("llm_lbl_gguf"), ggufSelE);
+  enhLeft.appendChild(rowGgufE); enhBackend._localOnly.push(rowGgufE);
 
   const gpuLayersE = makeNumberInput(llm.n_gpu_layers, -1, 999, 1, v => { llm.n_gpu_layers = v; saveLLM(); });
-  enhLeft.appendChild(labelRow(t("llm_lbl_gpu_layers"), gpuLayersE));
+  const rowGpuE = labelRow(t("llm_lbl_gpu_layers"), gpuLayersE);
+  enhLeft.appendChild(rowGpuE); enhBackend._localOnly.push(rowGpuE);
 
   const nCtxE = makeNumberInput(llm.n_ctx, 512, 32768, 512, v => { llm.n_ctx = v; saveLLM(); });
-  enhLeft.appendChild(labelRow(t("llm_lbl_ctx"), nCtxE));
+  const rowCtxE = labelRow(t("llm_lbl_ctx"), nCtxE);
+  enhLeft.appendChild(rowCtxE); enhBackend._localOnly.push(rowCtxE);
 
   const maxTokE = makeNumberInput(llm.max_tokens, 50, 4096, 50, v => { llm.max_tokens = v; saveLLM(); });
   enhLeft.appendChild(labelRow(t("llm_lbl_max_tokens"), maxTokE));
@@ -392,6 +487,8 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt,
+          backend:            llm.backend,
+          or_model:           llm.or_model,
           gguf_model:         llm.gguf_model,
           n_gpu_layers:       llm.n_gpu_layers,
           n_ctx:              llm.n_ctx,
@@ -557,11 +654,16 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
 
   i2pLeft.appendChild(labelRow(t("llm_lbl_image"), imgWrap));
 
+  const i2pBackend = makeBackendBlock();
+  i2pLeft.appendChild(i2pBackend);
+
   const ggufSelI = makeSelect([llm.gguf_model || "Loading…"], llm.gguf_model, v => { llm.gguf_model = v; saveLLM(); ggufSelE.value = v; });
-  i2pLeft.appendChild(labelRow(t("llm_lbl_gguf"), ggufSelI));
+  const rowGgufI = labelRow(t("llm_lbl_gguf"), ggufSelI);
+  i2pLeft.appendChild(rowGgufI); i2pBackend._localOnly.push(rowGgufI);
 
   const mmprojSel = makeSelect([llm.mmproj_file || "none"], llm.mmproj_file, v => { llm.mmproj_file = v; saveLLM(); });
-  i2pLeft.appendChild(labelRow(t("llm_lbl_mmproj"), mmprojSel));
+  const rowMmproj = labelRow(t("llm_lbl_mmproj"), mmprojSel);
+  i2pLeft.appendChild(rowMmproj); i2pBackend._localOnly.push(rowMmproj);
 
   const vtSel = makeSelect(["Caption (plain description)"], llm.vision_task, v => { llm.vision_task = v; saveLLM(); });
   i2pLeft.appendChild(labelRow(t("llm_lbl_vision_task"), vtSel));
@@ -585,7 +687,8 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   i2pLeft.appendChild(labelRow(t("llm_lbl_custom_instruction"), customInstrTA));
 
   const gpuLayersI = makeNumberInput(llm.n_gpu_layers, -1, 999, 1, v => { llm.n_gpu_layers = v; saveLLM(); gpuLayersE.value = v; });
-  i2pLeft.appendChild(labelRow(t("llm_lbl_gpu_layers"), gpuLayersI));
+  const rowGpuI = labelRow(t("llm_lbl_gpu_layers"), gpuLayersI);
+  i2pLeft.appendChild(rowGpuI); i2pBackend._localOnly.push(rowGpuI);
 
   const maxTokI = makeNumberInput(llm.max_tokens, 50, 4096, 50, v => { llm.max_tokens = v; saveLLM(); maxTokE.value = v; });
   i2pLeft.appendChild(labelRow(t("llm_lbl_max_tokens"), maxTokI));
@@ -662,6 +765,8 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           image_b64:          _i2pImageB64,
+          backend:            llm.backend,
+          or_model:           llm.or_model,
           gguf_model:         llm.gguf_model,
           mmproj_file:        llm.mmproj_file,
           vision_task:        llm.vision_task,
@@ -779,15 +884,32 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   function loadModelsOnce() {
     if (_modelsLoaded) return;
     _modelsLoaded = true;
-    fetchModels().then(d => {
+    Promise.all([fetchModels(), fetchOrModels()]).then(([d, orModels]) => {
       if (d._notInstalled) {
-        _showNotInstalledInPanel(panelEnhance);
-        _showNotInstalledInPanel(panelI2P);
+        // Local GGUF path is gone, but OpenRouter still works — force that backend,
+        // fill the model list + key hint, and drop a slim note instead of blanking.
+        llm.backend = "openrouter"; saveLLM();
+        for (const b of _backendBlocks) {
+          b._fill(orModels, d.openrouter_key_hint);
+          b._localOnly.forEach(r => r.remove());
+          b._syncFromState();
+        }
+        const note = () => {
+          const n = document.createElement("div");
+          n.textContent = "Local GGUF LLM (TJ_NODE) not installed — using OpenRouter. Paste a key below if the field is empty.";
+          Object.assign(n.style, { fontSize: "10px", color: "#c9a24b", lineHeight: "1.5", marginBottom: "4px" });
+          return n;
+        };
+        enhLeft.insertBefore(note(), enhLeft.firstChild);
+        i2pLeft.insertBefore(note(), i2pLeft.firstChild);
         return;
       }
       populateSelects(d);
+      for (const b of _backendBlocks) { b._fill(orModels, d.openrouter_key_hint); b._syncFromState(); }
     });
   }
+
+  syncBackendBlocks();   // hide the OpenRouter group until the backend select picks it
 
   // Hook into the expand overlay's show — load models when first opened
   const _origShow = promptExpandEl._tj_show_hook;

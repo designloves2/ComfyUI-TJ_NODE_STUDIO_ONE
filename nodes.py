@@ -1527,9 +1527,15 @@ async def studio_llm_download_image(request):
 
 @PromptServer.instance.routes.get("/tj_studio_one/llm/models")
 async def studio_llm_models(request):
+    _or = {
+        "openrouter_key_set": bool(_openrouter_api_key()),
+        "openrouter_key_hint": _mask_secret(_openrouter_api_key()),
+        "or_model": _studio_llm_load().get("or_model", ""),
+    }
     _, _, utils = _try_import_tj_llm()
     if utils is None:
-        return web.json_response({"ok": False, "error": "TJ_NODE2 not installed", "gguf": [], "mmproj": []})
+        return web.json_response({"ok": False, "error": "TJ_NODE2 not installed",
+                                  "gguf": [], "mmproj": [], "local_available": False, **_or})
     try:
         gguf_list = utils._text_encoder_ggufs(exclude_mmproj=True)
         mmproj_list = utils._text_encoder_mmproj_options()
@@ -1548,15 +1554,30 @@ async def studio_llm_models(request):
             "model_formats": model_formats,
             "aesthetics": aesthetics,
             "purposes": purposes,
+            "local_available": True,
+            **_or,
         })
     except Exception as e:
-        return web.json_response({"ok": False, "error": str(e), "gguf": [], "mmproj": []})
+        return web.json_response({"ok": False, "error": str(e), "gguf": [], "mmproj": [], **_or})
 
 
 @PromptServer.instance.routes.post("/tj_studio_one/llm/enhance")
 async def studio_llm_enhance(request):
     import asyncio
     data = await request.json()
+
+    if (data.get("backend") or "").lower() == "openrouter":
+        model = data.get("or_model") or _studio_llm_load().get("or_model", "") or "google/gemini-2.5-flash"
+        try:
+            loop = asyncio.get_event_loop()
+            text = await loop.run_in_executor(
+                None, _openrouter_chat, _studio_enhance_system(data),
+                str(data.get("prompt", "")), model,
+                float(data.get("temperature", 0.7)), int(data.get("max_tokens", 1000)))
+            return web.json_response({"ok": True, "result": text})
+        except Exception as e:
+            return web.json_response({"ok": False, "error": str(e)})
+
     TJ_PromptEnhancer, _, _ = _try_import_tj_llm()
     if TJ_PromptEnhancer is None:
         return web.json_response({"ok": False, "error": "TJ_NODE2 not installed"})
@@ -1600,6 +1621,26 @@ async def studio_llm_image_to_prompt(request):
     import asyncio, base64
     from io import BytesIO
     data = await request.json()
+
+    if (data.get("backend") or "").lower() == "openrouter":
+        img_b64 = data.get("image_b64", "")
+        if not img_b64:
+            return web.json_response({"ok": False, "error": "No image data"})
+        model = data.get("or_model") or _studio_llm_load().get("or_model", "") or "google/gemini-2.5-flash"
+        vt = data.get("vision_task", "Caption (plain description)")
+        ci = (data.get("custom_instruction", "") or "").strip()
+        sys_p = ("You look at an image and produce a text-to-image prompt describing it.\n"
+                 "- Output ONLY the description — no preamble, no quotes, no markdown.\n"
+                 f"- Style of description: {vt}.\n" + (f"- {ci}\n" if ci else ""))
+        try:
+            loop = asyncio.get_event_loop()
+            text = await loop.run_in_executor(
+                None, _openrouter_vision, sys_p, "Describe this image.", img_b64, model,
+                float(data.get("temperature", 0.7)), int(data.get("max_tokens", 1000)))
+            return web.json_response({"ok": True, "result": text})
+        except Exception as e:
+            return web.json_response({"ok": False, "error": str(e)})
+
     _, TJ_ImageToPrompt, _ = _try_import_tj_llm()
     if TJ_ImageToPrompt is None:
         return web.json_response({"ok": False, "error": "TJ_NODE2 not installed"})
@@ -3835,6 +3876,119 @@ def _openrouter_chat(system_prompt, user_text, model, temperature=0.7, max_token
         f"OpenRouter returned no text (finish_reason={fr or 'unknown'}) — the model "
         f"spent its whole budget on reasoning. Pick a non-reasoning model "
         f"(e.g. google/gemini-2.5-flash, anthropic/claude-3.5-haiku).")
+
+
+def _openrouter_vision(system_prompt, user_text, image_b64, model, temperature=0.7, max_tokens=1200):
+    """One OpenRouter chat turn with an image attached (data URI). For Image → Prompt."""
+    import urllib.request, urllib.error
+    key = _openrouter_api_key()
+    if not key:
+        raise RuntimeError("OpenRouter API key 없음 — Settings에서 키를 넣어주세요.")
+    b64 = image_b64 if image_b64.startswith("data:") else ("data:image/jpeg;base64," + image_b64.split(",")[-1])
+    payload = {
+        "model": model or "google/gemini-2.5-flash",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": [
+                {"type": "text", "text": user_text or "Describe this image."},
+                {"type": "image_url", "image_url": {"url": b64}},
+            ]},
+        ],
+        "temperature": float(temperature),
+        "max_tokens": max(int(max_tokens), 1200),
+        "reasoning": {"exclude": True},
+    }
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {key}", "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE",
+            "X-Title": "ONE STUDIO",
+        }, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            d = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as he:
+        detail = ""
+        try:
+            detail = json.loads(he.read().decode("utf-8")).get("error", {}).get("message", "")
+        except Exception:
+            pass
+        raise RuntimeError(f"OpenRouter {he.code}: {detail or he.reason}")
+    if isinstance(d, dict) and d.get("error"):
+        err = d["error"]
+        raise RuntimeError(err.get("message") if isinstance(err, dict) else str(err))
+    ch0 = (d.get("choices") or [{}])[0]
+    msg = ch0.get("message") or {}
+    content = msg.get("content")
+    if isinstance(content, list):
+        content = "".join(p.get("text", "") for p in content if isinstance(p, dict))
+    content = (content or msg.get("reasoning") or "").strip()
+    if not content:
+        raise RuntimeError("OpenRouter returned no text — try a vision model like google/gemini-2.5-flash.")
+    return _strip_thinking(content)
+
+
+# One shared little store for the image-node LLM panel's OpenRouter model choice
+# (the key itself lives in .env). Gitignored — per-machine runtime state.
+_STUDIO_LLM_PATH = os.path.join(NODE_DIR, "studio_llm.json")
+
+
+def _studio_llm_load():
+    try:
+        with open(_STUDIO_LLM_PATH, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def _studio_llm_save(patch):
+    d = _studio_llm_load()
+    d.update({k: v for k, v in patch.items() if v is not None})
+    try:
+        with open(_STUDIO_LLM_PATH, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[TJ_NODE_ONE] studio_llm save error: {e}")
+
+
+@PromptServer.instance.routes.post("/tj_studio_one/llm/config")
+async def studio_llm_config(request):
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "bad request"}, status=400)
+    if "openrouter_key" in data and data["openrouter_key"] is not None:
+        _write_openrouter_key(data["openrouter_key"])
+    if data.get("or_model"):
+        _studio_llm_save({"or_model": data["or_model"]})
+    return web.json_response({
+        "ok": True,
+        "openrouter_key_set": bool(_openrouter_api_key()),
+        "openrouter_key_hint": _mask_secret(_openrouter_api_key()),
+        "or_model": _studio_llm_load().get("or_model", ""),
+    })
+
+
+def _studio_enhance_system(data):
+    fmt = data.get("model_format", "Universal Natural Language")
+    aes = data.get("aesthetic", "None (no aesthetic injection)")
+    extra = (data.get("extra_instructions", "") or "").strip()
+    purpose = data.get("purpose", "Image")
+    s = ("You rewrite a short text-to-" + ("video" if "Video" in purpose else "image") +
+         " prompt into a richer, more vivid one.\n"
+         "- Output ONLY the rewritten prompt — no preamble, no quotes, no markdown, no explanation.\n"
+         "- Keep the user's subject and intent; add concrete detail: composition, lighting, "
+         "materials, mood, lens and style cues.\n"
+         "- Do not invent a different scene; deepen the one given.\n"
+         f"- Target phrasing style: {fmt}.\n")
+    if aes and "None" not in aes:
+        s += f"- Aesthetic direction: {aes}.\n"
+    if extra:
+        s += f"- Extra instructions: {extra}\n"
+    return s
 
 
 @PromptServer.instance.routes.get("/music_one/openrouter_models")
