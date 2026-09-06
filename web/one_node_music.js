@@ -1096,16 +1096,33 @@ app.registerExtension({
               el("div"),
             );
             acc.appendChild(g3);
-            acc.appendChild(el("div", { className: "hd", text: "3-stage refine — steps / cfg" }));
+            acc.appendChild(el("div", { className: "hd", text: "Sampling stages — steps / cfg (stage 1 always; 2→3 sequential)" }));
             const stg = el("div", { className: "mmm-grid3" });
             state.aceStages.forEach((s, i) => {
-              const c = el("div");
-              c.appendChild(el("label", { className: "mmm-lbl", text: `stage ${i + 1}` }));
+              if (i === 0) s.on = true;
+              const prevOn = i === 0 ? true : state.aceStages[i - 1].on !== false;
+              const active = s.on !== false && prevOn;
+              const c = el("div", { style: { opacity: active || i === 0 ? "1" : ".4" }});
+              const lblRow = el("label", { className: "mmm-lbl", style: { display: "flex", alignItems: "center", gap: "5px", cursor: i === 0 ? "default" : "pointer" }});
+              if (i > 0) {
+                const cb = el("input", { type: "checkbox", style: { accentColor: BRAND, width: "13px", height: "13px", margin: "0" }});
+                cb.checked = active;
+                cb.disabled = !prevOn;
+                cb.onchange = () => {
+                  s.on = cb.checked;
+                  // turning a stage off cascades to every later stage
+                  if (!cb.checked) for (let k = i + 1; k < state.aceStages.length; k++) state.aceStages[k].on = false;
+                  persist(); renderCompose();
+                };
+                lblRow.appendChild(cb);
+              }
+              lblRow.appendChild(el("span", { text: `stage ${i + 1}` }));
+              c.appendChild(lblRow);
               const rr = el("div", { style: { display: "flex", gap: "4px" }});
-              rr.append(
-                fld(s.steps, (v) => { s.steps = Math.round(v); persist(); }, { num: true }),
-                fld(s.cfg, (v) => { s.cfg = v; persist(); }, { num: true }),
-              );
+              const st = fld(s.steps, (v) => { s.steps = Math.round(v); persist(); }, { num: true });
+              const cf = fld(s.cfg, (v) => { s.cfg = v; persist(); }, { num: true });
+              if (!active && i !== 0) { st.disabled = true; cf.disabled = true; }
+              rr.append(st, cf);
               c.appendChild(rr); stg.appendChild(c);
             });
             acc.appendChild(stg);

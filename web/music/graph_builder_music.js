@@ -181,8 +181,15 @@ function buildAceStepGraph(state, opts) {
     throw new Error("Pick the Ace-Step models (Diffusion / CLIP ×2 / VAE) in Settings.");
   const r = resolveCommon(state, opts);
   const P = "ACE";
-  const stages = (state.aceStages && state.aceStages.length ? state.aceStages
+  const allStages = (state.aceStages && state.aceStages.length ? state.aceStages
                   : [{ steps: 30, cfg: 0 }, { steps: 20, cfg: 1 }, { steps: 15, cfg: 1 }]);
+  // stage 1 always; 2 & 3 are sequential — stage 3 only runs if stage 2 does
+  const stages = [];
+  allStages.forEach((st, i) => {
+    if (i === 0) { stages.push(st); return; }
+    const prevOn = i === 1 ? true : (stages.length >= 2);
+    if (st.on !== false && prevOn) stages.push(st);
+  });
   const sched  = state.aceScheduler || "sgm_uniform";
   const g = {};
   g[`${P}:unet`] = unetNode(unet);
@@ -223,7 +230,7 @@ function buildAceStepGraph(state, opts) {
   const meta = { ...commonMeta(state, r),
     aceUnet: unet, aceClip1: clip1, aceClip2: clip2, aceVae: vae,
     aceShift: state.aceShift ?? 3, aceSamplerName: state.aceSamplerName || "jkass_quality",
-    aceScheduler: sched, aceStages: stages,
+    aceScheduler: sched, aceStages: allStages, aceStagesRun: stages.length,
     bpm: Math.round(state.bpm ?? 120), keyscale: state.keyscale || "A minor",
     timesignature: String(state.timesignature || "4"), language: state.language || "en",
     cfgScaleAce: state.cfgScaleAce ?? 2.5, temperature: state.temperature ?? 0.75,

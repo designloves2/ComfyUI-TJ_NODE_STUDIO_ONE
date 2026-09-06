@@ -129,8 +129,10 @@ export function defaultState(saved) {
     aceShift:       saved.aceShift       ?? 3,
     aceSamplerName: saved.aceSamplerName || "jkass_quality",
     aceScheduler:   saved.aceScheduler   || "sgm_uniform",
-    aceStages:      Array.isArray(saved.aceStages) ? saved.aceStages
-                    : [{ steps: 30, cfg: 0 }, { steps: 20, cfg: 1 }, { steps: 15, cfg: 1 }],
+    // stage 1 always runs; stages 2 & 3 are sequential opt-in (3 needs 2 on)
+    aceStages:      Array.isArray(saved.aceStages)
+                    ? saved.aceStages.map((s, i) => ({ steps: s.steps, cfg: s.cfg, on: i === 0 ? true : s.on !== false }))
+                    : [{ steps: 30, cfg: 0, on: true }, { steps: 20, cfg: 1, on: true }, { steps: 15, cfg: 1, on: true }],
     // Ace-Step TextEncodeAceStepAudio1.5 params
     bpm:          saved.bpm          ?? 120,
     keyscale:     saved.keyscale     || "A minor",
