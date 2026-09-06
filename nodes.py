@@ -2289,9 +2289,14 @@ async def tj_shared_sensitive_set(request):
         data = await request.json()
     except Exception:
         return web.json_response({"ok": False, "error": "bad request"}, status=400)
-    # {items:[...]} replaces the whole set; {key, on} toggles one (merge-safe — re-read
-    # first so a second client can't clobber entries added elsewhere).
-    if isinstance(data.get("items"), list):
+    # {add:[...]} unions into the existing set (used once to seed the web's old
+    # localStorage list without clobbering anything); {items:[...]} replaces the whole
+    # set; {key, on} toggles one (merge-safe — re-read first so a concurrent client
+    # can't clobber entries added elsewhere).
+    if isinstance(data.get("add"), list):
+        keys = _sensitive_load()
+        keys |= set(x for x in data["add"] if isinstance(x, str) and x)
+    elif isinstance(data.get("items"), list):
         keys = set(x for x in data["items"] if isinstance(x, str) and x)
     else:
         key = data.get("key")
