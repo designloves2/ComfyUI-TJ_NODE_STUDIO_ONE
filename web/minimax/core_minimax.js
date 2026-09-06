@@ -872,6 +872,8 @@ export function defaultState(saved) {
     visionSource:    "native",
     nativeVisionClip: saved.nativeVisionClip || "Qwen3\\qwen_3vl_8b_nvfp4.safetensors",
     nativeBriefClip:  saved.nativeBriefClip  || "LTX\\gemma4_e2b_it_bf16.safetensors",
+    h3LlmBackend:     saved.h3LlmBackend     || "native",   // "native" | "openrouter"
+    h3OrModel:        saved.h3OrModel        || "",
 
     // output
     saveSubfolder: saved.saveSubfolder || "",

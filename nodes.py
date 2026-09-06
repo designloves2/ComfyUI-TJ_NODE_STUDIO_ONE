@@ -1698,6 +1698,46 @@ PromptServer.instance.routes.post("/minimax_h3_one/copy_to_input")(_make_copy_to
 PromptServer.instance.routes.get("/minimax_h3_one/lora_triggers")(_make_lora_triggers_handler())
 
 
+@PromptServer.instance.routes.post("/minimax_h3_one/llm/analyze")
+async def mmh3_llm_analyze(request):
+    """Image → summary via OpenRouter vision (the cloud alternative to the native
+    TJ_MultiImageLoader + TextGenerate path). Body: {images:[input filenames], prompt, or_model}."""
+    import asyncio
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "bad request"}, status=400)
+    model = data.get("or_model") or _studio_llm_load().get("or_model", "") or "google/gemini-2.5-flash"
+    try:
+        loop = asyncio.get_event_loop()
+        text = await loop.run_in_executor(
+            None, _openrouter_vision_multi,
+            "You describe reference images for a video prompt writer.",
+            str(data.get("prompt", "")), data.get("images") or [], model, 0.5, 1600)
+        return web.json_response({"ok": True, "text": text})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+
+
+@PromptServer.instance.routes.post("/minimax_h3_one/llm/write_brief")
+async def mmh3_llm_write_brief(request):
+    """Text-only brief writing via OpenRouter. Body: {system, user, or_model}."""
+    import asyncio
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "bad request"}, status=400)
+    model = data.get("or_model") or _studio_llm_load().get("or_model", "") or "google/gemini-2.5-flash"
+    try:
+        loop = asyncio.get_event_loop()
+        text = await loop.run_in_executor(
+            None, _openrouter_chat, str(data.get("system", "")), str(data.get("user", "")),
+            model, 0.7, int(data.get("max_tokens", 2000)))
+        return web.json_response({"ok": True, "text": text})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+
+
 @PromptServer.instance.routes.get("/minimax_h3_one/videos")
 async def mmh3_list_videos(request):
     """Clips and stitched files in the node's output folder, newest first.
@@ -2022,6 +2062,8 @@ async def mmh3_get_config(request):
         # Ollama was removed; native is the only backend now.
         "vision_source":         "native",
         "native_vision_clip":    cfg.get("native_vision_clip",    "Qwen3\\qwen_3vl_8b_nvfp4.safetensors"),
+        "h3_llm_backend":        cfg.get("h3_llm_backend",        "native"),
+        "h3_or_model":           cfg.get("h3_or_model",           ""),
         "filename_prefix":       cfg.get("filename_prefix",       "MMH3"),
         "stitch_at_end":         cfg.get("stitch_at_end",         True),
         "trim_last_clip":        cfg.get("trim_last_clip",        False),
@@ -3927,6 +3969,68 @@ def _openrouter_vision(system_prompt, user_text, image_b64, model, temperature=0
     content = (content or msg.get("reasoning") or "").strip()
     if not content:
         raise RuntimeError("OpenRouter returned no text — try a vision model like google/gemini-2.5-flash.")
+    return _strip_thinking(content)
+
+
+def _openrouter_vision_multi(system_prompt, user_text, image_paths, model, temperature=0.7, max_tokens=1600):
+    """OpenRouter chat with several images attached — for MiniMax H3's Image → Brief.
+    image_paths are filenames in ComfyUI's input folder."""
+    import urllib.request, urllib.error, base64, mimetypes
+    key = _openrouter_api_key()
+    if not key:
+        raise RuntimeError("OpenRouter API key 없음 — Settings에서 키를 넣어주세요.")
+    parts = [{"type": "text", "text": user_text or "Describe these images."}]
+    in_dir = folder_paths.get_input_directory()
+    for fn in (image_paths or [])[:12]:
+        if not isinstance(fn, str) or os.path.basename(fn) != fn:
+            continue
+        p = os.path.join(in_dir, fn)
+        if not os.path.isfile(p):
+            continue
+        mime = mimetypes.guess_type(p)[0] or "image/jpeg"
+        with open(p, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("ascii")
+        parts.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
+    if len(parts) == 1:
+        raise RuntimeError("no readable images in the input folder")
+    payload = {
+        "model": model or "google/gemini-2.5-flash",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": parts},
+        ],
+        "temperature": float(temperature),
+        "max_tokens": max(int(max_tokens), 1600),
+        "reasoning": {"exclude": True},
+    }
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                 "HTTP-Referer": "https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE",
+                 "X-Title": "ONE STUDIO"},
+        method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=200) as resp:
+            d = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as he:
+        detail = ""
+        try:
+            detail = json.loads(he.read().decode("utf-8")).get("error", {}).get("message", "")
+        except Exception:
+            pass
+        raise RuntimeError(f"OpenRouter {he.code}: {detail or he.reason}")
+    if isinstance(d, dict) and d.get("error"):
+        err = d["error"]
+        raise RuntimeError(err.get("message") if isinstance(err, dict) else str(err))
+    ch0 = (d.get("choices") or [{}])[0]
+    msg = ch0.get("message") or {}
+    content = msg.get("content")
+    if isinstance(content, list):
+        content = "".join(p.get("text", "") for p in content if isinstance(p, dict))
+    content = (content or msg.get("reasoning") or "").strip()
+    if not content:
+        raise RuntimeError("OpenRouter returned no text — try google/gemini-2.5-flash.")
     return _strip_thinking(content)
 
 

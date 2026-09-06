@@ -192,10 +192,64 @@ export function createSettingsOverlay(state, ctx) {
   // Two model pickers, swapped out by source. Declared at module scope inside
   // the LLM tab so the model pickers can be re-rendered when availability arrives.
   let renderModelPickersInto = null;
+  let _orModels = null;
+  async function orModels() {
+    if (_orModels) return _orModels;
+    try { _orModels = (await (await fetch("/music_one/openrouter_models")).json()).models || []; }
+    catch { _orModels = []; }
+    return _orModels;
+  }
+
   function renderModelPickers() {
     const wrap2 = renderModelPickersInto;
     if (!wrap2) return;
     clear(wrap2);
+
+    // Backend: native ComfyUI CLIP, or OpenRouter (cloud). The OpenRouter key is the
+    // one shared with the image + music nodes (server .env).
+    const beSel = el("select", { style: {
+      width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+      border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px", fontSize: "12px", fontFamily: "inherit",
+    }}, [
+      el("option", { value: "native",     text: "Native (ComfyUI CLIP)", ...(state.h3LlmBackend !== "openrouter" ? { selected: "selected" } : {}) }),
+      el("option", { value: "openrouter", text: "OpenRouter (cloud)",     ...(state.h3LlmBackend === "openrouter" ? { selected: "selected" } : {}) }),
+    ]);
+    beSel.addEventListener("change", () => { state.h3LlmBackend = beSel.value; ctx.persist(); renderModelPickers(); });
+    wrap2.appendChild(col([label("LLM backend"), beSel]));
+
+    if (state.h3LlmBackend === "openrouter") {
+      const orSel = el("select", { style: {
+        width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+        border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px", fontSize: "12px", fontFamily: "inherit",
+      }}, [el("option", { value: state.h3OrModel || "", text: state.h3OrModel || "loading models…" })]);
+      orSel.addEventListener("change", () => {
+        state.h3OrModel = orSel.value; ctx.persist();
+        fetch("/tj_studio_one/llm/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ or_model: orSel.value }) }).catch(() => {});
+      });
+      orModels().then(ms => {
+        if (!ms.length) return;
+        clear(orSel);
+        ms.forEach(m => orSel.appendChild(el("option", { value: m, text: m, ...(m === state.h3OrModel ? { selected: "selected" } : {}) })));
+        if (!state.h3OrModel) { state.h3OrModel = ms.find(m => /gemini-2\.5-flash/.test(m)) || ms[0]; ctx.persist(); orSel.value = state.h3OrModel; }
+      });
+      const keyIn = el("input", { type: "password", placeholder: "sk-or-… (stored in .env, shared)", style: {
+        width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+        border: `1px solid ${C.border}`, borderRadius: "6px", padding: "5px 7px", fontSize: "11px", fontFamily: "inherit",
+      }});
+      keyIn.addEventListener("blur", () => {
+        const v = keyIn.value.trim();
+        if (!v || v.includes("*")) return;
+        fetch("/tj_studio_one/llm/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ openrouter_key: v }) })
+          .then(() => { keyIn.value = ""; keyIn.placeholder = "✓ key saved to .env"; });
+      });
+      fetch("/tj_studio_one/llm/models").then(r => r.json()).then(d => { if (d.openrouter_key_hint) keyIn.placeholder = d.openrouter_key_hint + " — click to replace"; }).catch(() => {});
+      wrap2.append(
+        col([label("OpenRouter model"), orSel]),
+        col([label("OpenRouter API key"), keyIn]),
+        el("div", { text: "Reads reference images + writes the brief through OpenRouter — no ComfyUI CLIP load, no queue turn.", style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+      );
+      return;
+    }
     {
       const missing = [];
       if (!availability.available?.TJ_MultiImageLoader)  missing.push("TJ_MultiImageLoader (TJ_NODE)");
@@ -422,6 +476,8 @@ export function createSettingsOverlay(state, ctx) {
       cache_max_steps:  state.cacheMaxSteps  ?? 2,
       vision_source:         "native",   // the Ollama backend was removed
       native_vision_clip:    state.nativeVisionClip  || "",
+      h3_llm_backend:        state.h3LlmBackend      || "native",
+      h3_or_model:           state.h3OrModel         || "",
       filename_prefix:       state.filenamePrefix    || "MMH3",
       stitch_at_end:         state.stitchAtEnd       ?? true,
       trim_last_clip:        state.trimLastClip      ?? false,
@@ -522,6 +578,8 @@ export function createSettingsOverlay(state, ctx) {
     if (cfg.cache_end != null)        state.cacheEnd       = cfg.cache_end;
     if (cfg.cache_max_steps != null)  state.cacheMaxSteps  = cfg.cache_max_steps;
     if (cfg.native_vision_clip)       state.nativeVisionClip = cfg.native_vision_clip;
+    if (cfg.h3_llm_backend)           state.h3LlmBackend     = cfg.h3_llm_backend;
+    if (cfg.h3_or_model)              state.h3OrModel        = cfg.h3_or_model;
     if (cfg.filename_prefix)          state.filenamePrefix   = cfg.filename_prefix;
     if (cfg.stitch_at_end != null)          state.stitchAtEnd        = cfg.stitch_at_end;
     if (cfg.trim_last_clip != null)         state.trimLastClip       = cfg.trim_last_clip;

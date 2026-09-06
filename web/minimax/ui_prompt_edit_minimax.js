@@ -13,7 +13,7 @@ import { openVideoGalleryPicker } from "./ui_video_picker_minimax.js";
 import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
 import { openAudioGalleryPicker } from "../shared/ui_audio_gallery_picker.js";
 import { ask } from "../shared/ui_ask.js";
-import { getMediaFiles, getSystemPrompt, uploadImage, uploadMedia, analyzeImagesNative, writeBriefNative, listPromptSets, getPromptSet, savePromptSet, deletePromptSet, missingInputFiles } from "./api_minimax.js";
+import { getMediaFiles, getSystemPrompt, uploadImage, uploadMedia, analyzeImagesNative, writeBriefNative, analyzeImagesOpenRouter, writeBriefOpenRouter, listPromptSets, getPromptSet, savePromptSet, deletePromptSet, missingInputFiles } from "./api_minimax.js";
 
 // A prompt entry may still arrive as a plain string (mid-migration data); normalize once.
 function normPrompt(p) {
@@ -981,6 +981,14 @@ ${name}`, style: {
   function renderModelSel() {
     clear(modelSelWrap);
     const needImage = enhMode === "image";
+    if (state.h3LlmBackend === "openrouter") {
+      modelSelWrap.appendChild(el("div", {
+        text: `OpenRouter · ${state.h3OrModel || "default model"}`,
+        title: "Change in Settings → LLM Setting",
+        style: { fontSize: "10px", color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+      }));
+      return;
+    }
     const briefOk = !!state.nativeBriefClip;
     const visionOk = !needImage || !!state.nativeVisionClip;
     if (!briefOk || !visionOk) {
@@ -1110,8 +1118,9 @@ ${name}`, style: {
     const images = enhMode === "image"
       ? a.refImages.slice(0, imageBriefMax(state.briefImageMode))
       : [];
-    if (!state.nativeBriefClip) { ctx.showPopup?.("No brief CLIP set - pick one in Settings.", true); return; }
-    if (images.length && !state.nativeVisionClip) { ctx.showPopup?.("No vision CLIP set - pick one in Settings.", true); return; }
+    const useOR = state.h3LlmBackend === "openrouter";
+    if (!useOR && !state.nativeBriefClip) { ctx.showPopup?.("No brief CLIP set - pick one in Settings (or switch the LLM backend to OpenRouter).", true); return; }
+    if (!useOR && images.length && !state.nativeVisionClip) { ctx.showPopup?.("No vision CLIP set - pick one in Settings.", true); return; }
 
     const target = targetSel.value;
     const base = (editor.value || "").trim();
@@ -1130,12 +1139,15 @@ ${name}`, style: {
         progressStage(`Analyzing ${images.length} image${images.length > 1 ? "s" : ""}...`);
         const prompt = `${VISION_SYSTEM_PROMPT} There are ${images.length} images, in order. `
           + `Describe each one separately, each on its own line starting with "Image N: ".`;
-        imageSummary = (await analyzeImagesNative(state.nativeVisionClip, images, prompt)).trim();
+        imageSummary = (useOR
+          ? await analyzeImagesOpenRouter(images, prompt, state.h3OrModel)
+          : await analyzeImagesNative(state.nativeVisionClip, images, prompt)).trim();
       }
 
       progressStage("Writing brief...");
-      const text = (await writeBriefNative(state.nativeBriefClip, systemPrompt,
-        buildUserPrompt(base, imageSummary))).trim();
+      const text = (useOR
+        ? await writeBriefOpenRouter(systemPrompt, buildUserPrompt(base, imageSummary), state.h3OrModel)
+        : await writeBriefNative(state.nativeBriefClip, systemPrompt, buildUserPrompt(base, imageSummary))).trim();
       if (!text) throw new Error("empty response");
       // Never write straight in - show what came back and let the user decide.
       openReview(text, target);

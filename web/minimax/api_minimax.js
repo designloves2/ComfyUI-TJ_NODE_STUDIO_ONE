@@ -608,6 +608,31 @@ export async function writeBriefNative(clipName, systemPrompt, userPrompt) {
 
 
 /**
+ * OpenRouter counterparts to analyzeImagesNative / writeBriefNative — used when the H3
+ * LLM backend is set to "openrouter" in Settings. The key lives server-side (.env,
+ * shared with the music + image nodes); the model id is passed through.
+ */
+export async function analyzeImagesOpenRouter(images, promptText, orModel) {
+  const r = await api.fetchApi("/minimax_h3_one/llm/analyze", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ images, prompt: promptText, or_model: orModel || "" }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "OpenRouter analyze failed");
+  return d.text;
+}
+
+export async function writeBriefOpenRouter(systemPrompt, userPrompt, orModel) {
+  const r = await api.fetchApi("/minimax_h3_one/llm/write_brief", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ system: systemPrompt, user: userPrompt, or_model: orModel || "" }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "OpenRouter brief failed");
+  return d.text;
+}
+
+/**
  * Which of these input-folder filenames are gone.
  *
  * Asked as one request rather than a HEAD per file: a prompt set can reference a dozen
