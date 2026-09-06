@@ -11,7 +11,7 @@ import {
   ENGINES, ENGINE_FIELDS, ACE_LANGUAGES, ACE_KEYSCALES, ACE_TIMESIGS,
   VOCAL_GENDER, VOCAL_STYLE, VOICE_TONE,
 } from "./music/core_music.js";
-import { buildMusicGraph } from "./music/graph_builder_music.js";
+import { buildMusicGraph, effectiveDuration } from "./music/graph_builder_music.js";
 
 // Match MiniMax H3's outer node size exactly (see one_node_minimax_h3.js NODE_MW/NODE_MH).
 const NODE_MW = 1280;
@@ -371,6 +371,7 @@ app.registerExtension({
         const vw = window.innerWidth, vh = window.innerHeight;
         entries.forEach(e => {
           if (e === "-") { m.appendChild(el("div", { className: "sep" })); return; }
+          if (e.el) { e.el._closeMenu = () => m.remove(); m.appendChild(e.el); return; }
           const it = el("div", { className: "it" + (e.danger ? " danger" : ""), text: (e.icon ? e.icon + "  " : "") + e.label });
           it.onclick = () => { m.remove(); e.fn(); };
           m.appendChild(it);
@@ -674,6 +675,10 @@ app.registerExtension({
         line("Engine", (meta || t).engine === "acestep" ? "Ace-Step 1.5" : "MiniMax Music 3");
         if (meta?.seconds) line("Length", fmtDur(meta.seconds));
         if (meta?.seed != null) line("Seed", String(meta.seed));
+        if (meta?.llmBackend) {
+          const bk = { local: "Local GGUF", openrouter: "OpenRouter", comfy: "ComfyUI TextGenerate" }[meta.llmBackend] || meta.llmBackend;
+          line("LLM", meta.llmModel ? `${bk} · ${meta.llmModel}` : bk);
+        }
         top.append(big, metaCol);
         body.appendChild(top);
 
@@ -758,7 +763,7 @@ app.registerExtension({
           : { class_type: "CLIPLoader",     inputs: { clip_name: state.llmClip, type: state.llmClipType || "qwen_image" } };
         const graph = {
           "tg:c": loader,
-          "tg:t": { class_type: "TextGenerate", inputs: { clip: ["tg:c", 0], prompt: composed, max_length: 1400, sampling_mode: "off", thinking: false, use_default_template: true } },
+          "tg:t": { class_type: "TextGenerate", inputs: { clip: ["tg:c", 0], prompt: composed, max_length: 2048, sampling_mode: "off", thinking: false, use_default_template: true } },
           "tg:p": { class_type: "PreviewAny", inputs: { source: ["tg:t", 0] } },
         };
         const res = await submitPrompt(graph, `MusicMaker · LLM (${role})`);
@@ -840,19 +845,35 @@ app.registerExtension({
         ];
         if (sets.length) {
           entries.push("-");
-          sets.forEach(s => entries.push({ label: s.name, fn: async () => {
-            try {
+          sets.forEach(s => {
+            const row = el("div", { className: "it", style: { display: "flex", alignItems: "center", gap: "6px" }});
+            const nm = el("span", { text: s.name, style: { flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }});
+            nm.onclick = async () => {
+              row._closeMenu?.();
+              try { applyPayload(await jget(`/${kind}_presets/get?name=${encodeURIComponent(s.name)}`)); persist(); statusEl.textContent = `Loaded — ${s.name}`; }
+              catch { statusEl.textContent = "Load failed"; }
+            };
+            const mini = (txt, title, fn) => el("button", { className: "mmm-x", text: txt, title,
+              style: { padding: "2px 6px", fontSize: "12px", lineHeight: "1", flexShrink: 0 },
+              onclick: (e) => { e.stopPropagation(); fn(); }});
+            const renameBtn = mini("↺", "Rename", async () => {
+              const nn = prompt("Rename preset", s.name);
+              if (!nn || nn.trim() === s.name) return;
+              row._closeMenu?.();
               const p = await jget(`/${kind}_presets/get?name=${encodeURIComponent(s.name)}`);
-              applyPayload(p); persist();
-            } catch { statusEl.textContent = "Load failed"; }
-          }}));
-          entries.push("-");
-          entries.push({ label: "Delete a preset…", danger: true, fn: async () => {
-            const name = prompt("Preset name to delete (exact)");
-            if (!name) return;
-            await jpost(`/${kind}_presets/delete`, { name });
-            statusEl.textContent = `Deleted — ${name}`;
-          }});
+              await jpost(`/${kind}_presets/save`, { ...p, name: nn.trim() });
+              await jpost(`/${kind}_presets/delete`, { name: s.name });
+              statusEl.textContent = `Renamed — ${nn.trim()}`;
+            });
+            const delBtn = mini("✕", "Delete", async () => {
+              if (!confirm(`Delete preset "${s.name}"?`)) return;
+              row._closeMenu?.();
+              await jpost(`/${kind}_presets/delete`, { name: s.name });
+              statusEl.textContent = `Deleted — ${s.name}`;
+            });
+            row.append(nm, renameBtn, delBtn);
+            entries.push({ el: row });
+          });
         }
         popMenu(ev, entries);
       }
@@ -938,7 +959,8 @@ app.registerExtension({
             let input = cur;
             if (intent === "empty" && (state.title || "").trim()) { role = "lyrics_from_title"; input = state.title.trim(); }
             else if (intent === "empty") { statusEl.textContent = "Write a brief, or fill in the Title"; return; }
-            runLLM(role, input, { engine: state.engine, language: state.language, duration_seconds: state.duration, style_caption: state.caption, title: state.title || "" }, (txt) => {
+            const durSec = effectiveDuration({ ...state, lyricsInput: cur });
+            runLLM(role, input, { engine: state.engine, language: state.language, duration_seconds: durSec, style_caption: state.caption, title: state.title || "" }, (txt) => {
               state.lyrics = txt; state.lyricsInput = cur; lyricsTA.value = txt; persist();
             }, lyricsWrap, "Writing lyrics…");
           } else {
@@ -1280,7 +1302,7 @@ app.registerExtension({
           if ((li === "brief" || li === "hook") && st.lyricsInput) {
             job.stage = "Writing lyrics…"; paintJob(job);
             const lx = await llmOnce("lyrics_from_theme", st.lyricsInput,
-              { engine: st.engine, language: st.language, duration_seconds: st.duration, style_caption: st.caption });
+              { engine: st.engine, language: st.language, duration_seconds: effectiveDuration(st), style_caption: st.caption });
             st.lyrics = lx || st.lyricsInput;
           } else {
             st.lyrics = st.lyricsInput;

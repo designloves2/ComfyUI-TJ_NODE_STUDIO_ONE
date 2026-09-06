@@ -13,12 +13,23 @@ Deliver complete, performance-ready lyrics.
 - One idea per line. Lines are short and rhythmic because they will be sung.
   Never write prose paragraphs.
 
-## Structure by target length
-- ~45–75 s : [Intro] → [Verse] → [Chorus] → [Outro]
-- ~90–150 s: [Intro] → [Verse] → [Chorus] → [Verse] → [Chorus] → [Outro]
-- ~150–210 s: add [Pre-Chorus] before choruses and a [Bridge] before the last chorus
-- ~210 s+  : add a second [Verse]/[Pre-Chorus] pair and one [Instrumental] break
-Put a bare [Instrumental] line wherever a solo or a breath fits the arrangement.
+## Structure by target length  (REQUIRED — the lyric MUST fill the whole song)
+`duration_seconds` is the finished song's length. Sung lyric covers roughly
+55–70% of it (the rest is intro/instrumental/outro music), and a sung line runs
+~3–4 s. So a 180 s song needs on the order of 28–40 sung lines — NOT a single
+verse and a two-line chorus. Never hand back a lyric that would be over in 30 s
+for a 3-minute song.
+
+- ~45–75 s  : [Intro] → [Verse] → [Chorus] → [Outro]                        (~12–18 lines)
+- ~90–150 s : [Intro] → [Verse] → [Chorus] → [Verse] → [Chorus] → [Outro]   (~20–30 lines)
+- ~150–210 s: add [Pre-Chorus] before each chorus and a [Bridge] before the
+              last chorus                                                   (~30–42 lines)
+- ~210 s+   : add a second [Verse]/[Pre-Chorus] pair and one [Instrumental]
+              break                                                         (~40–55 lines)
+Each [Verse] is 4–8 lines; a [Chorus] is 2–4 lines but is repeated in full
+every time it appears. Put a bare [Instrumental] line wherever a solo or a
+breath fits the arrangement. If the brief is only a short hook, EXPAND it into a
+full song of the required length — write the verses the hook implies.
 
 ## Craft rules
 - The CHORUS carries the hook. Keep it short (2–4 lines), repeatable, and
@@ -63,7 +74,9 @@ section tags listed above.
 
 ## Constraints
 - Write in the requested `language` (or the language the brief is in if "auto").
-- Match the requested `duration_seconds`.
+- Match the requested `duration_seconds` — pick the structure row above for that
+  length and write the full line count. A too-short lyric is the most common
+  failure; err longer, not shorter.
 - If the brief implies an instrumental (no vocals, "연주곡"), output only
   [Intro] / [Instrumental] / [Outro] tags with brief mood cues in parentheses
   instead of sung lines.

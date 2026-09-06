@@ -260,6 +260,9 @@ Playlist                        🔍 Search   Filters   Newest ▾   ◀ 1 ▶
 | 스타일 아코디언 📚 | 이름 붙인 스타일 (brief + 칩 + 3섹션 캡션 전부) | `music_style_sets/` | `/minimax_music_one/style_presets/{list,get,save,delete}` |
 
 각 📚 메뉴 = 현재 저장 / 불러오기 / 이름변경 / 삭제 / 드래그 정렬. `prompt_sets/` 라우트 팩토리 재사용.
+> 실제 구현(2026-09-06): 프리셋 팝업의 각 행 = `[이름(클릭=불러오기)] [↺ 이름변경] [✕ 삭제]`.
+> 이름을 타이핑해서 지우는 방식 아님. 이름변경은 백엔드 라우트 없이 클라이언트에서
+> `get → save(새이름) → delete(옛이름)`. `{save,delete,get}` 라우트만 있으면 됨.
 파이프라인 프리셋(steps/cfg/모델 레시피)은 별개 — 추가 옵션 안 (H3의 System/User Preset처럼).
 
 ---
@@ -272,6 +275,13 @@ Playlist                        🔍 Search   Filters   Newest ▾   ◀ 1 ▶
 |---|---|---|
 | `lyrics_from_theme` | 브리프/훅/무드 + 언어 + 분량 (+ 옵션 스타일 캡션) | `[Verse]`/`[Pre-Chorus]`/`[Chorus]`/`[Bridge]`/`[Instrumental]`/`[Outro]` 태그 붙은 완성 가사, 지정 언어, 분량에 맞는 섹션 수 |
 | `lyrics_from_title` | 곡 제목 + 언어 (+ 옵션 분량) | 그 제목 정서에 맞는 태그 가사 |
+
+> **분량 강제(2026-09-06)**: `duration_seconds`는 이제 `effectiveDuration(state)`로 계산 —
+> 가사/스타일 브리프에 적힌 "3:00"/"3분" 힌트가 슬라이더보다 우선. 두 lyric LLM
+> 호출 지점(✨ compose, `processJob` 큐) 모두 이 값을 넘김. `lyrics_from_theme.md`
+> / `lyrics_from_title.md`에 **필수 구조 표** 추가: 부른 가사는 곡 길이의 ~55–70%,
+> 한 줄 ~3–4초 → 3분 곡 ≈ 30–42줄 (1절 + 짧은 코러스로 끝내지 말 것). 짧은 훅은
+> 전체 곡으로 확장. `comfyTextGen.max_length` 1400→2048. 웹도 동일 적용 필요.
 | `lyrics_enhance` | 현재 가사 전체 | 이미지·운율 다듬고 섹션 보강, **태그·구조·언어 유지**, 길이 크게 안 바꿈 |
 | `caption_rewrite` | 짧은 스타일 brief + 칩 + (옵션) 가사 | music-caption-rewriter 3섹션 (Global Metadata / Vocal Details / Arrangement), 영어, 250~450단어 |
 | `title` | 가사 or 스타일 캡션 | 트랙 제목 한 줄 (사용자 편집 가능) |

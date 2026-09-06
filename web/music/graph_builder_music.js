@@ -61,6 +61,14 @@ export function clampDuration(seconds, { min = 1, max = 300 } = {}) {
   return Math.min(max, Math.max(min, n));
 }
 
+// The single source of truth for "how long is this song" — a duration typed into
+// the lyrics brief or the style brief ("3:00", "3분") wins over the slider, so the
+// lyric LLM and the sampler agree on the target length.
+export function effectiveDuration(state) {
+  const hint = parseDurationHint(state.lyricsInput) ?? parseDurationHint(state.captionBrief);
+  return clampDuration(hint ?? state.duration ?? 120);
+}
+
 // The vocal / BPM / key / time-sig dropdowns must take effect even when the user
 // typed their own caption and never hit ✨. MiniMax has no structured fields for
 // any of it, so everything rides in the caption text; Ace-Step reads bpm/key/
@@ -97,10 +105,7 @@ function resolveCommon(state, opts) {
   const caption = String(state.caption || "").trim();
   const lyrics  = String(state.lyrics  || "").trim();
   if (!caption) throw new Error("Style (caption) is empty — hit ✨ in the Style section or type one in.");
-  // Only sniff a duration out of what the USER typed (their brief) — never out of the
-  // LLM's verbose caption/lyrics, which are full of stray numbers ("1 sec", "beat 1").
-  const hint = parseDurationHint(state.lyricsInput) ?? parseDurationHint(state.captionBrief);
-  const seconds = clampDuration(hint ?? state.duration ?? 120);
+  const seconds = effectiveDuration(state);
   const seed = Number.isFinite(opts.seed) ? Math.floor(opts.seed)
              : Number.isFinite(state.seed) ? Math.floor(state.seed)
              : Math.floor(Math.random() * 2 ** 48);
@@ -121,7 +126,10 @@ function commonMeta(state, r) {
     timesignature: String(state.timesignature || "4"),
     vocalGender: state.vocalGender || "auto", vocalStyle: state.vocalStyle || "auto", voiceTone: state.voiceTone || "auto",
     coverBrief: state.coverBrief || "",
-    llmBackend: state.llmBackend || "local", llmModel: state.llmModel || "",
+    llmBackend: state.llmBackend || "local",
+    llmModel: (state.llmBackend === "openrouter" ? state.llmOrModel
+             : state.llmBackend === "comfy"      ? state.llmClip
+             : state.llmModel) || "",
     styleFamily: state.styleFamily || "", title: state.title || "",
   };
 }
