@@ -3711,25 +3711,22 @@ def _strip_thinking(text):
     return stripped
 
 
-def _openrouter_chat(system_prompt, user_text, model, temperature=0.7, max_tokens=1600):
+def _openrouter_once(key, system_prompt, user_text, model, temperature, max_tokens, exclude_reasoning):
     import urllib.request, urllib.error
-    key = _openrouter_api_key()
-    if not key:
-        raise RuntimeError("OpenRouter API key 없음 — LLM_KEY 환경변수 또는 "
-                           "custom_nodes/ComfyUI-Openrouter_node/openrouter_api_key.json 설정")
-    body = json.dumps({
+    payload = {
         "model": model or "google/gemini-2.5-flash",
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_text},
         ],
         "temperature": float(temperature),
-        # reasoning models (deepseek-*-flash, o*, etc.) burn the whole budget on hidden
-        # thinking and return empty content at 1600 — give them room, and drop the
-        # reasoning tokens from the response so we get the actual answer.
-        "max_tokens": max(int(max_tokens), 8000),
-        "reasoning": {"exclude": True},
-    }).encode("utf-8")
+        "max_tokens": int(max_tokens),
+    }
+    # exclude_reasoning: drop hidden thinking from the response (first try — we want
+    # only the answer). On a retry we keep it so a length-truncated reasoning dump
+    # can still be salvaged via _strip_thinking.
+    payload["reasoning"] = {"exclude": True} if exclude_reasoning else {}
+    body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         "https://openrouter.ai/api/v1/chat/completions", data=body,
         headers={
@@ -3738,7 +3735,7 @@ def _openrouter_chat(system_prompt, user_text, model, temperature=0.7, max_token
             "X-Title": "MusicMaker ONE STUDIO",
         }, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with urllib.request.urlopen(req, timeout=180) as resp:
             d = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as he:
         detail = ""
@@ -3756,13 +3753,36 @@ def _openrouter_chat(system_prompt, user_text, model, temperature=0.7, max_token
     content = msg.get("content")
     if isinstance(content, list):   # some models return content as parts
         content = "".join(p.get("text", "") for p in content if isinstance(p, dict))
-    # reasoning models sometimes leave content empty and put the answer in reasoning
     if not content:
         content = msg.get("reasoning") or msg.get("reasoning_content") or ""
-    if not content:
-        fr = ch0.get("finish_reason") or ""
-        raise RuntimeError(f"OpenRouter returned no text (finish_reason={fr or 'unknown'}) — try a non-reasoning model.")
-    return content.strip()
+    return (content or "").strip(), (ch0.get("finish_reason") or "")
+
+
+def _openrouter_chat(system_prompt, user_text, model, temperature=0.7, max_tokens=1600):
+    key = _openrouter_api_key()
+    if not key:
+        raise RuntimeError("OpenRouter API key 없음 — LLM_KEY 환경변수 또는 "
+                           "custom_nodes/ComfyUI-Openrouter_node/openrouter_api_key.json 설정")
+    # reasoning models (deepseek-*-flash, o*, glm-*-thinking, etc.) burn the whole
+    # budget on hidden thinking and return empty content at low limits — give them
+    # room from the start.
+    mt = max(int(max_tokens), 8000)
+    text, fr = _openrouter_once(key, system_prompt, user_text, model, temperature, mt, True)
+    if text:
+        return text
+    # empty content — almost always a reasoning model that hit the token ceiling
+    # before it finished thinking. Retry once with 2× the budget and reasoning
+    # INCLUDED, then let _strip_thinking pull the answer out of the monologue.
+    if fr == "length":
+        text2, _ = _openrouter_once(key, system_prompt, user_text, model,
+                                    temperature, max(mt * 2, 16000), False)
+        salvaged = _strip_thinking(text2)
+        if salvaged:
+            return salvaged
+    raise RuntimeError(
+        f"OpenRouter returned no text (finish_reason={fr or 'unknown'}) — the model "
+        f"spent its whole budget on reasoning. Pick a non-reasoning model "
+        f"(e.g. google/gemini-2.5-flash, anthropic/claude-3.5-haiku).")
 
 
 @PromptServer.instance.routes.get("/music_one/openrouter_models")
