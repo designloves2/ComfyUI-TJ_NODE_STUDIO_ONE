@@ -22,6 +22,19 @@ const jget  = (p)    => api.fetchApi(API + p).then(r => r.json());
 const jpost = (p, b) => api.fetchApi(API + p, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }).then(r => r.json());
 const viewURL = (t)  => `/view?filename=${encodeURIComponent(t.filename)}&subfolder=${encodeURIComponent(t.subfolder || "")}&type=output&t=${t.mtime || Date.now()}`;
 
+// iOS Safari can't decode FLAC in <audio> (canPlayType('audio/flac') === ""). When the
+// browser can't play the raw file, fall back to /music_one/download — the same ffmpeg
+// MP3 transcode the Download button uses (ID3-tagged, cached under .export/).
+const _MIME = { flac: "audio/flac", mp3: "audio/mpeg", opus: "audio/ogg", ogg: "audio/ogg", wav: "audio/wav", m4a: "audio/mp4" };
+function playableAudioUrl(t) {
+  const ext = String(t.filename || "").split(".").pop().toLowerCase();
+  const mime = _MIME[ext];
+  try {
+    if (mime && new Audio().canPlayType(mime)) return viewURL(t);
+  } catch {}
+  return `/music_one/download?filename=${encodeURIComponent(t.filename)}&subfolder=${encodeURIComponent(t.subfolder || "")}`;
+}
+
 app.registerExtension({
   name: "TJ.MusicMakerONE",
   async beforeRegisterNodeDef(nodeType, nodeData) {
@@ -521,7 +534,7 @@ app.registerExtension({
         if (i < 0 || i >= tracks.length) return;
         curIdx = i;
         const t = tracks[i];
-        audioEl.src = viewURL(t);
+        audioEl.src = playableAudioUrl(t);
         audioEl.play().catch(() => {});
         nowTitle.textContent = t.title || t.filename;
         nowSub.textContent = settingsBadge(t) || (t.engine === "acestep" ? "Ace-Step 1.5" : "MiniMax Music 3");
@@ -551,7 +564,7 @@ app.registerExtension({
         if (t.cover) cover.style.backgroundImage = coverURL(t.cover);
         else cover.appendChild(coverPlaceholder(t));
         if (t.seconds) cover.appendChild(el("div", { className: "mmm-dur", text: fmtDur(t.seconds) }));
-        attachSensitiveToggle(cover, cover, mediaKey(t.filename, t.subfolder || SUB()), "br");
+        attachSensitiveToggle(cover, cover, mediaKey(t.filename, t.subfolder || SUB()), "tl");
         const mid = el("div", { style: { flex: "1", minWidth: 0 }});
         let clickT = null;
         const title = el("div", { className: "mmm-tt", text: t.title || t.filename, title: "Click to play/pause · double-click to restart" });
