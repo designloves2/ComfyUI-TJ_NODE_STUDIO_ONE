@@ -3851,10 +3851,22 @@ def _strip_thinking(text):
     return stripped
 
 
+def _or_model_list(model):
+    """A `:free` model → [free, paid] so OpenRouter falls through to the paid variant
+    server-side when the free tier is rate-limited (429) or down. One request, no
+    extra latency. `a|b|c` is also accepted as an explicit fallback chain."""
+    model = model or "google/gemini-2.5-flash"
+    if "|" in model:
+        return [m.strip() for m in model.split("|") if m.strip()]
+    if model.endswith(":free"):
+        return [model, model[:-len(":free")]]
+    return [model]
+
+
 def _openrouter_once(key, system_prompt, user_text, model, temperature, max_tokens, exclude_reasoning, timeout=60):
     import urllib.request, urllib.error, socket
+    _models = _or_model_list(model)
     payload = {
-        "model": model or "google/gemini-2.5-flash",
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_text},
@@ -3862,6 +3874,10 @@ def _openrouter_once(key, system_prompt, user_text, model, temperature, max_toke
         "temperature": float(temperature),
         "max_tokens": int(max_tokens),
     }
+    if len(_models) > 1:
+        payload["models"] = _models          # OpenRouter routes down the list on 429 / error
+    else:
+        payload["model"] = _models[0]
     # exclude_reasoning: drop hidden thinking from the response (first try — we want
     # only the answer). On a retry we keep it so a length-truncated reasoning dump
     # can still be salvaged via _strip_thinking.
@@ -3939,8 +3955,9 @@ def _openrouter_vision(system_prompt, user_text, image_b64, model, temperature=0
     if not key:
         raise RuntimeError("OpenRouter API key 없음 — Settings에서 키를 넣어주세요.")
     b64 = image_b64 if image_b64.startswith("data:") else ("data:image/jpeg;base64," + image_b64.split(",")[-1])
+    _models = _or_model_list(model)
     payload = {
-        "model": model or "google/gemini-2.5-flash",
+        ("models" if len(_models) > 1 else "model"): _models if len(_models) > 1 else _models[0],
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": [
@@ -4005,8 +4022,9 @@ def _openrouter_vision_multi(system_prompt, user_text, image_paths, model, tempe
         parts.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
     if len(parts) == 1:
         raise RuntimeError("no readable images in the input folder")
+    _models = _or_model_list(model)
     payload = {
-        "model": model or "google/gemini-2.5-flash",
+        ("models" if len(_models) > 1 else "model"): _models if len(_models) > 1 else _models[0],
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": parts},
