@@ -3851,8 +3851,8 @@ def _strip_thinking(text):
     return stripped
 
 
-def _openrouter_once(key, system_prompt, user_text, model, temperature, max_tokens, exclude_reasoning):
-    import urllib.request, urllib.error
+def _openrouter_once(key, system_prompt, user_text, model, temperature, max_tokens, exclude_reasoning, timeout=60):
+    import urllib.request, urllib.error, socket
     payload = {
         "model": model or "google/gemini-2.5-flash",
         "messages": [
@@ -3875,7 +3875,7 @@ def _openrouter_once(key, system_prompt, user_text, model, temperature, max_toke
             "X-Title": "MusicMaker ONE STUDIO",
         }, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             d = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as he:
         detail = ""
@@ -3884,6 +3884,14 @@ def _openrouter_once(key, system_prompt, user_text, model, temperature, max_toke
         except Exception:
             pass
         raise RuntimeError(f"OpenRouter {he.code}: {detail or he.reason}")
+    except (socket.timeout, TimeoutError, urllib.error.URLError) as te:
+        # A reasoning model that thinks for minutes will blow past any front-facing
+        # proxy's timeout and the browser just sees "Failed to fetch". Fail fast here
+        # with an actionable message instead.
+        raise RuntimeError(
+            f"OpenRouter timed out after {timeout}s ({getattr(te, 'reason', te)}). "
+            f"'{model}' is likely a reasoning model — switch to a non-reasoning one in "
+            f"Settings (e.g. google/gemini-2.5-flash, anthropic/claude-3.5-haiku).")
     if isinstance(d, dict) and d.get("error"):
         err = d["error"]
         raise RuntimeError(err.get("message") if isinstance(err, dict) else str(err))
@@ -3903,19 +3911,18 @@ def _openrouter_chat(system_prompt, user_text, model, temperature=0.7, max_token
     if not key:
         raise RuntimeError("OpenRouter API key 없음 — LLM_KEY 환경변수 또는 "
                            "custom_nodes/ComfyUI-Openrouter_node/openrouter_api_key.json 설정")
-    # reasoning models (deepseek-*-flash, o*, glm-*-thinking, etc.) burn the whole
-    # budget on hidden thinking and return empty content at low limits — give them
-    # room from the start.
-    mt = max(int(max_tokens), 8000)
-    text, fr = _openrouter_once(key, system_prompt, user_text, model, temperature, mt, True)
+    # Two short attempts rather than one long one — a reasoning model that thinks for
+    # minutes blows past the front-facing proxy's timeout and the browser only sees
+    # "Failed to fetch". First try: a modest ceiling so a reasoning model hits
+    # finish_reason=length quickly; retry once with more room + the reasoning stream
+    # included, then salvage the answer out of the monologue. Total stays under ~95s.
+    mt = max(int(max_tokens), 3000)
+    text, fr = _openrouter_once(key, system_prompt, user_text, model, temperature, mt, True, timeout=45)
     if text:
         return text
-    # empty content — almost always a reasoning model that hit the token ceiling
-    # before it finished thinking. Retry once with 2× the budget and reasoning
-    # INCLUDED, then let _strip_thinking pull the answer out of the monologue.
     if fr == "length":
         text2, _ = _openrouter_once(key, system_prompt, user_text, model,
-                                    temperature, max(mt * 2, 16000), False)
+                                    temperature, max(mt * 3, 10000), False, timeout=45)
         salvaged = _strip_thinking(text2)
         if salvaged:
             return salvaged
@@ -3954,7 +3961,7 @@ def _openrouter_vision(system_prompt, user_text, image_b64, model, temperature=0
             "X-Title": "ONE STUDIO",
         }, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
+        with urllib.request.urlopen(req, timeout=90) as resp:
             d = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as he:
         detail = ""
@@ -4016,7 +4023,7 @@ def _openrouter_vision_multi(system_prompt, user_text, image_paths, model, tempe
                  "X-Title": "ONE STUDIO"},
         method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=200) as resp:
+        with urllib.request.urlopen(req, timeout=110) as resp:
             d = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as he:
         detail = ""
