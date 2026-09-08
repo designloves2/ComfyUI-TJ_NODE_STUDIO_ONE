@@ -240,19 +240,22 @@ export function createSettingsOverlay(state, ctx) {
 
       let control;
       if (isOR) {
-        const orSel = _selEl([el("option", { value: state[orModelKey] || "", text: state[orModelKey] || "loading models…" })]);
-        orSel.addEventListener("change", () => {
-          state[orModelKey] = orSel.value; ctx.persist();
-          const cfgKey = orModelKey === "h3OrModelVision" ? "h3_or_model_vision" : "h3_or_model_brief";
-          fetch("/minimax_h3_one/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [cfgKey]: orSel.value }) }).catch(() => {});
-        });
+        // full OpenRouter model list, searchable — no vision-capability filter, the
+        // user picks (qwen-vl flash, gemini, whatever). Default is a soft pre-select only.
+        const cfgKey = orModelKey === "h3OrModelVision" ? "h3_or_model_vision" : "h3_or_model_brief";
+        const saveOr = (v) => {
+          state[orModelKey] = v; ctx.persist();
+          fetch("/minimax_h3_one/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [cfgKey]: v }) }).catch(() => {});
+        };
+        const holder = el("div");
+        holder.appendChild(_selEl([el("option", { value: state[orModelKey] || "", text: state[orModelKey] || "loading models…" })]));
         orModels().then(ms => {
           if (!ms.length) return;
-          clear(orSel);
-          ms.forEach(m => orSel.appendChild(el("option", { value: m, text: m, ...(m === state[orModelKey] ? { selected: "selected" } : {}) })));
-          if (!state[orModelKey]) { state[orModelKey] = ms.find(m => /gemini-2\.5-flash/.test(m)) || ms[0]; ctx.persist(); orSel.value = state[orModelKey]; }
+          if (!state[orModelKey]) { state[orModelKey] = (ms.find(m => /gemini-2\.5-flash/.test(m)) || ms[0]); ctx.persist(); }
+          clear(holder);
+          holder.appendChild(searchableSelect(ms, state[orModelKey], saveOr).el);
         });
-        control = col([label("OpenRouter model"), orSel]);
+        control = col([label(orModelKey === "h3OrModelVision" ? "OpenRouter model (vision)" : "OpenRouter model (brief)"), holder]);
       } else if (nativeMissing.length) {
         control = el("div", { text: `⚠ Native needs: ${nativeMissing.join(", ")} (TJ_NODE / update ComfyUI)`,
           style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } });
