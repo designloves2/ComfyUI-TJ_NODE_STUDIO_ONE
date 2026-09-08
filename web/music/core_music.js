@@ -225,6 +225,54 @@ export function el(tag, props, children) {
 export function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 export function randomSeed() { return Math.floor(Math.random() * 1e15); }
 
+// ── Hermes agent job export ───────────────────────────────────────────────────
+// Inner `job` object of a music-headless `{tool:"music", job:{...}, target:""}` file.
+// Both engines are in scope. Mirrors the web twin's buildAgentJob().
+export function buildAgentJob(state) {
+  const job = {
+    engine: state.engine || "acestep",
+    caption: state.caption || "",
+    duration: state.duration ?? DURATION_DEFAULT,
+    seed: state.seedMode === "random" ? null : state.seed ?? 0,
+  };
+  if (state.instrumental) job.instrumental = true;
+  else if (state.lyrics) job.lyrics = state.lyrics;
+  if (state.title) job.title = state.title;
+  if (state.bpm != null) job.bpm = state.bpm;
+  if (state.keyscale) job.keyscale = state.keyscale;
+  if (state.timesignature) job.timesignature = state.timesignature;
+  if (state.vocalGender && state.vocalGender !== "auto") job.vocalGender = state.vocalGender;
+  if (state.vocalStyle && state.vocalStyle !== "auto") job.vocalStyle = state.vocalStyle;
+  if (state.voiceTone && state.voiceTone !== "auto") job.voiceTone = state.voiceTone;
+  if (state.format) job.format = state.format;
+  if (state.audioQuality) job.audioQuality = state.audioQuality;
+
+  const loras = (state.loras || []).filter(l => l && l.enabled !== false && l.name && l.name !== "none");
+  if (loras.length) job.loras = loras.map(l => ({ name: l.name, strength: l.strength ?? 1.0, enabled: true }));
+
+  if (state.engine === "minimax") {
+    job.steps = state.steps ?? 30;
+    job.cfgScale = state.cfgScale ?? 1.7;
+    job.topK = state.topK ?? 50;
+    job.sampler = state.sampler || "euler";
+    job.scheduler = state.scheduler || "simple";
+    job.tiledDecode = !!state.tiledDecode;
+  } else {
+    job.language = state.language || "en";
+    job.cfgScaleAce = state.cfgScaleAce ?? 2.5;
+    job.temperature = state.temperature ?? 0.75;
+    job.topP = state.topP ?? 0.9;
+    job.minP = state.minP ?? 0;
+    job.topKAce = state.topKAce ?? 0;
+    job.genAudioCodes = state.genAudioCodes ?? true;
+    job.aceShift = state.aceShift ?? 3;
+    job.aceSamplerName = state.aceSamplerName || "jkass_quality";
+    job.aceScheduler = state.aceScheduler || "sgm_uniform";
+    job.aceStages = (state.aceStages || []).map(s => ({ steps: s.steps, cfg: s.cfg, on: s.on !== false }));
+  }
+  return job;
+}
+
 /** mm:ss from seconds */
 export function fmtDur(sec) {
   const s = Math.max(0, Math.round(sec || 0));

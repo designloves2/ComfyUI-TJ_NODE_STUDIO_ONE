@@ -9,8 +9,9 @@ import {
   SAMPLERS, SCHEDULERS, LORA_MAX, AUDIO_FORMATS, STYLE_CHIPS, LYRIC_TAGS,
   DURATION_MIN, DURATION_MAX, LLM_BACKENDS, LLM_CLIP_TYPES, lyricsIntent, fmtDur, settingsBadge,
   ENGINES, ENGINE_FIELDS, ACE_LANGUAGES, ACE_KEYSCALES, ACE_TIMESIGS,
-  VOCAL_GENDER, VOCAL_STYLE, VOICE_TONE,
+  VOCAL_GENDER, VOCAL_STYLE, VOICE_TONE, buildAgentJob,
 } from "./music/core_music.js";
+import { downloadAgentJob } from "./shared/agent_job.js";
 import { buildMusicGraph, effectiveDuration } from "./music/graph_builder_music.js";
 import { attachSensitiveToggle, mediaKey } from "./shared/ui_sensitive_media.js";
 
@@ -1227,6 +1228,14 @@ app.registerExtension({
         const genRow = el("div", { style: { display: "flex", gap: "6px" }});
         genRow.append(genBtn, stopBtn);
         composeFixed.appendChild(genRow);
+        const agentBtn = el("button", {
+          text: "⬇ job.json",
+          title: "Download the current settings as a job.json for the music-headless Hermes agent",
+          style: { width: "100%", marginTop: "4px", fontSize: "11px", padding: "5px", cursor: "pointer",
+                   background: C.bg2, color: C.text, border: `1px solid ${C.border}`, borderRadius: "6px", opacity: "0.85" },
+          onclick: () => downloadAgentJob("music", buildAgentJob(state), `music_${state.engine || "acestep"}.json`),
+        });
+        composeFixed.appendChild(agentBtn);
       }
 
       // Submit to the ComfyUI queue with a label so it shows in the queue sidebar / server log.

@@ -26,8 +26,9 @@ import {
   clipPlan, formatDuration, formatClock, framesToSeconds, alignFrameCount, FPS, ONE_TAKE_OVERLAP_FRAMES, resolveResolution,
   parseBrief, groupShots, composeClipPrompt, composeStitchedPrompt,
   turboLoraForMode, pddFileForMode, clipAssets, explainGenerationError,
-  promptText, promptFirstFrame, promptEnabled, activePrompts,
+  promptText, promptFirstFrame, promptEnabled, activePrompts, buildAgentJob,
 } from "./minimax/core_minimax.js";
+import { downloadAgentJob } from "./shared/agent_job.js";
 import { panel, label, button, select, loraSelect, numberField, slider, row, col, modeBar, iconBtn, openVideoFullscreen }
   from "./klein/ui_common.js";
 import {
@@ -596,6 +597,17 @@ app.registerExtension({
             persist(); refreshPlan();
           });
           sideCol.appendChild(cb);
+          const jsonBtn = el("button", {
+            type: "button", text: "⬇", title: "Download this clip as a job.json for the h3-headless Hermes agent",
+            style: { cursor: "pointer", background: "transparent", color: C.muted, border: "none", fontSize: "11px", padding: "0" },
+          });
+          jsonBtn.addEventListener("click", () => {
+            const presetName = (matchPreset(state, state.userPresets) || matchPreset(state) || {}).label ?? null;
+            const job = buildAgentJob(state, i, presetName);
+            const seed = state.seedPerClip ? ((state.seed ?? 0) + i) % Number.MAX_SAFE_INTEGER : state.seed ?? 0;
+            downloadAgentJob("h3", job, `job_${seed}_C${i + 1}.json`);
+          });
+          sideCol.appendChild(jsonBtn);
 
           const ta = el("textarea", { placeholder: i === 0 ? "Describe the shot…" : "(blank = reuse the previous prompt)", style: {
             flex: "1", minHeight: "120px", boxSizing: "border-box", background: C.bg2, color: C.text,

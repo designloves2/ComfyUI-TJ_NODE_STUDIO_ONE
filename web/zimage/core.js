@@ -156,3 +156,41 @@ export function el(tag, props, children) {
 
 export function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 export function randomSeed() { return Math.floor(Math.random() * 1e15); }
+
+// ── Hermes agent job export ───────────────────────────────────────────────────
+// Inner `job` object of a zimage-headless `{tool:"zimage", job:{...}, target:""}`
+// file. Only t2i / i2i are in zimage-headless's scope — the paint / rebg / controlnet
+// / face-redraw / upscale modes return null and the button hides. `i2iImage` is
+// rewritten to ~/.hermes/render-queue/inputs/<filename>. Mirrors the web twin.
+import { agentInputPath } from "../shared/agent_job.js";
+
+export function buildAgentJob(state) {
+  if (state.mode !== "t2i" && state.mode !== "i2i") return null;
+  const key = state.mode;
+  const modePrompt = (state.promptsByMode && key in state.promptsByMode)
+    ? state.promptsByMode[key] : (state.prompt || "");
+  const loras = (state.loras || []).filter(l => l && l.enabled !== false && l.name && l.name !== "none");
+  const job = {
+    mode: state.mode,
+    prompt: [modePrompt, state.promptSuffix].map(s => (s || "").trim()).filter(Boolean).join(", "),
+    steps: state.steps || 8,
+    cfg: state.cfg || 1,
+    shift: state.shift || 3,
+    seed: state.seedMode === "randomize" ? null : state.seed ?? 0,
+  };
+  if (state.negativePrompt) job.negativePrompt = state.negativePrompt;
+  if (state.sampler) job.sampler = state.sampler;
+  if (state.scheduler) job.scheduler = state.scheduler;
+  if (loras.length) job.loras = loras.map(l => ({ name: l.name, strength: l.strength ?? 1, triggerWord: l.triggerWord || "", enabled: true }));
+
+  if (state.mode === "t2i") {
+    job.width = state.width || 1024;
+    job.height = state.height || 1536;
+  } else {
+    job.i2iImage = agentInputPath(state.i2iImage);
+    job.i2iDenoise = state.i2iDenoise ?? 0.75;
+    job.i2iWidth = state.i2iWidth || null;
+    job.i2iHeight = state.i2iHeight || null;
+  }
+  return job;
+}

@@ -177,3 +177,53 @@ export function el(tag, props, children) {
 
 export function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 export function randomSeed() { return Math.floor(Math.random() * 1e15); }
+
+// ── Hermes agent job export ───────────────────────────────────────────────────
+// The inner `job` object of a krea2-headless `{tool:"krea2", job:{...}, target:""}`
+// file. Only t2i / i2i / identity are in krea2-headless's scope — the other modes
+// (controlnet, upscale) return null and the button hides. Image paths are rewritten
+// to ~/.hermes/render-queue/inputs/<filename>; mirrors the web twin's buildAgentJob().
+import { agentInputPath } from "../shared/agent_job.js";
+
+function agentPromptText(state, key) {
+  const k = key || state.mode || "t2i";
+  const modePrompt = (state.promptsByMode && k in state.promptsByMode)
+    ? state.promptsByMode[k] : (state.prompt || "");
+  return [modePrompt, state.promptSuffix].map(s => (s || "").trim()).filter(Boolean).join(", ");
+}
+
+export function buildAgentJob(state) {
+  if (state.mode !== "t2i" && state.mode !== "i2i" && state.mode !== "identity") return null;
+  const loras = (state.loras || []).filter(l => l && l.enabled !== false && l.name && l.name !== "none");
+  const job = {
+    mode: state.mode,
+    prompt: agentPromptText(state),
+    steps: state.steps ?? 8,
+    cfg: state.cfg ?? 1,
+    seed: state.seedMode === "randomize" ? null : state.seed ?? 0,
+  };
+  if (state.sampler) job.sampler = state.sampler;
+  if (state.scheduler) job.scheduler = state.scheduler;
+  if (loras.length) job.loras = loras.map(l => ({ name: l.name, strength: l.strength ?? 0.8, triggerWord: l.triggerWord || "", enabled: true }));
+
+  if (state.mode === "t2i") {
+    job.width = state.width || 1024;
+    job.height = state.height || 1024;
+  } else if (state.mode === "i2i") {
+    job.i2iImage = agentInputPath(state.i2iImage);
+    job.i2iDenoise = state.i2iDenoise ?? 0.75;
+    job.i2iWidth = state.i2iWidth || null;
+    job.i2iHeight = state.i2iHeight || null;
+  } else {
+    job.identityImage = agentInputPath(state.identityImage);
+    if (state.identityImageB) job.identityImageB = agentInputPath(state.identityImageB);
+    job.identityWidth = state.identityWidth || 1024;
+    job.identityHeight = state.identityHeight || 1024;
+    if (state.identityLora && state.identityLora !== "none") job.identityLora = state.identityLora;
+    job.identityLoraStrength = state.identityLoraStrength ?? 1.0;
+    job.identityFitMode = state.identityFitMode || "fit";
+    job.identityRefBoost = state.identityRefBoost ?? 1.0;
+    job.identityGroundingPx = state.identityGroundingPx ?? 768;
+  }
+  return job;
+}

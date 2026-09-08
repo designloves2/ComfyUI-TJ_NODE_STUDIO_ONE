@@ -1,7 +1,8 @@
 // one_node_z_image_turbo.js — Z-Image ONE STUDIO (TJ)
 import { app } from "../../../scripts/app.js";
 import { C, NODE_W, PREVIEW_SIZE, LEFT_W, PAD,
-         el, clear, loadState, saveState, defaultState, randomSeed, LS_KEY } from "./core.js";
+         el, clear, loadState, saveState, defaultState, randomSeed, LS_KEY, buildAgentJob } from "./core.js";
+import { downloadAgentJob } from "../shared/agent_job.js";
 import { panel, label, button, select, numberField, row, col,
          modeBar, iconBtn, openFullscreen } from "./ui_common.js";
 import { queuePrompt, interrupt, copyOutputToInput, setLastImage,
@@ -576,6 +577,17 @@ app.registerExtension({
       genRow.appendChild(row([genBtn,stopBtn]));
       seedRow.appendChild(genRow);
 
+      // ── Hermes agent job export ──────────────────────────────────────────
+      const agentBtn=button("⬇ job.json",()=>{
+        const job=buildAgentJob(state);
+        if(!job){ alert("This mode isn't in the zimage-headless agent's scope (t2i / i2i only)."); return; }
+        downloadAgentJob("zimage", job, `zimage_${state.mode}.json`);
+      });
+      agentBtn.title="Download the current settings as a job.json for the zimage-headless Hermes agent";
+      agentBtn.style.cssText+="width:100%;font-size:11px;padding:5px;opacity:0.85;";
+      genRow.appendChild(agentBtn);
+      const syncAgentBtn=()=>{ agentBtn.style.display=["t2i","i2i"].includes(state.mode)?"":"none"; };
+
       let modeHandle=null;
 
       // ── 연결된 prompt_override 슬롯 값 읽기 ────────────────────────────────
@@ -660,6 +672,7 @@ app.registerExtension({
         else if(state.mode==="face_redraw")        modeHandle=mountFaceRedrawLeft(leftPanel,state,ctx);
         else if(state.mode==="upscale")            modeHandle=mountUpscaleLeft(leftPanel,state,ctx);
         leftOuter.appendChild(seedRow);
+        syncAgentBtn();
       }
 
       function renderPills(){

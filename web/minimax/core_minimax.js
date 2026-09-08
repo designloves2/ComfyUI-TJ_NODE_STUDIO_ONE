@@ -1098,6 +1098,55 @@ export function loraTriggers(state) {
     .join(", ");
 }
 
+// ── Hermes agent job export ───────────────────────────────────────────────────
+// One clip's inner `job` object for an h3-headless `{tool:"h3", job:{...}, target:""}`
+// file. Mirrors the exact per-clip resolution the render loop does (clipAssets() for
+// the §1 override, then the always-on per-clip first-frame override on top, which
+// forces firstlast mode). refImages / firstFrame / lastFrame are rewritten to
+// ~/.hermes/render-queue/inputs/<filename>. Mirrors the web twin's buildAgentJob().
+const AGENT_INPUTS_DIR = "/Users/hermes/.hermes/render-queue/inputs/";
+function agentInputPath(filename) {
+  if (!filename) return null;
+  const base = String(filename).split(/[/\\]/).pop() || filename;
+  return AGENT_INPUTS_DIR + base;
+}
+
+export function buildAgentJob(state, i, presetName = null) {
+  const isRef = state.generationMode === "reference";
+  const assets = clipAssets(state, i);
+  let firstFrame = isRef ? null : state.firstFrameImage || null;
+  let refImages = assets.refImages;
+  const override = promptFirstFrame((state.prompts || [])[i]);
+  let overridden = false;
+  if (override) { firstFrame = override; refImages = []; overridden = true; }
+  const lastFrame = assets.lastFrame || state.lastFrameImage || null;
+  const modeForClip = overridden ? "firstlast" : state.generationMode || "t2v";
+  const mode = modeForClip === "reference" ? "ref2va" : modeForClip === "firstlast" ? "fl2va" : "t2va";
+  const seed = state.seedPerClip ? ((state.seed ?? 0) + i) % Number.MAX_SAFE_INTEGER : state.seed ?? 0;
+
+  const job = {
+    mode,
+    preset: presetName,
+    durationSeconds: framesToSeconds(state.clipFrames ?? 192),
+    megapixels: state.megapixels,
+    aspect: state.aspect,
+    seed: state.seedMode === "randomize" ? null : seed,
+    prompt: composeClipPrompt(state, i),
+  };
+  if (mode === "ref2va") job.refImages = (refImages || []).map(f => agentInputPath(f)).filter(Boolean);
+  if (mode === "fl2va") {
+    job.firstFrame = agentInputPath(firstFrame);
+    job.lastFrame = agentInputPath(lastFrame);
+  }
+  if (state.unetFirstLast) job.unetFirstLast = state.unetFirstLast;
+  if (state.unetReference) job.unetReference = state.unetReference;
+  const loras = (state.loras || [])
+    .filter(l => l && l.enabled !== false && l.name && l.name !== "none")
+    .map(l => ({ name: l.name, strength: l.strength ?? 1.0 }));
+  if (loras.length) job.loras = loras;
+  return job;
+}
+
 // Kept for the plain "split this text" path (no header/footer awareness).
 export function splitBrief(text, clipCount) {
   const { header, shots, footer } = parseBrief(text);
