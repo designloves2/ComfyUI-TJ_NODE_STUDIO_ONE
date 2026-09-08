@@ -31,7 +31,9 @@ async function fetchModels() {
     _tjNodeAvailable = false;
     // local backend unavailable — still hand back the OpenRouter fields so that path works
     return { gguf: [], mmproj: [], vision_tasks: [], _notInstalled: true,
-             openrouter_key_hint: d.openrouter_key_hint || "", or_model: d.or_model || "" };
+             openrouter_key_hint: d.openrouter_key_hint || "",
+             or_model_text: d.or_model_text || d.or_model || "",
+             or_model_vision: d.or_model_vision || d.or_model || "" };
   } catch { _tjNodeAvailable = false; }
   return { gguf: [], mmproj: [], vision_tasks: [], _notInstalled: true };
 }
@@ -241,8 +243,12 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   // ── Persist LLM settings across sessions ──────────────────────────────────
   const cfg = loadLLMSettings();
   const llm = {
-    backend:            cfg.backend             || "local",   // "local" | "openrouter"
-    or_model:           cfg.or_model            || "",
+    // backend + OpenRouter model are chosen INDEPENDENTLY for text (Enhance) and
+    // vision (Image→Prompt): e.g. brief on OpenRouter, vision on a local GGUF.
+    backend_text:       cfg.backend_text        || cfg.backend || "local",     // "local" | "openrouter"
+    backend_vision:     cfg.backend_vision      || cfg.backend || "local",
+    or_model_text:      cfg.or_model_text       || cfg.or_model || "",
+    or_model_vision:    cfg.or_model_vision     || cfg.or_model || "",
     gguf_model:         cfg.gguf_model         || "",
     mmproj_file:        cfg.mmproj_file         || "none",
     vision_task:        cfg.vision_task         || "Caption (plain description)",
@@ -259,31 +265,36 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   function saveLLM() { saveLLMSettings(llm); }
 
   // ── Backend selector (Local GGUF | OpenRouter) — one instance per panel, both
-  //    share llm.backend / llm.or_model. The key itself goes to the server .env.
+  //    per-role backend + OpenRouter model. The key itself goes to the server .env.
   const _backendBlocks = [];
-  function pushOrModel() {
+  function pushOrModel(role) {
+    const key = role === "vision" ? "or_model_vision" : "or_model_text";
     fetch("/tj_studio_one/llm/config", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ or_model: llm.or_model }),
+      body: JSON.stringify({ [key]: llm[key] }),
     }).catch(() => {});
   }
   function syncBackendBlocks() {
     for (const b of _backendBlocks) { b._syncFromState(); }
   }
-  function makeBackendBlock() {
+  // role: "text" (Enhance) | "vision" (Image→Prompt) — each panel's block owns its own
+  // backend + OpenRouter model, so the two roles can differ.
+  function makeBackendBlock(role) {
+    const mkey = role === "vision" ? "or_model_vision" : "or_model_text";
+    const bkey = role === "vision" ? "backend_vision" : "backend_text";
     const wrap = document.createElement("div");
     Object.assign(wrap.style, { display: "flex", flexDirection: "column", gap: "6px", marginBottom: "2px" });
 
     const beSel = makeSelect(["Local GGUF", "OpenRouter"],
-      llm.backend === "openrouter" ? "OpenRouter" : "Local GGUF",
-      (v) => { llm.backend = v === "OpenRouter" ? "openrouter" : "local"; saveLLM(); syncBackendBlocks(); });
-    wrap.appendChild(labelRow("Backend", beSel));
+      llm[bkey] === "openrouter" ? "OpenRouter" : "Local GGUF",
+      (v) => { llm[bkey] = v === "OpenRouter" ? "openrouter" : "local"; saveLLM(); syncBackendBlocks(); });
+    wrap.appendChild(labelRow(role === "vision" ? "Backend (Image → Prompt)" : "Backend (Enhance)", beSel));
 
     const orGroup = document.createElement("div");
     Object.assign(orGroup.style, { display: "flex", flexDirection: "column", gap: "6px" });
-    const orSel = makeSelect([llm.or_model || "Loading…"], llm.or_model,
-      (v) => { llm.or_model = v; saveLLM(); pushOrModel(); syncBackendBlocks(); });
-    orGroup.appendChild(labelRow("OpenRouter model", orSel));
+    const orSel = makeSelect([llm[mkey] || "Loading…"], llm[mkey],
+      (v) => { llm[mkey] = v; saveLLM(); pushOrModel(role); syncBackendBlocks(); });
+    orGroup.appendChild(labelRow(role === "vision" ? "OpenRouter model (vision — reads images)" : "OpenRouter model (text — writes prompts)", orSel));
 
     const keyInp = document.createElement("input");
     keyInp.type = "password";
@@ -305,9 +316,9 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
 
     wrap._localOnly = [];   // labelRows only meaningful for the local backend
     wrap._syncFromState = () => {
-      beSel.value = llm.backend === "openrouter" ? "OpenRouter" : "Local GGUF";
-      orSel.value = llm.or_model;
-      const or = llm.backend === "openrouter";
+      beSel.value = llm[bkey] === "openrouter" ? "OpenRouter" : "Local GGUF";
+      orSel.value = llm[mkey];
+      const or = llm[bkey] === "openrouter";
       orGroup.style.display = or ? "flex" : "none";
       for (const row of wrap._localOnly) row.style.display = or ? "none" : "flex";
     };
@@ -317,12 +328,12 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
         for (const m of orModels) {
           const o = document.createElement("option");
           o.value = m; o.textContent = m;
-          if (m === llm.or_model) o.selected = true;
+          if (m === llm[mkey]) o.selected = true;
           orSel.appendChild(o);
         }
-        if (!llm.or_model) {
-          llm.or_model = orModels.find((m) => /gemini-2\.5-flash/.test(m)) || orModels[0];
-          saveLLM(); orSel.value = llm.or_model;
+        if (!llm[mkey]) {
+          llm[mkey] = orModels.find((m) => /gemini-2\.5-flash/.test(m)) || orModels[0];
+          saveLLM(); orSel.value = llm[mkey];
         }
       }
       if (keyHint) keyInp.placeholder = keyHint + "  — click to replace";
@@ -404,7 +415,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     borderRight: "1px solid #333",
   });
 
-  const enhBackend = makeBackendBlock();
+  const enhBackend = makeBackendBlock("text");
   enhLeft.appendChild(enhBackend);
 
   // GGUF model select (populated after fetch)
@@ -487,8 +498,8 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt,
-          backend:            llm.backend,
-          or_model:           llm.or_model,
+          backend:            llm.backend_text,
+          or_model:           llm.or_model_text,
           gguf_model:         llm.gguf_model,
           n_gpu_layers:       llm.n_gpu_layers,
           n_ctx:              llm.n_ctx,
@@ -654,7 +665,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
 
   i2pLeft.appendChild(labelRow(t("llm_lbl_image"), imgWrap));
 
-  const i2pBackend = makeBackendBlock();
+  const i2pBackend = makeBackendBlock("vision");
   i2pLeft.appendChild(i2pBackend);
 
   const ggufSelI = makeSelect([llm.gguf_model || "Loading…"], llm.gguf_model, v => { llm.gguf_model = v; saveLLM(); ggufSelE.value = v; });
@@ -765,8 +776,8 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           image_b64:          _i2pImageB64,
-          backend:            llm.backend,
-          or_model:           llm.or_model,
+          backend:            llm.backend_vision,
+          or_model:           llm.or_model_vision,
           gguf_model:         llm.gguf_model,
           mmproj_file:        llm.mmproj_file,
           vision_task:        llm.vision_task,
@@ -885,10 +896,14 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     if (_modelsLoaded) return;
     _modelsLoaded = true;
     Promise.all([fetchModels(), fetchOrModels()]).then(([d, orModels]) => {
+      // fresh browser → adopt whatever the server has saved
+      if (!llm.or_model_text && (d.or_model_text || d.or_model)) llm.or_model_text = d.or_model_text || d.or_model;
+      if (!llm.or_model_vision && (d.or_model_vision || d.or_model)) llm.or_model_vision = d.or_model_vision || d.or_model;
+      if (d.or_model_text || d.or_model_vision) saveLLM();
       if (d._notInstalled) {
         // Local GGUF path is gone, but OpenRouter still works — force that backend,
         // fill the model list + key hint, and drop a slim note instead of blanking.
-        llm.backend = "openrouter"; saveLLM();
+        llm.backend_text = "openrouter"; llm.backend_vision = "openrouter"; saveLLM();
         for (const b of _backendBlocks) {
           b._fill(orModels, d.openrouter_key_hint);
           b._localOnly.forEach(r => r.remove());
