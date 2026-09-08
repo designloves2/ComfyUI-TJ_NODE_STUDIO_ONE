@@ -294,7 +294,20 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     Object.assign(orGroup.style, { display: "flex", flexDirection: "column", gap: "6px" });
     const orSel = makeSelect([llm[mkey] || "Loading…"], llm[mkey],
       (v) => { llm[mkey] = v; saveLLM(); pushOrModel(role); syncBackendBlocks(); });
-    orGroup.appendChild(labelRow(role === "vision" ? "OpenRouter model (vision — reads images)" : "OpenRouter model (text — writes prompts)", orSel));
+    // full OpenRouter model list (~300) — a filter box, no vision-capability gating
+    const orFilter = document.createElement("input");
+    orFilter.type = "text";
+    orFilter.placeholder = "filter models…";
+    Object.assign(orFilter.style, {
+      background: "#1a1a1a", color: "#ddd", border: "1px solid #444",
+      borderRadius: "4px", padding: "3px 5px", fontSize: "11px", width: "100%", boxSizing: "border-box",
+    });
+    orFilter.addEventListener("input", () => {
+      const q = orFilter.value.toLowerCase().trim();
+      for (const o of orSel.options) o.hidden = !!q && !o.value.toLowerCase().includes(q);
+    });
+    orGroup.appendChild(labelRow(role === "vision" ? "OpenRouter model (vision — reads images)" : "OpenRouter model (text — writes prompts)", orFilter));
+    orGroup.appendChild(orSel);
 
     const keyInp = document.createElement("input");
     keyInp.type = "password";
