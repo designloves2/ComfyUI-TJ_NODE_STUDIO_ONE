@@ -872,8 +872,13 @@ export function defaultState(saved) {
     visionSource:    "native",
     nativeVisionClip: saved.nativeVisionClip || "Qwen3\\qwen_3vl_8b_nvfp4.safetensors",
     nativeBriefClip:  saved.nativeBriefClip  || "LTX\\gemma4_e2b_it_bf16.safetensors",
-    h3LlmBackend:     saved.h3LlmBackend     || "native",   // "native" | "openrouter"
+    h3LlmBackend:     saved.h3LlmBackend     || "native",   // legacy single (migrates to the pair below)
     h3OrModel:        saved.h3OrModel        || "",
+    // Brief (writes the prompt) and Vision (reads images) pick their backend + model independently
+    h3BriefBackend:   saved.h3BriefBackend   || saved.h3LlmBackend || "native",   // "native" | "openrouter"
+    h3VisionBackend:  saved.h3VisionBackend  || saved.h3LlmBackend || "native",
+    h3OrModelBrief:   saved.h3OrModelBrief   || saved.h3OrModel || "",
+    h3OrModelVision:  saved.h3OrModelVision  || saved.h3OrModel || "",
 
     // output
     saveSubfolder: saved.saveSubfolder || "",

@@ -2065,10 +2065,12 @@ async def mmh3_get_config(request):
         # Ollama was removed; native is the only backend now.
         "vision_source":         "native",
         "native_vision_clip":    cfg.get("native_vision_clip",    "Qwen3\\qwen_3vl_8b_nvfp4.safetensors"),
-        "h3_llm_backend":        cfg.get("h3_llm_backend",        "native"),
+        "h3_llm_backend":        cfg.get("h3_llm_backend",        "native"),   # legacy
+        "h3_brief_backend":      cfg.get("h3_brief_backend")  or cfg.get("h3_llm_backend", "native"),
+        "h3_vision_backend":     cfg.get("h3_vision_backend") or cfg.get("h3_llm_backend", "native"),
         "h3_or_model":           cfg.get("h3_or_model_brief") or cfg.get("h3_or_model", ""),   # back-compat
         "h3_or_model_brief":     cfg.get("h3_or_model_brief") or cfg.get("h3_or_model", ""),
-        "h3_or_model_vision":    cfg.get("h3_or_model_vision",     ""),
+        "h3_or_model_vision":    cfg.get("h3_or_model_vision") or cfg.get("h3_or_model", ""),
         "filename_prefix":       cfg.get("filename_prefix",       "MMH3"),
         "stitch_at_end":         cfg.get("stitch_at_end",         True),
         "trim_last_clip":        cfg.get("trim_last_clip",        False),

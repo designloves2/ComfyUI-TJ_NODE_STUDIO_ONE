@@ -981,29 +981,22 @@ ${name}`, style: {
   function renderModelSel() {
     clear(modelSelWrap);
     const needImage = enhMode === "image";
-    if (state.h3LlmBackend === "openrouter") {
+    const bOR = (state.h3BriefBackend  || state.h3LlmBackend) === "openrouter";
+    const vOR = (state.h3VisionBackend || state.h3LlmBackend) === "openrouter";
+    const shortName = (m) => String(m || "").split("/").pop() || m;
+    const brief  = bOR ? `OR:${shortName(state.h3OrModelBrief || state.h3OrModel) || "default"}` : (state.nativeBriefClip ? shortName(state.nativeBriefClip) : null);
+    const vision = vOR ? `OR:${shortName(state.h3OrModelVision || state.h3OrModel) || "default"}` : (state.nativeVisionClip ? shortName(state.nativeVisionClip) : null);
+    if (!brief || (needImage && !vision)) {
       modelSelWrap.appendChild(el("div", {
-        text: `OpenRouter · ${state.h3OrModel || "default model"}`,
-        title: "Change in Settings → LLM Setting",
-        style: { fontSize: "10px", color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
-      }));
-      return;
-    }
-    const briefOk = !!state.nativeBriefClip;
-    const visionOk = !needImage || !!state.nativeVisionClip;
-    if (!briefOk || !visionOk) {
-      modelSelWrap.appendChild(el("div", {
-        text: !briefOk ? "No brief CLIP set - pick one in Settings -> LLM Setting."
-                       : "No vision CLIP set - pick one in Settings -> LLM Setting.",
+        text: !brief ? "Brief: not set — pick a CLIP or switch to OpenRouter in Settings → LLM."
+                     : "Vision: not set — pick a CLIP or switch to OpenRouter in Settings → LLM.",
         style: { fontSize: "10.5px", color: C.warn },
       }));
       return;
     }
     modelSelWrap.appendChild(el("div", {
-      text: needImage
-        ? `Brief: ${state.nativeBriefClip}  .  Vision: ${state.nativeVisionClip}`
-        : `Brief: ${state.nativeBriefClip}`,
-      title: "Change these in Settings -> LLM Setting",
+      text: needImage ? `Brief: ${brief}  ·  Vision: ${vision}` : `Brief: ${brief}`,
+      title: "Change in Settings → LLM Setting",
       style: { fontSize: "10px", color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
     }));
   }
@@ -1118,9 +1111,11 @@ ${name}`, style: {
     const images = enhMode === "image"
       ? a.refImages.slice(0, imageBriefMax(state.briefImageMode))
       : [];
-    const useOR = state.h3LlmBackend === "openrouter";
-    if (!useOR && !state.nativeBriefClip) { ctx.showPopup?.("No brief CLIP set - pick one in Settings (or switch the LLM backend to OpenRouter).", true); return; }
-    if (!useOR && images.length && !state.nativeVisionClip) { ctx.showPopup?.("No vision CLIP set - pick one in Settings.", true); return; }
+    // Brief and Vision each choose their own backend (native CLIP vs OpenRouter).
+    const briefOR  = (state.h3BriefBackend  || state.h3LlmBackend) === "openrouter";
+    const visionOR = (state.h3VisionBackend || state.h3LlmBackend) === "openrouter";
+    if (!briefOR && !state.nativeBriefClip) { ctx.showPopup?.("No brief CLIP set - pick one in Settings, or switch the Brief backend to OpenRouter.", true); return; }
+    if (images.length && !visionOR && !state.nativeVisionClip) { ctx.showPopup?.("No vision CLIP set - pick one in Settings, or switch the Vision backend to OpenRouter.", true); return; }
 
     const target = targetSel.value;
     const base = (editor.value || "").trim();
@@ -1139,14 +1134,14 @@ ${name}`, style: {
         progressStage(`Analyzing ${images.length} image${images.length > 1 ? "s" : ""}...`);
         const prompt = `${VISION_SYSTEM_PROMPT} There are ${images.length} images, in order. `
           + `Describe each one separately, each on its own line starting with "Image N: ".`;
-        imageSummary = (useOR
-          ? await analyzeImagesOpenRouter(images, prompt, state.h3OrModel)
+        imageSummary = (visionOR
+          ? await analyzeImagesOpenRouter(images, prompt, state.h3OrModelVision || state.h3OrModel)
           : await analyzeImagesNative(state.nativeVisionClip, images, prompt)).trim();
       }
 
       progressStage("Writing brief...");
-      const text = (useOR
-        ? await writeBriefOpenRouter(systemPrompt, buildUserPrompt(base, imageSummary), state.h3OrModel)
+      const text = (briefOR
+        ? await writeBriefOpenRouter(systemPrompt, buildUserPrompt(base, imageSummary), state.h3OrModelBrief || state.h3OrModel)
         : await writeBriefNative(state.nativeBriefClip, systemPrompt, buildUserPrompt(base, imageSummary))).trim();
       if (!text) throw new Error("empty response");
       // Never write straight in - show what came back and let the user decide.

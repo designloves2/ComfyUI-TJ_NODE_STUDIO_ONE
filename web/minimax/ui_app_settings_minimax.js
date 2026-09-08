@@ -200,38 +200,79 @@ export function createSettingsOverlay(state, ctx) {
     return _orModels;
   }
 
+  function _selEl(opts) {
+    return el("select", { style: {
+      width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+      border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px", fontSize: "12px", fontFamily: "inherit",
+    }}, opts);
+  }
+
   function renderModelPickers() {
     const wrap2 = renderModelPickersInto;
     if (!wrap2) return;
     clear(wrap2);
 
-    // Backend: native ComfyUI CLIP, or OpenRouter (cloud). The OpenRouter key is the
-    // one shared with the image + music nodes (server .env).
-    const beSel = el("select", { style: {
-      width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
-      border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px", fontSize: "12px", fontFamily: "inherit",
-    }}, [
-      el("option", { value: "native",     text: "Native (ComfyUI CLIP)", ...(state.h3LlmBackend !== "openrouter" ? { selected: "selected" } : {}) }),
-      el("option", { value: "openrouter", text: "OpenRouter (cloud)",     ...(state.h3LlmBackend === "openrouter" ? { selected: "selected" } : {}) }),
-    ]);
-    beSel.addEventListener("change", () => { state.h3LlmBackend = beSel.value; ctx.persist(); renderModelPickers(); });
-    wrap2.appendChild(col([label("LLM backend"), beSel]));
+    // Brief (writes the prompt) and Vision (reads reference images) are chosen fully
+    // independently — backend + model for each. e.g. brief on OpenRouter, vision on a
+    // local CLIP, or vice versa. The OpenRouter key is the one shared with the image +
+    // music nodes (server .env).
+    const clipList = ["none", ...(modelData.text_encoders || []).filter(x => x !== "none")];
+    const nativeMissing = [];
+    if (!availability.available?.TJ_MultiImageLoader)   nativeMissing.push("TJ_MultiImageLoader");
+    if (!availability.available?.TextGenerate)           nativeMissing.push("TextGenerate");
+    if (!availability.available?.TJStudioOneTextOutput)  nativeMissing.push("TJStudioOneTextOutput");
 
-    if (state.h3LlmBackend === "openrouter") {
-      const orSel = el("select", { style: {
-        width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
-        border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px", fontSize: "12px", fontFamily: "inherit",
-      }}, [el("option", { value: state.h3OrModel || "", text: state.h3OrModel || "loading models…" })]);
-      orSel.addEventListener("change", () => {
-        state.h3OrModel = orSel.value; ctx.persist();
-        fetch("/tj_studio_one/llm/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ or_model: orSel.value }) }).catch(() => {});
+    let anyOR = false;
+
+    function roleRow(roleLabel, backendKey, clipKey, orModelKey, defaultBackend) {
+      if (!state[backendKey]) state[backendKey] = state.h3LlmBackend || defaultBackend || "native";
+      if (!state[orModelKey]) state[orModelKey] = state.h3OrModel || "";
+      const isOR = state[backendKey] === "openrouter";
+      if (isOR) anyOR = true;
+
+      const beSel = _selEl([
+        el("option", { value: "native",     text: "Native (ComfyUI CLIP)", ...(!isOR ? { selected: "selected" } : {}) }),
+        el("option", { value: "openrouter", text: "OpenRouter (cloud)",     ...(isOR ? { selected: "selected" } : {}) }),
+      ]);
+      beSel.addEventListener("change", () => {
+        state[backendKey] = beSel.value; ctx.persist(); renderModelPickers();
       });
-      orModels().then(ms => {
-        if (!ms.length) return;
-        clear(orSel);
-        ms.forEach(m => orSel.appendChild(el("option", { value: m, text: m, ...(m === state.h3OrModel ? { selected: "selected" } : {}) })));
-        if (!state.h3OrModel) { state.h3OrModel = ms.find(m => /gemini-2\.5-flash/.test(m)) || ms[0]; ctx.persist(); orSel.value = state.h3OrModel; }
-      });
+
+      let control;
+      if (isOR) {
+        const orSel = _selEl([el("option", { value: state[orModelKey] || "", text: state[orModelKey] || "loading models…" })]);
+        orSel.addEventListener("change", () => {
+          state[orModelKey] = orSel.value; ctx.persist();
+          const cfgKey = orModelKey === "h3OrModelVision" ? "h3_or_model_vision" : "h3_or_model_brief";
+          fetch("/minimax_h3_one/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [cfgKey]: orSel.value }) }).catch(() => {});
+        });
+        orModels().then(ms => {
+          if (!ms.length) return;
+          clear(orSel);
+          ms.forEach(m => orSel.appendChild(el("option", { value: m, text: m, ...(m === state[orModelKey] ? { selected: "selected" } : {}) })));
+          if (!state[orModelKey]) { state[orModelKey] = ms.find(m => /gemini-2\.5-flash/.test(m)) || ms[0]; ctx.persist(); orSel.value = state[orModelKey]; }
+        });
+        control = col([label("OpenRouter model"), orSel]);
+      } else if (nativeMissing.length) {
+        control = el("div", { text: `⚠ Native needs: ${nativeMissing.join(", ")} (TJ_NODE / update ComfyUI)`,
+          style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } });
+      } else {
+        const pick = searchableSelect(clipList, state[clipKey] || "none", v => { state[clipKey] = v === "none" ? "" : v; ctx.persist(); });
+        control = col([label("CLIP checkpoint"), pick.el]);
+      }
+      return col([
+        el("div", { text: roleLabel, style: { fontSize: "11px", fontWeight: "700", color: BRAND } }),
+        col([label("Backend"), beSel]),
+        control,
+      ]);
+    }
+
+    wrap2.append(
+      roleRow("Brief — writes the prompt", "h3BriefBackend", "nativeBriefClip", "h3OrModelBrief", "native"),
+      roleRow("Vision — reads reference images", "h3VisionBackend", "nativeVisionClip", "h3OrModelVision", "native"),
+    );
+
+    if (anyOR) {
       const keyIn = el("input", { type: "password", placeholder: "sk-or-… (stored in .env, shared)", style: {
         width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
         border: `1px solid ${C.border}`, borderRadius: "6px", padding: "5px 7px", fontSize: "11px", fontFamily: "inherit",
@@ -243,34 +284,7 @@ export function createSettingsOverlay(state, ctx) {
           .then(() => { keyIn.value = ""; keyIn.placeholder = "✓ key saved to .env"; });
       });
       fetch("/tj_studio_one/llm/models").then(r => r.json()).then(d => { if (d.openrouter_key_hint) keyIn.placeholder = d.openrouter_key_hint + " — click to replace"; }).catch(() => {});
-      wrap2.append(
-        col([label("OpenRouter model"), orSel]),
-        col([label("OpenRouter API key"), keyIn]),
-        el("div", { text: "Reads reference images + writes the brief through OpenRouter — no ComfyUI CLIP load, no queue turn.", style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-      );
-      return;
-    }
-    {
-      const missing = [];
-      if (!availability.available?.TJ_MultiImageLoader)  missing.push("TJ_MultiImageLoader (TJ_NODE)");
-      if (!availability.available?.TextGenerate)          missing.push("TextGenerate (ComfyUI core — update ComfyUI)");
-      if (!availability.available?.TJStudioOneTextOutput) missing.push("TJStudioOneTextOutput (this package)");
-      if (missing.length) {
-        wrap2.appendChild(el("div", { text: `⚠ Native vision needs: ${missing.join(", ")}`,
-          style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
-        return;
-      }
-      const clipList = ["none", ...(modelData.text_encoders || []).filter(x => x !== "none")];
-      const briefPick  = searchableSelect(clipList, state.nativeBriefClip  || "none", v => { state.nativeBriefClip  = v === "none" ? "" : v; ctx.persist(); });
-      const visionPick = searchableSelect(clipList, state.nativeVisionClip || "none", v => { state.nativeVisionClip = v === "none" ? "" : v; ctx.persist(); });
-      wrap2.append(
-        row([col([label("Brief CLIP (writes the prompt)"), briefPick.el]),
-             col([label("Vision CLIP (reads images)"), visionPick.el])]),
-        el("div", { text: "Both run through TextGenerate on ComfyUI's own model loading — no external server. "
-          + "A Qwen3-VL checkpoint (the kind already used for MiniMax H3 text encoding) can be picked for either "
-          + "or both roles; the same file works for both if you don't want two loaded at once.",
-          style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-      );
+      wrap2.appendChild(col([label("OpenRouter API key (shared)"), keyIn]));
     }
   }
 
@@ -476,8 +490,10 @@ export function createSettingsOverlay(state, ctx) {
       cache_max_steps:  state.cacheMaxSteps  ?? 2,
       vision_source:         "native",   // the Ollama backend was removed
       native_vision_clip:    state.nativeVisionClip  || "",
-      h3_llm_backend:        state.h3LlmBackend      || "native",
-      h3_or_model:           state.h3OrModel         || "",
+      h3_brief_backend:      state.h3BriefBackend    || state.h3LlmBackend || "native",
+      h3_vision_backend:     state.h3VisionBackend   || state.h3LlmBackend || "native",
+      h3_or_model_brief:     state.h3OrModelBrief    || state.h3OrModel || "",
+      h3_or_model_vision:    state.h3OrModelVision   || state.h3OrModel || "",
       filename_prefix:       state.filenamePrefix    || "MMH3",
       stitch_at_end:         state.stitchAtEnd       ?? true,
       trim_last_clip:        state.trimLastClip      ?? false,
@@ -578,8 +594,12 @@ export function createSettingsOverlay(state, ctx) {
     if (cfg.cache_end != null)        state.cacheEnd       = cfg.cache_end;
     if (cfg.cache_max_steps != null)  state.cacheMaxSteps  = cfg.cache_max_steps;
     if (cfg.native_vision_clip)       state.nativeVisionClip = cfg.native_vision_clip;
-    if (cfg.h3_llm_backend)           state.h3LlmBackend     = cfg.h3_llm_backend;
-    if (cfg.h3_or_model)              state.h3OrModel        = cfg.h3_or_model;
+    if (cfg.h3_llm_backend)           state.h3LlmBackend     = cfg.h3_llm_backend;   // legacy
+    if (cfg.h3_or_model)              state.h3OrModel        = cfg.h3_or_model;      // legacy
+    if (cfg.h3_brief_backend)         state.h3BriefBackend   = cfg.h3_brief_backend;
+    if (cfg.h3_vision_backend)        state.h3VisionBackend  = cfg.h3_vision_backend;
+    if (cfg.h3_or_model_brief)        state.h3OrModelBrief   = cfg.h3_or_model_brief;
+    if (cfg.h3_or_model_vision)       state.h3OrModelVision  = cfg.h3_or_model_vision;
     if (cfg.filename_prefix)          state.filenamePrefix   = cfg.filename_prefix;
     if (cfg.stitch_at_end != null)          state.stitchAtEnd        = cfg.stitch_at_end;
     if (cfg.trim_last_clip != null)         state.trimLastClip       = cfg.trim_last_clip;
