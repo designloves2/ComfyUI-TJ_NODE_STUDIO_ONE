@@ -1527,10 +1527,13 @@ async def studio_llm_download_image(request):
 
 @PromptServer.instance.routes.get("/tj_studio_one/llm/models")
 async def studio_llm_models(request):
+    _or_text, _or_vision = _studio_or_models()
     _or = {
         "openrouter_key_set": bool(_openrouter_api_key()),
         "openrouter_key_hint": _mask_secret(_openrouter_api_key()),
-        "or_model": _studio_llm_load().get("or_model", ""),
+        "or_model": _or_text,   # back-compat (= text model)
+        "or_model_text": _or_text,
+        "or_model_vision": _or_vision,
     }
     _, _, utils = _try_import_tj_llm()
     if utils is None:
@@ -1567,7 +1570,7 @@ async def studio_llm_enhance(request):
     data = await request.json()
 
     if (data.get("backend") or "").lower() == "openrouter":
-        model = data.get("or_model") or _studio_llm_load().get("or_model", "") or "google/gemini-2.5-flash"
+        model = (data.get("or_model") or "").strip() or _studio_or_models()[0]   # text
         try:
             loop = asyncio.get_event_loop()
             text = await loop.run_in_executor(
@@ -1626,7 +1629,7 @@ async def studio_llm_image_to_prompt(request):
         img_b64 = data.get("image_b64", "")
         if not img_b64:
             return web.json_response({"ok": False, "error": "No image data"})
-        model = data.get("or_model") or _studio_llm_load().get("or_model", "") or "google/gemini-2.5-flash"
+        model = (data.get("or_model") or "").strip() or _studio_or_models()[1]   # vision
         vt = data.get("vision_task", "Caption (plain description)")
         ci = (data.get("custom_instruction", "") or "").strip()
         sys_p = ("You look at an image and produce a text-to-image prompt describing it.\n"
@@ -1707,7 +1710,7 @@ async def mmh3_llm_analyze(request):
         data = await request.json()
     except Exception:
         return web.json_response({"ok": False, "error": "bad request"}, status=400)
-    model = data.get("or_model") or _studio_llm_load().get("or_model", "") or "google/gemini-2.5-flash"
+    model = (data.get("or_model") or "").strip() or _h3_or_models()[1]   # vision
     try:
         loop = asyncio.get_event_loop()
         text = await loop.run_in_executor(
@@ -1727,7 +1730,7 @@ async def mmh3_llm_write_brief(request):
         data = await request.json()
     except Exception:
         return web.json_response({"ok": False, "error": "bad request"}, status=400)
-    model = data.get("or_model") or _studio_llm_load().get("or_model", "") or "google/gemini-2.5-flash"
+    model = (data.get("or_model") or "").strip() or _h3_or_models()[0]   # brief / text
     try:
         loop = asyncio.get_event_loop()
         text = await loop.run_in_executor(
@@ -2063,7 +2066,9 @@ async def mmh3_get_config(request):
         "vision_source":         "native",
         "native_vision_clip":    cfg.get("native_vision_clip",    "Qwen3\\qwen_3vl_8b_nvfp4.safetensors"),
         "h3_llm_backend":        cfg.get("h3_llm_backend",        "native"),
-        "h3_or_model":           cfg.get("h3_or_model",           ""),
+        "h3_or_model":           cfg.get("h3_or_model_brief") or cfg.get("h3_or_model", ""),   # back-compat
+        "h3_or_model_brief":     cfg.get("h3_or_model_brief") or cfg.get("h3_or_model", ""),
+        "h3_or_model_vision":    cfg.get("h3_or_model_vision",     ""),
         "filename_prefix":       cfg.get("filename_prefix",       "MMH3"),
         "stitch_at_end":         cfg.get("stitch_at_end",         True),
         "trim_last_clip":        cfg.get("trim_last_clip",        False),
@@ -4078,6 +4083,30 @@ def _studio_llm_load():
         return {}
 
 
+_OR_DEFAULT_VISION = "google/gemini-2.5-flash"
+
+
+def _studio_or_models():
+    """(text, vision) OpenRouter model ids for the image-node LLM panel. Text is used
+    for Enhance, vision for Image → Prompt. Migrates the old single `or_model`."""
+    d = _studio_llm_load()
+    legacy = (d.get("or_model") or "").strip()
+    text = (d.get("or_model_text") or "").strip() or legacy or _OR_DEFAULT_VISION
+    vision = (d.get("or_model_vision") or "").strip() or legacy or _OR_DEFAULT_VISION
+    return text, vision
+
+
+def _h3_or_models():
+    """(brief, vision) OpenRouter model ids for MiniMax H3's Image → Brief. The H3
+    config overrides the shared studio pair; the old single `h3_or_model` migrates to
+    brief."""
+    cfg = _load_config(MMH3_CONFIG_PATH)
+    base_text, base_vision = _studio_or_models()
+    brief = (cfg.get("h3_or_model_brief") or cfg.get("h3_or_model") or "").strip() or base_text
+    vision = (cfg.get("h3_or_model_vision") or "").strip() or base_vision
+    return brief, vision
+
+
 def _studio_llm_save(patch):
     d = _studio_llm_load()
     d.update({k: v for k, v in patch.items() if v is not None})
@@ -4096,13 +4125,22 @@ async def studio_llm_config(request):
         return web.json_response({"ok": False, "error": "bad request"}, status=400)
     if "openrouter_key" in data and data["openrouter_key"] is not None:
         _write_openrouter_key(data["openrouter_key"])
-    if data.get("or_model"):
-        _studio_llm_save({"or_model": data["or_model"]})
+    patch = {}
+    if data.get("or_model_text"):   patch["or_model_text"] = data["or_model_text"]
+    if data.get("or_model_vision"): patch["or_model_vision"] = data["or_model_vision"]
+    # legacy single field: set text (the more common role), leave vision to migrate
+    if data.get("or_model") and "or_model_text" not in patch:
+        patch["or_model_text"] = data["or_model"]
+    if patch:
+        _studio_llm_save(patch)
+    text, vision = _studio_or_models()
     return web.json_response({
         "ok": True,
         "openrouter_key_set": bool(_openrouter_api_key()),
         "openrouter_key_hint": _mask_secret(_openrouter_api_key()),
-        "or_model": _studio_llm_load().get("or_model", ""),
+        "or_model": text,   # back-compat
+        "or_model_text": text,
+        "or_model_vision": vision,
     })
 
 
