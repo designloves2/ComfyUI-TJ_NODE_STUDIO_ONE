@@ -28,7 +28,7 @@ import {
   turboLoraForMode, pddFileForMode, clipAssets, explainGenerationError,
   promptText, promptFirstFrame, promptEnabled, activePrompts, buildAgentJob,
 } from "./minimax/core_minimax.js";
-import { downloadAgentJob } from "./shared/agent_job.js";
+import { downloadAgentJob, agentStamp } from "./shared/agent_job.js";
 import { panel, label, button, select, loraSelect, numberField, slider, row, col, modeBar, iconBtn, openVideoFullscreen }
   from "./klein/ui_common.js";
 import {
@@ -605,7 +605,7 @@ app.registerExtension({
             const presetName = (matchPreset(state, state.userPresets) || matchPreset(state) || {}).label ?? null;
             const job = buildAgentJob(state, i, presetName);
             const seed = state.seedPerClip ? ((state.seed ?? 0) + i) % Number.MAX_SAFE_INTEGER : state.seed ?? 0;
-            downloadAgentJob("h3", job, `job_${seed}_C${i + 1}.json`);
+            downloadAgentJob("h3", job, `MMH3_${job.mode}_${agentStamp()}_${seed}_${i + 1}.json`);
           });
           sideCol.appendChild(jsonBtn);
 

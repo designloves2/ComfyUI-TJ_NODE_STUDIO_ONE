@@ -2,7 +2,7 @@
 import { app } from "../../scripts/app.js";
 import { C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD,
          el, clear, loadState, saveState, defaultState, randomSeed, LS_KEY, buildAgentJob } from "./krea2/core_krea2.js";
-import { downloadAgentJob } from "./shared/agent_job.js";
+import { downloadAgentJob, agentStamp } from "./shared/agent_job.js";
 import { resolvePipeOverrides, applyOverridesTemp, collectModelNames } from "./shared/promptdb_pipe.js";
 import { panel, label, button, select, numberField, row, col,
          modeBar, iconBtn, openFullscreen }                                    from "./klein/ui_common.js";
@@ -384,7 +384,8 @@ app.registerExtension({
       const agentBtn = button("⬇ job.json",()=>{
         const job = buildAgentJob(state);
         if(!job){ alert("This mode isn't in the krea2-headless agent's scope (t2i / i2i / identity only)."); return; }
-        downloadAgentJob("krea2", job, `krea2_${state.mode}.json`);
+        const m = state.mode === "identity" ? "id" : state.mode;
+        downloadAgentJob("krea2", job, `Krea2_${m}_${agentStamp()}_${state.seed ?? 0}.json`);
       });
       agentBtn.title = "Download the current settings as a job.json for the krea2-headless Hermes agent";
       agentBtn.style.cssText += "width:100%;font-size:11px;padding:5px;opacity:0.85;";

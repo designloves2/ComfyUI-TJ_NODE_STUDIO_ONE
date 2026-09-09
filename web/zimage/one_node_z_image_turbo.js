@@ -2,7 +2,7 @@
 import { app } from "../../../scripts/app.js";
 import { C, NODE_W, PREVIEW_SIZE, LEFT_W, PAD,
          el, clear, loadState, saveState, defaultState, randomSeed, LS_KEY, buildAgentJob } from "./core.js";
-import { downloadAgentJob } from "../shared/agent_job.js";
+import { downloadAgentJob, agentStamp } from "../shared/agent_job.js";
 import { panel, label, button, select, numberField, row, col,
          modeBar, iconBtn, openFullscreen } from "./ui_common.js";
 import { queuePrompt, interrupt, copyOutputToInput, setLastImage,
@@ -581,7 +581,7 @@ app.registerExtension({
       const agentBtn=button("⬇ job.json",()=>{
         const job=buildAgentJob(state);
         if(!job){ alert("This mode isn't in the zimage-headless agent's scope (t2i / i2i only)."); return; }
-        downloadAgentJob("zimage", job, `zimage_${state.mode}.json`);
+        downloadAgentJob("zimage", job, `Zimage_${state.mode}_${agentStamp()}_${state.seed ?? 0}.json`);
       });
       agentBtn.title="Download the current settings as a job.json for the zimage-headless Hermes agent";
       agentBtn.style.cssText+="width:100%;font-size:11px;padding:5px;opacity:0.85;";

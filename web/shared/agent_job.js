@@ -13,6 +13,12 @@ export function agentInputPath(filename) {
   return base ? AGENT_INPUTS_DIR + base : "";
 }
 
+// Local-time YYYYMMDDHHmm stamp for job.json filenames.
+export function agentStamp(d = new Date()) {
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
 // Wrap a job object in the envelope and download it as <filename>. `target` (agent-side
 // delivery routing, e.g. "telegram:<chat id>") is left blank for the user to fill in.
 export function downloadAgentJob(tool, job, filename) {
