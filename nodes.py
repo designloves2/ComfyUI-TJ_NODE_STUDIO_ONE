@@ -2375,6 +2375,9 @@ MMH3_OPTIONAL_NODES = [
     "RTXVideoSuperResolution",
     # ships with TJ_NODE — NVIDIA VFX deblur, same-resolution sharpening
     "TJ_RTXDeblur",
+    # LTX 2.5 Upscale mode — GGUF text-encoder loader (ships with TJ_NODE); the LTXV*
+    # nodes and LatentUpscaleModelLoader are ComfyUI core.
+    "TJ_LTX25ClipLoaderGGUF",
     # gallery post-processing — upscale / frame interpolation on a finished clip
     "UpscaleModelLoader",
     "ImageUpscaleWithModel",

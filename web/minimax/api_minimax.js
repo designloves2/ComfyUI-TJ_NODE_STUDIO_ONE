@@ -49,6 +49,9 @@ export const MMH3_OPTIONAL_NODES = [
   "MiniMaxH3ScheduledSolAttentionPatch", "MiniMaxH3FusedModulation",
   "MiniMaxH3TurboSampler", "MiniMaxH3TurboLoRA", "SolAttnPatch",
   "SpectrumApplyMiniMaxH3", "RTXVideoSuperResolution", "TJ_RTXDeblur",
+  // LTX 2.5 Upscale mode — the LTXV* nodes + LatentUpscaleModelLoader are ComfyUI core;
+  // only the GGUF text-encoder loader is ours (needed for the gemma4 LTX clip).
+  "TJ_LTX25ClipLoaderGGUF",
   // gallery post-processing — upscale / frame interpolation on a finished clip
   "UpscaleModelLoader", "ImageUpscaleWithModel", "RIFEInterpolation",
   // reference video / audio inputs
