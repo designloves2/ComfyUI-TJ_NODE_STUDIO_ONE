@@ -727,6 +727,7 @@ export function defaultState(saved) {
     // Does not touch the H3 conditioning/sampler chain — see buildLtxUpscaleGraph.
     ltxSource:      saved.ltxSource      || "",     // source video filename (gallery pick or upload)
     ltxSourceKind:  saved.ltxSourceKind  || "gallery",  // "gallery" | "upload"
+    ltxSourceMeta:  saved.ltxSourceMeta  || null,   // { w, h, fps, frames, duration } from the clip's sidecar, for the info line
     ltxPrompt:      saved.ltxPrompt      || "",
     ltxNegPrompt:   saved.ltxNegPrompt   || "bad anatomy, inconsistent look, low resolution,",
     ltxSteps:       saved.ltxSteps       ?? 3,

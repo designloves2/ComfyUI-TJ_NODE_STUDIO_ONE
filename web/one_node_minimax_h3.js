@@ -1205,6 +1205,12 @@ app.registerExtension({
           if (String(p).trim() && !String(state.ltxPrompt || "").trim())    state.ltxPrompt = String(p);
           if (String(n).trim() && !String(state.ltxNegPrompt || "").trim()) state.ltxNegPrompt = String(n);
         }
+        // The clip's own sidecar meta is the instant, reliable source for the info line
+        // (duration / fps / size) — ffmpeg probe fills gaps and covers uploads.
+        const durM = m.durationSeconds || m.seconds || (m.frames && m.fps ? m.frames / m.fps : 0) || 0;
+        state.ltxSourceMeta = (m.w || m.h || m.fps || m.frames || durM)
+          ? { w: m.w || 0, h: m.h || 0, fps: m.fps || 0, frames: m.frames || 0, duration: durM }
+          : null;
         _ltxSrcInfo = null;
         persist(); renderLeft(); renderPrompts();
         loadLtxSrcInfo();
@@ -1245,7 +1251,7 @@ app.registerExtension({
           card.appendChild(el("button", { type: "button", text: "✕", title: "Clear source", style: {
             position: "absolute", top: "6px", right: "6px", zIndex: "3", width: "24px", height: "24px",
             border: "none", borderRadius: "6px", background: "rgba(0,0,0,0.7)", color: "#fff", cursor: "pointer", fontSize: "12px",
-          }, onclick: () => { state.ltxSource = ""; state.ltxSourceKind = "gallery"; _ltxSrcInfo = null; persist(); renderLeft(); renderPrompts(); } }));
+          }, onclick: () => { state.ltxSource = ""; state.ltxSourceKind = "gallery"; state.ltxSourceMeta = null; _ltxSrcInfo = null; persist(); renderLeft(); renderPrompts(); } }));
           srcKids.push(card);
 
           // ── control bar — sits under the card, never over the picture ────────
@@ -1263,26 +1269,37 @@ app.registerExtension({
           let seeking = false;
           seek.addEventListener("input", () => { seeking = true; if (vid.duration) vid.currentTime = (parseFloat(seek.value) / 1000) * vid.duration; });
           seek.addEventListener("change", () => { seeking = false; });
-          const timeLabel = el("span", { text: "0:00 / 0:00" });
           vid.addEventListener("timeupdate", () => {
             if (!seeking && vid.duration) seek.value = String(Math.round((vid.currentTime / vid.duration) * 1000));
-            timeLabel.textContent = `${fmtT(vid.currentTime)} / ${fmtT(vid.duration)}`;
           });
           srcKids.push(el("div", { style: { display: "flex", alignItems: "center", gap: "8px", padding: "6px 2px" } }, [playBtn, seek, muteBtn]));
 
-          // ── info line: 0:00 / 0:08    24fps    1248x768 ─────────────────────
-          const info = _ltxSrcInfo;
+          // ── info line — length · fps · size ────────────────────────────────
+          // The <video> element itself gives exact duration + pixel size once its
+          // metadata loads; fps comes from the ffmpeg probe or (frames ÷ duration)
+          // off the clip's sidecar. No dependency on the probe succeeding.
+          const durLabel  = el("span", { text: "0:00 / 0:00" });
+          const fpsSpan   = el("span", { text: "—", style: { color: C.muted } });
+          const sizeSpan  = el("span", { text: "—", style: { color: C.muted } });
+          const refreshInfo = () => {
+            const info = _ltxSrcInfo, sm = state.ltxSourceMeta || {};
+            const dur = vid.duration || (info && info.duration) || sm.duration || 0;
+            const w   = vid.videoWidth  || (info && info.width)  || sm.w || 0;
+            const h   = vid.videoHeight || (info && info.height) || sm.h || 0;
+            let fps   = (info && info.fps) || sm.fps || 0;
+            if (!fps && sm.frames && dur) fps = sm.frames / dur;
+            durLabel.textContent = `${fmtT(vid.currentTime)} / ${fmtT(dur)}`;
+            if (fps)   { fpsSpan.textContent  = `${Math.round(fps)}fps`; fpsSpan.style.color  = C.text; }
+            if (w && h){ sizeSpan.textContent = `${w}x${h}`;             sizeSpan.style.color = C.text; }
+          };
+          vid.addEventListener("loadedmetadata", refreshInfo);
+          vid.addEventListener("timeupdate", refreshInfo);
+          refreshInfo();
           srcKids.push(el("div", { style: {
-            display: "flex", alignItems: "center", gap: "14px", padding: "0 2px",
-            fontSize: "11px", color: info ? C.text : C.muted, fontVariantNumeric: "tabular-nums",
-          }}, [
-            timeLabel,
-            el("span", { text: info && info.fps ? `${info.fps.toFixed(info.fps % 1 ? 2 : 0)}fps` : "— fps" }),
-            el("span", { text: info && info.width && info.height ? `${info.width}x${info.height}` : "—" }),
-            el("span", { text: state.ltxSourceKind === "upload" ? "⬆ upload" : "🖼 gallery",
-              style: { marginLeft: "auto", color: C.muted } }),
-          ]));
-          if (info && !info.has_audio) srcKids.push(el("div", {
+            display: "flex", alignItems: "center", gap: "16px", padding: "0 2px",
+            fontSize: "11px", color: C.text, fontVariantNumeric: "tabular-nums",
+          }}, [durLabel, fpsSpan, sizeSpan]));
+          if (_ltxSrcInfo && _ltxSrcInfo.has_audio === false) srcKids.push(el("div", {
             text: "⚠ No audio track — the LTX audio branch needs one. Add audio to the clip first.",
             style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
         } else {
