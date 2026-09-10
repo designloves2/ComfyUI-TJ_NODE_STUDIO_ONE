@@ -674,8 +674,11 @@ export function defaultState(saved) {
     ltxDenoise:     saved.ltxDenoise     ?? 0.15,
     ltxSampler:     saved.ltxSampler     || "euler_ancestral",
     ltxScheduler:   saved.ltxScheduler   || "simple",
-    ltxSeed:        saved.ltxSeed        ?? 0,
-    ltxSeedMode:    saved.ltxSeedMode    || "randomize",
+    // LTX Upscale runs on the LTX 2.5 unet — a different model from H3 — so its LoRAs
+    // are their own list, never the H3 `loras`.
+    ltxLoras: Array.isArray(saved.ltxLoras) ? saved.ltxLoras.map(l => ({
+      name: l.name || "none", strength: l.strength ?? 1.0, enabled: l.enabled !== false,
+    })) : [],
     // configured once in ⚙ Settings → LTX 2.5 Upscale (round-trip through the config route)
     ltxUnet:           saved.ltxUnet           || "",   // .gguf → TJ_LTX25ClipLoaderGGUF-companion UnetLoaderGGUF; .safetensors → UNETLoader
     ltxLatentUpscaler: saved.ltxLatentUpscaler || "",   // models/latent_upscale_models/
@@ -683,6 +686,14 @@ export function defaultState(saved) {
     ltxVaeVideo:       saved.ltxVaeVideo       || "",
     ltxVaeAudio:       saved.ltxVaeAudio       || "",
     ltxTinyVae:        saved.ltxTinyVae        || "",   // preview TAE (taeltx2*) — falls back to the H3 preview tiny_vae if unset
+    // The ✨ LLM in the upscale prompt area: analyses the source clip's first frame to
+    // reconstruct a prompt that matches it. The native path's instruction is editable in
+    // Settings (saved as ltx_llm_prompt); the OpenRouter path reuses the H3 vision config.
+    ltxLlmPrompt:      saved.ltxLlmPrompt      ||
+      "Describe this single video frame as one flowing text-to-image prompt for an LTX video "
+      + "upscale/refine pass. Match what is shown exactly — subjects, their attributes and "
+      + "positions, setting, lighting, colour, camera framing and motion feel, overall style "
+      + "and medium. Do not invent anything not visible. One paragraph, no lists, no preamble.",
     accelMode:      saved.accelMode      || "solattn",   // legacy — kept only so old
                                                          // workflows can be migrated below
     upscaleMode:    saved.upscaleMode    || "none",

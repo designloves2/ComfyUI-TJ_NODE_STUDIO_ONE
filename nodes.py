@@ -2074,6 +2074,7 @@ async def mmh3_get_config(request):
         "ltx_vae_video":         cfg.get("ltx_vae_video",         ""),
         "ltx_vae_audio":         cfg.get("ltx_vae_audio",         ""),
         "ltx_tiny_vae":          cfg.get("ltx_tiny_vae",          ""),
+        "ltx_llm_prompt":        cfg.get("ltx_llm_prompt",        ""),
         "stitch_at_end":         cfg.get("stitch_at_end",         True),
         "trim_last_clip":        cfg.get("trim_last_clip",        False),
         "unload_between_clips":  cfg.get("unload_between_clips",  True),

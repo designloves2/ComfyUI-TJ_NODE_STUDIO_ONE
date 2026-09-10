@@ -162,6 +162,22 @@ export function createSettingsOverlay(state, ctx) {
         style: { fontSize: "10px", color: C.muted, lineHeight: "1.6" } }),
     ]));
 
+    const llmTA = el("textarea", {
+      value: state.ltxLlmPrompt || "",
+      style: { width: "100%", minHeight: "110px", boxSizing: "border-box", background: C.bg2, color: C.text,
+               border: `1px solid ${C.border}`, borderRadius: "6px", padding: "8px", fontSize: "11px",
+               fontFamily: "inherit", outline: "none", resize: "vertical" },
+    });
+    llmTA.addEventListener("input", () => { state.ltxLlmPrompt = llmTA.value; ctx.persist(); });
+    wrap.appendChild(panel([
+      label("LTX Upscale — ✨ vision instruction (native path)"),
+      llmTA,
+      el("div", { html: "The system prompt the ✨ button feeds the vision model when it reads the source clip's first "
+        + "frame to write the refine prompt. Native path uses the <b>native vision CLIP</b> set under LLM Setting; the "
+        + "OpenRouter path reuses the H3 vision model. Saved with Save All.",
+        style: { fontSize: "10px", color: C.muted, lineHeight: "1.6" } }),
+    ]));
+
     const missing = availability.missing_optional || [];
     const missCore = availability.missing_core || [];
     const availNote = el("div", { style: { fontSize: "10px", lineHeight: "1.6", color: (missing.length || missCore.length) ? C.warn : C.ok } });
@@ -455,6 +471,7 @@ export function createSettingsOverlay(state, ctx) {
       ltx_vae_video:       state.ltxVaeVideo       || "",
       ltx_vae_audio:       state.ltxVaeAudio       || "",
       ltx_tiny_vae:        state.ltxTinyVae        || "",
+      ltx_llm_prompt:      state.ltxLlmPrompt      || "",
       turbo_lora:      state.turboLora     || "",
       turbo_lora_strength: state.turboLoraStrength ?? 1.0,
       upscale_model:   state.upscaleModel  || "",
@@ -562,6 +579,7 @@ export function createSettingsOverlay(state, ctx) {
     take("ltxVaeVideo",       cfg.ltx_vae_video);
     take("ltxVaeAudio",       cfg.ltx_vae_audio);
     take("ltxTinyVae",        cfg.ltx_tiny_vae);
+    if (cfg.ltx_llm_prompt && !String(state.ltxLlmPrompt || "").trim()) state.ltxLlmPrompt = cfg.ltx_llm_prompt;
     // These always have a value already (defaultState()'s `?? 8`/`?? true`/etc. fallback),
     // so the `take()`/`== null` guard used above can never fire for them — same situation
     // avg_minutes_per_clip already had, handled the same way: unconditional overwrite here

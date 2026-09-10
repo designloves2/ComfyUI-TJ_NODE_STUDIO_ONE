@@ -35,7 +35,7 @@ import {
   queuePrompt, waitForHistory, interrupt, freeMemory, setLastResult, stitchClips, getVideoInfo,
   copyOutputToInput, getNodeAvailability, getModels, saveMeta, pickChainFrame, getLoraTriggers,
   getMediaFiles, uploadMedia, getVramStats, listVideos,
-  saveConfig,
+  saveConfig, analyzeImagesNative, analyzeImagesOpenRouter,
 } from "./minimax/api_minimax.js";
 import { buildClipGraph, buildLtxUpscaleGraph, NODE_IDS, previewNodeKey } from "./minimax/graph_builder_minimax.js";
 import { PIPELINE_PRESETS, allPresets, captureAxes, matchPreset, applyPreset } from "./minimax/presets_minimax.js";
@@ -49,6 +49,7 @@ import { resolvePipeOverrides, applyOverridesTemp } from "./shared/promptdb_pipe
 import { attachNodeState, restoreNodeState } from "./shared/node_state.js";
 import { createNodeFullscreen } from "./shared/node_fullscreen.js";
 import { openAudioGalleryPicker } from "./shared/ui_audio_gallery_picker.js";
+import { openVideoGalleryPicker } from "./minimax/ui_video_picker_minimax.js";
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 const TOPBAR_H   = 40;
@@ -184,7 +185,7 @@ app.registerExtension({
         pillsWrap.appendChild(modeBar(modes, state.generationMode, key => {
           state.generationMode = key;
           // Turbo isn't offered in Reference mode, so don't leave it selected there.
-          persist(); renderPills(); renderLeft();
+          persist(); renderPills(); renderLeft(); renderPrompts();
         }));
 
         const issues = configIssues(state);
@@ -514,7 +515,10 @@ app.registerExtension({
         padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text,
         border: `1px solid ${BRAND}`, fontWeight: "600",
       }});
-      editBtn.addEventListener("click", () => promptEditOv?.show());
+      editBtn.addEventListener("click", () => {
+        if (state.generationMode === "ltxupscale") { openLtxPromptEdit(); return; }
+        promptEditOv?.show();
+      });
       promptHdr.appendChild(editBtn);
 
       const splitBtn = el("button", { type: "button", text: "✂ Split into clips", title: "Split this brief into one prompt per clip", style: {
@@ -576,6 +580,15 @@ app.registerExtension({
       }
       function renderPrompts() {
         clear(promptList);
+        const isLtx = state.generationMode === "ltxupscale";
+        // The bottom prompt area is per-mode: the H3 shot list, or (LTX Upscale) one
+        // prompt + a ✨ LLM button. Common / Split / Add are H3-only.
+        commonBtn.style.display = isLtx ? "none" : "";
+        splitBtn.style.display  = isLtx ? "none" : "";
+        addBtn.style.display    = isLtx ? "none" : "";
+        promptTitle.textContent = isLtx ? "UPSCALE PROMPT" : "PROMPTS";
+        promptList.style.gap = isLtx ? "6px" : "4px";
+        if (isLtx) { renderLtxPrompt(); return; }
         const plan = currentPlan();
         const onCount = state.prompts.filter(p => promptEnabled(p)).length;
         promptCount.textContent = `(${plan.promptCount} prompt${plan.promptCount > 1 ? "s" : ""} · ${onCount} on → ${plan.count} clip${plan.count > 1 ? "s" : ""} · ${plan.actualSeconds.toFixed(2)}s)`;
@@ -636,6 +649,144 @@ app.registerExtension({
           promptList.appendChild(line);
         });
       }
+      // ── LTX Upscale — bottom prompt area (replaces the H3 shot list in this mode) ──
+      // One prompt + one negative, and a ✨ that reads the source clip's first frame and
+      // writes a matching prompt. The refine follows the prompt closely at low denoise, so
+      // "matches the original" is the whole job — for a gallery pick we already have the
+      // clip's saved prompt; for an upload the vision model reconstructs one.
+      let _ltxBusy = false;
+      async function grabFirstFrameFile() {
+        // client-side: draw frame 0 of the source video to a canvas, upload it as a PNG
+        if (!state.ltxSource) throw new Error("No source clip.");
+        const v = document.createElement("video");
+        v.src = `/view?filename=${encodeURIComponent(state.ltxSource)}&type=input`;
+        v.muted = true; v.crossOrigin = "anonymous";
+        await new Promise((res, rej) => {
+          v.addEventListener("loadeddata", res, { once: true });
+          v.addEventListener("error", () => rej(new Error("Could not read the source video.")), { once: true });
+          setTimeout(() => rej(new Error("Source video load timed out.")), 15000);
+        });
+        try { v.currentTime = 0.05; await new Promise(r => v.addEventListener("seeked", r, { once: true })); } catch {}
+        const cv = document.createElement("canvas");
+        cv.width = v.videoWidth || 1024; cv.height = v.videoHeight || 576;
+        cv.getContext("2d").drawImage(v, 0, 0, cv.width, cv.height);
+        const blob = await new Promise(r => cv.toBlob(r, "image/png"));
+        return uploadMedia(new File([blob], `ltx_srcframe_${Date.now()}.png`, { type: "image/png" }));
+      }
+      async function ltxWritePrompt() {
+        if (_ltxBusy) return;
+        if (!state.ltxSource) { showPopup("Pick a source clip first.", true); return; }
+        _ltxBusy = true; renderPrompts();
+        try {
+          const frame = await grabFirstFrameFile();
+          const instr = (state.ltxLlmPrompt || "").trim()
+            || "Describe this video frame as one text-to-image prompt matching exactly what is shown.";
+          const backend = (state.h3VisionBackend || state.h3LlmBackend || "native");
+          let text;
+          if (backend === "openrouter") {
+            text = await analyzeImagesOpenRouter([frame], instr, state.h3OrModelVision || state.h3OrModel || "");
+          } else {
+            if (!state.nativeVisionClip) throw new Error("Set a native vision CLIP in ⚙ Settings → LLM, or switch the H3 vision backend to OpenRouter.");
+            text = await analyzeImagesNative(state.nativeVisionClip, [frame], instr);
+          }
+          if (text && text.trim()) { state.ltxPrompt = text.trim(); persist(); showPopup("Prompt written from the source clip's first frame.", false); }
+          else showPopup("The vision model returned nothing — try again or write the prompt by hand.", true);
+        } catch (e) { showPopup(e.message, true); }
+        _ltxBusy = false; renderPrompts();
+      }
+      function renderLtxPrompt() {
+        clear(promptList);
+        promptCount.textContent = state.ltxSource ? "" : "(no source clip)";
+        const ta = el("textarea", {
+          value: state.ltxPrompt || "",
+          placeholder: "Prompt for the refine pass — should match the source clip closely. Gallery picks auto-fill from the clip's saved prompt; ✨ writes one from an upload.",
+          style: { flex: "1", width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+                   border: `1px solid ${C.border}`, borderRadius: "6px", padding: "8px", fontSize: "12px",
+                   fontFamily: "inherit", outline: "none", resize: "none", minHeight: "0" },
+        });
+        ta.addEventListener("input", () => { state.ltxPrompt = ta.value; persist(); });
+        ta.addEventListener("focus", () => ta.style.borderColor = BRAND);
+        ta.addEventListener("blur", () => ta.style.borderColor = C.border);
+
+        const enh = el("button", { type: "button", text: _ltxBusy ? "✨ Analyzing…" : "✨ Write from source frame", style: {
+          cursor: _ltxBusy ? "wait" : "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 12px",
+          borderRadius: "6px", background: BRAND, color: "#fff", border: "none", fontWeight: "600",
+          opacity: (_ltxBusy || !state.ltxSource) ? "0.55" : "1",
+        }});
+        enh.disabled = _ltxBusy || !state.ltxSource;
+        enh.addEventListener("click", ltxWritePrompt);
+
+        const neg = el("input", { type: "text", value: state.ltxNegPrompt || "",
+          placeholder: "Negative (optional)", style: {
+          width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+          border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px 8px", fontSize: "11px",
+          fontFamily: "inherit", outline: "none" } });
+        neg.addEventListener("input", () => { state.ltxNegPrompt = neg.value; persist(); });
+
+        const btnRow = el("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexShrink: "0" } });
+        btnRow.append(enh, el("div", { style: { flex: "1" } }),
+          el("div", { text: `${(state.h3VisionBackend || "native") === "openrouter" ? "OpenRouter" : "native"} vision`,
+            style: { fontSize: "10px", color: C.muted } }));
+
+        promptList.style.gap = "6px";
+        promptList.append(ta, neg, btnRow);
+      }
+
+      // "Prompt Edit" in LTX mode → a roomy modal for the same prompt + negative + ✨,
+      // with the source frame alongside.
+      function openLtxPromptEdit() {
+        const box = el("div", { style: {
+          background: "#0e0e0e", border: `1px solid ${C.border}`, borderRadius: "10px",
+          width: "820px", maxWidth: "94%", maxHeight: "88vh", display: "flex", flexDirection: "column",
+          overflow: "hidden", boxShadow: "0 16px 50px rgba(0,0,0,0.65)" } });
+        const head = el("div", { style: {
+          display: "flex", alignItems: "center", gap: "8px", padding: "10px 12px",
+          borderBottom: `1px solid ${C.border}`, flexShrink: "0" } },
+          [el("div", { text: "📝 Upscale prompt", style: { color: "#fff", fontSize: "13px", fontWeight: "700", flex: "1" } })]);
+        const ov = el("div", { style: {
+          position: "fixed", inset: "0", zIndex: "100050", display: "flex", alignItems: "center",
+          justifyContent: "center", background: "rgba(0,0,0,0.72)" } }, [box]);
+        const close = () => { ov.remove(); renderPrompts(); };
+        ov.addEventListener("mousedown", e => { if (e.target === ov) close(); });
+        head.appendChild(el("button", { type: "button", text: "✕ Close", style: {
+          cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "4px 10px", borderRadius: "6px",
+          background: "transparent", color: C.err, border: `1px solid ${C.border}` }, onclick: close }));
+
+        const body = el("div", { style: { display: "flex", gap: "12px", padding: "12px", overflow: "auto" } });
+        const leftCol = el("div", { style: { flex: "1", display: "flex", flexDirection: "column", gap: "8px", minWidth: "0" } });
+        const bigTA = el("textarea", { value: state.ltxPrompt || "", style: {
+          width: "100%", minHeight: "260px", boxSizing: "border-box", background: C.bg2, color: C.text,
+          border: `1px solid ${C.border}`, borderRadius: "6px", padding: "10px", fontSize: "13px",
+          fontFamily: "inherit", outline: "none", resize: "vertical" } });
+        bigTA.addEventListener("input", () => { state.ltxPrompt = bigTA.value; persist(); });
+        const bigNeg = el("input", { type: "text", value: state.ltxNegPrompt || "", placeholder: "Negative (optional)", style: {
+          width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+          borderRadius: "6px", padding: "8px", fontSize: "12px", fontFamily: "inherit", outline: "none" } });
+        bigNeg.addEventListener("input", () => { state.ltxNegPrompt = bigNeg.value; persist(); });
+        const enh2 = button(_ltxBusy ? "✨ Analyzing…" : "✨ Write from source frame", async () => {
+          await ltxWritePrompt(); bigTA.value = state.ltxPrompt || "";
+        }, "primary");
+        enh2.disabled = _ltxBusy || !state.ltxSource;
+        leftCol.append(label("Prompt"), bigTA, label("Negative"), bigNeg, enh2);
+
+        const rightCol = el("div", { style: { width: "230px", flexShrink: "0", display: "flex", flexDirection: "column", gap: "6px" } });
+        if (state.ltxSource) {
+          const pv = el("video", { src: `/view?filename=${encodeURIComponent(state.ltxSource)}&type=input`,
+            controls: true, muted: true, loop: true, style: { width: "100%", borderRadius: "6px", background: "#000" } });
+          rightCol.append(label("Source"), pv);
+        } else {
+          rightCol.append(el("div", { text: "No source clip — pick one in the left panel.", style: { fontSize: "11px", color: C.warn } }));
+        }
+        rightCol.append(el("div", { html: `Vision: <b>${(state.h3VisionBackend || "native") === "openrouter" ? "OpenRouter" : "native CLIP"}</b>. `
+          + `Edit the ✨ instruction in ⚙ Settings → Models → LTX Upscale.`,
+          style: { fontSize: "10px", color: C.muted, lineHeight: "1.6" } }));
+
+        body.append(leftCol, rightCol);
+        box.append(head, body);
+        document.body.appendChild(ov);
+        bigTA.focus();
+      }
+
       addBtn.addEventListener("click", () => {
         state.prompts.push({ text: "", firstFrame: "", enabled: true });
         persist(); refreshPlan();
@@ -697,7 +848,7 @@ app.registerExtension({
         renderPrompts();
       }
       ctx.refreshPlan = refreshPlan;
-      ctx.refreshModes = () => { renderPills(); renderLeft(); };
+      ctx.refreshModes = () => { renderPills(); renderLeft(); renderPrompts(); };
 
       // Audio for the lock: pick something already in ComfyUI's input folder, or
       // upload one. Same two-control shape the reference-audio rows use.
@@ -902,23 +1053,19 @@ app.registerExtension({
       }
 
       // ── LTX 2.5 Upscale mode left panel ─────────────────────────────────────
-      // A standalone refine pass — nothing to do with the H3 pipeline, so it replaces
-      // the whole left column (no prompt list, no accel/attn/cache accordions).
-      let _ltxGalleryCache = null;
-      async function loadLtxGallery() {
-        try {
-          const d = await listVideos(state.saveSubfolder || SUBFOLDER, { limit: 80 });
-          _ltxGalleryCache = (d.videos || []).map(v => ({
-            file: v.subfolder ? `${v.subfolder}/${v.filename}` : v.filename,
-            filename: v.filename, subfolder: v.subfolder || "",
-            prompt: v.meta?.prompt || v.prompt || "",
-            label: `${v.filename}${v.is_full ? "  (FULL)" : ""}`,
-          }));
-        } catch { _ltxGalleryCache = []; }
-        renderLeft();
-      }
+      // A standalone refine pass on the LTX 2.5 model — nothing to do with the H3
+      // pipeline. Its prompt + LLM live in the bottom prompt area (renderPrompts), its
+      // seed on the fixed bottom row. Only the source, the refine params, its own LoRA
+      // list and the RTX finisher are here.
       const LTX_SAMPLERS   = ["euler_ancestral", "euler", "dpmpp_2m", "dpmpp_sde", "res_multistep", "lcm"];
       const LTX_SCHEDULERS = ["simple", "normal", "sgm_uniform", "beta", "linear_quadratic", "karras"];
+
+      // Gallery pick / local upload both end with the file sitting in ComfyUI's input/.
+      function setLtxSource(inputFilename, kind, meta) {
+        state.ltxSource = inputFilename; state.ltxSourceKind = kind;
+        if (meta && meta.prompt && !String(state.ltxPrompt || "").trim()) state.ltxPrompt = meta.prompt;
+        persist(); renderLeft(); renderPrompts();
+      }
 
       function renderLtxUpscaleLeft() {
         const prevScroll = leftPanel.scrollTop;
@@ -929,68 +1076,54 @@ app.registerExtension({
             el("div", { html: "⚙ <b>LTX 2.5 Upscale</b> needs its models set first.<br>Open <b>⚙ Settings → LTX 2.5 Upscale</b> and pick:", style: { fontSize: "12px", lineHeight: "1.6" } }),
             el("div", { text: "missing: " + ltxUpscaleMissing(state).join(", "), style: { fontSize: "11px", color: C.warn, marginTop: "4px" } }),
           ]));
+          leftOuter.appendChild(seedGenWrap);
           leftPanel.scrollTop = prevScroll;
           return;
         }
 
-        // ── source video ─────────────────────────────────────────────────────
-        if (_ltxGalleryCache === null) loadLtxGallery();
-        const gal = _ltxGalleryCache || [];
-        const srcRows = [
+        // ── source clip — one big thumbnail card (gallery pick / local upload) ──
+        const card = el("div", { style: {
+          position: "relative", width: "100%", aspectRatio: "16 / 9", borderRadius: "8px",
+          background: C.bg2, border: `1px solid ${state.ltxSource ? BRAND : C.border}`,
+          overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center",
+        }});
+        if (state.ltxSource) {
+          const vid = el("video", { src: `/view?filename=${encodeURIComponent(state.ltxSource)}&type=input`,
+            muted: true, loop: true, playsInline: true,
+            style: { width: "100%", height: "100%", objectFit: "contain", background: "#000" } });
+          vid.addEventListener("mouseenter", () => vid.play().catch(() => {}));
+          vid.addEventListener("mouseleave", () => { vid.pause(); vid.currentTime = 0; });
+          card.appendChild(vid);
+          const clr = el("button", { type: "button", text: "✕", title: "Clear source", style: {
+            position: "absolute", top: "6px", right: "6px", zIndex: "3", width: "22px", height: "22px",
+            border: "none", borderRadius: "4px", background: "rgba(0,0,0,0.7)", color: "#fff", cursor: "pointer", fontSize: "11px",
+          }, onclick: () => { state.ltxSource = ""; persist(); renderLeft(); renderPrompts(); } });
+          card.appendChild(clr);
+          card.appendChild(el("div", { text: `${state.ltxSourceKind === "upload" ? "⬆ upload" : "🖼 gallery"}`, style: {
+            position: "absolute", bottom: "6px", left: "6px", fontSize: "10px", color: "#fff",
+            background: "rgba(0,0,0,0.6)", padding: "2px 6px", borderRadius: "4px" } }));
+        } else {
+          card.appendChild(el("div", { text: "no source clip", style: { color: C.muted, fontSize: "12px" } }));
+        }
+        const fileInp = el("input", { type: "file", accept: "video/*", style: { display: "none" } });
+        fileInp.addEventListener("change", async () => {
+          const f = fileInp.files[0]; fileInp.value = "";
+          if (!f) return;
+          try { const name = await uploadMedia(f); setLtxSource(name, "upload"); }
+          catch (e) { showPopup(e.message, true); }
+        });
+        leftPanel.appendChild(panel([
           label("Source clip"),
+          card,
           row([
-            col([label("From gallery"), select(
-              [{ value: "", label: gal.length ? "— pick a clip —" : "(no clips in this subfolder)" },
-               ...gal.map(g => ({ value: g.file, label: g.label }))],
-              state.ltxSourceKind === "gallery" ? state.ltxSource : "",
-              v => {
-                if (!v) return;
-                state.ltxSource = v; state.ltxSourceKind = "gallery";
-                const hit = gal.find(g => g.file === v);
-                if (hit && hit.prompt && !String(state.ltxPrompt || "").trim()) state.ltxPrompt = hit.prompt;
-                persist(); renderLeft();
-              })]),
-            col([label("↻"), button("↻", () => { _ltxGalleryCache = null; renderLeft(); })]),
+            button("🖼 From gallery", () => openVideoGalleryPicker((inputFilename, item) =>
+              setLtxSource(inputFilename, "gallery", item?.meta))),
+            button("⬆ Upload", () => fileInp.click(), "default"),
           ]),
-          row([
-            button("⬆ Upload a video", async () => {
-              const inp = el("input", { type: "file", accept: "video/*", style: { display: "none" } });
-              inp.addEventListener("change", async () => {
-                const f = inp.files[0]; inp.value = "";
-                if (!f) return;
-                try {
-                  const name = await uploadMedia(f);
-                  state.ltxSource = name; state.ltxSourceKind = "upload";
-                  persist(); renderLeft();
-                  showPopup("Uploaded — write a prompt matching the clip (or use ✨ once the LLM hookup lands).", false);
-                } catch (e) { showPopup(e.message, true); }
-              });
-              document.body.appendChild(inp); inp.click(); inp.remove();
-            }, "default"),
-          ]),
-          el("div", { text: state.ltxSource
-              ? `▸ ${state.ltxSourceKind === "upload" ? "upload" : "gallery"}: ${state.ltxSource}`
-              : "▸ no source selected",
-            style: { fontSize: "10px", color: state.ltxSource ? C.text : C.warn, lineHeight: "1.5", wordBreak: "break-all" } }),
-        ];
-        leftPanel.appendChild(panel(srcRows));
-
-        // ── prompt ───────────────────────────────────────────────────────────
-        const pTA = el("textarea", {
-          value: state.ltxPrompt || "",
-          placeholder: "Describe the clip — for a refine pass this should match the original closely. (Gallery picks auto-fill from the clip's saved prompt.)",
-          style: { width: "100%", minHeight: "120px", boxSizing: "border-box", background: C.bg2, color: C.text,
-                   border: `1px solid ${C.border}`, borderRadius: "6px", padding: "7px", fontSize: "12px",
-                   fontFamily: "inherit", resize: "vertical", outline: "none" },
-        });
-        pTA.addEventListener("input", () => { state.ltxPrompt = pTA.value; persist(); });
-        const nTA = el("input", {
-          value: state.ltxNegPrompt || "",
-          style: { width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
-                   border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px", fontSize: "11px", outline: "none" },
-        });
-        nTA.addEventListener("input", () => { state.ltxNegPrompt = nTA.value; persist(); });
-        leftPanel.appendChild(panel([label("Prompt"), pTA, label("Negative"), nTA]));
+          fileInp,
+          el("div", { text: "The whole clip is upscaled — audio is carried through. Gallery picks auto-fill the prompt from the clip's saved meta.",
+            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+        ]));
 
         // ── refine sampling ──────────────────────────────────────────────────
         leftPanel.appendChild(panel([
@@ -1009,31 +1142,45 @@ app.registerExtension({
             style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
         ]));
 
-        // ── seed ─────────────────────────────────────────────────────────────
-        leftPanel.appendChild(panel([
-          row([
-            col([label("Seed"), numberField(state.ltxSeed ?? 0, v => { state.ltxSeed = Math.round(v); persist(); }, 1)]),
-            col([label("Mode"), select([{ value: "randomize", label: "Random" }, { value: "fixed", label: "Fixed" }],
-              state.ltxSeedMode || "randomize", v => { state.ltxSeedMode = v; persist(); })]),
-          ]),
-        ]));
-
-        // ── LoRA (reuse state.loras) ─────────────────────────────────────────
+        // ── LTX LoRA (own list — different model from H3) ────────────────────
         const loraOpts = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
-        leftPanel.appendChild(accordion("ltxlora", "LoRA",
-          (state.loras || []).filter(l => l?.name && l.name !== "none").length
-            ? `${(state.loras || []).filter(l => l?.name && l.name !== "none").length} on` : "OFF",
-          () => {
-            const rows = [];
-            (state.loras || []).forEach((l, i) => rows.push(row([
-              col([loraSelect(loraOpts, l.name || "none", v => { state.loras[i].name = v; persist(); renderLeft(); }).el]),
-              col([label("str"), numberField(l.strength ?? 1.0, v => { state.loras[i].strength = v; persist(); }, 0.05)]),
-              col([label(" "), button("✕", () => { state.loras.splice(i, 1); persist(); renderLeft(); }, "danger")]),
-            ])));
-            rows.push(button("+ Add LoRA", () => { (state.loras ||= []).push({ name: "none", strength: 1.0, enabled: true }); persist(); renderLeft(); }, "default"));
-            rows.push(el("div", { text: "LoRAs load on the LTX unet (before the attention patch).", style: { fontSize: "10px", color: C.muted } }));
-            return rows;
-          }));
+        const ltxL = state.ltxLoras ||= [];
+        const ltxLoraWrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } });
+        function renderLtxLoras() {
+          clear(ltxLoraWrap);
+          ltxL.forEach((l, i) => {
+            const off = l.enabled === false;
+            const card = el("div", { style: {
+              border: `1px solid ${off ? C.dim : C.border}`, borderRadius: "6px", padding: "6px",
+              display: "flex", flexDirection: "column", gap: "5px", opacity: off ? "0.55" : "1" } });
+            const head = el("div", { style: { display: "flex", alignItems: "center", gap: "5px" } });
+            const tog = el("button", { type: "button", text: off ? "OFF" : "ON", style: {
+              flexShrink: "0", cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "3px 9px",
+              borderRadius: "10px", border: "none", fontWeight: "700", background: off ? "#444" : BRAND, color: "#fff" },
+              onclick: () => { l.enabled = off; persist(); renderLtxLoras(); } });
+            const strWrap = el("div", { style: { flexShrink: "0", width: "62px" } });
+            strWrap.appendChild(numberField(l.strength ?? 1.0, v => { l.strength = v; persist(); }, 0.05));
+            const del = el("button", { type: "button", text: "✕", title: "Remove", style: {
+              flexShrink: "0", cursor: "pointer", background: "transparent", color: C.err, border: "none", fontSize: "11px", padding: "2px 4px" },
+              onclick: () => { ltxL.splice(i, 1); persist(); renderLtxLoras(); } });
+            head.append(tog, el("div", { style: { flex: "1" } }), strWrap, del);
+            const sel = loraSelect(loraOpts, l.name || "none", v => { l.name = v; persist(); });
+            card.append(head, sel.el);
+            ltxLoraWrap.appendChild(card);
+          });
+          const add = el("button", { type: "button", text: "+ Add LoRA", style: {
+            cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 10px", borderRadius: "6px",
+            background: C.bg2, color: C.text, border: `1px solid ${C.border}` },
+            onclick: () => { ltxL.push({ name: "none", strength: 1.0, enabled: true }); persist(); renderLtxLoras(); } });
+          ltxLoraWrap.appendChild(add);
+          ltxLoraWrap.appendChild(el("div", { text: "Loads on the LTX 2.5 unet (before the attention patch). Separate from the H3 LoRA list.",
+            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
+        }
+        renderLtxLoras();
+        leftPanel.appendChild(accordion("ltxlora", "LTX LoRA",
+          ltxL.filter(l => l?.name && l.name !== "none" && l.enabled !== false).length
+            ? `${ltxL.filter(l => l?.name && l.name !== "none" && l.enabled !== false).length} on` : "OFF",
+          () => [ltxLoraWrap]));
 
         // ── RTX finisher (shares the H3 deblur / RTX VSR settings) ───────────
         const deblurNow = state.deblurStrength || "none";
@@ -2275,6 +2422,10 @@ app.registerExtension({
       // ── LTX 2.5 Upscale run — one queue, no relay ───────────────────────────
       async function runLtxUpscale() {
         if (running) return;
+        if (state.seedMode === "randomize")      { state.seed = randomSeed(); seedInput.value = state.seed; }
+        else if (state.seedMode === "increment") { state.seed = (state.seed || 0) + 1; seedInput.value = state.seed; }
+        else if (state.seedMode === "decrement") { state.seed = Math.max(0, (state.seed || 0) - 1); seedInput.value = state.seed; }
+        persist();
         const rs = JSON.parse(JSON.stringify(state));
         if (!ltxUpscaleReady(rs)) { showPopup("Set the LTX 2.5 models in ⚙ Settings first — missing: " + ltxUpscaleMissing(rs).join(", "), true); return; }
         if (!rs.ltxSource)        { showPopup("Pick a source clip (gallery) or upload a video.", true); return; }
@@ -2290,17 +2441,9 @@ app.registerExtension({
             const av = await getNodeAvailability();
             ctx.availability = av.available || {}; ctx.availabilityInfo = av;
           }
-          if (rs.ltxSeedMode === "randomize") { rs.ltxSeed = randomSeed(); state.ltxSeed = rs.ltxSeed; persist(); }
-
-          // The graph's VHS_LoadVideo only reads ComfyUI's input/. A gallery pick lives in
-          // output/ — copy it over first; an upload is already in input/.
-          let sourceFile = rs.ltxSource;
-          if (rs.ltxSourceKind === "gallery") {
-            setStatus("Copying source clip to input…");
-            const parts = String(rs.ltxSource).split("/");
-            const fname = parts.pop();
-            sourceFile = await copyOutputToInput(fname, parts.join("/"), "output");
-          }
+          // Both the gallery picker and the upload button leave the file sitting in
+          // ComfyUI's input/, which is the only place VHS_LoadVideo reads from.
+          const sourceFile = rs.ltxSource;
 
           setStatus("Building LTX Upscale graph…");
           const { graph, meta } = buildLtxUpscaleGraph(rs, ctx.availability, {
@@ -2332,8 +2475,8 @@ app.registerExtension({
             steps: meta.steps, denoise: meta.denoise, sampler: meta.sampler,
             scheduler: meta.scheduler, seed: meta.seed, fps: meta.fps,
             deblur: meta.deblur || null, upscale: meta.upscale || null,
-            loras: (rs.loras || []).filter(l => l?.name && l.name !== "none")
-              .map(l => ({ name: l.name, strength: l.strength ?? 1.0 })),
+            loras: meta.loras || [],
+            negativePrompt: String(rs.ltxNegPrompt || ""),
             elapsedSec: (Date.now() - (runStart || Date.now())) / 1000,
             ...(memPeak || {}),
           };
