@@ -60,7 +60,7 @@ MiniMax H3 올인원 스튜디오 노드 명세서.
 
 **모델 패치 체인 (분기 없는 일직선)**
 `MiniMaxH3SigmaShift`(210) → `ModelPatchTorchSettings`(211) → `MiniMaxH3MemoryEfficientSageAttentionPatch`(213)
-→ `PathchSageAttentionKJ`(212) → `SolAttnPatch`(205) → `MiniMaxH3Cache`(206) → `MiniMaxH3TurboLoRA`(238)
+→ `PathchSageAttentionKJ`(212) → `SolAttnPatch`(205) → `ApplyMiniMaxH3FirstBlockCache`(206) → `MiniMaxH3TurboLoRA`(238)
 
 **컨디셔닝**
 - `MiniMaxH3ImageToVideo` (201) — FL2VA 경로
@@ -225,8 +225,8 @@ OOM보다 나쁜 **sysmem 스필 → 속도 붕괴**가 발생한다. 큐가 한
 
 | 노드 | 출처 팩 |
 |---|---|
-| `PathchSageAttentionKJ`, `ModelPreviewOverrideKJ` | comfyui-kjnodes |
-| `MiniMaxH3MemoryEfficientSageAttentionPatch`, `MiniMaxH3Cache` | ComfyUI-MiniMaxH3-Cache |
+| `PathchSageAttentionKJ`, `ModelPreviewOverrideKJ`, `MiniMaxH3MemoryEfficientSageAttentionPatch` | comfyui-kjnodes |
+| `ApplyMiniMaxH3FirstBlockCache` | ComfyUI-MiniMaxH3-FirstBlockCache |
 | `MiniMaxH3TurboSampler`, `MiniMaxH3TurboLoRA` | comfyui-minimax-h3-turbo |
 | `SolAttnPatch` | ComfyUI-SolAttn_triton |
 | `RTXVideoSuperResolution` | comfyui_nvidia_rtx_nodes |

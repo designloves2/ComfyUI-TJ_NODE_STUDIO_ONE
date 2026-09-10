@@ -2041,7 +2041,6 @@ async def mmh3_get_config(request):
         "pdd_file_reference":   cfg.get("pdd_file_reference",   ""),
         "pdd_nfe":              str(cfg.get("pdd_nfe",          "8")),
         "pdd_lora_strength":    cfg.get("pdd_lora_strength",    1.0),
-        "pdd_head_strength":    cfg.get("pdd_head_strength",    1.0),
         "turbo_mode":           cfg.get("turbo_mode",           "none"),
         "attn_backend":         cfg.get("attn_backend",         "sage"),
         "attn_forward":         cfg.get("attn_forward",         "memeff_sage"),
@@ -2058,10 +2057,6 @@ async def mmh3_get_config(request):
         "sol_sag_int8_pv":      cfg.get("sol_sag_int8_pv",      False),
         "sol_sag_sink_cond":    cfg.get("sol_sag_sink_cond",    "exact_kv"),
         "sol_sag_dense_blocks": cfg.get("sol_sag_dense_blocks", ""),
-        "cache_threshold":  cfg.get("cache_threshold",  0.3),
-        "cache_start":      cfg.get("cache_start",      0.15),
-        "cache_end":        cfg.get("cache_end",        0.9),
-        "cache_max_steps":  cfg.get("cache_max_steps",  2),
         # Ollama was removed; native is the only backend now.
         "vision_source":         "native",
         "native_vision_clip":    cfg.get("native_vision_clip",    "Qwen3\\qwen_3vl_8b_nvfp4.safetensors"),
@@ -2340,10 +2335,6 @@ async def mmh3_get_models(request):
         # ModelPreviewOverrideKJ's optional tiny_vae — a fast approx decoder for the live
         # preview only (not used for the real render). Folder is models/vae_approx/.
         "vae_approx":       scan("vae_approx", [".pth", ".safetensors"]),
-        # PDD Acc checkpoints. The folder is registered by ComfyUI-MiniMax-H3-PDD-Acc, so
-        # this comes back empty until that pack is installed — which is the right answer
-        # rather than an error, since the picker is only reachable from its turbo mode.
-        "pdd_acc":          scan("pdd_acc", [".safetensors", ".pt"]),
     })
 
 
@@ -2354,7 +2345,6 @@ MMH3_OPTIONAL_NODES = [
     "ModelPreviewOverrideKJ",
     "ModelPatchTorchSettings",
     "MiniMaxH3MemoryEfficientSageAttentionPatch",
-    "MiniMaxH3Cache",
     "ApplyMiniMaxH3FirstBlockCache",
     "ModelAttentionBackend",
     # H3-Optimizations (Zironic) — backend-preserving VRAM + optional sparse attention
@@ -2369,9 +2359,6 @@ MMH3_OPTIONAL_NODES = [
     "MiniMaxH3FusedModulation",
     "MiniMaxH3TurboSampler",
     "MiniMaxH3TurboLoRA",
-    # Jalen-Brunson/ComfyUI-MiniMax-H3-PDD-Acc — loads the alibaba-pai PDD Acc release
-    # (trunk LoRA + 32-interval head bank) and emits the sigmas it was trained on.
-    "MiniMaxH3PDDAccApply",
     "SolAttnPatch",
     "SpectrumApplyMiniMaxH3",
     "RTXVideoSuperResolution",

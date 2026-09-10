@@ -1169,16 +1169,19 @@ app.registerExtension({
               );
             } else if (turboMode === "pdd") {
               const isRef = state.generationMode === "reference";
-              const pddOpts = ["none", ...((ctx.availableModels?.pdd_acc) || []).filter(x => x !== "none")];
+              // Core-native PDD (v0.35.0+) loads the Acc file as a plain LoRA, so it comes
+              // from the normal loras list — not the pdd_acc folder the old pack registered.
+              const pddOpts = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
               rows.push(
-                col([label(`PDD Acc file (First-Last / Text)${isRef ? "" : " ●"}`),
+                col([label(`PDD Acc LoRA (First-Last / Text)${isRef ? "" : " ●"}`),
                   loraSelect(pddOpts, state.pddFile || "none",
                     v => { state.pddFile = v; rememberLora({ pdd_file: v }); }).el]),
-                col([label(`PDD Acc file (Reference)${isRef ? " ●" : ""}`),
+                col([label(`PDD Acc LoRA (Reference)${isRef ? " ●" : ""}`),
                   loraSelect(pddOpts, state.pddFileReference || "none",
                     v => { state.pddFileReference = v; rememberLora({ pdd_file_reference: v }); }).el]),
                 el("div", { text: "● The release is per-variant: pair Ref2VA with the reference UNET and "
-                    + "FL2VA with the first-last one. A mismatched pair does not error — it just renders badly.",
+                    + "FL2VA with the first-last one. A mismatched pair does not error — it just renders badly. "
+                    + "Use the ComfyUI-converted file (…_comfy.safetensors); the raw alibaba-pai one applies 0 patches.",
                   style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
                 row([
                   col([label("nfe (steps)"), select(
@@ -1188,14 +1191,12 @@ app.registerExtension({
                   col([label("lora strength"), numberField(state.pddLoraStrength ?? 1.0,
                     v => { state.pddLoraStrength = v; persist(); }, 0.05)]),
                 ]),
-                col([label("head strength"), numberField(state.pddHeadStrength ?? 1.0,
-                  v => { state.pddHeadStrength = v; persist(); }, 0.05)]),
-                el("div", { text: "Not a LoRA: the file carries a rank-64 trunk LoRA plus 32 per-interval "
-                    + "output heads, and the sampler runs euler on the sigmas those heads were trained on — "
-                    + "so the sampler and schedule are fixed here. nfe is how that 32-step grid is "
-                    + "partitioned (8 and 4 are official); other counts fall off the trained grid. "
-                    + "CFG is already 1.0 on this pipeline, which is what PDD expects. Both strengths were "
-                    + "trained at 1.0.",
+                el("div", { text: "Core-native since ComfyUI v0.35.0 — the Acc file loads as a plain "
+                    + "model-only LoRA (no separate pack). It expands the output projection into a "
+                    + "per-interval head bank and euler runs on a normal schedule; the head for each "
+                    + "step is picked from that schedule. nfe is the distilled step count (8 and 4 are "
+                    + "official; others fall off the trained envelope). CFG is already 1.0, which is "
+                    + "what PDD expects. Strength was trained at 1.0. Needs core ≥ v0.35.0.",
                   style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
               );
             } else if (turboMode === "lightx2v") {
@@ -1367,17 +1368,7 @@ app.registerExtension({
                 v => { state.blockCache = v; persist(); renderLeft(); })]),
               warn((BLOCK_CACHES.find(c => c.key === state.blockCache) || {}).node),
             ];
-            if (state.blockCache === "h3cache") {
-              rows.push(
-                row([
-                  col([label("reuse threshold"), numberField(state.cacheThreshold ?? 0.3, v => { state.cacheThreshold = v; persist(); }, 0.05)]),
-                  col([label("max steps"), numberField(state.cacheMaxSteps ?? 2, v => { state.cacheMaxSteps = Math.round(v); persist(); }, 1)]),
-                ]),
-                row([
-                  col([label("start %"), numberField(state.cacheStart ?? 0.15, v => { state.cacheStart = v; persist(); }, 0.05)]),
-                  col([label("end %"),   numberField(state.cacheEnd ?? 0.9,   v => { state.cacheEnd = v; persist(); }, 0.05)]),
-                ]));
-            } else if (state.blockCache === "fbcache") {
+            if (state.blockCache === "fbcache") {
               const custom = (state.fbcMode || FBC_MODES[1]) === FBC_MODES[3];
               const dim = (f) => { if (!custom) { f.disabled = true; f.style.opacity = "0.4"; } return f; };
               // Same treatment for a row that wraps its input. The node reads NONE of the

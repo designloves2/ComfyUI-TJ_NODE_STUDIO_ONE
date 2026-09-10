@@ -127,34 +127,34 @@ set REPOS[8]=https://github.com/facok/comfyui-krea2-controlnet
 set REPOS[9]=https://github.com/lbouaraba/comfyui-krea2edit
 set REPOS[10]=https://github.com/Nynxz/ComfyUI-NK2E
 :: Experimental - MiniMax H3 ONE STUDIO (video). Optional accelerators/preview.
-set REPOS[11]=https://github.com/lihaoyun6/ComfyUI-MiniMaxH3-Cache
-set REPOS[12]=https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo
-set REPOS[13]=https://github.com/kijai/ComfyUI-SolAttn_triton
-set REPOS[14]=https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI
+:: PDD Acc (8-step) is now core-native as a plain LoRA - use the ComfyUI-converted
+:: file (...pruned_comfy.safetensors); no separate pack. H3 Cache (lihaoyun6) is
+:: dropped - it global-patches an older core _forward and breaks H3 on ComfyUI 0.35+.
+set REPOS[11]=https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo
+set REPOS[12]=https://github.com/kijai/ComfyUI-SolAttn_triton
+set REPOS[13]=https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI
 :: MiniMax H3 reference videos (VHS_LoadVideo) and the Spectrum accelerator
-set REPOS[15]=https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite
-set REPOS[16]=https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3
-set REPOS[17]=https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache
-set REPOS[18]=https://github.com/PlagueKind/ComfyUI-PlagueKind-Nodes
-set REPOS[19]=https://github.com/Saganaki22/ComfyUI-sol-attn
-rem MiniMax-H3 PDD Acc: 8-step parallel-decoding LoRA (alibaba-pai weights).
-set REPOS[20]=https://github.com/Jalen-Brunson/ComfyUI-MiniMax-H3-PDD-Acc
+set REPOS[14]=https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite
+set REPOS[15]=https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3
+set REPOS[16]=https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache
+set REPOS[17]=https://github.com/PlagueKind/ComfyUI-PlagueKind-Nodes
+set REPOS[18]=https://github.com/Saganaki22/ComfyUI-sol-attn
 rem Sibling pack. Ships TJ_FreeTextEncoderVRAM, TJ_RTXDeblur, the H3 Audio Lock and
 rem One-Take latent-continuation nodes, TJ_MultiImageLoader, and the LLM / vision utils.
-set REPOS[21]=https://github.com/designloves2/ComfyUI-TJ_NODE
+set REPOS[19]=https://github.com/designloves2/ComfyUI-TJ_NODE
 rem RIFEInterpolation - the gallery's "Interpolate a finished clip" post-process.
-set REPOS[22]=https://github.com/GACLove/ComfyUI-VFI
+set REPOS[20]=https://github.com/GACLove/ComfyUI-VFI
 rem H3-Optimizations (Zironic) - backend-preserving VRAM optimizer + H3 Sparse Attention.
-set REPOS[23]=https://github.com/Zironic/H3-Optimizations
+set REPOS[21]=https://github.com/Zironic/H3-Optimizations
 rem OpenRouter LLM node - cloud LLM backend shared by MusicMaker (lyrics / style),
 rem the image nodes' Enhance / Image-to-Prompt panel, and MiniMax H3 Image-to-Brief.
-set REPOS[24]=https://github.com/gabe-init/ComfyUI-Openrouter_node
+set REPOS[22]=https://github.com/gabe-init/ComfyUI-Openrouter_node
 rem MusicMaker ONE STUDIO (music). Ace-Step 1.5 + MiniMax Music 3 encode/sampler nodes
 rem ship with ComfyUI core; JK-AceStep-Nodes adds the JKASS quality sampler that the
 rem Ace-Step engine's KSamplerSelect defaults to (sampler_name "jkass_quality").
-set REPOS[25]=https://github.com/jeankassio/JK-AceStep-Nodes
+set REPOS[23]=https://github.com/jeankassio/JK-AceStep-Nodes
 
-set COUNT=26
+set COUNT=24
 set /a LAST=COUNT-1
 
 :: ComfyUI Manager names a folder after the pack's pyproject "name", not the repo name.
@@ -162,11 +162,11 @@ set /a LAST=COUNT-1
 :: twice and break the pack. Only the packs whose two names differ are listed here, and
 :: checked alongside the repo name before installing.
 set "ALT[3]=seedvr2_videoupscaler"
-set "ALT[14]=comfyui_nvidia_rtx_nodes"
-set "ALT[17]=minimax-h3-firstblockcache"
-set "ALT[22]=rife_comfyui_wrapper"
-set "ALT[23]=h3-optimizations"
-set "ALT[25]=comfyui-ace-step-ksampler"
+set "ALT[13]=comfyui_nvidia_rtx_nodes"
+set "ALT[16]=minimax-h3-firstblockcache"
+set "ALT[20]=rife_comfyui_wrapper"
+set "ALT[21]=h3-optimizations"
+set "ALT[23]=comfyui-ace-step-ksampler"
 
 set /a N_NEW=0, N_UPD=0, N_CUR=0, N_FAIL=0
 

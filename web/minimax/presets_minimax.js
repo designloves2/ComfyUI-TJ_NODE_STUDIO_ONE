@@ -150,7 +150,7 @@ export function applyPreset(state, preset) {
   state.turboMode          = preset.turbo;
   state.attnBackend        = preset.backend;
   state.attnForward        = preset.forward;
-  state.blockCache         = preset.cache;
+  state.blockCache         = preset.cache === "h3cache" ? "none" : preset.cache;  // H3 Cache pack retired
   state.useSpectrum        = preset.spectrum;
   state.useTorchPatch      = preset.torch;
   state.useFusedModulation = preset.fused;

@@ -2,7 +2,27 @@
 
 ---
 
-## v1.25.0 (2026-09-06)
+## v1.25.1 (2026-09-11)
+
+### MiniMax H3 — PDD Acc is core-native now; two accel packs dropped
+
+- **PDD Acc (8-step) runs as a plain LoRA.** ComfyUI v0.35.0 (PR #15908 "Support PDD
+  LoRA") absorbed the progressive-distillation head bank into core `FinalLayer`, so the
+  Acc checkpoint now loads through `LoraLoaderModelOnly` on a normal `BasicScheduler` —
+  no apply node, no emitted sigmas, no on-grid contract. The graph builder emits the
+  LoRA loader instead of `MiniMaxH3PDDAccApply`; the Settings → Turbo picker draws from
+  the regular LoRA list. **Use the ComfyUI-converted file** (`…_pruned_comfy.safetensors`);
+  the raw alibaba-pai release is in DiffSynth key naming and applies 0 patches. Needs
+  core ≥ v0.35.0. The `head strength` field is gone (native reads one strength).
+- **`ComfyUI-MiniMax-H3-PDD-Acc` removed from the installer / dependency check / node
+  probe list** — obsolete, and its `inspect.getsource(forward)` patch breaks on any core
+  change to that function.
+- **`ComfyUI-MiniMaxH3-Cache` (H3 Cache) removed everywhere.** It global-patches
+  `MiniMaxH3Model._forward` at import with a fork of an older core forward that calls
+  `final_layer()` with the pre-#15908 signature, so it breaks **every** H3 render on
+  ComfyUI 0.35+ whether or not a cache node is in the graph. The "H3 Cache" block-cache
+  option is gone; **H3 FirstBlockCache** (maintained, node-gated) is the step-reuse cache.
+  Legacy state / presets carrying `h3cache` fall back to `none`.
 
 ### 🆕 MusicMaker ONE STUDIO (TJ) — new node (8th) 🧪
 

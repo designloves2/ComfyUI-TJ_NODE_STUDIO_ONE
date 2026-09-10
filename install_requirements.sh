@@ -138,7 +138,9 @@ REPOS=(
     "https://github.com/lbouaraba/comfyui-krea2edit"
     "https://github.com/Nynxz/ComfyUI-NK2E"
     # Experimental - MiniMax H3 ONE STUDIO (video). Optional accelerators/preview.
-    "https://github.com/lihaoyun6/ComfyUI-MiniMaxH3-Cache"
+    # PDD Acc (8-step) is core-native now as a plain LoRA (use the ...pruned_comfy file);
+    # H3 Cache (lihaoyun6) is dropped - it global-patches an older core _forward and
+    # breaks H3 on ComfyUI 0.35+.
     "https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo"
     "https://github.com/kijai/ComfyUI-SolAttn_triton"
     "https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI"

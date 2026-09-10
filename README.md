@@ -202,8 +202,7 @@ chmod +x install_requirements.sh
 | [comfyui-krea2-controlnet](https://github.com/facok/comfyui-krea2-controlnet) 🧪 | Krea2 Control LoRA (depth)<br><sub>Krea2 Control LoRA (depth)</sub>| Krea2 ControlNet Depth |
 | [comfyui-krea2edit](https://github.com/lbouaraba/comfyui-krea2edit) 🧪 | Krea2 in-context 편집<br><sub>Krea2 in-context edit</sub>| Krea2 IDENTITY |
 | [ComfyUI-NK2E](https://github.com/Nynxz/ComfyUI-NK2E) 🧪 | Krea2 NK2E in-context (canny)<br><sub>Krea2 NK2E in-context (canny)</sub>| Krea2 ControlNet Canny |
-| [ComfyUI-MiniMaxH3-Cache](https://github.com/lihaoyun6/ComfyUI-MiniMaxH3-Cache) 🧪 | 스텝 재사용 캐시<br><sub>step-reuse cache</sub>| MiniMax H3 (선택)<br><sub>optional</sub>|
-| [ComfyUI-MiniMaxH3-FirstBlockCache](https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache) 🧪 | 스텝 재사용 캐시 (대안)<br><sub>step-reuse cache (alt)</sub>| MiniMax H3 (선택)<br><sub>optional</sub>|
+| [ComfyUI-MiniMaxH3-FirstBlockCache](https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache) 🧪 | 스텝 재사용 캐시<br><sub>step-reuse cache</sub>| MiniMax H3 (선택)<br><sub>optional</sub>|
 | [ComfyUI-PlagueKind-Nodes](https://github.com/PlagueKind/ComfyUI-PlagueKind-Nodes) 🧪 | H3 SLA Attention (블록-스파스)<br><sub>H3 SLA Attention (block-sparse)</sub>| MiniMax H3 (선택)<br><sub>optional</sub>|
 | [ComfyUI-sol-attn](https://github.com/Saganaki22/ComfyUI-sol-attn) 🧪 | H3 전용 Sol 어텐션 · Fused Modulation<br><sub>H3-specific Sol attention + AdaLN fusion</sub>| MiniMax H3 (선택)<br><sub>optional</sub>|
 | [ComfyUI-MiniMax-H3-Turbo](https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo) 🧪 | Turbo LoRA · Turbo 샘플러<br><sub>turbo LoRA + sampler</sub>| MiniMax H3 Accel=Turbo |
@@ -619,8 +618,7 @@ only `BasicGuider` (positive-only), like MiniMax H3, don't have this problem.
 |---|---|---|
 | ComfyUI 코어<br><sub>ComfyUI core</sub>| `MiniMaxH3ImageToVideo` · `MiniMaxH3ReferenceToVideo` · `MiniMaxH3SigmaShift` · `CreateVideo` · `SaveVideo` | **필수**<br><sub>required</sub>|
 | [ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes) | 라이브 프리뷰 · SageAttention 패치<br><sub>live preview, SageAttention patch</sub>| 프리뷰만 비활성<br><sub>preview disabled</sub>|
-| [ComfyUI-MiniMaxH3-Cache](https://github.com/lihaoyun6/ComfyUI-MiniMaxH3-Cache) | 스텝 캐시 가속<br><sub>step-reuse cache</sub>| 해당 옵션만 비활성<br><sub>that option disabled</sub>|
-| [ComfyUI-MiniMaxH3-FirstBlockCache](https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache) | 스텝 캐시 가속 (대안)<br><sub>step-reuse cache (alt)</sub>| 해당 옵션만 비활성<br><sub>that option disabled</sub>|
+| [ComfyUI-MiniMaxH3-FirstBlockCache](https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache) | 스텝 캐시 가속<br><sub>step-reuse cache</sub>| 해당 옵션만 비활성<br><sub>that option disabled</sub>|
 | [ComfyUI-PlagueKind-Nodes](https://github.com/PlagueKind/ComfyUI-PlagueKind-Nodes) | H3 SLA Attention<br><sub>block-sparse attention</sub>| 해당 옵션만 비활성<br><sub>that option disabled</sub>|
 | [ComfyUI-sol-attn](https://github.com/Saganaki22/ComfyUI-sol-attn) | H3 Sol 어텐션 · Fused Modulation<br><sub>H3 Sol attention + AdaLN fusion</sub>| 해당 옵션만 비활성<br><sub>that option disabled</sub>|
 | [ComfyUI-MiniMax-H3-Turbo](https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo) | Turbo LoRA / Turbo 샘플러<br><sub>turbo LoRA + sampler</sub>| Accel=Turbo 비활성<br><sub>turbo accel disabled</sub>|
@@ -986,8 +984,7 @@ chmod +x install_requirements.sh
 | **ComfyUI-KJNodes** 🧪 | 라이브 프리뷰 (`ModelPreviewOverrideKJ`) · SageAttention 패치<br><sub>live preview + SageAttention patch</sub>| MiniMax H3 | [kijai/ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes) |
 | **ComfyUI-SolAttn_triton** 🧪 | SolAttn 가속 (**기본 가속값**)<br><sub>SolAttn acceleration (default)</sub>| MiniMax H3 | [kijai/ComfyUI-SolAttn_triton](https://github.com/kijai/ComfyUI-SolAttn_triton) |
 | **ComfyUI-Spectrum-MiniMax-H3** 🧪 | Spectrum 가속<br><sub>Spectrum acceleration</sub>| MiniMax H3 | [xmarre/ComfyUI-Spectrum-MiniMax-H3](https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3) |
-| **ComfyUI-MiniMaxH3-Cache** 🧪 | 스텝 재사용 캐시<br><sub>step-reuse cache</sub>| MiniMax H3 | [lihaoyun6/ComfyUI-MiniMaxH3-Cache](https://github.com/lihaoyun6/ComfyUI-MiniMaxH3-Cache) |
-| **ComfyUI-MiniMaxH3-FirstBlockCache** 🧪 | 스텝 재사용 캐시 (대안)<br><sub>step-reuse cache (alt)</sub>| MiniMax H3 | [duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache](https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache) |
+| **ComfyUI-MiniMaxH3-FirstBlockCache** 🧪 | 스텝 재사용 캐시<br><sub>step-reuse cache</sub>| MiniMax H3 | [duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache](https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache) |
 | **ComfyUI-PlagueKind-Nodes** 🧪 | H3 SLA Attention (블록-스파스)<br><sub>H3 SLA Attention (block-sparse)</sub>| MiniMax H3 | [PlagueKind/ComfyUI-PlagueKind-Nodes](https://github.com/PlagueKind/ComfyUI-PlagueKind-Nodes) |
 | **ComfyUI-MiniMax-H3-Turbo** 🧪 | Turbo LoRA · Turbo 샘플러 (FL2VA 전용)<br><sub>turbo LoRA + sampler, FL2VA only</sub>| MiniMax H3 | [Larryvrh/ComfyUI-MiniMax-H3-Turbo](https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo) |
 | **ComfyUI-VideoHelperSuite** 🧪 | 레퍼런스 **비디오** 입력 (`VHS_LoadVideo`)<br><sub>reference video inputs</sub>| MiniMax H3 · Reference | [Kosinkadink/ComfyUI-VideoHelperSuite](https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite) |
@@ -1589,8 +1586,7 @@ Several nodes were heavily reworked and integrated into the TJ wireless workflow
 ### MiniMax H3 🧪
 
 - [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3) — 모델 / models
-- [lihaoyun6/ComfyUI-MiniMaxH3-Cache](https://github.com/lihaoyun6/ComfyUI-MiniMaxH3-Cache) — 스텝 재사용 캐시 / step-reuse cache
-- [duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache](https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache) — 스텝 재사용 캐시 (대안) / step-reuse cache (alt)
+- [duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache](https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache) — 스텝 재사용 캐시 / step-reuse cache
 - [PlagueKind/ComfyUI-PlagueKind-Nodes](https://github.com/PlagueKind/ComfyUI-PlagueKind-Nodes) — H3 SLA Attention (블록-스파스) / H3 SLA Attention (block-sparse)
 - [Saganaki22/ComfyUI-sol-attn](https://github.com/Saganaki22/ComfyUI-sol-attn) — H3 Sol 어텐션 · Fused Modulation / H3 Sol attention + AdaLN fusion
 - [Larryvrh/ComfyUI-MiniMax-H3-Turbo](https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo) — Turbo LoRA · 샘플러 / turbo LoRA + sampler

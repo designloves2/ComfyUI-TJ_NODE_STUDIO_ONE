@@ -41,13 +41,13 @@ export const MMH3_CORE_NODES = [
 ];
 export const MMH3_OPTIONAL_NODES = [
   "PathchSageAttentionKJ", "ModelPreviewOverrideKJ", "ModelPatchTorchSettings",
-  "MiniMaxH3MemoryEfficientSageAttentionPatch", "MiniMaxH3Cache", "ApplyMiniMaxH3FirstBlockCache",
+  "MiniMaxH3MemoryEfficientSageAttentionPatch", "ApplyMiniMaxH3FirstBlockCache",
   "ModelAttentionBackend", "H3SLAAttention", "TJ_FreeTextEncoderVRAM",
   // H3-Optimizations (Zironic) — backend-preserving VRAM + optional sparse attention
   "H3MemoryOptimization", "H3SparseAttention",
   // Saganaki22/ComfyUI-sol-attn — H3-specific sparse attention + AdaLN fusion
   "MiniMaxH3ScheduledSolAttentionPatch", "MiniMaxH3FusedModulation",
-  "MiniMaxH3TurboSampler", "MiniMaxH3TurboLoRA", "MiniMaxH3PDDAccApply", "SolAttnPatch",
+  "MiniMaxH3TurboSampler", "MiniMaxH3TurboLoRA", "SolAttnPatch",
   "SpectrumApplyMiniMaxH3", "RTXVideoSuperResolution", "TJ_RTXDeblur",
   // gallery post-processing — upscale / frame interpolation on a finished clip
   "UpscaleModelLoader", "ImageUpscaleWithModel", "RIFEInterpolation",

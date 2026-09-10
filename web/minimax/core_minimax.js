@@ -89,16 +89,15 @@ export function effectiveTurbo(state, avail) {
     return { mode: "larryvrh", fellBack: false };
   }
 
-  // PDD is the one turbo that is not a LoRA. The checkpoint carries a rank-64 trunk LoRA
-  // *plus* a bank of 32 per-interval output heads, and the apply node swaps the model's
-  // final projection for that bank and hands back the sigmas the heads were trained on.
-  // Loading it through an ordinary LoRA loader would drop the head bank and silently
-  // render nonsense, so a missing pack has to fall back rather than improvise.
+  // PDD is core-native since ComfyUI v0.35.0 (#15908): the ComfyUI-converted Acc checkpoint
+  // loads as a plain model-only LoRA that expands the final projection into its per-interval
+  // head bank, and FinalLayer picks the right head per step off the sampler's own schedule.
+  // No apply node, no dedicated pack — just the file. (The raw alibaba-pai Acc file won't
+  // load: its DiffSynth key names map to nothing, so it silently applies 0 patches. On a
+  // pre-v0.35.0 core the shape-changing LoRA load errors at patch time — a loud failure.)
   if (want === "pdd") {
     if (!pddFileForMode(state))
       return { mode: "none", fellBack: true, reason: "No PDD Acc file set for this mode — turbo skipped." };
-    if (!installed("MiniMaxH3PDDAccApply"))
-      return { mode: "none", fellBack: true, reason: "ComfyUI-MiniMax-H3-PDD-Acc is not installed — PDD needs its apply node for the head bank." };
     return { mode: "pdd", fellBack: false };
   }
 
@@ -117,9 +116,9 @@ export function effectiveSteps(state, avail) {
   const t = effectiveTurbo(state, avail).mode;
   if (t === "larryvrh") return Math.max(1, Math.round(state.turboSteps ?? 4));
   if (t === "lightx2v") return Math.max(1, Math.round(state.slaTurboSteps ?? 6));
-  // PDD's step count is not a preference — it is how the 32-interval grid was partitioned
-  // during training, and the apply node emits exactly this many sigmas. Anything else is
-  // off the trained envelope and renders as noise, so it is a fixed list, not a number.
+  // PDD's step count is not a preference — it is how the interval grid was partitioned
+  // during training. Core-native PDD adapts head selection to whatever schedule it is given,
+  // but only the distilled counts stay on the trained envelope, so it is a fixed list.
   if (t === "pdd") return PDD_NFE_CHOICES.includes(String(state.pddNfe)) ? Number(state.pddNfe) : 8;
   return Math.max(1, Math.round(state.steps ?? 20));
 }
@@ -313,7 +312,7 @@ export const TURBO_MODES = [
   { key: "none",     label: "None" },
   { key: "larryvrh", label: "Turbo LoRA (larryvrh)", node: "MiniMaxH3TurboLoRA" },
   { key: "lightx2v", label: "SLA Turbo (lightx2v)",  node: "H3SLAAttention" },
-  { key: "pdd",      label: "PDD Acc (alibaba-pai)", node: "MiniMaxH3PDDAccApply" },
+  { key: "pdd",      label: "PDD Acc (alibaba-pai)", node: null },  // core-native since v0.35.0
 ];
 export const ATTN_BACKENDS = [
   { key: "none",          label: "None",                   node: null,                   dense: true },
@@ -329,7 +328,6 @@ export const ATTN_FORWARDS = [
 ];
 export const BLOCK_CACHES = [
   { key: "none",    label: "None",                   node: null },
-  { key: "h3cache", label: "H3 Cache",               node: "MiniMaxH3Cache" },
   { key: "fbcache", label: "H3 FirstBlockCache",     node: "ApplyMiniMaxH3FirstBlockCache" },
 ];
 // H3-Optimizations (Zironic) — a backend-preserving axis. `memory` wraps whatever dense
@@ -471,8 +469,9 @@ export function migrateLegacyAccel(state) {
   }
   state.attnForward = state.useMemEffSage ? "memeff_sage" : "none";
 
+  // Legacy state.useCache mapped to the H3 Cache pack, which is gone (it global-patches
+  // an older core forward and breaks H3 on ComfyUI 0.35+). FirstBlockCache is the survivor.
   if (state.useFirstBlockCache)  state.blockCache = "fbcache";
-  else if (state.useCache)       state.blockCache = "h3cache";
   else                           state.blockCache = "none";
 
   return true;
@@ -765,7 +764,7 @@ export function defaultState(saved) {
     //                                               transformer_options override slot
     //   attnForward none | memeff_sage | solattn_sag
     //                                               blocks[i].attn.forward object patch
-    //   blockCache  none | h3cache | fbcache        block-output reuse across steps
+    //   blockCache  none | fbcache                  block-output reuse across steps
     //   useSpectrum bool                            latent-level step forecasting
     //   useFusedModulation bool                     blocks[i].forward AdaLN fusion
     //
@@ -784,16 +783,15 @@ export function defaultState(saved) {
     // The user's own saved presets. Server-backed via the config route, but kept in
     // state so the dropdown can render before that round-trip finishes.
     userPresets: Array.isArray(saved.userPresets) ? saved.userPresets : [],
-    // PDD Acc — per-variant checkpoint, plus the two blend strengths its apply node takes.
-    // nfe is a string because it is a choice from a fixed list, not a free number.
+    // PDD Acc — per-variant ComfyUI-converted LoRA (core-native since v0.35.0), plus its
+    // strength. nfe is a string because it is a choice from a fixed list, not a free number.
     pddFile:          saved.pddFile          || "none",
     pddFileReference: saved.pddFileReference || "none",
     pddNfe:           String(saved.pddNfe ?? "8"),
     pddLoraStrength:  saved.pddLoraStrength  ?? 1.0,
-    pddHeadStrength:  saved.pddHeadStrength  ?? 1.0,
     attnBackend: saved.attnBackend || "sage",
     attnForward: saved.attnForward || "memeff_sage",
-    blockCache:  saved.blockCache  || "none",
+    blockCache:  (saved.blockCache && saved.blockCache !== "h3cache") ? saved.blockCache : "none",
     useSpectrum: saved.useSpectrum ?? false,
     useFusedModulation: saved.useFusedModulation ?? false,
 
@@ -825,10 +823,6 @@ export function defaultState(saved) {
       upscale: false, continuity: false, audiolock: false, images: false, lora: false,
     }, saved.accordion || {}),
 
-    cacheThreshold: saved.cacheThreshold ?? 0.3,
-    cacheStart:     saved.cacheStart     ?? 0.15,
-    cacheEnd:       saved.cacheEnd       ?? 0.9,
-    cacheMaxSteps:  saved.cacheMaxSteps  ?? 2,
     solTau:        saved.solTau        ?? 1.3,
     solStart:      saved.solStart      ?? 0.2,
     solEnd:        saved.solEnd        ?? 0.9,

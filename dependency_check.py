@@ -35,7 +35,6 @@ _OPTIONAL = [
     ("ComfyUI-MiniMax-H3-Turbo",          ("comfyui-minimax-h3-turbo",)),
     ("ComfyUI-SolAttn_triton",            ("comfyui-solattn_triton",)),
     ("ComfyUI-Spectrum-MiniMax-H3",       ("comfyui-spectrum-minimax-h3",)),
-    ("ComfyUI-MiniMaxH3-Cache",           ("comfyui-minimaxh3-cache",)),
     ("ComfyUI-MiniMaxH3-FirstBlockCache", ("comfyui-minimaxh3-firstblockcache", "minimax-h3-firstblockcache")),
     ("ComfyUI-PlagueKind-Nodes",          ("comfyui-plaguekind-nodes",)),
     ("ComfyUI-sol-attn",                  ("comfyui-sol-attn",)),

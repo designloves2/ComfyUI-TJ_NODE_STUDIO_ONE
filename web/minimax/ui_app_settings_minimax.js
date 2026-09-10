@@ -470,7 +470,6 @@ export function createSettingsOverlay(state, ctx) {
       pdd_file_reference:   state.pddFileReference   || "",
       pdd_nfe:              String(state.pddNfe ?? "8"),
       pdd_lora_strength:    state.pddLoraStrength    ?? 1.0,
-      pdd_head_strength:    state.pddHeadStrength    ?? 1.0,
       turbo_mode:           state.turboMode          || "none",
       attn_backend:         state.attnBackend        || "sage",
       attn_forward:         state.attnForward        || "memeff_sage",
@@ -487,10 +486,6 @@ export function createSettingsOverlay(state, ctx) {
       sol_sag_int8_pv:      state.solSagInt8Pv       ?? false,
       sol_sag_sink_cond:    state.solSagSinkCond     || "exact_kv",
       sol_sag_dense_blocks: state.solSagDenseBlocks  || "",
-      cache_threshold:  state.cacheThreshold ?? 0.3,
-      cache_start:      state.cacheStart     ?? 0.15,
-      cache_end:        state.cacheEnd       ?? 0.9,
-      cache_max_steps:  state.cacheMaxSteps  ?? 2,
       vision_source:         "native",   // the Ollama backend was removed
       native_vision_clip:    state.nativeVisionClip  || "",
       h3_brief_backend:      state.h3BriefBackend    || state.h3LlmBackend || "native",
@@ -575,7 +570,6 @@ export function createSettingsOverlay(state, ctx) {
     take("pddFileReference",   cfg.pdd_file_reference);
     if (cfg.pdd_nfe != null)              state.pddNfe            = String(cfg.pdd_nfe);
     if (cfg.pdd_lora_strength != null)    state.pddLoraStrength   = cfg.pdd_lora_strength;
-    if (cfg.pdd_head_strength != null)    state.pddHeadStrength   = cfg.pdd_head_strength;
     if (cfg.turbo_mode)                   state.turboMode         = cfg.turbo_mode;
     if (cfg.attn_backend)                 state.attnBackend       = cfg.attn_backend;
     if (cfg.attn_forward)                 state.attnForward       = cfg.attn_forward;
@@ -592,10 +586,6 @@ export function createSettingsOverlay(state, ctx) {
     if (cfg.sol_sag_int8_pv != null)      state.solSagInt8Pv      = cfg.sol_sag_int8_pv;
     if (cfg.sol_sag_sink_cond)            state.solSagSinkCond    = cfg.sol_sag_sink_cond;
     if (cfg.sol_sag_dense_blocks)         state.solSagDenseBlocks = cfg.sol_sag_dense_blocks;
-    if (cfg.cache_threshold != null)  state.cacheThreshold = cfg.cache_threshold;
-    if (cfg.cache_start != null)      state.cacheStart     = cfg.cache_start;
-    if (cfg.cache_end != null)        state.cacheEnd       = cfg.cache_end;
-    if (cfg.cache_max_steps != null)  state.cacheMaxSteps  = cfg.cache_max_steps;
     if (cfg.native_vision_clip)       state.nativeVisionClip = cfg.native_vision_clip;
     if (cfg.h3_llm_backend)           state.h3LlmBackend     = cfg.h3_llm_backend;   // legacy
     if (cfg.h3_or_model)              state.h3OrModel        = cfg.h3_or_model;      // legacy
