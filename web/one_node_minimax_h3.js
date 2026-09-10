@@ -740,6 +740,13 @@ app.registerExtension({
         ta.addEventListener("input", () => { state.ltxPrompt = ta.value; persist(); });
         ta.addEventListener("focus", () => ta.style.borderColor = BRAND);
         ta.addEventListener("blur", () => ta.style.borderColor = C.border);
+        // While the LLM is writing, freeze the box so a stray keystroke can't be
+        // overwritten by the result landing.
+        if (_ltxBusy) {
+          ta.disabled = true;
+          ta.style.opacity = "0.6";
+          ta.value = "✨ LLM is writing the prompt from the source clip — please wait…";
+        }
 
         const enh = el("button", { type: "button", text: _ltxBusy ? "✨ …" : "✨ Write from frame", style: {
           cursor: _ltxBusy ? "wait" : "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 10px",
@@ -762,6 +769,7 @@ app.registerExtension({
           border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px 8px", fontSize: "11px",
           fontFamily: "inherit", outline: "none" } });
         neg.addEventListener("input", () => { state.ltxNegPrompt = neg.value; persist(); });
+        if (_ltxBusy) neg.disabled = true;
 
         const btnRow = el("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexShrink: "0", flexWrap: "wrap" } });
         btnRow.append(enh, conv, el("div", { style: { flex: "1", minWidth: "0" } }),
@@ -770,6 +778,9 @@ app.registerExtension({
 
         promptList.style.gap = "6px";
         promptList.append(ta, neg, btnRow);
+        if (_ltxBusy) promptList.append(el("div", {
+          text: "⏳ Running the LLM — the prompt box is locked until it returns.",
+          style: { fontSize: "10px", color: BRAND, fontWeight: "600" } }));
       }
 
       // "Prompt Edit" in LTX mode → a modal: source video on top, prompt below.
@@ -813,6 +824,43 @@ app.registerExtension({
           body.append(el("div", { text: "No source clip — pick one in the left panel.", style: { fontSize: "11px", color: C.warn } }));
         }
 
+        // — LLM backend + model — changing it here also writes the Settings config
+        //   so the two stay in sync (Settings re-reads config each time it opens).
+        const llmWrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } });
+        const syncLlmCfg = () => saveConfig({
+          ltx_vision_backend: state.ltxVisionBackend || "native",
+          ltx_vision_clip:    state.ltxVisionClip    || "",
+          ltx_vision_or_model: state.ltxVisionOrModel || "",
+        }).catch(() => {});
+        function renderLlmPicker() {
+          clear(llmWrap);
+          const backend = state.ltxVisionBackend || "native";
+          const bSel = select(
+            [{ value: "native", label: "Native CLIP (local)" }, { value: "openrouter", label: "OpenRouter (cloud)" }],
+            backend, v => { state.ltxVisionBackend = v; persist(); syncLlmCfg(); renderLlmPicker(); llmLabel.textContent = `LLM: ${ltxVisionLabel()}`; });
+          let mSel;
+          if (backend === "openrouter") {
+            mSel = el("select", { style: { width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+              border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px", fontSize: "12px", fontFamily: "inherit", outline: "none" } },
+              [el("option", { value: state.ltxVisionOrModel || "", text: state.ltxVisionOrModel || "loading models…" })]);
+            mSel.addEventListener("change", () => { state.ltxVisionOrModel = mSel.value; persist(); syncLlmCfg(); llmLabel.textContent = `LLM: ${ltxVisionLabel()}`; });
+            fetch("/music_one/openrouter_models").then(r => r.json()).then(d => {
+              const ms = d.models || []; clear(mSel);
+              if (!ms.length) mSel.appendChild(el("option", { value: "", text: "(no models — set the OpenRouter key in Settings)" }));
+              ms.forEach(m => mSel.appendChild(el("option", { value: m, text: m, ...(m === state.ltxVisionOrModel ? { selected: "selected" } : {}) })));
+              if (!state.ltxVisionOrModel && ms[0]) { state.ltxVisionOrModel = ms[0]; persist(); syncLlmCfg(); llmLabel.textContent = `LLM: ${ltxVisionLabel()}`; }
+            }).catch(() => {});
+          } else {
+            const te = ["none", ...((ctx.availableModels?.text_encoders_all || ctx.availableModels?.text_encoders || []).filter(x => x !== "none"))];
+            mSel = select(te.map(x => ({ value: x, label: x })), state.ltxVisionClip || "none",
+              v => { state.ltxVisionClip = v === "none" ? "" : v; persist(); syncLlmCfg(); llmLabel.textContent = `LLM: ${ltxVisionLabel()}`; });
+          }
+          llmWrap.append(row([
+            col([label("LLM backend"), bSel]),
+            col([label(backend === "openrouter" ? "OpenRouter model" : "Vision CLIP"), mSel]),
+          ]));
+        }
+
         // — prompt below —
         const bigTA = el("textarea", { value: state.ltxPrompt || "", style: {
           width: "100%", minHeight: "200px", boxSizing: "border-box", background: C.bg2, color: C.text,
@@ -823,17 +871,27 @@ app.registerExtension({
           width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
           borderRadius: "6px", padding: "8px", fontSize: "12px", fontFamily: "inherit", outline: "none" } });
         bigNeg.addEventListener("input", () => { state.ltxNegPrompt = bigNeg.value; persist(); });
-        const enh2 = button(_ltxBusy ? "✨ …" : "✨ Write from frame", async () => {
-          await ltxWritePrompt(); bigTA.value = state.ltxPrompt || "";
+        const llmLabel = el("div", { text: `LLM: ${ltxVisionLabel()}`, style: { fontSize: "10px", color: C.muted, alignSelf: "center" } });
+        // Lock the prompt box while the LLM runs so a keystroke can't collide with the result.
+        const lockBig = (on, msg) => {
+          bigTA.disabled = on; bigNeg.disabled = on; enh2.disabled = on || !state.ltxSource;
+          conv2.disabled = on || !String(state.ltxPrompt || "").trim();
+          bigTA.style.opacity = on ? "0.6" : "1";
+          if (on) bigTA.value = msg || "✨ LLM is writing — please wait…";
+        };
+        const enh2 = button("✨ Write from frame", async () => {
+          lockBig(true, "✨ LLM is writing the prompt from the source clip's first frame…");
+          try { await ltxWritePrompt(); } finally { lockBig(false); bigTA.value = state.ltxPrompt || ""; renderLlmPicker(); }
         }, "primary");
         enh2.disabled = _ltxBusy || !state.ltxSource;
         const conv2 = button("H3 → LTX 2.5", async () => {
-          await ltxConvertToLtx(); bigTA.value = state.ltxPrompt || "";
+          lockBig(true, "🔄 Converting the H3 brief to an LTX 2.5 prompt…");
+          try { await ltxConvertToLtx(); } finally { lockBig(false); bigTA.value = state.ltxPrompt || ""; renderLlmPicker(); }
         }, "default");
         conv2.disabled = _ltxBusy || !String(state.ltxPrompt || "").trim();
-        body.append(label("Prompt"), bigTA, label("Negative"), bigNeg,
-          row([enh2, conv2, el("div", { style: { flex: "1" } }),
-            el("div", { text: `LLM: ${ltxVisionLabel()}`, style: { fontSize: "10px", color: C.muted, alignSelf: "center" } })]));
+        renderLlmPicker();
+        body.append(label("LLM"), llmWrap, label("Prompt"), bigTA, label("Negative"), bigNeg,
+          row([enh2, conv2, el("div", { style: { flex: "1" } }), llmLabel]));
 
         const foot = el("div", { style: {
           display: "flex", gap: "8px", padding: "10px 12px", borderTop: `1px solid ${C.border}`, flexShrink: "0", justifyContent: "flex-end" } });
@@ -1156,40 +1214,72 @@ app.registerExtension({
           return;
         }
 
-        // ── source clip — one big card: real player + full media info ──────────
-        const card = el("div", { style: {
-          position: "relative", width: "100%", borderRadius: "8px", background: "#000",
-          border: `1px solid ${state.ltxSource ? BRAND : C.border}`, overflow: "hidden",
-          minHeight: "150px", display: "flex", alignItems: "center", justifyContent: "center",
-        }});
+        // ── source clip — square card, controls BELOW the video, clean frame ──
         const srcKids = [label("Source clip")];
-        if (state.ltxSource) {
+        const hasSrc = !!state.ltxSource;
+
+        const card = el("div", { style: {
+          position: "relative", width: "100%", aspectRatio: "1 / 1", background: "#000",
+          borderRadius: "8px", overflow: "hidden",
+          border: `1px solid ${hasSrc ? BRAND : C.border}`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }});
+
+        if (hasSrc) {
+          // clean video — no native controls, landscape fits width / portrait fits height
           const vid = el("video", { src: `/view?filename=${encodeURIComponent(state.ltxSource)}&type=input`,
-            controls: true, muted: true, loop: true, playsInline: true, preload: "metadata",
-            style: { width: "100%", maxHeight: "260px", objectFit: "contain", background: "#000", display: "block" } });
+            muted: true, loop: true, playsInline: true, preload: "metadata",
+            style: { width: "100%", height: "100%", objectFit: "contain", background: "#000", display: "block", cursor: "pointer" } });
+          vid.addEventListener("click", () => { vid.paused ? vid.play() : vid.pause(); });
           card.appendChild(vid);
-          const clr = el("button", { type: "button", text: "✕", title: "Clear source", style: {
-            position: "absolute", top: "6px", right: "6px", zIndex: "3", width: "22px", height: "22px",
-            border: "none", borderRadius: "4px", background: "rgba(0,0,0,0.75)", color: "#fff", cursor: "pointer", fontSize: "11px",
-          }, onclick: () => { state.ltxSource = ""; _ltxSrcInfo = null; persist(); renderLeft(); renderPrompts(); } });
-          card.appendChild(clr);
+          card.appendChild(el("button", { type: "button", text: "✕", title: "Clear source", style: {
+            position: "absolute", top: "6px", right: "6px", zIndex: "3", width: "24px", height: "24px",
+            border: "none", borderRadius: "6px", background: "rgba(0,0,0,0.7)", color: "#fff", cursor: "pointer", fontSize: "12px",
+          }, onclick: () => { state.ltxSource = ""; state.ltxSourceKind = "gallery"; _ltxSrcInfo = null; persist(); renderLeft(); renderPrompts(); } }));
           srcKids.push(card);
-          // media info line — resolution · duration · fps · audio, from the media_info route
+
+          // ── control bar — sits under the card, never over the picture ────────
+          const fmtT = (s) => { s = Math.max(0, s || 0); const m = Math.floor(s / 60); const ss = Math.floor(s % 60); return `${m}:${String(ss).padStart(2, "0")}`; };
+          const btnStyle = { width: "30px", height: "26px", flexShrink: "0", border: `1px solid ${C.border}`,
+            borderRadius: "5px", background: C.bg2, color: C.text, cursor: "pointer", fontSize: "11px" };
+          const playBtn = el("button", { type: "button", text: "▶", style: btnStyle });
+          const muteBtn = el("button", { type: "button", text: "🔇", title: "Unmute", style: btnStyle });
+          const seek = el("input", { type: "range", min: "0", max: "1000", value: "0",
+            style: { flex: "1", accentColor: BRAND, cursor: "pointer" } });
+          playBtn.addEventListener("click", () => { vid.paused ? vid.play() : vid.pause(); });
+          vid.addEventListener("play",  () => playBtn.textContent = "⏸");
+          vid.addEventListener("pause", () => playBtn.textContent = "▶");
+          muteBtn.addEventListener("click", () => { vid.muted = !vid.muted; muteBtn.textContent = vid.muted ? "🔇" : "🔊"; muteBtn.title = vid.muted ? "Unmute" : "Mute"; });
+          let seeking = false;
+          seek.addEventListener("input", () => { seeking = true; if (vid.duration) vid.currentTime = (parseFloat(seek.value) / 1000) * vid.duration; });
+          seek.addEventListener("change", () => { seeking = false; });
+          const timeLabel = el("span", { text: "0:00 / 0:00" });
+          vid.addEventListener("timeupdate", () => {
+            if (!seeking && vid.duration) seek.value = String(Math.round((vid.currentTime / vid.duration) * 1000));
+            timeLabel.textContent = `${fmtT(vid.currentTime)} / ${fmtT(vid.duration)}`;
+          });
+          srcKids.push(el("div", { style: { display: "flex", alignItems: "center", gap: "8px", padding: "6px 2px" } }, [playBtn, seek, muteBtn]));
+
+          // ── info line: 0:00 / 0:08    24fps    1248x768 ─────────────────────
           const info = _ltxSrcInfo;
-          const infoText = info
-            ? `${info.width && info.height ? `${info.width}×${info.height}` : "?"}  ·  ${
-                (info.duration || 0).toFixed(2)}s  ·  ${info.fps ? info.fps.toFixed(2) : "?"} fps  ·  ${
-                info.has_audio ? "🔊 audio" : "🔇 no audio"}`
-            : "reading media info…";
-          srcKids.push(el("div", { text: `${state.ltxSourceKind === "upload" ? "⬆ upload" : "🖼 gallery"}  —  ${infoText}`,
-            style: { fontSize: "10px", color: info ? C.text : C.muted, lineHeight: "1.5", wordBreak: "break-all" } }));
+          srcKids.push(el("div", { style: {
+            display: "flex", alignItems: "center", gap: "14px", padding: "0 2px",
+            fontSize: "11px", color: info ? C.text : C.muted, fontVariantNumeric: "tabular-nums",
+          }}, [
+            timeLabel,
+            el("span", { text: info && info.fps ? `${info.fps.toFixed(info.fps % 1 ? 2 : 0)}fps` : "— fps" }),
+            el("span", { text: info && info.width && info.height ? `${info.width}x${info.height}` : "—" }),
+            el("span", { text: state.ltxSourceKind === "upload" ? "⬆ upload" : "🖼 gallery",
+              style: { marginLeft: "auto", color: C.muted } }),
+          ]));
           if (info && !info.has_audio) srcKids.push(el("div", {
             text: "⚠ No audio track — the LTX audio branch needs one. Add audio to the clip first.",
             style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
         } else {
-          card.appendChild(el("div", { text: "no source clip", style: { color: C.muted, fontSize: "12px", padding: "40px 0" } }));
+          card.appendChild(el("div", { text: "no source clip", style: { color: C.muted, fontSize: "12px" } }));
           srcKids.push(card);
         }
+
         const fileInp = el("input", { type: "file", accept: "video/*", style: { display: "none" } });
         fileInp.addEventListener("change", async () => {
           const f = fileInp.files[0]; fileInp.value = "";
@@ -1197,11 +1287,12 @@ app.registerExtension({
           try { showPopup("Uploading…", false); const name = await uploadMedia(f); setLtxSource(name, "upload"); }
           catch (e) { showPopup(e.message, true); }
         });
-        srcKids.push(row([
-          button("🖼 From gallery", () => openVideoGalleryPicker((inputFilename, item) =>
-            setLtxSource(inputFilename, "gallery", item), { subfolder: state.saveSubfolder || SUBFOLDER })),
-          button("⬆ Upload", () => fileInp.click(), "default"),
-        ]));
+        // From gallery | Upload — equal width (1:1)
+        const galBtn = button("🖼 From gallery", () => openVideoGalleryPicker((inputFilename, item) =>
+          setLtxSource(inputFilename, "gallery", item), { subfolder: state.saveSubfolder || SUBFOLDER }));
+        const upBtn = button("⬆ Upload", () => fileInp.click(), "default");
+        galBtn.style.flex = "1"; upBtn.style.flex = "1";
+        srcKids.push(el("div", { style: { display: "flex", gap: "8px" } }, [galBtn, upBtn]));
         srcKids.push(fileInp);
         srcKids.push(el("div", { text: "The whole clip is upscaled 2× and its audio is carried through. Gallery picks auto-fill the prompt from the clip's saved meta.",
           style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
