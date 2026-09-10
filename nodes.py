@@ -2067,6 +2067,13 @@ async def mmh3_get_config(request):
         "h3_or_model_brief":     cfg.get("h3_or_model_brief") or cfg.get("h3_or_model", ""),
         "h3_or_model_vision":    cfg.get("h3_or_model_vision") or cfg.get("h3_or_model", ""),
         "filename_prefix":       cfg.get("filename_prefix",       "MMH3"),
+        # LTX 2.5 Upscale mode — its own model set (generationMode "ltxupscale")
+        "ltx_unet":              cfg.get("ltx_unet",              ""),
+        "ltx_latent_upscaler":   cfg.get("ltx_latent_upscaler",   ""),
+        "ltx_clip":              cfg.get("ltx_clip",              ""),
+        "ltx_vae_video":         cfg.get("ltx_vae_video",         ""),
+        "ltx_vae_audio":         cfg.get("ltx_vae_audio",         ""),
+        "ltx_tiny_vae":          cfg.get("ltx_tiny_vae",          ""),
         "stitch_at_end":         cfg.get("stitch_at_end",         True),
         "trim_last_clip":        cfg.get("trim_last_clip",        False),
         "unload_between_clips":  cfg.get("unload_between_clips",  True),
@@ -2335,6 +2342,10 @@ async def mmh3_get_models(request):
         # ModelPreviewOverrideKJ's optional tiny_vae — a fast approx decoder for the live
         # preview only (not used for the real render). Folder is models/vae_approx/.
         "vae_approx":       scan("vae_approx", [".pth", ".safetensors"]),
+        # LTX 2.5 Upscale mode
+        "latent_upscale_models": scan("latent_upscale_models"),
+        # LTX text encoder can be GGUF (loaded via TJ_LTX25ClipLoaderGGUF) or safetensors
+        "text_encoders_all":     scan("text_encoders", [".safetensors", ".gguf", ".pt", ".sft"]),
     })
 
 

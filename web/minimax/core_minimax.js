@@ -264,10 +264,24 @@ export const SAMPLERS = [
 export const SCHEDULERS = ["simple", "normal", "karras", "exponential", "sgm_uniform", "beta", "ddim_uniform"];
 
 export const GENERATION_MODES = [
-  { key: "t2v",       label: "Text only",        hint: "prompt only (T2VA)" },
-  { key: "firstlast", label: "First/Last Frame",  hint: "start + end keyframe (FL2VA)" },
-  { key: "reference", label: "Reference",         hint: "up to 9 reference images (REF2VA)" },
+  { key: "t2v",        label: "Text only",        hint: "prompt only (T2VA)" },
+  { key: "firstlast",  label: "First/Last Frame",  hint: "start + end keyframe (FL2VA)" },
+  { key: "reference",  label: "Reference",         hint: "up to 9 reference images (REF2VA)" },
+  { key: "ltxupscale", label: "LTX Upscale",       hint: "2x refine an existing clip (LTX 2.5)" },
 ];
+
+// LTX 2.5 Upscale mode is a standalone refine pass — not an H3 render. It needs its own
+// model set configured in Settings (the LTX unet, latent upscaler, text encoder, and the
+// LTX video + audio VAEs). A missing piece disables the mode rather than failing at run.
+export function ltxUpscaleReady(state) {
+  const need = [state.ltxUnet, state.ltxLatentUpscaler, state.ltxClip, state.ltxVaeVideo, state.ltxVaeAudio];
+  return need.every(v => v && v !== "none");
+}
+export function ltxUpscaleMissing(state) {
+  const map = { ltxUnet: "LTX unet", ltxLatentUpscaler: "latent upscaler", ltxClip: "text encoder",
+                ltxVaeVideo: "video VAE", ltxVaeAudio: "audio VAE" };
+  return Object.keys(map).filter(k => !state[k] || state[k] === "none").map(k => map[k]);
+}
 
 /** Turn the tensor errors these packs throw into something actionable. */
 export function explainGenerationError(message) {
@@ -538,6 +552,11 @@ export function configIssues(state) {
 export function generationModesFor(state) {
   const a = modelAvailability(state);
   return GENERATION_MODES.map(m => {
+    if (m.key === "ltxupscale") {
+      const ok = ltxUpscaleReady(state);
+      return { ...m, enabled: ok, reason: ok ? "" :
+        `Set the LTX 2.5 models in ⚙ Settings (missing: ${ltxUpscaleMissing(state).join(", ")})` };
+    }
     const ok = m.key === "reference" ? a.ref : a.fl;
     return { ...m, enabled: ok, reason: ok ? "" :
       `Set the ${m.key === "reference" ? "Reference" : "First/Last"} UNET in ⚙ Settings → Models` };
@@ -643,6 +662,27 @@ export function defaultState(saved) {
 
     // modes
     generationMode: saved.generationMode || "t2v",
+
+    // ── LTX 2.5 Upscale mode (generationMode "ltxupscale") ────────────────────
+    // A standalone 2x latent-upscale + light refine pass over a finished/uploaded clip.
+    // Does not touch the H3 conditioning/sampler chain — see buildLtxUpscaleGraph.
+    ltxSource:      saved.ltxSource      || "",     // source video filename (gallery pick or upload)
+    ltxSourceKind:  saved.ltxSourceKind  || "gallery",  // "gallery" | "upload"
+    ltxPrompt:      saved.ltxPrompt      || "",
+    ltxNegPrompt:   saved.ltxNegPrompt   || "bad anatomy, inconsistent look, low resolution,",
+    ltxSteps:       saved.ltxSteps       ?? 3,
+    ltxDenoise:     saved.ltxDenoise     ?? 0.15,
+    ltxSampler:     saved.ltxSampler     || "euler_ancestral",
+    ltxScheduler:   saved.ltxScheduler   || "simple",
+    ltxSeed:        saved.ltxSeed        ?? 0,
+    ltxSeedMode:    saved.ltxSeedMode    || "randomize",
+    // configured once in ⚙ Settings → LTX 2.5 Upscale (round-trip through the config route)
+    ltxUnet:           saved.ltxUnet           || "",   // .gguf → TJ_LTX25ClipLoaderGGUF-companion UnetLoaderGGUF; .safetensors → UNETLoader
+    ltxLatentUpscaler: saved.ltxLatentUpscaler || "",   // models/latent_upscale_models/
+    ltxClip:           saved.ltxClip           || "",   // .gguf → TJ_LTX25ClipLoaderGGUF; else core CLIPLoader(type ltxv)
+    ltxVaeVideo:       saved.ltxVaeVideo       || "",
+    ltxVaeAudio:       saved.ltxVaeAudio       || "",
+    ltxTinyVae:        saved.ltxTinyVae        || "",   // preview TAE (taeltx2*) — falls back to the H3 preview tiny_vae if unset
     accelMode:      saved.accelMode      || "solattn",   // legacy — kept only so old
                                                          // workflows can be migrated below
     upscaleMode:    saved.upscaleMode    || "none",

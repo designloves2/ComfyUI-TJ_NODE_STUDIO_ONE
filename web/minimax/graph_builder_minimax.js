@@ -812,6 +812,179 @@ export function buildClipGraph(state, avail, opts = {}) {
 
 export const NODE_IDS = N;
 
+// ── LTX 2.5 Upscale mode ─────────────────────────────────────────────────────
+// A standalone 2x latent-upscale + light refine pass over a finished/uploaded clip.
+// Nothing about an H3 render is involved — its own model set (Settings → LTX 2.5 Upscale),
+// its own euler_ancestral / BasicScheduler(steps 3, denoise 0.15) refine, its own LTX
+// video+audio VAEs. The source video is read with VHS_LoadVideo (audio passes straight
+// through), its first frame anchors LTXVImgToVideoInplace so colour/identity don't drift.
+// Built from the verified MiniMaxH3-LTX-2-5-Upscale.json (dead nodes dropped).
+const L = {
+  load: "LX:load", unet: "LX:unet", clip: "LX:clip", vaeV: "LX:vae_v", vaeA: "LX:vae_a",
+  upmodel: "LX:up_model", ckAttn: "LX:ck_attn", sol: "LX:sol", preview: "LX:preview",
+  txtPos: "LX:txt_pos", txtNeg: "LX:txt_neg", cond: "LX:cond", freePos: "LX:free_pos",
+  freeNeg: "LX:free_neg", guider: "LX:guider", enc: "LX:vae_encode", upsamp: "LX:upsampler",
+  firstF: "LX:first_frame", i2v: "LX:i2v_inplace", audEnc: "LX:aud_encode", concat: "LX:concat",
+  noise: "LX:noise", sampSel: "LX:sampler_sel", sched: "LX:scheduler", sampler: "LX:sampler",
+  sep: "LX:separate", decV: "LX:decode_v", decA: "LX:decode_a", deblur: "LX:deblur",
+  upApply: "LX:up_apply", upLoad: "LX:up_load", rtx: "LX:rtx", video: "LX:video", save: "LX:save",
+};
+
+/**
+ * @param state  UI snapshot
+ * @param avail  node availability map
+ * @param opts   { nodeId, sourceFile, fps }  sourceFile = filename in ComfyUI's input/
+ */
+export function buildLtxUpscaleGraph(state, avail, opts = {}) {
+  const { nodeId, sourceFile, fps = FPS } = opts;
+  if (!sourceFile) throw new Error("LTX Upscale: pick a source clip (gallery or upload).");
+  const need = { ltxUnet: "LTX unet", ltxLatentUpscaler: "latent upscaler", ltxClip: "text encoder",
+                 ltxVaeVideo: "video VAE", ltxVaeAudio: "audio VAE" };
+  const missing = Object.keys(need).filter(k => !state[k] || state[k] === "none").map(k => need[k]);
+  if (missing.length) throw new Error(`LTX Upscale: set these in ⚙ Settings → LTX 2.5 Upscale — ${missing.join(", ")}`);
+
+  const g = {};
+  const folder = (state.saveSubfolder || SUBFOLDER).replace(/\\/g, "/");
+  const stem = state.filenamePrefix || "MMH3";
+  const isGguf = (s) => String(s || "").toLowerCase().endsWith(".gguf");
+
+  // ── source ─────────────────────────────────────────────────────────────────
+  g[L.load] = { class_type: "VHS_LoadVideo", inputs: {
+    video: sourceFile, force_rate: 0, custom_width: 0, custom_height: 0,
+    frame_load_cap: 0, skip_first_frames: 0, select_every_nth: 1, format: "AnimateDiff",
+  }};
+  // IMAGE = [L.load, 0], frame_count = [L.load, 1], audio = [L.load, 2]
+
+  // ── loaders ────────────────────────────────────────────────────────────────
+  g[L.unet] = isGguf(state.ltxUnet)
+    ? { class_type: "UnetLoaderGGUF", inputs: { unet_name: state.ltxUnet } }
+    : { class_type: "UNETLoader", inputs: { unet_name: state.ltxUnet, weight_dtype: "default" } };
+  let model = [L.unet, 0];
+
+  g[L.clip] = isGguf(state.ltxClip)
+    ? { class_type: "TJ_LTX25ClipLoaderGGUF", inputs: { clip_name: state.ltxClip } }
+    : { class_type: "CLIPLoader", inputs: { clip_name: state.ltxClip, type: "ltxv", device: "default" } };
+  const clip = [L.clip, 0];
+
+  g[L.vaeV] = { class_type: "VAELoader", inputs: { vae_name: state.ltxVaeVideo } };
+  g[L.vaeA] = { class_type: "VAELoader", inputs: { vae_name: state.ltxVaeAudio } };
+  const vaeV = [L.vaeV, 0], vaeA = [L.vaeA, 0];
+
+  g[L.upmodel] = { class_type: "LatentUpscaleModelLoader", inputs: { model_name: state.ltxLatentUpscaler } };
+
+  // ── model patches (verified combo: comfy-kitchen attention → Sol-Attn → preview) ──
+  if (has(avail, "ModelAttentionBackend")) {
+    g[L.ckAttn] = { class_type: "ModelAttentionBackend", inputs: { model, attention: "comfy kitchen attention" } };
+    model = [L.ckAttn, 0];
+  }
+  if (has(avail, "SolAttnPatch")) {
+    g[L.sol] = { class_type: "SolAttnPatch", inputs: {
+      model, tau: 1.3, start_percent: 0.2, end_percent: 0.9, min_tokens: 4096,
+      int8_qk: true, sink_conditioning: "exact_kv_and_rows", morton: false, morton_curve: "2d_frame",
+      int8_pv: true, verbose: false, use_tma: false, dense_blocks: "",
+    }};
+    model = [L.sol, 0];
+  }
+  if (state.previewEnabled && has(avail, "ModelPreviewOverrideKJ") && nodeId != null) {
+    const pin = {
+      model, max_resolution: state.previewMaxRes ?? 1024, jpeg_quality: state.previewQuality ?? 80,
+      suppress_default_preview: true, preview_frames: Math.max(1, state.previewFrames ?? 250),
+      preview_fps: state.previewFps ?? fps,
+    };
+    const tv = state.ltxTinyVae || state.previewTinyVae;
+    if (tv && tv !== "none") pin.tiny_vae = tv;
+    g[L.preview] = { class_type: "ModelPreviewOverrideKJ", inputs: pin, _meta: { title: `MMH3 LTX preview #${nodeId}` } };
+    model = [L.preview, 0];
+  }
+
+  // ── conditioning ───────────────────────────────────────────────────────────
+  g[L.txtPos] = { class_type: "CLIPTextEncode", inputs: { text: String(state.ltxPrompt || ""), clip } };
+  g[L.txtNeg] = { class_type: "CLIPTextEncode", inputs: {
+    text: String(state.ltxNegPrompt || "bad anatomy, inconsistent look, low resolution,"), clip,
+  }};
+  g[L.cond] = { class_type: "LTXVConditioning", inputs: {
+    frame_rate: fps, positive: [L.txtPos, 0], negative: [L.txtNeg, 0],
+  }};
+  let condPos = [L.cond, 0], condNeg = [L.cond, 1];
+  if (has(avail, "TJ_FreeTextEncoderVRAM")) {
+    g[L.freePos] = { class_type: "TJ_FreeTextEncoderVRAM", inputs: { clip, trigger: [L.cond, 0] } };
+    g[L.freeNeg] = { class_type: "TJ_FreeTextEncoderVRAM", inputs: { clip, trigger: [L.cond, 1] } };
+    condPos = [L.freePos, 0]; condNeg = [L.freeNeg, 0];
+  }
+  g[L.guider] = { class_type: "LTXVDualCFGGuider", inputs: {
+    video_cfg: 1, audio_cfg: 1, model, positive: condPos, negative: condNeg,
+  }};
+
+  // ── latent: encode → 2x latent upscale → first-frame anchor → concat with audio ──
+  g[L.enc] = { class_type: "VAEEncode", inputs: { pixels: [L.load, 0], vae: vaeV } };
+  g[L.upsamp] = { class_type: "LTXVLatentUpsampler", inputs: {
+    samples: [L.enc, 0], upscale_model: [L.upmodel, 0], vae: vaeV,
+  }};
+  g[L.firstF] = { class_type: "ImageFromBatch", inputs: { image: [L.load, 0], batch_index: 0, length: 1 } };
+  g[L.i2v] = { class_type: "LTXVImgToVideoInplace", inputs: {
+    strength: 1, bypass: false, vae: vaeV, image: [L.firstF, 0], latent: [L.upsamp, 0],
+  }};
+  g[L.audEnc] = { class_type: "LTXVAudioVAEEncode", inputs: { audio: [L.load, 2], audio_vae: vaeA } };
+  g[L.concat] = { class_type: "LTXVConcatAVLatent", inputs: {
+    video_latent: [L.i2v, 0], audio_latent: [L.audEnc, 0],
+  }};
+
+  // ── refine sample ──────────────────────────────────────────────────────────
+  const seed = state.ltxSeedMode === "randomize" ? (Math.floor(Math.random() * 1e15)) : (state.ltxSeed ?? 0);
+  g[L.noise] = { class_type: "RandomNoise", inputs: { noise_seed: seed } };
+  g[L.sampSel] = { class_type: "KSamplerSelect", inputs: { sampler_name: state.ltxSampler || "euler_ancestral" } };
+  g[L.sched] = { class_type: "BasicScheduler", inputs: {
+    model, scheduler: state.ltxScheduler || "simple",
+    steps: Math.max(1, Math.round(state.ltxSteps ?? 3)), denoise: state.ltxDenoise ?? 0.15,
+  }};
+  g[L.sampler] = { class_type: "SamplerCustomAdvanced", inputs: {
+    noise: [L.noise, 0], guider: [L.guider, 0], sampler: [L.sampSel, 0],
+    sigmas: [L.sched, 0], latent_image: [L.concat, 0],
+  }};
+
+  // ── decode ─────────────────────────────────────────────────────────────────
+  g[L.sep] = { class_type: "LTXVSeparateAVLatent", inputs: { av_latent: [L.sampler, 0] } };
+  g[L.decV] = { class_type: "VAEDecodeTiled", inputs: {
+    tile_size: 512, overlap: 64, temporal_size: 4096, temporal_overlap: 32,
+    samples: [L.sep, 0], vae: vaeV,
+  }};
+  g[L.decA] = { class_type: "LTXVAudioVAEDecode", inputs: { samples: [L.sep, 1], audio_vae: vaeA } };
+  let images = [L.decV, 0];
+
+  // ── optional RTX finisher (reuses the H3 node's deblur / RTX VSR settings) ──
+  let deblurUsed = null, upscaleUsed = null;
+  if (state.deblurStrength && state.deblurStrength !== "none" && has(avail, "TJ_RTXDeblur")) {
+    g[L.deblur] = { class_type: "TJ_RTXDeblur", inputs: { images, strength: state.deblurStrength } };
+    images = [L.deblur, 0]; deblurUsed = state.deblurStrength;
+  }
+  const up = state.upscaleMode || "none";
+  if (up === "model" && state.upscaleModel && state.upscaleModel !== "none") {
+    g[L.upLoad] = { class_type: "UpscaleModelLoader", inputs: { model_name: state.upscaleModel } };
+    g[L.upApply] = { class_type: "ImageUpscaleWithModel", inputs: { upscale_model: [L.upLoad, 0], image: images } };
+    images = [L.upApply, 0]; upscaleUsed = { method: "model", model: state.upscaleModel };
+  } else if (up === "rtx" && has(avail, "RTXVideoSuperResolution")) {
+    g[L.rtx] = { class_type: "RTXVideoSuperResolution", inputs: {
+      images, resize_type: "scale by multiplier",
+      "resize_type.scale": state.rtxScale ?? 2.0, quality: state.rtxQuality || "ULTRA",
+    }};
+    images = [L.rtx, 0]; upscaleUsed = { method: "rtx", scale: state.rtxScale ?? 2.0, quality: state.rtxQuality || "ULTRA" };
+  }
+
+  // ── output ─────────────────────────────────────────────────────────────────
+  g[L.video] = { class_type: "CreateVideo", inputs: { images, fps, audio: [L.decA, 0] } };
+  g[L.save] = { class_type: "SaveVideo", inputs: {
+    video: [L.video, 0], filename_prefix: `${folder}/${stem}_LTXUP`, format: "auto", codec: "auto",
+  }};
+
+  return { graph: g, meta: {
+    ltxUpscale: true, steps: Math.max(1, Math.round(state.ltxSteps ?? 3)),
+    denoise: state.ltxDenoise ?? 0.15, sampler: state.ltxSampler || "euler_ancestral",
+    scheduler: state.ltxScheduler || "simple", seed, source: sourceFile, fps,
+    deblur: deblurUsed, upscale: upscaleUsed,
+    videoNode: L.save, lastFrameNode: null,
+  } };
+}
+
 // ── post-processing an already-rendered clip ─────────────────────────────────
 // Upscaling and frame interpolation both follow the same shape: read the finished mp4
 // back in, run the frames through one node, and write a new mp4 beside it. They are

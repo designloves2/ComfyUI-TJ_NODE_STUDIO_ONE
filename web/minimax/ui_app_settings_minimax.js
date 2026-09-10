@@ -139,6 +139,29 @@ export function createSettingsOverlay(state, ctx) {
         style: { fontSize: "10px", color: C.muted, lineHeight: "1.55" } }),
     ]));
 
+    // ── LTX 2.5 Upscale mode — its own model set (generationMode "ltxupscale") ──
+    const lup  = ["none", ...(modelData.latent_upscale_models || []).filter(x => x !== "none")];
+    const lte  = ["none", ...(modelData.text_encoders_all || modelData.text_encoders || []).filter(x => x !== "none")];
+    const vxa  = ["none", ...(modelData.vae_approx || []).filter(x => x !== "none")];
+    const lxU  = searchableSelect(diff, state.ltxUnet           || "none", v => { state.ltxUnet = v === "none" ? "" : v;           ctx.persist(); ctx.refreshModes?.(); });
+    const lxLU = searchableSelect(lup,  state.ltxLatentUpscaler || "none", v => { state.ltxLatentUpscaler = v === "none" ? "" : v; ctx.persist(); ctx.refreshModes?.(); });
+    const lxC  = searchableSelect(lte,  state.ltxClip           || "none", v => { state.ltxClip = v === "none" ? "" : v;           ctx.persist(); ctx.refreshModes?.(); });
+    const lxVV = searchableSelect(vae,  state.ltxVaeVideo       || "none", v => { state.ltxVaeVideo = v === "none" ? "" : v;       ctx.persist(); ctx.refreshModes?.(); });
+    const lxVA = searchableSelect(vae,  state.ltxVaeAudio       || "none", v => { state.ltxVaeAudio = v === "none" ? "" : v;       ctx.persist(); ctx.refreshModes?.(); });
+    const lxTV = searchableSelect(vxa,  state.ltxTinyVae        || "none", v => { state.ltxTinyVae = v === "none" ? "" : v;        ctx.persist(); });
+    wrap.appendChild(panel([
+      label("LTX 2.5 Upscale — models for the LTX Upscale generation mode"),
+      row([col([label("LTX unet (.gguf or .safetensors)"), lxU.el]),
+           col([label("Latent spatial upscaler (x2)"), lxLU.el])]),
+      col([label("Text encoder (.gguf → LTX25 CLIP GGUF LOADER (TJ); else CLIPLoader type ltxv)"), lxC.el]),
+      row([col([label("LTX video VAE"), lxVV.el]), col([label("LTX audio VAE"), lxVA.el])]),
+      col([label("Preview TAE (taeltx2*) — optional, falls back to the H3 preview TAE"), lxTV.el]),
+      el("div", { html: "Files: LTX unet → <code>models/diffusion_models/</code> · latent upscaler → <code>models/latent_upscale_models/</code> · "
+        + "text encoder → <code>models/text_encoders/</code> · VAEs → <code>models/vae/</code>. The gemma4 GGUF text encoder needs the "
+        + "<code>ComfyUI-TJ_NODE</code> pack (<code>TJ_LTX25ClipLoaderGGUF</code>); the int8 safetensors works with core <code>CLIPLoader</code>.",
+        style: { fontSize: "10px", color: C.muted, lineHeight: "1.6" } }),
+    ]));
+
     const missing = availability.missing_optional || [];
     const missCore = availability.missing_core || [];
     const availNote = el("div", { style: { fontSize: "10px", lineHeight: "1.6", color: (missing.length || missCore.length) ? C.warn : C.ok } });
@@ -425,6 +448,13 @@ export function createSettingsOverlay(state, ctx) {
       clip_name:       state.clipName      || "",
       vae_video:       state.vaeVideo      || "",
       vae_audio:       state.vaeAudio      || "",
+      // LTX 2.5 Upscale mode
+      ltx_unet:            state.ltxUnet           || "",
+      ltx_latent_upscaler: state.ltxLatentUpscaler || "",
+      ltx_clip:            state.ltxClip           || "",
+      ltx_vae_video:       state.ltxVaeVideo       || "",
+      ltx_vae_audio:       state.ltxVaeAudio       || "",
+      ltx_tiny_vae:        state.ltxTinyVae        || "",
       turbo_lora:      state.turboLora     || "",
       turbo_lora_strength: state.turboLoraStrength ?? 1.0,
       upscale_model:   state.upscaleModel  || "",
@@ -526,6 +556,12 @@ export function createSettingsOverlay(state, ctx) {
     take("turboLora",     cfg.turbo_lora);
     take("upscaleModel",  cfg.upscale_model);
     take("previewTinyVae", cfg.preview_tiny_vae);
+    take("ltxUnet",           cfg.ltx_unet);
+    take("ltxLatentUpscaler", cfg.ltx_latent_upscaler);
+    take("ltxClip",           cfg.ltx_clip);
+    take("ltxVaeVideo",       cfg.ltx_vae_video);
+    take("ltxVaeAudio",       cfg.ltx_vae_audio);
+    take("ltxTinyVae",        cfg.ltx_tiny_vae);
     // These always have a value already (defaultState()'s `?? 8`/`?? true`/etc. fallback),
     // so the `take()`/`== null` guard used above can never fire for them — same situation
     // avg_minutes_per_clip already had, handled the same way: unconditional overwrite here

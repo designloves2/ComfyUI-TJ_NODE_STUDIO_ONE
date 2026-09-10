@@ -22,7 +22,7 @@ import {
   attnBlockedReason, attnForwardBlockedReason, attnForwardOverlapNote, blockCacheBlockedReason,
   h3OptimizerBlockedReason, h3OptimizerOverlapNote,
   effectiveTurbo, effectiveSteps, migrateLegacyAccel,
-  continuityModesFor, generationModesFor, configIssues,
+  continuityModesFor, generationModesFor, configIssues, ltxUpscaleReady, ltxUpscaleMissing,
   clipPlan, formatDuration, formatClock, framesToSeconds, alignFrameCount, FPS, ONE_TAKE_OVERLAP_FRAMES, resolveResolution,
   parseBrief, groupShots, composeClipPrompt, composeStitchedPrompt,
   turboLoraForMode, pddFileForMode, clipAssets, explainGenerationError,
@@ -34,10 +34,10 @@ import { panel, label, button, select, loraSelect, numberField, slider, row, col
 import {
   queuePrompt, waitForHistory, interrupt, freeMemory, setLastResult, stitchClips, getVideoInfo,
   copyOutputToInput, getNodeAvailability, getModels, saveMeta, pickChainFrame, getLoraTriggers,
-  getMediaFiles, uploadMedia, getVramStats,
+  getMediaFiles, uploadMedia, getVramStats, listVideos,
   saveConfig,
 } from "./minimax/api_minimax.js";
-import { buildClipGraph, NODE_IDS, previewNodeKey } from "./minimax/graph_builder_minimax.js";
+import { buildClipGraph, buildLtxUpscaleGraph, NODE_IDS, previewNodeKey } from "./minimax/graph_builder_minimax.js";
 import { PIPELINE_PRESETS, allPresets, captureAxes, matchPreset, applyPreset } from "./minimax/presets_minimax.js";
 import { createPresetDialogs } from "./minimax/ui_presets_minimax.js";
 import { createSettingsOverlay } from "./minimax/ui_app_settings_minimax.js";
@@ -901,12 +901,175 @@ app.registerExtension({
         return panel([head, ...(open ? body().filter(Boolean) : [])]);
       }
 
+      // ── LTX 2.5 Upscale mode left panel ─────────────────────────────────────
+      // A standalone refine pass — nothing to do with the H3 pipeline, so it replaces
+      // the whole left column (no prompt list, no accel/attn/cache accordions).
+      let _ltxGalleryCache = null;
+      async function loadLtxGallery() {
+        try {
+          const d = await listVideos(state.saveSubfolder || SUBFOLDER, { limit: 80 });
+          _ltxGalleryCache = (d.videos || []).map(v => ({
+            file: v.subfolder ? `${v.subfolder}/${v.filename}` : v.filename,
+            filename: v.filename, subfolder: v.subfolder || "",
+            prompt: v.meta?.prompt || v.prompt || "",
+            label: `${v.filename}${v.is_full ? "  (FULL)" : ""}`,
+          }));
+        } catch { _ltxGalleryCache = []; }
+        renderLeft();
+      }
+      const LTX_SAMPLERS   = ["euler_ancestral", "euler", "dpmpp_2m", "dpmpp_sde", "res_multistep", "lcm"];
+      const LTX_SCHEDULERS = ["simple", "normal", "sgm_uniform", "beta", "linear_quadratic", "karras"];
+
+      function renderLtxUpscaleLeft() {
+        const prevScroll = leftPanel.scrollTop;
+        clear(leftPanel);
+
+        if (!ltxUpscaleReady(state)) {
+          leftPanel.appendChild(panel([
+            el("div", { html: "⚙ <b>LTX 2.5 Upscale</b> needs its models set first.<br>Open <b>⚙ Settings → LTX 2.5 Upscale</b> and pick:", style: { fontSize: "12px", lineHeight: "1.6" } }),
+            el("div", { text: "missing: " + ltxUpscaleMissing(state).join(", "), style: { fontSize: "11px", color: C.warn, marginTop: "4px" } }),
+          ]));
+          leftPanel.scrollTop = prevScroll;
+          return;
+        }
+
+        // ── source video ─────────────────────────────────────────────────────
+        if (_ltxGalleryCache === null) loadLtxGallery();
+        const gal = _ltxGalleryCache || [];
+        const srcRows = [
+          label("Source clip"),
+          row([
+            col([label("From gallery"), select(
+              [{ value: "", label: gal.length ? "— pick a clip —" : "(no clips in this subfolder)" },
+               ...gal.map(g => ({ value: g.file, label: g.label }))],
+              state.ltxSourceKind === "gallery" ? state.ltxSource : "",
+              v => {
+                if (!v) return;
+                state.ltxSource = v; state.ltxSourceKind = "gallery";
+                const hit = gal.find(g => g.file === v);
+                if (hit && hit.prompt && !String(state.ltxPrompt || "").trim()) state.ltxPrompt = hit.prompt;
+                persist(); renderLeft();
+              })]),
+            col([label("↻"), button("↻", () => { _ltxGalleryCache = null; renderLeft(); })]),
+          ]),
+          row([
+            button("⬆ Upload a video", async () => {
+              const inp = el("input", { type: "file", accept: "video/*", style: { display: "none" } });
+              inp.addEventListener("change", async () => {
+                const f = inp.files[0]; inp.value = "";
+                if (!f) return;
+                try {
+                  const name = await uploadMedia(f);
+                  state.ltxSource = name; state.ltxSourceKind = "upload";
+                  persist(); renderLeft();
+                  showPopup("Uploaded — write a prompt matching the clip (or use ✨ once the LLM hookup lands).", false);
+                } catch (e) { showPopup(e.message, true); }
+              });
+              document.body.appendChild(inp); inp.click(); inp.remove();
+            }, "default"),
+          ]),
+          el("div", { text: state.ltxSource
+              ? `▸ ${state.ltxSourceKind === "upload" ? "upload" : "gallery"}: ${state.ltxSource}`
+              : "▸ no source selected",
+            style: { fontSize: "10px", color: state.ltxSource ? C.text : C.warn, lineHeight: "1.5", wordBreak: "break-all" } }),
+        ];
+        leftPanel.appendChild(panel(srcRows));
+
+        // ── prompt ───────────────────────────────────────────────────────────
+        const pTA = el("textarea", {
+          value: state.ltxPrompt || "",
+          placeholder: "Describe the clip — for a refine pass this should match the original closely. (Gallery picks auto-fill from the clip's saved prompt.)",
+          style: { width: "100%", minHeight: "120px", boxSizing: "border-box", background: C.bg2, color: C.text,
+                   border: `1px solid ${C.border}`, borderRadius: "6px", padding: "7px", fontSize: "12px",
+                   fontFamily: "inherit", resize: "vertical", outline: "none" },
+        });
+        pTA.addEventListener("input", () => { state.ltxPrompt = pTA.value; persist(); });
+        const nTA = el("input", {
+          value: state.ltxNegPrompt || "",
+          style: { width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+                   border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px", fontSize: "11px", outline: "none" },
+        });
+        nTA.addEventListener("input", () => { state.ltxNegPrompt = nTA.value; persist(); });
+        leftPanel.appendChild(panel([label("Prompt"), pTA, label("Negative"), nTA]));
+
+        // ── refine sampling ──────────────────────────────────────────────────
+        leftPanel.appendChild(panel([
+          label("Refine"),
+          row([
+            col([label("Steps"), numberField(state.ltxSteps ?? 3, v => { state.ltxSteps = Math.max(1, Math.round(v)); persist(); }, 1)]),
+            col([label("Denoise"), numberField(state.ltxDenoise ?? 0.15, v => { state.ltxDenoise = Math.min(1, Math.max(0.01, v)); persist(); }, 0.01)]),
+          ]),
+          row([
+            col([label("Sampler"), select(LTX_SAMPLERS.map(s => ({ value: s, label: s })),
+              state.ltxSampler || "euler_ancestral", v => { state.ltxSampler = v; persist(); })]),
+            col([label("Scheduler"), select(LTX_SCHEDULERS.map(s => ({ value: s, label: s })),
+              state.ltxScheduler || "simple", v => { state.ltxScheduler = v; persist(); })]),
+          ]),
+          el("div", { text: "2x latent upscale + a light refine. Verified defaults: 3 steps / 0.15 denoise / euler_ancestral / simple. Limit ~0.8MP / 8s per pass on 16GB (~6 min sampling).",
+            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+        ]));
+
+        // ── seed ─────────────────────────────────────────────────────────────
+        leftPanel.appendChild(panel([
+          row([
+            col([label("Seed"), numberField(state.ltxSeed ?? 0, v => { state.ltxSeed = Math.round(v); persist(); }, 1)]),
+            col([label("Mode"), select([{ value: "randomize", label: "Random" }, { value: "fixed", label: "Fixed" }],
+              state.ltxSeedMode || "randomize", v => { state.ltxSeedMode = v; persist(); })]),
+          ]),
+        ]));
+
+        // ── LoRA (reuse state.loras) ─────────────────────────────────────────
+        const loraOpts = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
+        leftPanel.appendChild(accordion("ltxlora", "LoRA",
+          (state.loras || []).filter(l => l?.name && l.name !== "none").length
+            ? `${(state.loras || []).filter(l => l?.name && l.name !== "none").length} on` : "OFF",
+          () => {
+            const rows = [];
+            (state.loras || []).forEach((l, i) => rows.push(row([
+              col([loraSelect(loraOpts, l.name || "none", v => { state.loras[i].name = v; persist(); renderLeft(); }).el]),
+              col([label("str"), numberField(l.strength ?? 1.0, v => { state.loras[i].strength = v; persist(); }, 0.05)]),
+              col([label(" "), button("✕", () => { state.loras.splice(i, 1); persist(); renderLeft(); }, "danger")]),
+            ])));
+            rows.push(button("+ Add LoRA", () => { (state.loras ||= []).push({ name: "none", strength: 1.0, enabled: true }); persist(); renderLeft(); }, "default"));
+            rows.push(el("div", { text: "LoRAs load on the LTX unet (before the attention patch).", style: { fontSize: "10px", color: C.muted } }));
+            return rows;
+          }));
+
+        // ── RTX finisher (shares the H3 deblur / RTX VSR settings) ───────────
+        const deblurNow = state.deblurStrength || "none";
+        const upNow = (UPSCALE_MODES.find(m => m.key === state.upscaleMode) || {}).label || "None";
+        leftPanel.appendChild(accordion("upscale", "RTX finish",
+          deblurNow === "none" ? upNow : `Deblur ${deblurNow} → ${upNow}`,
+          () => [
+            col([label("Deblur"), select(
+              ["none", "LOW", "MEDIUM", "HIGH", "ULTRA"].map(v => ({ value: v, label: v === "none" ? "None" : v })),
+              deblurNow, v => { state.deblurStrength = v; persist(); renderLeft(); })]),
+            col([label("Upscale"), select(UPSCALE_MODES.map(m => ({ value: m.key, label: m.label })),
+              state.upscaleMode || "none", v => { state.upscaleMode = v; persist(); renderLeft(); })]),
+            state.upscaleMode === "rtx" ? row([
+              col([label("RTX scale"), numberField(state.rtxScale ?? 2, v => { state.rtxScale = v; persist(); }, 0.5)]),
+              col([label("Quality"), select(["LOW", "MEDIUM", "HIGH", "ULTRA"].map(q => ({ value: q, label: q })),
+                state.rtxQuality || "ULTRA", v => { state.rtxQuality = v; persist(); })]),
+            ]) : null,
+            el("div", { text: "Runs on the LTX-upscaled frames, after decode. Same nodes as a normal H3 render's finisher.",
+              style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+          ]));
+
+        leftPanel.appendChild(el("div", {
+          html: `Models: <code>${(state.ltxUnet || "?").split(/[\\/]/).pop()}</code> · clip <code>${(state.ltxClip || "?").split(/[\\/]/).pop()}</code> — change in ⚙ Settings.`,
+          style: { fontSize: "9px", color: C.muted, lineHeight: "1.6", marginTop: "2px", wordBreak: "break-all" } }));
+
+        leftOuter.appendChild(seedGenWrap);   // keep the Generate button below the panel
+        leftPanel.scrollTop = prevScroll;
+      }
+
       function renderLeft() {
         // Every control in this column re-runs renderLeft(), which rebuilds the whole
         // panel — and a rebuilt scroll container starts back at the top. Ticking one
         // checkbox halfway down therefore threw you back to Canvas and you had to scroll
         // down again for the next one. Remember where the column was and put it back
         // after the rebuild; the browser clamps for us if the new content is shorter.
+        if (state.generationMode === "ltxupscale") { renderLtxUpscaleLeft(); return; }
         const prevScroll = leftPanel.scrollTop;
         const contModes = continuityModesFor(state.generationMode, state);
         const lockAvailable = !!ctx.availability?.TJ_H3_AudioLock;
@@ -2109,8 +2272,97 @@ app.registerExtension({
         };
       }
 
+      // ── LTX 2.5 Upscale run — one queue, no relay ───────────────────────────
+      async function runLtxUpscale() {
+        if (running) return;
+        const rs = JSON.parse(JSON.stringify(state));
+        if (!ltxUpscaleReady(rs)) { showPopup("Set the LTX 2.5 models in ⚙ Settings first — missing: " + ltxUpscaleMissing(rs).join(", "), true); return; }
+        if (!rs.ltxSource)        { showPopup("Pick a source clip (gallery) or upload a video.", true); return; }
+
+        running = true; stopRequested = false;
+        startWakeAudio(); startQueueWatch();
+        genBtn.disabled = true; genBtn.textContent = "⏳ LTX Upscale…";
+        nextGenBtn.style.display = "none";
+        resetPreview(); barInner.style.width = "0%"; startClock();
+        let mem = null;
+        try {
+          if (!ctx.availability || !Object.keys(ctx.availability).length) {
+            const av = await getNodeAvailability();
+            ctx.availability = av.available || {}; ctx.availabilityInfo = av;
+          }
+          if (rs.ltxSeedMode === "randomize") { rs.ltxSeed = randomSeed(); state.ltxSeed = rs.ltxSeed; persist(); }
+
+          // The graph's VHS_LoadVideo only reads ComfyUI's input/. A gallery pick lives in
+          // output/ — copy it over first; an upload is already in input/.
+          let sourceFile = rs.ltxSource;
+          if (rs.ltxSourceKind === "gallery") {
+            setStatus("Copying source clip to input…");
+            const parts = String(rs.ltxSource).split("/");
+            const fname = parts.pop();
+            sourceFile = await copyOutputToInput(fname, parts.join("/"), "output");
+          }
+
+          setStatus("Building LTX Upscale graph…");
+          const { graph, meta } = buildLtxUpscaleGraph(rs, ctx.availability, {
+            nodeId: self.id, sourceFile,
+          });
+
+          setStatus("LTX Upscale · queued (≈6 min sampling on 16GB)");
+          mem = watchMemory();
+          let res;
+          try {
+            res = await queuePrompt(graph, {
+              onProgress: (v, m) => setStepProgress(v, m),
+              samplerNode: "LX:sampler",
+            });
+          } finally { mem.stop(); }
+
+          const vid = firstOutput(res.byNode, "LX:save");
+          if (!vid) throw new Error("LTX Upscale finished but produced no video output.");
+          const memPeak = mem ? mem.peak() : null;
+          const clipMeta = {
+            v: 1,
+            prompt: String(rs.ltxPrompt || ""),
+            mode: "ltxupscale",
+            source: rs.ltxSource, sourceKind: rs.ltxSourceKind,
+            ltx: {
+              unet: rs.ltxUnet, clip: rs.ltxClip, latentUpscaler: rs.ltxLatentUpscaler,
+              vaeVideo: rs.ltxVaeVideo, vaeAudio: rs.ltxVaeAudio,
+            },
+            steps: meta.steps, denoise: meta.denoise, sampler: meta.sampler,
+            scheduler: meta.scheduler, seed: meta.seed, fps: meta.fps,
+            deblur: meta.deblur || null, upscale: meta.upscale || null,
+            loras: (rs.loras || []).filter(l => l?.name && l.name !== "none")
+              .map(l => ({ name: l.name, strength: l.strength ?? 1.0 })),
+            elapsedSec: (Date.now() - (runStart || Date.now())) / 1000,
+            ...(memPeak || {}),
+          };
+          try { await reconcileGeometry?.(clipMeta, vid); } catch {}
+          saveMeta(vid.filename, vid.subfolder || "", clipMeta);
+
+          const url = `/view?filename=${encodeURIComponent(vid.filename)}&subfolder=${encodeURIComponent(vid.subfolder || "")}&type=output`;
+          lastResultURL = url;
+          showResultVideo(url, { final: true });
+          badge.textContent = "LTX UPSCALED";
+          setStatus(`Done — ${vid.filename}`);
+          barInner.style.width = "100%";
+          try { galleryOv?.refresh?.(); } catch {}
+        } catch (e) {
+          const why = explainGenerationError(e.message);
+          setStatus(why ? `Error: ${why}` : `Error: ${e.message}`);
+          showPopup(why || e.message, true);
+        } finally {
+          try { await freeMemory(); } catch {}
+          stopWakeAudio(); stopQueueWatch();
+          running = false; stopRequested = false;
+          genBtn.disabled = false; genBtn.textContent = "▶ Generate";
+          stopClock();
+        }
+      }
+
       async function runGeneration(resume = null) {
         if (running) return;
+        if (state.generationMode === "ltxupscale" && !resume) return runLtxUpscale();
         running = true; stopRequested = false;
         startWakeAudio();
         startQueueWatch();
