@@ -1228,25 +1228,30 @@ app.registerExtension({
             ? `${ltxL.filter(l => l?.name && l.name !== "none" && l.enabled !== false).length} on` : "OFF",
           () => [ltxLoraWrap]));
 
-        // ── post finish — Deblur + RTX VSR only (no upscale-model path here) ──
+        // ── post finish — Deblur + RTX VSR, both as a quality dropdown (none = off) ──
+        const QUAL = ["none", "LOW", "MEDIUM", "HIGH", "ULTRA"].map(v => ({ value: v, label: v === "none" ? "None" : v }));
         const deblurNow = state.deblurStrength || "none";
-        const rtxOn = state.upscaleMode === "rtx";
+        const rtxQualNow = state.upscaleMode === "rtx" ? (state.rtxQuality || "ULTRA") : "none";
+        const rtxOn = rtxQualNow !== "none";
         leftPanel.appendChild(accordion("upscale", "Post finish",
           [deblurNow !== "none" && `Deblur ${deblurNow}`, rtxOn && `RTX VSR ${state.rtxScale ?? 2}×`].filter(Boolean).join(" → ") || "OFF",
           () => [
-            col([label("Deblur"), select(
-              ["none", "LOW", "MEDIUM", "HIGH", "ULTRA"].map(v => ({ value: v, label: v === "none" ? "None" : v })),
-              deblurNow, v => { state.deblurStrength = v; persist(); renderLeft(); })]),
-            checkboxRow("RTX Video Super Resolution", rtxOn,
-              v => { state.upscaleMode = v ? "rtx" : "none"; persist(); renderLeft(); },
-              { disabled: !ctx.availability?.RTXVideoSuperResolution,
-                title: ctx.availability?.RTXVideoSuperResolution ? "" : "RTXVideoSuperResolution not installed" }),
-            rtxOn ? row([
-              col([label("Scale (×)"), numberField(state.rtxScale ?? 2, v => { state.rtxScale = Math.max(1, v); persist(); }, 0.5)]),
-              col([label("Quality"), select(["LOW", "MEDIUM", "HIGH", "ULTRA"].map(q => ({ value: q, label: q })),
-                state.rtxQuality || "ULTRA", v => { state.rtxQuality = v; persist(); })]),
-            ]) : null,
-            el("div", { text: "Runs on the LTX-upscaled frames after decode. Deblur sharpens at the same size; RTX VSR scales it up further (e.g. 2× → 4K).",
+            col([label("Deblur"), select(QUAL, deblurNow,
+              v => { state.deblurStrength = v; persist(); renderLeft(); })]),
+            col([label("RTX Video Super Resolution"), select(QUAL, rtxQualNow, v => {
+              if (v === "none") { state.upscaleMode = "none"; }
+              else { state.upscaleMode = "rtx"; state.rtxQuality = v; if (!(state.rtxScale > 0)) state.rtxScale = 2; }
+              persist(); renderLeft();
+            })]),
+            col([label("Scale (×)"), (() => {
+              const f = numberField(state.rtxScale ?? 2, v => { state.rtxScale = Math.max(1, v); persist(); }, 0.5);
+              if (!rtxOn) { f.disabled = true; f.style.opacity = "0.4"; }
+              return f;
+            })()]),
+            !ctx.availability?.RTXVideoSuperResolution ? el("div", {
+              html: "⚠ <code>RTXVideoSuperResolution</code> not installed — RTX VSR is skipped.",
+              style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }) : null,
+            el("div", { text: "Runs on the LTX-upscaled frames after decode. Deblur sharpens at the same size; RTX VSR scales it further (e.g. 2× → 4K).",
               style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
           ]));
 
