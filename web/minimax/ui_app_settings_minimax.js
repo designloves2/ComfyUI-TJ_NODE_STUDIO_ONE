@@ -306,18 +306,22 @@ export function createSettingsOverlay(state, ctx) {
       roleRow("Vision — reads reference images", "h3VisionBackend", "nativeVisionClip", "h3OrModelVision", "native"),
     );
 
-    // ── LTX Upscale ✨ — its own vision model (reads the source clip's first frame) ──
-    const ltxInstr = el("textarea", {
-      value: state.ltxLlmPrompt || "",
-      style: { width: "100%", minHeight: "90px", boxSizing: "border-box", background: C.bg2, color: C.text,
-               border: `1px solid ${C.border}`, borderRadius: "6px", padding: "7px", fontSize: "11px",
-               fontFamily: "inherit", outline: "none", resize: "vertical" },
-    });
-    ltxInstr.addEventListener("input", () => { state.ltxLlmPrompt = ltxInstr.value; ctx.persist(); });
+    // ── LTX Upscale LLM — its own backend + model (not shared with H3) ──
+    const mkTA = (val, on) => {
+      const t = el("textarea", { value: val || "", style: {
+        width: "100%", minHeight: "90px", boxSizing: "border-box", background: C.bg2, color: C.text,
+        border: `1px solid ${C.border}`, borderRadius: "6px", padding: "7px", fontSize: "11px",
+        fontFamily: "inherit", outline: "none", resize: "vertical" } });
+      t.addEventListener("input", () => { on(t.value); ctx.persist(); });
+      return t;
+    };
+    const ltxInstr = mkTA(state.ltxLlmPrompt, v => state.ltxLlmPrompt = v);
+    const ltxConv  = mkTA(state.ltxConvertPrompt, v => state.ltxConvertPrompt = v);
     wrap2.append(el("div", { style: { borderTop: `1px solid ${C.border}`, margin: "4px 0 2px" } }));
-    wrap2.append(roleRow("LTX Upscale ✨ — reads the source clip's first frame", "ltxVisionBackend", "ltxVisionClip", "ltxVisionOrModel", "native", [
-      col([label("✨ instruction (system prompt)"), ltxInstr]),
-      el("div", { text: "The ✨ button in the LTX Upscale prompt area feeds this + the source clip's first frame to the model above. Saved with Save All.",
+    wrap2.append(roleRow("LTX Upscale — used by the ✨ and H3→LTX buttons", "ltxVisionBackend", "ltxVisionClip", "ltxVisionOrModel", "native", [
+      col([label("✨ vision instruction — writes a prompt from the source clip's first frame"), ltxInstr]),
+      col([label("H3 → LTX 2.5 instruction — converts a loaded H3 brief into an LTX prompt"), ltxConv]),
+      el("div", { text: "Both instructions ship ready to use — you don't have to write them. The ✨ path needs a vision-capable model; H3→LTX is text-only. Saved with Save All.",
         style: { fontSize: "10px", color: C.muted, lineHeight: "1.55" } }),
     ]));
 
@@ -479,6 +483,7 @@ export function createSettingsOverlay(state, ctx) {
       ltx_vae_audio:       state.ltxVaeAudio       || "",
       ltx_tiny_vae:        state.ltxTinyVae        || "",
       ltx_llm_prompt:      state.ltxLlmPrompt      || "",
+      ltx_convert_prompt:  state.ltxConvertPrompt  || "",
       ltx_vision_backend:  state.ltxVisionBackend  || "native",
       ltx_vision_clip:     state.ltxVisionClip     || "",
       ltx_vision_or_model: state.ltxVisionOrModel  || "",
@@ -590,6 +595,7 @@ export function createSettingsOverlay(state, ctx) {
     take("ltxVaeAudio",       cfg.ltx_vae_audio);
     take("ltxTinyVae",        cfg.ltx_tiny_vae);
     if (cfg.ltx_llm_prompt && !String(state.ltxLlmPrompt || "").trim()) state.ltxLlmPrompt = cfg.ltx_llm_prompt;
+    if (cfg.ltx_convert_prompt && !String(state.ltxConvertPrompt || "").trim()) state.ltxConvertPrompt = cfg.ltx_convert_prompt;
     if (cfg.ltx_vision_backend)  state.ltxVisionBackend = cfg.ltx_vision_backend;
     take("ltxVisionClip",    cfg.ltx_vision_clip);
     if (cfg.ltx_vision_or_model && !String(state.ltxVisionOrModel || "").trim()) state.ltxVisionOrModel = cfg.ltx_vision_or_model;

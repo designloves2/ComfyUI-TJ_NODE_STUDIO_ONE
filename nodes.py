@@ -2083,6 +2083,7 @@ async def mmh3_get_config(request):
         "ltx_vae_audio":         cfg.get("ltx_vae_audio",         ""),
         "ltx_tiny_vae":          cfg.get("ltx_tiny_vae",          ""),
         "ltx_llm_prompt":        cfg.get("ltx_llm_prompt",        ""),
+        "ltx_convert_prompt":    cfg.get("ltx_convert_prompt",    ""),
         "ltx_vision_backend":    cfg.get("ltx_vision_backend",    "native"),
         "ltx_vision_clip":       cfg.get("ltx_vision_clip",       ""),
         "ltx_vision_or_model":   cfg.get("ltx_vision_or_model",   ""),

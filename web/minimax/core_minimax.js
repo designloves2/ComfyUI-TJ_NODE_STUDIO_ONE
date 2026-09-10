@@ -270,6 +270,55 @@ export const GENERATION_MODES = [
   { key: "ltxupscale", label: "LTX Upscale",       hint: "2x refine an existing clip (LTX 2.5)" },
 ];
 
+// The ✨ button's default system prompt — a ready-to-use LTX-2.5 prompt author, written
+// to the LTX-2.5 prompt guide (ltx.io/blog/ltx-2-5-prompt-guide): one detailed
+// present-tense paragraph, action first, then details, then camera, then lighting/mood,
+// natural language, no keyword lists or quality boosters. It is shown one still frame
+// from the source clip and returns the prompt for a light refine pass, so it must
+// describe the clip that already exists. Editable in Settings but works as-is — the
+// user should not have to write it.
+export const LTX_UPSCALE_LLM_PROMPT =
+  "You write prompts for the LTX-2.5 video model. You are given ONE still frame from near "
+  + "the start of a short existing clip that is about to go through a light 2x upscale + "
+  + "refine at low denoise, so your prompt must describe the clip that already exists — "
+  + "not a new idea, and nothing that is not visible or clearly implied.\n\n"
+  + "Follow the LTX-2.5 prompt style:\n"
+  + "1. Open with ONE sentence stating the main action / what is happening in the shot, "
+  + "present tense.\n"
+  + "2. Then add specifics: each subject's exact appearance (face, hair, clothing, "
+  + "colours, materials, props), their pose and gesture, and how the motion plausibly "
+  + "continues from this frame.\n"
+  + "3. Then the setting and background in concrete detail.\n"
+  + "4. Then the camera: shot size and angle matching the framing shown, and the move "
+  + "(static, slow push-in, pan, handheld, tracking, orbit).\n"
+  + "5. Then lighting and atmosphere: direction, colour, contrast, time of day, haze, "
+  + "bokeh.\n"
+  + "6. End with the overall look: live-action or animation, film or digital, grain, "
+  + "sharpness, colour grade.\n\n"
+  + "One flowing natural-language paragraph, roughly 60-120 words. No bullet points, no "
+  + "keyword lists, no parenthetical weights, no \"masterpiece / 4k / best quality\" "
+  + "boosters, no negatives, and never mention upscaling, resolution or the refine pass. "
+  + "Output only the paragraph.";
+
+// The "H3 → LTX 2.5" button's default instruction. A gallery clip's saved prompt is in
+// MiniMax H3's structured brief format (technical_settings / subject_definitions /
+// <Subject N> tokens / summary / detailed_description / retention_analysis / audio
+// sections). This converts that into a plain LTX-2.5 prompt. Text-only, no image needed.
+export const LTX_CONVERT_LLM_PROMPT =
+  "The text below is a MiniMax-H3 video brief: a structured document with sections like "
+  + "technical_settings, subject_definitions, <Subject 1> / <Reference Image N> tokens, "
+  + "summary, detailed_description, retention_analysis, and audio sections. Rewrite it as "
+  + "a single prompt for the LTX-2.5 video model.\n\n"
+  + "Keep every subject, their exact appearance and wardrobe, their left-to-right order, "
+  + "the setting, the lighting, the camera move and the shot progression. Resolve the "
+  + "<Subject N> / <Reference Image N> tokens to plain descriptions. Drop the H3 headings, "
+  + "the reference-image bookkeeping, the retention_analysis, the audio sections and the "
+  + "technical_settings line.\n\n"
+  + "Produce one flowing natural-language paragraph in LTX-2.5 style: open with the main "
+  + "action in one present-tense sentence, then subject details, then setting, then camera, "
+  + "then lighting and mood, then the overall look. Roughly 60-130 words. No bullet points, "
+  + "no keyword lists, no quality boosters, no negatives. Output only the paragraph.";
+
 // LTX 2.5 Upscale mode is a standalone refine pass — not an H3 render. It needs its own
 // model set configured in Settings (the LTX unet, latent upscaler, text encoder, and the
 // LTX video + audio VAEs). A missing piece disables the mode rather than failing at run.
@@ -692,11 +741,8 @@ export function defaultState(saved) {
     ltxVisionBackend: saved.ltxVisionBackend || "native",       // "native" | "openrouter"
     ltxVisionClip:    saved.ltxVisionClip    || "",             // native: the vision CLIP (text_encoders)
     ltxVisionOrModel: saved.ltxVisionOrModel || "",             // openrouter: model id
-    ltxLlmPrompt:      saved.ltxLlmPrompt      ||
-      "Describe this single video frame as one flowing text-to-image prompt for an LTX video "
-      + "upscale/refine pass. Match what is shown exactly — subjects, their attributes and "
-      + "positions, setting, lighting, colour, camera framing and motion feel, overall style "
-      + "and medium. Do not invent anything not visible. One paragraph, no lists, no preamble.",
+    ltxLlmPrompt:      saved.ltxLlmPrompt      || LTX_UPSCALE_LLM_PROMPT,
+    ltxConvertPrompt:  saved.ltxConvertPrompt  || LTX_CONVERT_LLM_PROMPT,
     accelMode:      saved.accelMode      || "solattn",   // legacy — kept only so old
                                                          // workflows can be migrated below
     upscaleMode:    saved.upscaleMode    || "none",

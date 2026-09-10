@@ -35,7 +35,7 @@ import {
   queuePrompt, waitForHistory, interrupt, freeMemory, setLastResult, stitchClips, getVideoInfo,
   copyOutputToInput, getNodeAvailability, getModels, saveMeta, pickChainFrame, getLoraTriggers,
   getMediaFiles, uploadMedia, getVramStats, listVideos,
-  saveConfig, analyzeImagesNative, analyzeImagesOpenRouter,
+  saveConfig, analyzeImagesNative, analyzeImagesOpenRouter, writeBriefNative, writeBriefOpenRouter, getMediaInfo,
 } from "./minimax/api_minimax.js";
 import { buildClipGraph, buildLtxUpscaleGraph, NODE_IDS, previewNodeKey } from "./minimax/graph_builder_minimax.js";
 import { PIPELINE_PRESETS, allPresets, captureAxes, matchPreset, applyPreset } from "./minimax/presets_minimax.js";
@@ -702,6 +702,31 @@ app.registerExtension({
         } catch (e) { showPopup(e.message, true); }
         _ltxBusy = false; renderPrompts();
       }
+      // "H3 → LTX 2.5" — a gallery clip's saved prompt is a MiniMax-H3 structured brief;
+      // rewrite it into a plain LTX-2.5 prompt. Text-only (no frame needed). Uses the same
+      // LTX Upscale LLM configured in Settings.
+      async function ltxConvertToLtx() {
+        if (_ltxBusy) return;
+        const src = String(state.ltxPrompt || "").trim();
+        if (!src) { showPopup("Nothing to convert — the prompt box is empty. Load a gallery clip or use ✨.", true); return; }
+        const backend = state.ltxVisionBackend || "native";
+        if (backend === "openrouter" && !(state.ltxVisionOrModel || "").trim()) {
+          showPopup("Set the OpenRouter model in ⚙ Settings → LLM Setting → LTX Upscale.", true); return;
+        }
+        if (backend !== "openrouter" && !(state.ltxVisionClip || "").trim()) {
+          showPopup("Set the native LLM CLIP in ⚙ Settings → LLM Setting → LTX Upscale.", true); return;
+        }
+        _ltxBusy = true; renderPrompts();
+        try {
+          const sys = (state.ltxConvertPrompt || "").trim() || "Rewrite this MiniMax-H3 brief as one LTX-2.5 prompt paragraph.";
+          let text;
+          if (backend === "openrouter") text = await writeBriefOpenRouter(sys, src, state.ltxVisionOrModel);
+          else                          text = await writeBriefNative(state.ltxVisionClip, sys, src);
+          if (text && text.trim()) { state.ltxPrompt = text.trim(); persist(); showPopup("Converted the H3 brief to an LTX 2.5 prompt.", false); }
+          else showPopup("The model returned nothing — try again.", true);
+        } catch (e) { showPopup(e.message, true); }
+        _ltxBusy = false; renderPrompts();
+      }
       function renderLtxPrompt() {
         clear(promptList);
         promptCount.textContent = state.ltxSource ? "" : "(no source clip)";
@@ -716,13 +741,20 @@ app.registerExtension({
         ta.addEventListener("focus", () => ta.style.borderColor = BRAND);
         ta.addEventListener("blur", () => ta.style.borderColor = C.border);
 
-        const enh = el("button", { type: "button", text: _ltxBusy ? "✨ Analyzing…" : "✨ Write from source frame", style: {
-          cursor: _ltxBusy ? "wait" : "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 12px",
+        const enh = el("button", { type: "button", text: _ltxBusy ? "✨ …" : "✨ Write from frame", style: {
+          cursor: _ltxBusy ? "wait" : "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 10px",
           borderRadius: "6px", background: BRAND, color: "#fff", border: "none", fontWeight: "600",
           opacity: (_ltxBusy || !state.ltxSource) ? "0.55" : "1",
         }});
         enh.disabled = _ltxBusy || !state.ltxSource;
         enh.addEventListener("click", ltxWritePrompt);
+        const conv = el("button", { type: "button", text: "H3 → LTX 2.5", title: "Rewrite the current prompt (a MiniMax H3 brief) as an LTX 2.5 prompt", style: {
+          cursor: _ltxBusy ? "wait" : "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 10px",
+          borderRadius: "6px", background: C.bg3, color: C.text, border: `1px solid ${C.border}`,
+          opacity: (_ltxBusy || !String(state.ltxPrompt || "").trim()) ? "0.55" : "1",
+        }});
+        conv.disabled = _ltxBusy || !String(state.ltxPrompt || "").trim();
+        conv.addEventListener("click", ltxConvertToLtx);
 
         const neg = el("input", { type: "text", value: state.ltxNegPrompt || "",
           placeholder: "Negative (optional)", style: {
@@ -731,9 +763,9 @@ app.registerExtension({
           fontFamily: "inherit", outline: "none" } });
         neg.addEventListener("input", () => { state.ltxNegPrompt = neg.value; persist(); });
 
-        const btnRow = el("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexShrink: "0" } });
-        btnRow.append(enh, el("div", { style: { flex: "1" } }),
-          el("div", { text: `✨ ${ltxVisionLabel()}`, title: "Configured in ⚙ Settings → LLM Setting → LTX Upscale",
+        const btnRow = el("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexShrink: "0", flexWrap: "wrap" } });
+        btnRow.append(enh, conv, el("div", { style: { flex: "1", minWidth: "0" } }),
+          el("div", { text: `LLM: ${ltxVisionLabel()}`, title: "Configured in ⚙ Settings → LLM Setting → LTX Upscale",
             style: { fontSize: "10px", color: C.muted } }));
 
         promptList.style.gap = "6px";
@@ -791,13 +823,17 @@ app.registerExtension({
           width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
           borderRadius: "6px", padding: "8px", fontSize: "12px", fontFamily: "inherit", outline: "none" } });
         bigNeg.addEventListener("input", () => { state.ltxNegPrompt = bigNeg.value; persist(); });
-        const enh2 = button(_ltxBusy ? "✨ Analyzing…" : "✨ Write from source frame", async () => {
+        const enh2 = button(_ltxBusy ? "✨ …" : "✨ Write from frame", async () => {
           await ltxWritePrompt(); bigTA.value = state.ltxPrompt || "";
         }, "primary");
         enh2.disabled = _ltxBusy || !state.ltxSource;
+        const conv2 = button("H3 → LTX 2.5", async () => {
+          await ltxConvertToLtx(); bigTA.value = state.ltxPrompt || "";
+        }, "default");
+        conv2.disabled = _ltxBusy || !String(state.ltxPrompt || "").trim();
         body.append(label("Prompt"), bigTA, label("Negative"), bigNeg,
-          row([enh2, el("div", { style: { flex: "1" } }),
-            el("div", { text: `✨ ${ltxVisionLabel()}`, style: { fontSize: "10px", color: C.muted, alignSelf: "center" } })]));
+          row([enh2, conv2, el("div", { style: { flex: "1" } }),
+            el("div", { text: `LLM: ${ltxVisionLabel()}`, style: { fontSize: "10px", color: C.muted, alignSelf: "center" } })]));
 
         const foot = el("div", { style: {
           display: "flex", gap: "8px", padding: "10px 12px", borderTop: `1px solid ${C.border}`, flexShrink: "0", justifyContent: "flex-end" } });
