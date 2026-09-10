@@ -731,12 +731,12 @@ app.registerExtension({
         clear(promptList);
         promptCount.textContent = state.ltxSource ? "" : "(no source clip)";
         const ta = el("textarea", {
-          value: state.ltxPrompt || "",
           placeholder: "Prompt for the refine pass — should match the source clip closely. Gallery picks auto-fill from the clip's saved prompt; ✨ writes one from an upload.",
           style: { flex: "1", width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
                    border: `1px solid ${C.border}`, borderRadius: "6px", padding: "8px", fontSize: "12px",
                    fontFamily: "inherit", outline: "none", resize: "none", minHeight: "0" },
         });
+        ta.value = state.ltxPrompt || "";   // textarea content must be set as a property — el() only setAttribute()s
         ta.addEventListener("input", () => { state.ltxPrompt = ta.value; persist(); });
         ta.addEventListener("focus", () => ta.style.borderColor = BRAND);
         ta.addEventListener("blur", () => ta.style.borderColor = C.border);
@@ -862,10 +862,11 @@ app.registerExtension({
         }
 
         // — prompt below —
-        const bigTA = el("textarea", { value: state.ltxPrompt || "", style: {
+        const bigTA = el("textarea", { style: {
           width: "100%", minHeight: "200px", boxSizing: "border-box", background: C.bg2, color: C.text,
           border: `1px solid ${C.border}`, borderRadius: "6px", padding: "10px", fontSize: "13px",
           fontFamily: "inherit", outline: "none", resize: "vertical" } });
+        bigTA.value = state.ltxPrompt || "";   // textarea text is a property, not an attribute
         bigTA.addEventListener("input", () => { state.ltxPrompt = bigTA.value; persist(); });
         const bigNeg = el("input", { type: "text", value: state.ltxNegPrompt || "", placeholder: "Negative (optional)", style: {
           width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
