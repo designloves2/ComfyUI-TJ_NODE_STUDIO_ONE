@@ -33,7 +33,7 @@ import { panel, label, button, select, loraSelect, numberField, slider, row, col
   from "./klein/ui_common.js";
 import {
   queuePrompt, waitForHistory, interrupt, freeMemory, setLastResult, stitchClips, getVideoInfo,
-  copyOutputToInput, getNodeAvailability, getModels, saveMeta, pickChainFrame, getLoraTriggers,
+  copyOutputToInput, getNodeAvailability, getModels, saveMeta, pickChainFrame, getLoraTriggers, deleteImage,
   getMediaFiles, uploadMedia, getVramStats, listVideos,
   saveConfig, analyzeImagesNative, analyzeImagesOpenRouter, writeBriefNative, writeBriefOpenRouter, getMediaInfo,
 } from "./minimax/api_minimax.js";
@@ -1341,7 +1341,12 @@ app.registerExtension({
             col([label("Scheduler"), select(LTX_SCHEDULERS.map(s => ({ value: s, label: s })),
               state.ltxScheduler || "simple", v => { state.ltxScheduler = v; persist(); })]),
           ]),
-          el("div", { text: "2x latent upscale + a light refine. Verified defaults: 3 steps / 0.15 denoise / euler_ancestral / simple. Limit ~0.8MP / 8s per pass on 16GB (~6 min sampling).",
+          row([
+            col([label("Segment (s) — 0 = whole clip"),
+              numberField(state.ltxSegmentSeconds ?? 5, v => { state.ltxSegmentSeconds = Math.max(0, Math.round(v)); persist(); }, 1)]),
+            col([el("div", { style: { height: "1px" } })]),
+          ]),
+          el("div", { text: "2x latent upscale + a light refine. Verified defaults: 3 steps / 0.15 denoise / euler_ancestral / simple. Splitting a long/large clip into segments upscales each on its own queue turn (VRAM freed between turns) then ffmpeg-concats — each window is first-frame-anchored + low-denoise so the joins are seamless. ~0.8MP / 8s per segment on 16GB (~6 min each).",
             style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
         ]));
 
@@ -2654,24 +2659,82 @@ app.registerExtension({
           // Both the gallery picker and the upload button leave the file sitting in
           // ComfyUI's input/, which is the only place VHS_LoadVideo reads from.
           const sourceFile = rs.ltxSource;
+          const folder = (rs.saveSubfolder || SUBFOLDER).replace(/\\/g, "/");
+          // Every segment shares one seed so the low-denoise refine stays coherent across
+          // the joins (the reroll at the top already stamped rs.seed).
+          rs.seedMode = "fixed";
 
-          setStatus("Building LTX Upscale graph…");
-          const { graph, meta } = buildLtxUpscaleGraph(rs, ctx.availability, {
-            nodeId: self.id, sourceFile,
-          });
+          // ── plan the passes ──────────────────────────────────────────────────
+          // segSec > 0 → split the source into fixed windows, upscale each on its own
+          // queue turn (ComfyUI frees VRAM between turns), then ffmpeg-concat the parts.
+          // Each window is anchored to its own first frame + refined at low denoise, so a
+          // plain concat has no visible seam.
+          const segSec = Math.max(0, Number(rs.ltxSegmentSeconds) || 0);
+          let passes = [{ window: null, suffix: "" }];
+          if (segSec > 0) {
+            let srcInfo = null;
+            try { srcInfo = await getVideoInfo(sourceFile, "", "input"); } catch {}
+            const sFps = (srcInfo && srcInfo.fps) || rs.ltxSourceMeta?.fps || FPS;
+            const total = (srcInfo && srcInfo.frames)
+              || Math.round(((rs.ltxSourceMeta?.duration) || 0) * sFps) || 0;
+            let seg = Math.max(8, Math.round((segSec * sFps) / 8) * 8);   // LTX temporal align
+            if (total > seg) {
+              passes = [];
+              for (let skip = 0, k = 0; skip < total; skip += seg, k++) {
+                let cap = Math.min(seg, total - skip);
+                // fold a sub-window tail into this window rather than run a stub
+                if (total - (skip + cap) > 0 && total - (skip + cap) < 8) cap = total - skip;
+                passes.push({ window: { skip, cap }, suffix: `_seg${String(k).padStart(2, "0")}` });
+                if (skip + cap >= total) break;
+              }
+            }
+          }
 
-          setStatus("LTX Upscale · queued (≈6 min sampling on 16GB)");
           mem = watchMemory();
-          let res;
+          const parts = [];
+          let meta = null;
           try {
-            res = await queuePrompt(graph, {
-              onProgress: (v, m) => setStepProgress(v, m),
-              samplerNode: "LX:sampler",
-            });
+            for (let i = 0; i < passes.length; i++) {
+              if (stopRequested) throw new Error("Stopped.");
+              const p = passes[i];
+              setStatus(passes.length > 1
+                ? `LTX Upscale · segment ${i + 1}/${passes.length}${p.window ? ` (frames ${p.window.skip}–${p.window.skip + p.window.cap})` : ""}`
+                : "LTX Upscale · queued (≈6 min sampling on 16GB)");
+              const built = buildLtxUpscaleGraph(rs, ctx.availability, {
+                nodeId: self.id, sourceFile, window: p.window, saveSuffix: p.suffix,
+              });
+              meta = built.meta;
+              const r = await queuePrompt(built.graph, {
+                onProgress: (v, m) => setStepProgress(
+                  passes.length > 1 ? (i + (v || 0)) / passes.length : v,
+                  passes.length > 1 ? `seg ${i + 1}/${passes.length}${m ? " — " + m : ""}` : m),
+                samplerNode: "LX:sampler",
+              });
+              const out = firstOutput(r.byNode, "LX:save");
+              if (!out) throw new Error(`LTX Upscale segment ${i + 1} produced no output.`);
+              parts.push(out);
+              try { await freeMemory(); } catch {}
+            }
           } finally { mem.stop(); }
 
-          const vid = firstOutput(res.byNode, "LX:save");
+          // ── assemble ─────────────────────────────────────────────────────────
+          let vid;
+          if (parts.length === 1) {
+            vid = parts[0];
+          } else {
+            setStatus(`Assembling ${parts.length} segments with ffmpeg…`);
+            const st = await stitchClips(
+              parts.map(p => ({ filename: p.filename, subfolder: p.subfolder || "" })),
+              `${folder}/${rs.filenamePrefix || "MMH3"}_LTXUP_full`, null, null, null,
+            );
+            vid = { filename: st.filename, subfolder: st.subfolder || "", type: "output" };
+            // the per-segment files were scratch — drop them so the gallery stays clean
+            for (const p of parts) {
+              try { await deleteImage(p.filename, p.subfolder || ""); } catch {}
+            }
+          }
           if (!vid) throw new Error("LTX Upscale finished but produced no video output.");
+          meta = meta || {};
           const memPeak = mem ? mem.peak() : null;
           const clipMeta = {
             v: 1,
@@ -2687,6 +2750,8 @@ app.registerExtension({
             deblur: meta.deblur || null, upscale: meta.upscale || null,
             loras: meta.loras || [],
             negativePrompt: String(rs.ltxNegPrompt || ""),
+            segments: passes.length,
+            ...(passes.length > 1 ? { stitched: true, segmentSeconds: segSec, frames: null } : {}),
             elapsedSec: (Date.now() - (runStart || Date.now())) / 1000,
             ...(memPeak || {}),
           };

@@ -837,7 +837,8 @@ const L = {
  * @param opts   { nodeId, sourceFile, fps }  sourceFile = filename in ComfyUI's input/
  */
 export function buildLtxUpscaleGraph(state, avail, opts = {}) {
-  const { nodeId, sourceFile, fps = FPS } = opts;
+  const { nodeId, sourceFile, fps = FPS, window = null, saveSuffix = "" } = opts;
+  // window = { skip, cap } — one segment of the source when the clip is split for VRAM.
   if (!sourceFile) throw new Error("LTX Upscale: pick a source clip (gallery or upload).");
   const need = { ltxUnet: "LTX unet", ltxLatentUpscaler: "latent upscaler", ltxClip: "text encoder",
                  ltxVaeVideo: "video VAE", ltxVaeAudio: "audio VAE" };
@@ -852,7 +853,9 @@ export function buildLtxUpscaleGraph(state, avail, opts = {}) {
   // ── source ─────────────────────────────────────────────────────────────────
   g[L.load] = { class_type: "VHS_LoadVideo", inputs: {
     video: sourceFile, force_rate: 0, custom_width: 0, custom_height: 0,
-    frame_load_cap: 0, skip_first_frames: 0, select_every_nth: 1, format: "AnimateDiff",
+    frame_load_cap: window ? Math.max(1, window.cap | 0) : 0,
+    skip_first_frames: window ? Math.max(0, window.skip | 0) : 0,
+    select_every_nth: 1, format: "AnimateDiff",
   }};
   // IMAGE = [L.load, 0], frame_count = [L.load, 1], audio = [L.load, 2]
 
@@ -985,7 +988,7 @@ export function buildLtxUpscaleGraph(state, avail, opts = {}) {
   // ── output ─────────────────────────────────────────────────────────────────
   g[L.video] = { class_type: "CreateVideo", inputs: { images, fps, audio: [L.decA, 0] } };
   g[L.save] = { class_type: "SaveVideo", inputs: {
-    video: [L.video, 0], filename_prefix: `${folder}/${stem}_LTXUP`, format: "auto", codec: "auto",
+    video: [L.video, 0], filename_prefix: `${folder}/${stem}_LTXUP${saveSuffix}`, format: "auto", codec: "auto",
   }};
 
   const usedLoras = (state.ltxLoras || []).filter(l => l?.name && l.name !== "none" && l.enabled !== false)

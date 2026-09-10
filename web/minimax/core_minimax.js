@@ -734,6 +734,11 @@ export function defaultState(saved) {
     ltxDenoise:     saved.ltxDenoise     ?? 0.15,
     ltxSampler:     saved.ltxSampler     || "euler_ancestral",
     ltxScheduler:   saved.ltxScheduler   || "simple",
+    // Split a long/large clip into fixed-length windows, upscale each on its own queue
+    // turn (ComfyUI frees VRAM between turns), then ffmpeg-concat the parts. 0 = whole
+    // clip in one pass. Each window is anchored to its own first frame + refined at low
+    // denoise, so a plain concat has no visible seam.
+    ltxSegmentSeconds: saved.ltxSegmentSeconds ?? 5,
     // LTX Upscale runs on the LTX 2.5 unet — a different model from H3 — so its LoRAs
     // are their own list, never the H3 `loras`.
     ltxLoras: Array.isArray(saved.ltxLoras) ? saved.ltxLoras.map(l => ({
