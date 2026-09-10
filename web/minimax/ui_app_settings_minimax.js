@@ -162,21 +162,7 @@ export function createSettingsOverlay(state, ctx) {
         style: { fontSize: "10px", color: C.muted, lineHeight: "1.6" } }),
     ]));
 
-    const llmTA = el("textarea", {
-      value: state.ltxLlmPrompt || "",
-      style: { width: "100%", minHeight: "110px", boxSizing: "border-box", background: C.bg2, color: C.text,
-               border: `1px solid ${C.border}`, borderRadius: "6px", padding: "8px", fontSize: "11px",
-               fontFamily: "inherit", outline: "none", resize: "vertical" },
-    });
-    llmTA.addEventListener("input", () => { state.ltxLlmPrompt = llmTA.value; ctx.persist(); });
-    wrap.appendChild(panel([
-      label("LTX Upscale — ✨ vision instruction (native path)"),
-      llmTA,
-      el("div", { html: "The system prompt the ✨ button feeds the vision model when it reads the source clip's first "
-        + "frame to write the refine prompt. Native path uses the <b>native vision CLIP</b> set under LLM Setting; the "
-        + "OpenRouter path reuses the H3 vision model. Saved with Save All.",
-        style: { fontSize: "10px", color: C.muted, lineHeight: "1.6" } }),
-    ]));
+    // (the ✨ vision model + instruction for this mode live under the LLM Setting tab)
 
     const missing = availability.missing_optional || [];
     const missCore = availability.missing_core || [];
@@ -263,9 +249,12 @@ export function createSettingsOverlay(state, ctx) {
 
     let anyOR = false;
 
-    function roleRow(roleLabel, backendKey, clipKey, orModelKey, defaultBackend) {
-      if (!state[backendKey]) state[backendKey] = state.h3LlmBackend || defaultBackend || "native";
-      if (!state[orModelKey]) state[orModelKey] = state.h3OrModel || "";
+    function roleRow(roleLabel, backendKey, clipKey, orModelKey, defaultBackend, extraRows) {
+      // H3's Brief/Vision fall back to the legacy single H3 backend; the LTX row is fully
+      // its own — never inherits an H3 value.
+      const isLtx = backendKey.startsWith("ltx");
+      if (!state[backendKey]) state[backendKey] = (isLtx ? null : state.h3LlmBackend) || defaultBackend || "native";
+      if (!state[orModelKey] && !isLtx) state[orModelKey] = state.h3OrModel || "";
       const isOR = state[backendKey] === "openrouter";
       if (isOR) anyOR = true;
 
@@ -281,7 +270,9 @@ export function createSettingsOverlay(state, ctx) {
       if (isOR) {
         // full OpenRouter model list, searchable — no vision-capability filter, the
         // user picks (qwen-vl flash, gemini, whatever). Default is a soft pre-select only.
-        const cfgKey = orModelKey === "h3OrModelVision" ? "h3_or_model_vision" : "h3_or_model_brief";
+        const cfgKey = orModelKey === "h3OrModelVision" ? "h3_or_model_vision"
+          : orModelKey === "ltxVisionOrModel" ? "ltx_vision_or_model"
+          : "h3_or_model_brief";
         const saveOr = (v) => {
           state[orModelKey] = v; ctx.persist();
           fetch("/minimax_h3_one/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [cfgKey]: v }) }).catch(() => {});
@@ -306,6 +297,7 @@ export function createSettingsOverlay(state, ctx) {
         el("div", { text: roleLabel, style: { fontSize: "11px", fontWeight: "700", color: BRAND } }),
         col([label("Backend"), beSel]),
         control,
+        ...(extraRows || []),
       ]);
     }
 
@@ -313,6 +305,21 @@ export function createSettingsOverlay(state, ctx) {
       roleRow("Brief — writes the prompt", "h3BriefBackend", "nativeBriefClip", "h3OrModelBrief", "native"),
       roleRow("Vision — reads reference images", "h3VisionBackend", "nativeVisionClip", "h3OrModelVision", "native"),
     );
+
+    // ── LTX Upscale ✨ — its own vision model (reads the source clip's first frame) ──
+    const ltxInstr = el("textarea", {
+      value: state.ltxLlmPrompt || "",
+      style: { width: "100%", minHeight: "90px", boxSizing: "border-box", background: C.bg2, color: C.text,
+               border: `1px solid ${C.border}`, borderRadius: "6px", padding: "7px", fontSize: "11px",
+               fontFamily: "inherit", outline: "none", resize: "vertical" },
+    });
+    ltxInstr.addEventListener("input", () => { state.ltxLlmPrompt = ltxInstr.value; ctx.persist(); });
+    wrap2.append(el("div", { style: { borderTop: `1px solid ${C.border}`, margin: "4px 0 2px" } }));
+    wrap2.append(roleRow("LTX Upscale ✨ — reads the source clip's first frame", "ltxVisionBackend", "ltxVisionClip", "ltxVisionOrModel", "native", [
+      col([label("✨ instruction (system prompt)"), ltxInstr]),
+      el("div", { text: "The ✨ button in the LTX Upscale prompt area feeds this + the source clip's first frame to the model above. Saved with Save All.",
+        style: { fontSize: "10px", color: C.muted, lineHeight: "1.55" } }),
+    ]));
 
     if (anyOR) {
       const keyIn = el("input", { type: "password", placeholder: "sk-or-… (stored in .env, shared)", style: {
@@ -472,6 +479,9 @@ export function createSettingsOverlay(state, ctx) {
       ltx_vae_audio:       state.ltxVaeAudio       || "",
       ltx_tiny_vae:        state.ltxTinyVae        || "",
       ltx_llm_prompt:      state.ltxLlmPrompt      || "",
+      ltx_vision_backend:  state.ltxVisionBackend  || "native",
+      ltx_vision_clip:     state.ltxVisionClip     || "",
+      ltx_vision_or_model: state.ltxVisionOrModel  || "",
       turbo_lora:      state.turboLora     || "",
       turbo_lora_strength: state.turboLoraStrength ?? 1.0,
       upscale_model:   state.upscaleModel  || "",
@@ -580,6 +590,9 @@ export function createSettingsOverlay(state, ctx) {
     take("ltxVaeAudio",       cfg.ltx_vae_audio);
     take("ltxTinyVae",        cfg.ltx_tiny_vae);
     if (cfg.ltx_llm_prompt && !String(state.ltxLlmPrompt || "").trim()) state.ltxLlmPrompt = cfg.ltx_llm_prompt;
+    if (cfg.ltx_vision_backend)  state.ltxVisionBackend = cfg.ltx_vision_backend;
+    take("ltxVisionClip",    cfg.ltx_vision_clip);
+    if (cfg.ltx_vision_or_model && !String(state.ltxVisionOrModel || "").trim()) state.ltxVisionOrModel = cfg.ltx_vision_or_model;
     // These always have a value already (defaultState()'s `?? 8`/`?? true`/etc. fallback),
     // so the `take()`/`== null` guard used above can never fire for them — same situation
     // avg_minutes_per_clip already had, handled the same way: unconditional overwrite here

@@ -687,8 +687,11 @@ export function defaultState(saved) {
     ltxVaeAudio:       saved.ltxVaeAudio       || "",
     ltxTinyVae:        saved.ltxTinyVae        || "",   // preview TAE (taeltx2*) — falls back to the H3 preview tiny_vae if unset
     // The ✨ LLM in the upscale prompt area: analyses the source clip's first frame to
-    // reconstruct a prompt that matches it. The native path's instruction is editable in
-    // Settings (saved as ltx_llm_prompt); the OpenRouter path reuses the H3 vision config.
+    // reconstruct a prompt that matches it. Its own backend + model (not shared with H3),
+    // all configured in ⚙ Settings → LTX 2.5 Upscale and saved to the config.
+    ltxVisionBackend: saved.ltxVisionBackend || "native",       // "native" | "openrouter"
+    ltxVisionClip:    saved.ltxVisionClip    || "",             // native: the vision CLIP (text_encoders)
+    ltxVisionOrModel: saved.ltxVisionOrModel || "",             // openrouter: model id
     ltxLlmPrompt:      saved.ltxLlmPrompt      ||
       "Describe this single video frame as one flowing text-to-image prompt for an LTX video "
       + "upscale/refine pass. Match what is shown exactly — subjects, their attributes and "

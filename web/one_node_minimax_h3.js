@@ -673,22 +673,30 @@ app.registerExtension({
         const blob = await new Promise(r => cv.toBlob(r, "image/png"));
         return uploadMedia(new File([blob], `ltx_srcframe_${Date.now()}.png`, { type: "image/png" }));
       }
+      // The ✨ vision setup, its own — not shared with H3. Configured in Settings.
+      function ltxVisionLabel() {
+        if ((state.ltxVisionBackend || "native") === "openrouter")
+          return `OpenRouter · ${(state.ltxVisionOrModel || "(model not set)").split("/").pop()}`;
+        return `native CLIP · ${(state.ltxVisionClip || "(clip not set)").split(/[\\/]/).pop()}`;
+      }
       async function ltxWritePrompt() {
         if (_ltxBusy) return;
         if (!state.ltxSource) { showPopup("Pick a source clip first.", true); return; }
+        const backend = state.ltxVisionBackend || "native";
+        if (backend === "openrouter" && !(state.ltxVisionOrModel || "").trim()) {
+          showPopup("Set the OpenRouter vision model in ⚙ Settings → Models → LTX Upscale.", true); return;
+        }
+        if (backend !== "openrouter" && !(state.ltxVisionClip || "").trim()) {
+          showPopup("Set the native vision CLIP in ⚙ Settings → Models → LTX Upscale (or switch that backend to OpenRouter).", true); return;
+        }
         _ltxBusy = true; renderPrompts();
         try {
           const frame = await grabFirstFrameFile();
           const instr = (state.ltxLlmPrompt || "").trim()
             || "Describe this video frame as one text-to-image prompt matching exactly what is shown.";
-          const backend = (state.h3VisionBackend || state.h3LlmBackend || "native");
           let text;
-          if (backend === "openrouter") {
-            text = await analyzeImagesOpenRouter([frame], instr, state.h3OrModelVision || state.h3OrModel || "");
-          } else {
-            if (!state.nativeVisionClip) throw new Error("Set a native vision CLIP in ⚙ Settings → LLM, or switch the H3 vision backend to OpenRouter.");
-            text = await analyzeImagesNative(state.nativeVisionClip, [frame], instr);
-          }
+          if (backend === "openrouter") text = await analyzeImagesOpenRouter([frame], instr, state.ltxVisionOrModel);
+          else                          text = await analyzeImagesNative(state.ltxVisionClip, [frame], instr);
           if (text && text.trim()) { state.ltxPrompt = text.trim(); persist(); showPopup("Prompt written from the source clip's first frame.", false); }
           else showPopup("The vision model returned nothing — try again or write the prompt by hand.", true);
         } catch (e) { showPopup(e.message, true); }
@@ -725,19 +733,21 @@ app.registerExtension({
 
         const btnRow = el("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexShrink: "0" } });
         btnRow.append(enh, el("div", { style: { flex: "1" } }),
-          el("div", { text: `${(state.h3VisionBackend || "native") === "openrouter" ? "OpenRouter" : "native"} vision`,
+          el("div", { text: `✨ ${ltxVisionLabel()}`, title: "Configured in ⚙ Settings → LLM Setting → LTX Upscale",
             style: { fontSize: "10px", color: C.muted } }));
 
         promptList.style.gap = "6px";
         promptList.append(ta, neg, btnRow);
       }
 
-      // "Prompt Edit" in LTX mode → a roomy modal for the same prompt + negative + ✨,
-      // with the source frame alongside.
+      // "Prompt Edit" in LTX mode → a modal: source video on top, prompt below.
+      // ✓ Apply keeps the edits (they are already bound live to state) and syncs the
+      // bottom area; ✕ Cancel reverts to the snapshot taken on open.
       function openLtxPromptEdit() {
+        const snap = { p: state.ltxPrompt || "", n: state.ltxNegPrompt || "" };
         const box = el("div", { style: {
           background: "#0e0e0e", border: `1px solid ${C.border}`, borderRadius: "10px",
-          width: "820px", maxWidth: "94%", maxHeight: "88vh", display: "flex", flexDirection: "column",
+          width: "760px", maxWidth: "94%", maxHeight: "90vh", display: "flex", flexDirection: "column",
           overflow: "hidden", boxShadow: "0 16px 50px rgba(0,0,0,0.65)" } });
         const head = el("div", { style: {
           display: "flex", alignItems: "center", gap: "8px", padding: "10px 12px",
@@ -746,16 +756,34 @@ app.registerExtension({
         const ov = el("div", { style: {
           position: "fixed", inset: "0", zIndex: "100050", display: "flex", alignItems: "center",
           justifyContent: "center", background: "rgba(0,0,0,0.72)" } }, [box]);
-        const close = () => { ov.remove(); renderPrompts(); };
-        ov.addEventListener("mousedown", e => { if (e.target === ov) close(); });
-        head.appendChild(el("button", { type: "button", text: "✕ Close", style: {
+        const finish = (apply) => {
+          if (!apply) { state.ltxPrompt = snap.p; state.ltxNegPrompt = snap.n; }
+          persist(); ov.remove();
+          try { renderPrompts(); } catch (e) { console.warn("[MMH3] LTX prompt sync:", e); }
+        };
+        ov.addEventListener("mousedown", e => { if (e.target === ov) finish(true); });
+        head.appendChild(el("button", { type: "button", text: "✕ Cancel", style: {
           cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "4px 10px", borderRadius: "6px",
-          background: "transparent", color: C.err, border: `1px solid ${C.border}` }, onclick: close }));
+          background: "transparent", color: C.err, border: `1px solid ${C.border}` }, onclick: () => finish(false) }));
 
-        const body = el("div", { style: { display: "flex", gap: "12px", padding: "12px", overflow: "auto" } });
-        const leftCol = el("div", { style: { flex: "1", display: "flex", flexDirection: "column", gap: "8px", minWidth: "0" } });
+        const body = el("div", { style: { display: "flex", flexDirection: "column", gap: "10px", padding: "12px", overflow: "auto" } });
+
+        // — source video on top —
+        if (state.ltxSource) {
+          const pv = el("video", { src: `/view?filename=${encodeURIComponent(state.ltxSource)}&type=input`,
+            controls: true, muted: true, loop: true, preload: "metadata",
+            style: { width: "100%", maxHeight: "300px", objectFit: "contain", borderRadius: "6px", background: "#000" } });
+          body.append(pv);
+          if (_ltxSrcInfo) body.append(el("div", {
+            text: `${_ltxSrcInfo.width}×${_ltxSrcInfo.height} · ${(_ltxSrcInfo.duration || 0).toFixed(2)}s · ${(_ltxSrcInfo.fps || 0).toFixed(2)} fps · ${_ltxSrcInfo.has_audio ? "audio" : "no audio"}`,
+            style: { fontSize: "10px", color: C.muted } }));
+        } else {
+          body.append(el("div", { text: "No source clip — pick one in the left panel.", style: { fontSize: "11px", color: C.warn } }));
+        }
+
+        // — prompt below —
         const bigTA = el("textarea", { value: state.ltxPrompt || "", style: {
-          width: "100%", minHeight: "260px", boxSizing: "border-box", background: C.bg2, color: C.text,
+          width: "100%", minHeight: "200px", boxSizing: "border-box", background: C.bg2, color: C.text,
           border: `1px solid ${C.border}`, borderRadius: "6px", padding: "10px", fontSize: "13px",
           fontFamily: "inherit", outline: "none", resize: "vertical" } });
         bigTA.addEventListener("input", () => { state.ltxPrompt = bigTA.value; persist(); });
@@ -767,22 +795,18 @@ app.registerExtension({
           await ltxWritePrompt(); bigTA.value = state.ltxPrompt || "";
         }, "primary");
         enh2.disabled = _ltxBusy || !state.ltxSource;
-        leftCol.append(label("Prompt"), bigTA, label("Negative"), bigNeg, enh2);
+        body.append(label("Prompt"), bigTA, label("Negative"), bigNeg,
+          row([enh2, el("div", { style: { flex: "1" } }),
+            el("div", { text: `✨ ${ltxVisionLabel()}`, style: { fontSize: "10px", color: C.muted, alignSelf: "center" } })]));
 
-        const rightCol = el("div", { style: { width: "230px", flexShrink: "0", display: "flex", flexDirection: "column", gap: "6px" } });
-        if (state.ltxSource) {
-          const pv = el("video", { src: `/view?filename=${encodeURIComponent(state.ltxSource)}&type=input`,
-            controls: true, muted: true, loop: true, style: { width: "100%", borderRadius: "6px", background: "#000" } });
-          rightCol.append(label("Source"), pv);
-        } else {
-          rightCol.append(el("div", { text: "No source clip — pick one in the left panel.", style: { fontSize: "11px", color: C.warn } }));
-        }
-        rightCol.append(el("div", { html: `Vision: <b>${(state.h3VisionBackend || "native") === "openrouter" ? "OpenRouter" : "native CLIP"}</b>. `
-          + `Edit the ✨ instruction in ⚙ Settings → Models → LTX Upscale.`,
-          style: { fontSize: "10px", color: C.muted, lineHeight: "1.6" } }));
+        const foot = el("div", { style: {
+          display: "flex", gap: "8px", padding: "10px 12px", borderTop: `1px solid ${C.border}`, flexShrink: "0", justifyContent: "flex-end" } });
+        foot.append(
+          button("✕ Cancel", () => finish(false), "default"),
+          button("✓ Apply", () => finish(true), "primary"),
+        );
 
-        body.append(leftCol, rightCol);
-        box.append(head, body);
+        box.append(head, body, foot);
         document.body.appendChild(ov);
         bigTA.focus();
       }
@@ -1061,10 +1085,25 @@ app.registerExtension({
       const LTX_SCHEDULERS = ["simple", "normal", "sgm_uniform", "beta", "linear_quadratic", "karras"];
 
       // Gallery pick / local upload both end with the file sitting in ComfyUI's input/.
-      function setLtxSource(inputFilename, kind, meta) {
+      // `item` is the picker's gallery entry ({filename, subfolder, meta, prompt, ...}).
+      let _ltxSrcInfo = null;   // { width, height, duration, fps, has_audio } for the current source
+      async function loadLtxSrcInfo() {
+        _ltxSrcInfo = null;
+        if (!state.ltxSource) { renderLeft(); return; }
+        try {
+          const d = await getMediaInfo(state.ltxSource);
+          if (d && d.ok) _ltxSrcInfo = d;
+        } catch {}
+        renderLeft();
+      }
+      function setLtxSource(inputFilename, kind, item) {
         state.ltxSource = inputFilename; state.ltxSourceKind = kind;
-        if (meta && meta.prompt && !String(state.ltxPrompt || "").trim()) state.ltxPrompt = meta.prompt;
+        const p = item && (item.prompt || item.meta?.prompt);
+        if (p && !String(state.ltxPrompt || "").trim()) state.ltxPrompt = p;
+        if (item && item.meta?.negativePrompt && !String(state.ltxNegPrompt || "").trim()) state.ltxNegPrompt = item.meta.negativePrompt;
+        _ltxSrcInfo = null;
         persist(); renderLeft(); renderPrompts();
+        loadLtxSrcInfo();
       }
 
       function renderLtxUpscaleLeft() {
@@ -1081,49 +1120,56 @@ app.registerExtension({
           return;
         }
 
-        // ── source clip — one big thumbnail card (gallery pick / local upload) ──
+        // ── source clip — one big card: real player + full media info ──────────
         const card = el("div", { style: {
-          position: "relative", width: "100%", aspectRatio: "16 / 9", borderRadius: "8px",
-          background: C.bg2, border: `1px solid ${state.ltxSource ? BRAND : C.border}`,
-          overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center",
+          position: "relative", width: "100%", borderRadius: "8px", background: "#000",
+          border: `1px solid ${state.ltxSource ? BRAND : C.border}`, overflow: "hidden",
+          minHeight: "150px", display: "flex", alignItems: "center", justifyContent: "center",
         }});
+        const srcKids = [label("Source clip")];
         if (state.ltxSource) {
           const vid = el("video", { src: `/view?filename=${encodeURIComponent(state.ltxSource)}&type=input`,
-            muted: true, loop: true, playsInline: true,
-            style: { width: "100%", height: "100%", objectFit: "contain", background: "#000" } });
-          vid.addEventListener("mouseenter", () => vid.play().catch(() => {}));
-          vid.addEventListener("mouseleave", () => { vid.pause(); vid.currentTime = 0; });
+            controls: true, muted: true, loop: true, playsInline: true, preload: "metadata",
+            style: { width: "100%", maxHeight: "260px", objectFit: "contain", background: "#000", display: "block" } });
           card.appendChild(vid);
           const clr = el("button", { type: "button", text: "✕", title: "Clear source", style: {
             position: "absolute", top: "6px", right: "6px", zIndex: "3", width: "22px", height: "22px",
-            border: "none", borderRadius: "4px", background: "rgba(0,0,0,0.7)", color: "#fff", cursor: "pointer", fontSize: "11px",
-          }, onclick: () => { state.ltxSource = ""; persist(); renderLeft(); renderPrompts(); } });
+            border: "none", borderRadius: "4px", background: "rgba(0,0,0,0.75)", color: "#fff", cursor: "pointer", fontSize: "11px",
+          }, onclick: () => { state.ltxSource = ""; _ltxSrcInfo = null; persist(); renderLeft(); renderPrompts(); } });
           card.appendChild(clr);
-          card.appendChild(el("div", { text: `${state.ltxSourceKind === "upload" ? "⬆ upload" : "🖼 gallery"}`, style: {
-            position: "absolute", bottom: "6px", left: "6px", fontSize: "10px", color: "#fff",
-            background: "rgba(0,0,0,0.6)", padding: "2px 6px", borderRadius: "4px" } }));
+          srcKids.push(card);
+          // media info line — resolution · duration · fps · audio, from the media_info route
+          const info = _ltxSrcInfo;
+          const infoText = info
+            ? `${info.width && info.height ? `${info.width}×${info.height}` : "?"}  ·  ${
+                (info.duration || 0).toFixed(2)}s  ·  ${info.fps ? info.fps.toFixed(2) : "?"} fps  ·  ${
+                info.has_audio ? "🔊 audio" : "🔇 no audio"}`
+            : "reading media info…";
+          srcKids.push(el("div", { text: `${state.ltxSourceKind === "upload" ? "⬆ upload" : "🖼 gallery"}  —  ${infoText}`,
+            style: { fontSize: "10px", color: info ? C.text : C.muted, lineHeight: "1.5", wordBreak: "break-all" } }));
+          if (info && !info.has_audio) srcKids.push(el("div", {
+            text: "⚠ No audio track — the LTX audio branch needs one. Add audio to the clip first.",
+            style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
         } else {
-          card.appendChild(el("div", { text: "no source clip", style: { color: C.muted, fontSize: "12px" } }));
+          card.appendChild(el("div", { text: "no source clip", style: { color: C.muted, fontSize: "12px", padding: "40px 0" } }));
+          srcKids.push(card);
         }
         const fileInp = el("input", { type: "file", accept: "video/*", style: { display: "none" } });
         fileInp.addEventListener("change", async () => {
           const f = fileInp.files[0]; fileInp.value = "";
           if (!f) return;
-          try { const name = await uploadMedia(f); setLtxSource(name, "upload"); }
+          try { showPopup("Uploading…", false); const name = await uploadMedia(f); setLtxSource(name, "upload"); }
           catch (e) { showPopup(e.message, true); }
         });
-        leftPanel.appendChild(panel([
-          label("Source clip"),
-          card,
-          row([
-            button("🖼 From gallery", () => openVideoGalleryPicker((inputFilename, item) =>
-              setLtxSource(inputFilename, "gallery", item?.meta))),
-            button("⬆ Upload", () => fileInp.click(), "default"),
-          ]),
-          fileInp,
-          el("div", { text: "The whole clip is upscaled — audio is carried through. Gallery picks auto-fill the prompt from the clip's saved meta.",
-            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+        srcKids.push(row([
+          button("🖼 From gallery", () => openVideoGalleryPicker((inputFilename, item) =>
+            setLtxSource(inputFilename, "gallery", item), { subfolder: state.saveSubfolder || SUBFOLDER })),
+          button("⬆ Upload", () => fileInp.click(), "default"),
         ]));
+        srcKids.push(fileInp);
+        srcKids.push(el("div", { text: "The whole clip is upscaled 2× and its audio is carried through. Gallery picks auto-fill the prompt from the clip's saved meta.",
+          style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
+        leftPanel.appendChild(panel(srcKids));
 
         // ── refine sampling ──────────────────────────────────────────────────
         leftPanel.appendChild(panel([
@@ -1182,23 +1228,25 @@ app.registerExtension({
             ? `${ltxL.filter(l => l?.name && l.name !== "none" && l.enabled !== false).length} on` : "OFF",
           () => [ltxLoraWrap]));
 
-        // ── RTX finisher (shares the H3 deblur / RTX VSR settings) ───────────
+        // ── post finish — Deblur + RTX VSR only (no upscale-model path here) ──
         const deblurNow = state.deblurStrength || "none";
-        const upNow = (UPSCALE_MODES.find(m => m.key === state.upscaleMode) || {}).label || "None";
-        leftPanel.appendChild(accordion("upscale", "RTX finish",
-          deblurNow === "none" ? upNow : `Deblur ${deblurNow} → ${upNow}`,
+        const rtxOn = state.upscaleMode === "rtx";
+        leftPanel.appendChild(accordion("upscale", "Post finish",
+          [deblurNow !== "none" && `Deblur ${deblurNow}`, rtxOn && `RTX VSR ${state.rtxScale ?? 2}×`].filter(Boolean).join(" → ") || "OFF",
           () => [
             col([label("Deblur"), select(
               ["none", "LOW", "MEDIUM", "HIGH", "ULTRA"].map(v => ({ value: v, label: v === "none" ? "None" : v })),
               deblurNow, v => { state.deblurStrength = v; persist(); renderLeft(); })]),
-            col([label("Upscale"), select(UPSCALE_MODES.map(m => ({ value: m.key, label: m.label })),
-              state.upscaleMode || "none", v => { state.upscaleMode = v; persist(); renderLeft(); })]),
-            state.upscaleMode === "rtx" ? row([
-              col([label("RTX scale"), numberField(state.rtxScale ?? 2, v => { state.rtxScale = v; persist(); }, 0.5)]),
+            checkboxRow("RTX Video Super Resolution", rtxOn,
+              v => { state.upscaleMode = v ? "rtx" : "none"; persist(); renderLeft(); },
+              { disabled: !ctx.availability?.RTXVideoSuperResolution,
+                title: ctx.availability?.RTXVideoSuperResolution ? "" : "RTXVideoSuperResolution not installed" }),
+            rtxOn ? row([
+              col([label("Scale (×)"), numberField(state.rtxScale ?? 2, v => { state.rtxScale = Math.max(1, v); persist(); }, 0.5)]),
               col([label("Quality"), select(["LOW", "MEDIUM", "HIGH", "ULTRA"].map(q => ({ value: q, label: q })),
                 state.rtxQuality || "ULTRA", v => { state.rtxQuality = v; persist(); })]),
             ]) : null,
-            el("div", { text: "Runs on the LTX-upscaled frames, after decode. Same nodes as a normal H3 render's finisher.",
+            el("div", { text: "Runs on the LTX-upscaled frames after decode. Deblur sharpens at the same size; RTX VSR scales it up further (e.g. 2× → 4K).",
               style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
           ]));
 

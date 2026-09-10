@@ -56,7 +56,8 @@ export function openVideoGalleryPicker(onPick, opts = {}) {
   (async () => {
     let items = [];
     try {
-      const r = await api.fetchApi(`${API}/videos?limit=120`);
+      const sf = opts.subfolder != null ? `&subfolder=${encodeURIComponent(opts.subfolder)}` : "";
+      const r = await api.fetchApi(`${API}/videos?limit=200${sf}`);
       items = (await r.json()).videos || [];
     } catch (e) {
       status.textContent = `Could not read the gallery: ${e?.message || e}`;
@@ -82,7 +83,37 @@ export function openVideoGalleryPicker(onPick, opts = {}) {
       vid.muted = true;
       cell.addEventListener("mouseenter", () => { vid.currentTime = 0; vid.play().catch(() => {}); cell.style.borderColor = BRAND; });
       cell.addEventListener("mouseleave", () => { vid.pause(); vid.currentTime = 0; cell.style.borderColor = C.border; });
-      cell.append(vid, el("div", { text: it.filename, title: it.filename, style: {
+
+      // ⓘ — resolution / frames / duration / seed / prompt, from the clip's saved sidecar.
+      const m = it.meta || {};
+      const dur = m.durationSeconds || (m.frames && (m.fps || 24) ? m.frames / (m.fps || 24) : m.seconds) || 0;
+      const infoBits = [
+        m.w && m.h ? `${m.w}×${m.h}` : null,
+        m.frames ? `${m.frames}f` : null,
+        dur ? `${Number(dur).toFixed(1)}s` : null,
+        (m.fps ? `${Number(m.fps).toFixed(0)}fps` : null),
+        m.seed != null ? `seed ${m.seed}` : null,
+      ].filter(Boolean).join("  ·  ");
+      const promptTxt = it.prompt || m.prompt || "";
+      const infoBtn = el("div", { text: "ⓘ", title: "Details", style: {
+        position: "absolute", top: "4px", right: "4px", zIndex: "4", width: "18px", height: "18px",
+        borderRadius: "50%", background: "rgba(0,0,0,0.72)", color: "#fff", fontSize: "11px",
+        display: "flex", alignItems: "center", justifyContent: "center", cursor: "help" } });
+      const infoPanel = el("div", { style: {
+        position: "absolute", inset: "0", zIndex: "5", background: "rgba(0,0,0,0.9)", color: "#e6e6e6",
+        padding: "8px", fontSize: "10px", lineHeight: "1.5", overflow: "auto", display: "none" } });
+      infoPanel.append(
+        el("div", { text: it.filename, style: { fontWeight: "700", wordBreak: "break-all", marginBottom: "3px" } }),
+        el("div", { text: infoBits || "no saved metadata", style: { color: "#9ac7ff", marginBottom: "4px" } }),
+        el("div", { text: promptTxt ? (promptTxt.length > 320 ? promptTxt.slice(0, 320) + "…" : promptTxt) : "(no prompt saved)",
+          style: { color: promptTxt ? "#cfcfcf" : "#888", whiteSpace: "pre-wrap" } }),
+      );
+      infoBtn.addEventListener("mouseenter", () => { infoPanel.style.display = "block"; });
+      infoPanel.addEventListener("mouseleave", () => { infoPanel.style.display = "none"; });
+      infoPanel.addEventListener("click", e => e.stopPropagation());
+
+      cell.style.position = "relative";
+      cell.append(vid, infoBtn, infoPanel, el("div", { text: it.filename, title: it.filename, style: {
         fontSize: "9.5px", color: C.muted, padding: "4px 5px",
         whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }));
 

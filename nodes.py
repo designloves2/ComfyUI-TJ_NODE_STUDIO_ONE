@@ -1939,6 +1939,8 @@ async def mmh3_media_info(request):
                 pass
             break
     fps = 0.0
+    width = 0
+    height = 0
     for line in info.splitlines():
         if "Video:" in line:
             for part in line.split(","):
@@ -1948,6 +1950,10 @@ async def mmh3_media_info(request):
                         fps = float(p[:-3].strip())
                     except Exception:
                         pass
+                # ffmpeg prints the geometry as "WWWxHHH" (sometimes "WWWxHHH [SAR ...]")
+                m = re.search(r"\b(\d{2,5})x(\d{2,5})\b", p)
+                if m and not width:
+                    width, height = int(m.group(1)), int(m.group(2))
             break
     return web.json_response({
         "ok": True, "file": name,
@@ -1955,6 +1961,8 @@ async def mmh3_media_info(request):
         "has_audio": "Audio:" in info,
         "has_video": "Video:" in info,
         "fps": fps,
+        "width": width,
+        "height": height,
     })
 
 
@@ -2075,6 +2083,9 @@ async def mmh3_get_config(request):
         "ltx_vae_audio":         cfg.get("ltx_vae_audio",         ""),
         "ltx_tiny_vae":          cfg.get("ltx_tiny_vae",          ""),
         "ltx_llm_prompt":        cfg.get("ltx_llm_prompt",        ""),
+        "ltx_vision_backend":    cfg.get("ltx_vision_backend",    "native"),
+        "ltx_vision_clip":       cfg.get("ltx_vision_clip",       ""),
+        "ltx_vision_or_model":   cfg.get("ltx_vision_or_model",   ""),
         "stitch_at_end":         cfg.get("stitch_at_end",         True),
         "trim_last_clip":        cfg.get("trim_last_clip",        False),
         "unload_between_clips":  cfg.get("unload_between_clips",  True),
