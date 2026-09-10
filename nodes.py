@@ -2328,11 +2328,19 @@ async def mmh3_get_models(request):
             return _scan(key, extensions=ext)
         except Exception:
             return ["none"]
-    try:
-        gguf_list = _scan("gguf", extensions=[".gguf"])
-    except Exception:
-        gguf_list = []
-    diff = scan("diffusion_models")
+    # No dedicated gguf/unet_gguf folder key exists here — UnetLoaderGGUF reads .gguf
+    # straight out of models/unet + models/diffusion_models, so scan those with the gguf
+    # extension included rather than a separate (missing) folder key.
+    gguf_list = []
+    for k in ("gguf", "unet_gguf", "diffusion_models_gguf"):
+        try:
+            got = _scan(k, extensions=[".gguf"])
+            if got and got != ["none"]:
+                gguf_list = got
+                break
+        except Exception:
+            pass
+    diff = scan("diffusion_models", [".safetensors", ".gguf", ".ckpt", ".pt", ".sft"])
     all_unets = list(dict.fromkeys([m for m in diff + gguf_list if m != "none"])) or ["none"]
     return web.json_response({
         "diffusion_models": all_unets,
