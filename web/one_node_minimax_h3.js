@@ -1195,11 +1195,13 @@ app.registerExtension({
         // A gallery pick means "refine THIS clip" — load its saved prompt/negative
         // (from the sidecar meta json) straight into the boxes, replacing whatever was
         // there. An upload carries no prompt, so leave the boxes for ✨ / manual entry.
-        const m = (item && item.meta) || {};
-        const p = item && (item.prompt || m.prompt || "");
+        let m = (item && item.meta) || {};
+        if (typeof m === "string") { try { m = JSON.parse(m); } catch { m = {}; } }
+        const p = (item && item.prompt) || m.prompt || (Array.isArray(m.prompts) && m.prompts[0]) || "";
         const n = m.negativePrompt || m.negative || "";
         if (kind === "gallery") {
-          if (String(p).trim())  state.ltxPrompt = String(p);
+          if (String(p).trim()) { state.ltxPrompt = String(p); showPopup("Prompt loaded from the clip's saved metadata.", false); }
+          else showPopup("That clip has no prompt saved in its metadata — write one or use ✨.", true);
           if (String(n).trim())  state.ltxNegPrompt = String(n);
         } else {
           if (String(p).trim() && !String(state.ltxPrompt || "").trim())    state.ltxPrompt = String(p);
