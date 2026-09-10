@@ -24,6 +24,40 @@
   option is gone; **H3 FirstBlockCache** (maintained, node-gated) is the step-reuse cache.
   Legacy state / presets carrying `h3cache` fall back to `none`.
 
+### LLM — text and vision are separate models now
+
+- **Every OpenRouter LLM surface splits into a text model and a vision model.** The image
+  nodes' Enhance / Image-to-Prompt panel and MiniMax H3's Brief / Vision each pick their
+  own model (cheap text model for briefs & prompt-enhance, a multimodal one for reading
+  images). For MiniMax H3 the **backend** is independent per role too — Brief on OpenRouter
+  with Vision on a local CLIP, or the reverse. No hard-coded vision model: the picker is
+  the full searchable OpenRouter list with only a soft (empty-only) pre-select, plus a
+  filter box. Legacy single-key configs migrate automatically.
+- **`:free` OpenRouter models auto-fall through to the paid variant on 429.** Set a model
+  id ending `:free` and the request sends `[free, paid]` so OpenRouter switches server-side
+  only when the free tier rate-limits.
+- **Reasoning models fail fast instead of hanging.** A slow `deepseek-v4-flash` /
+  `minimax-m3` no longer stalls past the proxy timeout and surfaces as a browser
+  "Failed to fetch" — the call now times out cleanly with a message telling you to switch
+  to a non-reasoning model.
+
+### Hermes agent — "⬇ job.json" export on the node panels
+
+- The web twin's Agent JSON export is now on the ComfyUI panels: krea2 / zimage / music get
+  one button under Generate, MiniMax H3 gets a per-clip download on each prompt row. Files
+  are `<Tool>_<mode>_<YYYYMMDDHHmm>_<seed>[_<clip#>].json`, wrapped in the
+  `{tool, job, target}` envelope, with image paths rewritten to the Hermes input folder.
+- **`.claude/skills/`** bundles `hermes-job-json` + `studio-image-prompt` + `minimax-h3-prompt`
+  so a batch or story render request turns into ready-to-run job files.
+
+### MusicMaker
+
+- **Ace-Step: all three sampling stages default to `cfg 1`** (stage 1 was `cfg 0`).
+
+---
+
+## v1.25.0 (2026-09-06)
+
 ### 🆕 MusicMaker ONE STUDIO (TJ) — new node (8th) 🧪
 
 - **Song / instrumental generation, one node, two engines.** **Ace-Step 1.5** (48 kHz,
