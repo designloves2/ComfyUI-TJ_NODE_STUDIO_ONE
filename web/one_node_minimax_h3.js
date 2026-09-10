@@ -1192,9 +1192,19 @@ app.registerExtension({
       }
       function setLtxSource(inputFilename, kind, item) {
         state.ltxSource = inputFilename; state.ltxSourceKind = kind;
-        const p = item && (item.prompt || item.meta?.prompt);
-        if (p && !String(state.ltxPrompt || "").trim()) state.ltxPrompt = p;
-        if (item && item.meta?.negativePrompt && !String(state.ltxNegPrompt || "").trim()) state.ltxNegPrompt = item.meta.negativePrompt;
+        // A gallery pick means "refine THIS clip" — load its saved prompt/negative
+        // (from the sidecar meta json) straight into the boxes, replacing whatever was
+        // there. An upload carries no prompt, so leave the boxes for ✨ / manual entry.
+        const m = (item && item.meta) || {};
+        const p = item && (item.prompt || m.prompt || "");
+        const n = m.negativePrompt || m.negative || "";
+        if (kind === "gallery") {
+          if (String(p).trim())  state.ltxPrompt = String(p);
+          if (String(n).trim())  state.ltxNegPrompt = String(n);
+        } else {
+          if (String(p).trim() && !String(state.ltxPrompt || "").trim())    state.ltxPrompt = String(p);
+          if (String(n).trim() && !String(state.ltxNegPrompt || "").trim()) state.ltxNegPrompt = String(n);
+        }
         _ltxSrcInfo = null;
         persist(); renderLeft(); renderPrompts();
         loadLtxSrcInfo();

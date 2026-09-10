@@ -3,6 +3,7 @@ TJ Node ONE — Combined package for flux2 klein One (TJ) + Z-Image ONE (TJ)
 """
 import os
 import sys
+import re
 import json
 import glob
 import time
