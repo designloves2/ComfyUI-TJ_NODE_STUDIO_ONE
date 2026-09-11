@@ -954,7 +954,7 @@ export function buildLtxUpscaleGraph(state, avail, opts = {}) {
   g[L.sampSel] = { class_type: "KSamplerSelect", inputs: { sampler_name: state.ltxSampler || "euler_ancestral" } };
   g[L.sched] = { class_type: "BasicScheduler", inputs: {
     model, scheduler: state.ltxScheduler || "simple",
-    steps: Math.max(1, Math.round(state.ltxSteps ?? 3)), denoise: state.ltxDenoise ?? 0.15,
+    steps: Math.max(1, Math.round(state.ltxSteps ?? 4)), denoise: state.ltxDenoise ?? 0.15,
   }};
   g[L.sampler] = { class_type: "SamplerCustomAdvanced", inputs: {
     noise: [L.noise, 0], guider: [L.guider, 0], sampler: [L.sampSel, 0],
@@ -998,7 +998,7 @@ export function buildLtxUpscaleGraph(state, avail, opts = {}) {
   const usedLoras = (state.ltxLoras || []).filter(l => l?.name && l.name !== "none" && l.enabled !== false)
     .map(l => ({ name: l.name, strength: l.strength ?? 1.0 }));
   return { graph: g, meta: {
-    ltxUpscale: true, steps: Math.max(1, Math.round(state.ltxSteps ?? 3)),
+    ltxUpscale: true, steps: Math.max(1, Math.round(state.ltxSteps ?? 4)),
     denoise: state.ltxDenoise ?? 0.15, sampler: state.ltxSampler || "euler_ancestral",
     scheduler: state.ltxScheduler || "simple", seed, source: sourceFile, fps,
     loras: usedLoras, deblur: deblurUsed, upscale: upscaleUsed,

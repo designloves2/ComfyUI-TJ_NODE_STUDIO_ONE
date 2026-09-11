@@ -730,7 +730,7 @@ export function defaultState(saved) {
     ltxSourceMeta:  saved.ltxSourceMeta  || null,   // { w, h, fps, frames, duration } from the clip's sidecar, for the info line
     ltxPrompt:      saved.ltxPrompt      || "",
     ltxNegPrompt:   saved.ltxNegPrompt   || "bad anatomy, inconsistent look, low resolution,",
-    ltxSteps:       saved.ltxSteps       ?? 3,
+    ltxSteps:       saved.ltxSteps       ?? 4,
     ltxDenoise:     saved.ltxDenoise     ?? 0.15,
     ltxSampler:     saved.ltxSampler     || "euler_ancestral",
     ltxScheduler:   saved.ltxScheduler   || "simple",

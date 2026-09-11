@@ -1333,7 +1333,7 @@ app.registerExtension({
         leftPanel.appendChild(panel([
           label("Refine"),
           row([
-            col([label("Steps"), numberField(state.ltxSteps ?? 3, v => { state.ltxSteps = Math.max(1, Math.round(v)); persist(); }, 1)]),
+            col([label("Steps"), numberField(state.ltxSteps ?? 4, v => { state.ltxSteps = Math.max(1, Math.round(v)); persist(); }, 1)]),
             col([label("Denoise"), numberField(state.ltxDenoise ?? 0.15, v => { state.ltxDenoise = Math.min(1, Math.max(0.01, v)); persist(); }, 0.01)]),
           ]),
           row([
@@ -1381,7 +1381,7 @@ app.registerExtension({
             renderSegWrap();
             return segWrap;
           })(),
-          el("div", { text: "2x latent upscale + a light refine. Verified defaults: 3 steps / 0.15 denoise / euler_ancestral / simple. ~0.8MP / 8s per piece on 16GB (~6 min each).",
+          el("div", { text: "2x latent upscale + a light refine. Verified defaults: 4 steps / 0.15 denoise / euler_ancestral / simple. ~0.8MP / 8s per piece on 16GB (~6 min each).",
             style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
         ]));
 
