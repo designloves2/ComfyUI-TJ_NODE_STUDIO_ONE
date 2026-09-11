@@ -539,9 +539,12 @@ export async function historyEntry(promptId) {
  * it costs a real queue turn and whatever the CLIP takes to load, not an instant HTTP
  * round trip.
  */
-export async function analyzeImagesNative(clipName, images, promptText) {
+export async function analyzeImagesNative(clipName, images, promptText, clipType = "minimax") {
+  const isGguf = String(clipName || "").toLowerCase().endsWith(".gguf");
   const g = {
-    clip:   { class_type: "CLIPLoader", inputs: { clip_name: clipName, type: "minimax", device: "default" } },
+    clip: isGguf
+      ? { class_type: "TJ_LTX25ClipLoaderGGUF", inputs: { clip_name: clipName } }
+      : { class_type: "CLIPLoader", inputs: { clip_name: clipName, type: clipType, device: "default" } },
     batch:  { class_type: "TJ_MultiImageLoader", inputs: {
       image_paths_json: JSON.stringify(images),
       auto_set: true,
@@ -584,9 +587,12 @@ export async function analyzeImagesNative(clipName, images, promptText) {
  * TextGenerate node, just no image input; the system + user prompt are concatenated
  * into TextGenerate's single `prompt` field since it has no separate system role.
  */
-export async function writeBriefNative(clipName, systemPrompt, userPrompt) {
+export async function writeBriefNative(clipName, systemPrompt, userPrompt, clipType = "minimax") {
+  const isGguf = String(clipName || "").toLowerCase().endsWith(".gguf");
   const g = {
-    clip: { class_type: "CLIPLoader", inputs: { clip_name: clipName, type: "minimax", device: "default" } },
+    clip: isGguf
+      ? { class_type: "TJ_LTX25ClipLoaderGGUF", inputs: { clip_name: clipName } }
+      : { class_type: "CLIPLoader", inputs: { clip_name: clipName, type: clipType, device: "default" } },
     gen:  { class_type: "TextGenerate", inputs: {
       clip: ["clip", 0],
       prompt: `${systemPrompt}\n\n${userPrompt}`,
