@@ -2,6 +2,19 @@
 
 ---
 
+## v1.26.1 (2026-09-11)
+
+### Fixed
+
+- **Krea 2 GGUF models failed to load** — `Unexpected architecture type in GGUF file:
+  'krea2'`. The GGUF loader's architecture allowlist didn't recognize "krea2", even
+  though the actual model/text detection underneath doesn't rely on that tag at all —
+  a pure gate bug, not a real unsupported-model case. Krea2's diffusion-model and
+  text-encoder loaders now route `.gguf` files through ComfyUI-TJ_NODE's small wrapper
+  nodes (`TJ_NODE_Krea2UnetLoaderGGUF` / `TJ_NODE_Krea2ClipLoaderGGUF`), which patch the
+  allowlist at load time and delegate to the normal GGUF loaders. No change for regular
+  (safetensors) Krea2 models.
+
 ## v1.26.0 (2026-09-11)
 
 ### LTX 2.5 Upscale — segmented rendering, working live preview
