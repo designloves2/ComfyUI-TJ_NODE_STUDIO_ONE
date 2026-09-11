@@ -49,7 +49,6 @@ import { resolvePipeOverrides, applyOverridesTemp } from "./shared/promptdb_pipe
 import { attachNodeState, restoreNodeState } from "./shared/node_state.js";
 import { createNodeFullscreen } from "./shared/node_fullscreen.js";
 import { openAudioGalleryPicker } from "./shared/ui_audio_gallery_picker.js";
-import { openVideoGalleryPicker } from "./minimax/ui_video_picker_minimax.js";
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 const TOPBAR_H   = 40;
@@ -1317,9 +1316,11 @@ app.registerExtension({
           try { showPopup("Uploading…", false); const name = await uploadMedia(f); setLtxSource(name, "upload"); }
           catch (e) { showPopup(e.message, true); }
         });
-        // From gallery | Upload — equal width (1:1)
-        const galBtn = button("🖼 From gallery", () => openVideoGalleryPicker((inputFilename, item) =>
-          setLtxSource(inputFilename, "gallery", item), { subfolder: state.saveSubfolder || SUBFOLDER }));
+        // From gallery | Upload — equal width (1:1). The real clip gallery (badges,
+        // 눈가리기 blur, info, everything) opens in pick mode instead of a separate,
+        // stripped-down grid — a click there copies the clip to input/ and returns here.
+        const galBtn = button("🖼 From gallery", () => galleryOv?.showPicker((inputFilename, item) =>
+          setLtxSource(inputFilename, "gallery", item)));
         const upBtn = button("⬆ Upload", () => fileInp.click(), "default");
         galBtn.style.flex = "1"; upBtn.style.flex = "1";
         srcKids.push(el("div", { style: { display: "flex", gap: "8px" } }, [galBtn, upBtn]));

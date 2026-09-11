@@ -161,6 +161,22 @@ export function createGalleryOverlay(state, ctx) {
   let postMode = null;        // null | "upscale" | "rife"
   let postPick = null;        // video key
 
+  // "Pick a source clip" mode — another feature (e.g. LTX Upscale) opens this exact
+  // gallery, with all its badges/blur/info intact, instead of a stripped-down picker of
+  // its own. Set only for the duration of one showPicker() call; a card click copies the
+  // clip into input/ and hands it to the callback, same shape as the old dedicated picker.
+  let pickCallback = null;    // (inputFilename, videoItem) => void, or null when not picking
+  async function pickClip(v) {
+    if (!pickCallback) return;
+    const cb = pickCallback;
+    try {
+      const name = await copyOutputToInput(v.filename, v.subfolder || "", "output");
+      cb(name, v);
+    } catch (e) { ctx.showPopup?.(e.message || "Could not use that clip.", true); return; }
+    pickCallback = null;
+    hide();
+  }
+
   const upBtn = el("button", { type: "button", text: "⬆ Upscale", title: "Pick one clip, then upscale it", style: {
     cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "5px 11px",
     borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
@@ -1124,6 +1140,8 @@ export function createGalleryOverlay(state, ctx) {
             fontSize: "12px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center",
           }}));
         }
+      } else if (pickCallback) {
+        card.addEventListener("click", () => pickClip(v));
       } else {
         card.addEventListener("dblclick", () => openPlayer(i));
       }
@@ -1318,6 +1336,7 @@ export function createGalleryOverlay(state, ctx) {
     closePlayer(); stopGridVideos(); ov.style.display = "none";
     clear(grid);
     if (!postRunning) setMode(null, false);
+    pickCallback = null;
     deleteConfirmOv.style.display = "none"; pendingDelete = null;
   }
 
@@ -1325,6 +1344,10 @@ export function createGalleryOverlay(state, ctx) {
     el: ov,
     playerEl: player,
     show() { ov.style.display = "flex"; refresh(); resumePostJob(); },
+    // Open this same gallery in "pick a clip" mode — a card click copies it into input/
+    // and hands (inputFilename, videoItem) to onPick, then closes. Used wherever a
+    // feature needs a source clip instead of a separate, badge-less picker of its own.
+    showPicker(onPick) { pickCallback = onPick; ov.style.display = "flex"; refresh(); },
     hide,
     isOpen: () => ov.style.display !== "none",
     isPlaying: () => player.style.display !== "none",
