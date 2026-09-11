@@ -378,7 +378,7 @@ export function mountImagePanel(state, ctx) {
       // Same compact tiles Prompt Edit uses: a thumbnail you can preview, then the
       // transport and trim under it. The old stacked forms had no preview at all and each
       // one was taller than the whole image grid.
-      kids.push(buildClipMediaSlots("video", vids, ctx, render, onPick => openVideoGalleryPicker(onPick), state.missingAssets));
+      kids.push(buildClipMediaSlots("video", vids, ctx, render, onPick => (ctx.pickVideoFromGallery || openVideoGalleryPicker)(onPick), state.missingAssets));
       kids.push(el("div", { html: "Frames are pulled at 24fps between <b>in</b> and <b>out</b>; the model was trained on ~2-15s references.",
         style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
     }

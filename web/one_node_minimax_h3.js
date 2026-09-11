@@ -3560,6 +3560,9 @@ app.registerExtension({
       galleryOv = createGalleryOverlay(state, ctx);
       root.appendChild(galleryOv.el);
       document.body.appendChild(galleryOv.playerEl);   // fullscreen player lives above everything
+      // Any reference-video picker (left panel media slots, Prompt Edit's per-clip slots)
+      // opens this same gallery instead of a separate, badge-less grid of its own.
+      ctx.pickVideoFromGallery = (onPick) => galleryOv.showPicker(onPick);
 
       root.appendChild(helpEl);
       root.appendChild(queueListOv.el);

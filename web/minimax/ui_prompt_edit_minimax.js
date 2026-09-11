@@ -909,7 +909,7 @@ ${name}`, style: {
           fontSize: "10px", color: C.muted, height: HEAD_H,
           display: "flex", alignItems: "center" } }));
         wrap.appendChild(buildClipMediaSlots(kind, list, ctx, renderImageRow,
-          kind === "video" ? (onPick => openVideoGalleryPicker(onPick)) : (onPick => openAudioGalleryPicker(onPick)),
+          kind === "video" ? (onPick => (ctx.pickVideoFromGallery || openVideoGalleryPicker)(onPick)) : (onPick => openAudioGalleryPicker(onPick)),
           state.missingAssets));
         return wrap;
       };
