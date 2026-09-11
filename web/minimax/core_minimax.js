@@ -739,6 +739,12 @@ export function defaultState(saved) {
     // clip in one pass. Each window is anchored to its own first frame + refined at low
     // denoise, so a plain concat has no visible seam.
     ltxSegmentSeconds: saved.ltxSegmentSeconds ?? 5,
+    // "seconds" derives the piece count from a target size (rounds to whatever number of
+    // pieces gets closest, never a stub piece a few frames long); "count" takes the piece
+    // count directly — reaching for a target-seconds number just to land on a specific
+    // count is a wasted model load/unload for whatever tiny piece the rounding produces.
+    ltxSegmentMode:  saved.ltxSegmentMode  || "seconds",   // "seconds" | "count"
+    ltxSegmentCount: saved.ltxSegmentCount ?? 2,
     // LTX Upscale runs on the LTX 2.5 unet — a different model from H3 — so its LoRAs
     // are their own list, never the H3 `loras`.
     ltxLoras: Array.isArray(saved.ltxLoras) ? saved.ltxLoras.map(l => ({

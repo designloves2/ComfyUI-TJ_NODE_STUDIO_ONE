@@ -1342,27 +1342,43 @@ app.registerExtension({
               state.ltxScheduler || "simple", v => { state.ltxScheduler = v; persist(); })]),
           ]),
           (() => {
-            // "Segment" = the LENGTH of each piece, in seconds — not a piece count. A
-            // number field alone left that ambiguous, so show the piece count it works out
-            // to, live, next to it.
-            const segHint = el("div", { style: { fontSize: "10px", color: C.muted, paddingTop: "6px" } });
-            const updateSegHint = () => {
-              const dur = (_ltxSrcInfo && _ltxSrcInfo.duration) || (state.ltxSourceMeta && state.ltxSourceMeta.duration) || 0;
-              const s = Math.max(0, Number(state.ltxSegmentSeconds) || 0);
-              if (!s) segHint.textContent = "0 = whole clip, one pass";
-              else if (!dur) segHint.textContent = `${s}s per piece — pick a source to see the piece count`;
-              else segHint.textContent = `${s}s per piece → ${Math.max(1, Math.ceil(dur / s))} piece(s) for this ${dur.toFixed(1)}s clip`;
-            };
-            updateSegHint();
-            return row([
-              col([label("Segment length — seconds per piece (0 = whole clip)"),
-                numberField(state.ltxSegmentSeconds ?? 5, v => {
-                  state.ltxSegmentSeconds = Math.max(0, Math.round(v)); persist(); updateSegHint();
-                }, 1)]),
-              col([label(" "), segHint]),
-            ]);
+            // Two ways to say the same plan: "seconds" derives the piece count from a
+            // target size (rounded to whatever avoids a stub piece a few frames long);
+            // "count" takes the piece count directly — no rounding surprise, and no
+            // reloading the whole model just to run a handful of leftover frames.
+            const durNow = () => (_ltxSrcInfo && _ltxSrcInfo.duration) || (state.ltxSourceMeta && state.ltxSourceMeta.duration) || 0;
+            const segWrap = el("div", {});
+            function renderSegWrap() {
+              clear(segWrap);
+              const mode = state.ltxSegmentMode === "count" ? "count" : "seconds";
+              const segHint = el("div", { style: { fontSize: "12px", fontWeight: "700", color: BRAND, paddingTop: "18px", whiteSpace: "pre-line", lineHeight: "1.4" } });
+              const updateSegHint = () => {
+                const d = durNow();
+                if (mode === "count") {
+                  const n = Math.max(1, Math.round(Number(state.ltxSegmentCount) || 1));
+                  if (n <= 1) segHint.textContent = "1 = whole clip, one pass";
+                  else if (!d) segHint.textContent = `${n} piece(s) — pick a source to see the length`;
+                  else segHint.textContent = `${n} piece(s) → ~${(d / n).toFixed(1)}s each\nTotal : ${d.toFixed(1)}s clip`;
+                } else {
+                  const s = Math.max(0, Number(state.ltxSegmentSeconds) || 0);
+                  if (!s) segHint.textContent = "0 = whole clip, one pass";
+                  else if (!d) segHint.textContent = `${s}s per piece — pick a source to see the piece count`;
+                  else segHint.textContent = `${s}s per piece → ${Math.max(1, Math.round(d / s))} piece(s)\nTotal : ${d.toFixed(1)}s clip`;
+                }
+              };
+              updateSegHint();
+              const modeSel = select([{ value: "seconds", label: "By seconds per piece" }, { value: "count", label: "By piece count" }], mode, v => { state.ltxSegmentMode = v; persist(); renderSegWrap(); });
+              const valueField = mode === "count" ? numberField(state.ltxSegmentCount ?? 2, v => { state.ltxSegmentCount = Math.max(1, Math.round(v)); persist(); updateSegHint(); }, 1) : numberField(state.ltxSegmentSeconds ?? 5, v => { state.ltxSegmentSeconds = Math.max(0, Math.round(v)); persist(); updateSegHint(); }, 1);
+            segWrap.append(row([
+              col([el("div", { style: { display: "flex", alignItems: "center", gap: "4px" } }, [label("Split mode"), el("span", { text: "❔", title: "Splitting a long/large clip into fixed-length pieces upscales each on its own queue turn (VRAM freed between turns) then ffmpeg-concats — each piece is first-frame-anchored + low-denoise so the joins are seamless.", style: { cursor: "help", fontSize: "11px" } })]), modeSel]),
+              col([label(mode === "count" ? "Piece count (1 = whole clip)" : "Seconds per piece (0 = whole clip)"), valueField]),
+              col([label(" "), segHint]),
+            ]));
+            }
+            renderSegWrap();
+            return segWrap;
           })(),
-          el("div", { text: "2x latent upscale + a light refine. Verified defaults: 3 steps / 0.15 denoise / euler_ancestral / simple. Splitting a long/large clip into fixed-length pieces upscales each on its own queue turn (VRAM freed between turns) then ffmpeg-concats — each piece is first-frame-anchored + low-denoise so the joins are seamless. ~0.8MP / 8s per piece on 16GB (~6 min each).",
+          el("div", { text: "2x latent upscale + a light refine. Verified defaults: 3 steps / 0.15 denoise / euler_ancestral / simple. ~0.8MP / 8s per piece on 16GB (~6 min each).",
             style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
         ]));
 
@@ -2712,10 +2728,12 @@ app.registerExtension({
 
           // ── plan the passes (fresh run only) ────────────────────────────────
           if (!resume) {
+            const segMode = rs.ltxSegmentMode === "count" ? "count" : "seconds";
             const s = Math.max(0, Number(rs.ltxSegmentSeconds) || 0);
+            const segCount = Math.max(1, Math.round(Number(rs.ltxSegmentCount) || 1));
             segSec = s;
             passes = [{ window: null, suffix: "" }];
-            if (s > 0) {
+            if ((segMode === "count" && segCount > 1) || (segMode === "seconds" && s > 0)) {
               let srcInfo = null;
               try { srcInfo = await getVideoInfo(sourceFile, "", "input"); } catch {}
               const sFps = (srcInfo && srcInfo.fps) || rs.ltxSourceMeta?.fps || FPS;
@@ -2723,21 +2741,31 @@ app.registerExtension({
                 || Math.round(((rs.ltxSourceMeta?.duration) || 0) * sFps) || 0;
               // LTX 2.5's video VAE only takes 8n+1 pixel frames cleanly — anything else
               // gets silently cropped to the nearest 8n+1 (comfy_extras/nodes_lt.py:
-              // "Must be 8*n + 1 frames"). A plain multiple-of-8 window would lose a frame
-              // off the END of every middle piece, which is a visible jump at every
-              // boundary — not the same 17k+5 rule H3's own transformer uses (unrelated;
-              // this pass never touches H3's graph), so it needs its own snap.
+              // "Must be 8*n + 1 frames"). Not the same 17k+5 rule H3's own transformer
+              // uses (unrelated; this pass never touches H3's graph) — LTX needs its own.
               const snap8n1 = (n) => 8 * Math.max(0, Math.round((n - 1) / 8)) + 1;
-              const seg = Math.max(9, snap8n1(s * sFps));
-              if (total > seg) {
+
+              // How many pieces: "count" takes it directly (no seconds→frames guess, no
+              // rounding surprise); "seconds" derives it from the target size so a request
+              // for ~5s pieces on a 10.13s clip lands on 2 pieces, not a 3rd one holding a
+              // single leftover frame that would reload the whole model just to run it.
+              let nPieces;
+              if (segMode === "count") {
+                nPieces = Math.min(segCount, Math.max(1, Math.floor(total / 9)));
+              } else {
+                const targetSeg = Math.max(9, snap8n1(s * sFps));
+                nPieces = Math.max(1, Math.round(total / targetSeg));
+              }
+
+              if (nPieces > 1 && total > 9) {
+                const pieceLen = Math.max(9, snap8n1(Math.round(total / nPieces)));
                 passes = [];
-                for (let skip = 0, k = 0; skip < total; k++) {
-                  const remaining = total - skip;
-                  // Full middle pieces are exactly `seg` (already 8n+1). Only the final
-                  // piece's remainder needs its own snap — a leftover <9 frames (a
-                  // fraction of a second at the very end of the whole clip) is accepted
-                  // as-is rather than folded into a mid-clip boundary.
-                  const cap = remaining > seg ? seg : (remaining >= 9 ? snap8n1(remaining) : remaining);
+                let skip = 0;
+                for (let k = 0; k < nPieces; k++) {
+                  const isLast = k === nPieces - 1;
+                  // Only the last piece takes a raw (non-8n+1) remainder — nothing after
+                  // it depends on the count, so whatever LTX crops it to is fine.
+                  const cap = isLast ? (total - skip) : pieceLen;
                   if (cap <= 0) break;
                   passes.push({ window: { skip, cap }, suffix: `_seg${String(k).padStart(2, "0")}` });
                   skip += cap;
