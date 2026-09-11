@@ -1077,7 +1077,10 @@ export function buildFaceRefineGraph(state, avail, opts = {}) {
     smooth_window: state.frSmoothWindow ?? 21, size_smooth_window: 51,
     smooth_method: "gaussian", size_mode: "per_frame",
     identity_track: state.frIdentityTrack !== false,
-    identity_threshold: state.frIdentityThreshold ?? 0.28,
+    // 0.45 (not the pack's own stock 0.28) - see core_minimax.js's frIdentityThreshold
+    // default and SPEC_MINIMAX_H3_FACE_REFINE.md sec 19/20 for why 0.28 let continuity
+    // tracking drift onto the wrong person uncorrected.
+    identity_threshold: state.frIdentityThreshold ?? 0.45,
     fallback_detector: state.faceFallbackDetector || "none",
   };
   if (facePickLink) {

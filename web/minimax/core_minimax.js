@@ -845,7 +845,12 @@ export function defaultState(saved) {
     // refined output showed the left face, then drifted to the center face by the
     // end) - see SPEC_MINIMAX_H3_FACE_REFINE.md sec 19. 0.45 sits below observed
     // same-person scores but above chance cross-person similarity.
-    frIdentityThreshold: saved.frIdentityThreshold ?? 0.45,
+    // Force-migrate the OLD stock default (0.28) forward: there is no UI control for this
+    // field yet, so any browser holding exactly 0.28 got it from the old default, never from
+    // a deliberate user choice - safe to bump it without asking (see sec 20 in the SPEC:
+    // this bit the very fix meant to land it, because localStorage's saved 0.28 always wins
+    // over a fresh code default per the take()-style "never overwrite a live value" rule).
+    frIdentityThreshold: saved.frIdentityThreshold === 0.28 ? 0.45 : (saved.frIdentityThreshold ?? 0.45),
     frIdentityModel: saved.frIdentityModel || "insightface", // insightface | clip_vision | ccip
     // H3FaceTrackCrop crop/canvas params
     frCropFactor:   saved.frCropFactor   ?? 2.5,
