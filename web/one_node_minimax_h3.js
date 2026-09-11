@@ -1647,6 +1647,14 @@ app.registerExtension({
             cut_detection: state.frCutDetection ? "auto (pyscenedetect)" : "none",
             cut_threshold: state.frCutThreshold ?? 3.0,
             skip_first_frames: 0, frame_load_cap: scanFrameCap, select_every_nth: 1,
+            // Numbering MUST match H3FaceSelect's own numbering at render time, or a pick
+            // here refines a different face there. picker_api.py defaults `select` to
+            // "largest_face" (ranks boxes by size) when it's left out — but H3FaceSelect's
+            // manual mode numbers boxes by _MANUAL_RANK = "left_most" (leftmost first).
+            // Those two rankings can disagree on which box is "1" (found via a real report:
+            // picked box 1, box 2 got refined instead - see SPEC sec 20). Passing "manual"
+            // here makes picker_api._review_select() resolve to the same "left_most" order.
+            select: "manual",
           };
           const r = await fetch("/h3_facerefine/scan", {
             method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),

@@ -705,3 +705,39 @@ identity가 실제로 거부하고 continuity 쪽 박스 선택을 막을 수 �
 **아직 남은 확인 사항**: 실제로 사용자가 새 기본값(0.45)으로 같은 클립을 다시 렌더링해
 드리프트가 사라지는지 확인 필요 — 로그 기반으로 원인은 확정했지만 수정 후 재현 테스트는
 아직 하지 않음.
+
+---
+
+## 20. §19가 틀렸다 — 진짜 원인은 "픽커와 렌더의 얼굴 번호 매김 방식이 다름" (2026-09-12)
+
+§19 직후 사용자가 스크린샷과 함께 정정: "오른쪽을 골랐는데 왼쪽을 따라다닌다 — 이거는 시작
+박스 위치가 다르잖아." 이어서 "1을 골랐는데 2를 리파인하고 있다고." — **드리프트가 아니라
+처음부터 끝까지 일관되게 다른 번호를 리파인**하고 있었다. §19의 identity_threshold 수정은
+여전히 유효한 개선이지만(0.28은 실제로도 너무 낮았다), 이 버그의 원인은 아니었다.
+
+**진짜 원인, 소스로 확인**: 픽커(Pick Faces)와 실제 렌더(`H3FaceSelect`)가 얼굴에 번호를
+매기는 **정렬 기준 자체가 달랐다**.
+
+- `H3-FaceRefine`의 `nodes.py`: `select=="manual"`일 때 `_review_select()`가 리턴하는 랭킹
+  모드는 `_MANUAL_RANK = "left_most"` — 즉 **왼쪽부터 0, 1, 2...** 순서로 번호를 매긴다.
+- 반면 `picker_api.py`의 `_cards_from()`은 `mode = N._review_select(str(params.get("select")
+  or "largest_face"))` — 우리 프론트가 스캔 요청 바디에 `select`를 아예 안 보내고 있었으므로
+  항상 `"largest_face"` 랭킹(**크기가 큰 얼굴부터** 0, 1, 2...)으로 픽커 카드를 그리고 있었다.
+- 결과: 픽커에서 "1"이라고 표시된 박스(크기 기준 2번째로 큰 얼굴)와 렌더에서 `H3FaceSelect`가
+  "1"로 해석하는 박스(왼쪽에서 2번째 얼굴)가 서로 다른 사람일 수 있다 — 우연히 세 얼굴의
+  크기 순서와 좌우 순서가 같은 클립에서만 픽커와 렌더가 일치했던 것.
+
+**수정**: `openFacePickModal`의 `/h3_facerefine/scan` 요청 바디에 `select: "manual"`을 추가
+(`one_node_minimax_h3.js`) — `picker_api._review_select("manual")`이 `_MANUAL_RANK` ==
+`"left_most"`로 풀리므로, 픽커가 매기는 번호가 `H3FaceSelect`의 실제 manual 모드 번호 매김과
+정확히 같은 기준(왼쪽부터)을 쓰게 된다. `_scan()`의 캐시 키(`_KEYED`)에는 `select`가 빠져
+있어 재스캔을 유발하지 않고(수동 모드가 크게 힘든 detection 재실행이 아니라 캐시된 detection
+위에서 카드만 다시 그리는 경량 경로라는 게 그 팩 자체의 설계 의도 — 주석: "select changes
+only which face is numbered 0 ... re-renders cards from this and never re-scans") 안전하게
+번호만 다시 매긴다.
+
+**교훈**: §13의 frame_load_cap 가설과 §19의 identity_threshold 가설 둘 다 실제로 로그를
+읽고 반증까지 했는데도 진짜 원인이 아니었다 — 결국 소스 두 파일(`picker_api.py`와
+`nodes.py`)을 나란히 놓고 랭킹 함수 호출부를 직접 비교하고 나서야 찾았다. 이 버그처럼
+"프리뷰와 결과가 다르다"류는 두 코드 경로가 같은 입력을 같은 기준으로 해석하는지부터
+확인하는 게 맞는 접근이었다.
