@@ -5,6 +5,7 @@
 // unique) and hands the filename to the caller — same mechanism each tool's own gallery
 // "Send to" already uses, just exposed as a standalone overlay any tool can open.
 import { el, clear } from "../klein/core_klein.js";
+import { attachSensitiveToggle, mediaKey, isBlurred } from "./ui_sensitive_media.js";
 
 export const IMAGE_GALLERY_TOOLS = [
   // INPUT first and default: it is where a picture the user brought themselves already
@@ -117,8 +118,19 @@ export function openImageGalleryPicker(onPick, initialToolId) {
       const cell = el("div", { style: { position: "relative", borderRadius: "4px", overflow: "hidden", border: `1px solid ${C.border}`, background: C.bg2, cursor: "pointer" } });
       const im = el("img", { src: viewUrl(img, activeTool), style: { width: "100%", height: "auto", display: "block" } });
       cell.appendChild(im);
+      // 눈가리기 — same hidden-image set every gallery in the app reads/writes, keyed by
+      // subfolder+filename regardless of which tool's gallery this came from.
+      const sensKey = mediaKey(img.filename, img.subfolder || "");
+      attachSensitiveToggle(cell, im, sensKey, "br");
       cell.addEventListener("click", async () => {
         if (picking) return;
+        // Hidden stays hidden even here — reveal it (👁 on the tile) before it can be
+        // handed to whatever asked for a picture, never silently.
+        if (isBlurred(sensKey)) {
+          statusEl.textContent = "Hidden — click 👁 on the tile to reveal it first.";
+          setTimeout(() => { statusEl.textContent = imgs.length || total ? `${offset} / ${total}` : ""; }, 2200);
+          return;
+        }
         picking = true;
         const prevOpacity = cell.style.opacity;
         cell.style.opacity = "0.5";
