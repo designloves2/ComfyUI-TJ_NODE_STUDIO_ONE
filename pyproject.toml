@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-tj_node_studio_one"
 description = "TJ Node ONE Studio — all-in-one generation nodes for Flux2 Klein, Z-Image, Krea2, Qwen, SDXL, Anima, MiniMax H3 video, and MusicMaker (Ace-Step 1.5 / MiniMax Music 3) with unified config/preset management and an optional OpenRouter LLM backend."
-version = "1.25.1"
+version = "1.26.0"
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
 

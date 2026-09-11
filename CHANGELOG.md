@@ -2,6 +2,68 @@
 
 ---
 
+## v1.26.0 (2026-09-11)
+
+### LTX 2.5 Upscale — segmented rendering, working live preview
+
+- **Split a long/large source clip into pieces** before upscaling — Settings-free, right
+  on the panel: "By seconds per piece" or "By piece count". Each piece renders on its own
+  queue turn (VRAM freed between turns), then ffmpeg stream-copies them back together —
+  no trim/overlap needed, since every piece is anchored to its own first frame and
+  refined at low denoise. Piece length snaps to LTX 2.5's actual frame requirement
+  (`8n+1`, not a plain multiple of 8 and not H3's own `17k+5` — a different model, a
+  different rule) so a piece boundary never silently drops a frame.
+- **Survives a page reload.** A tab-switch reload used to kill the segmenting loop
+  mid-run, leaving orphan pieces and no result. The plan, finished pieces, and the
+  in-flight segment's prompt id now persist in node state; reloading reconnects to
+  whatever ComfyUI is still doing and finishes the concat.
+- **Live preview actually works now.** The preview node was keyed with a colon in its id,
+  which ComfyUI truncates for dynamic-expansion paths — it never matched what the UI
+  listens for, so frames were decoded but never shown. Fixed, and given its own
+  Settings → Preview panel (enable, frames, fps, resolution, quality, preview VAE) —
+  separate from H3's, since it's a different model at a different resolution.
+- Gallery cards now show a Ⓛ badge for a clip that went through LTX Upscale.
+
+### Every "pick from gallery" popup is the real gallery now
+
+Reference-video slots, the LTX Upscale source picker, and the last-frame continuation
+picker each used to open a separate, stripped-down grid with no badges, no info, and —
+the actual problem — no sensitive-content blur. They all now open the one real gallery
+in a "pick" mode instead, so whichever clip you're choosing shows the same
+upscale/deblur badges, info popup, and 눈가리기 blur it shows everywhere else.
+
+### 눈가리기 (sensitive-content blur) — closed real exposure gaps
+
+A hidden/blurred item's actual file reached the screen in several places that only ever
+blurred the *thumbnail*:
+
+- The clip gallery's fullscreen player loaded the real video unconditionally — opening a
+  hidden clip, or stepping `[`/`]` to one, played it in full. It no longer gets a real
+  `src` while hidden; a locked shade with its own 👁 toggle sits over the video instead,
+  so revealing it doesn't require leaving fullscreen either.
+- Picking a hidden clip (as a source, or for last-frame extraction) is refused outright
+  instead of silently handing the file over.
+- The cross-tool reference-image picker (shared by every image tool's "🖼 from gallery"
+  card) had no blur logic at all — added.
+- Every image tool's own gallery — Klein, Krea2, Anima, SDXL, Qwen Image 2511, Z-Image —
+  has its own fullscreen viewer, and all six had the identical bug: unconditional
+  `<img src>`, exposing a hidden picture on open and on every ←/→ navigation. Same fix
+  applied to all six.
+
+### Fixed
+
+- **Saved output subfolder never came back.** Every tool's Settings → Output path wrote
+  to the config file fine, but on the next session it silently reset to the hardcoded
+  default: MiniMax H3 never read the saved value back at all; Klein / Krea2 / Anima /
+  Qwen 2511 / Z-Image applied it to the input's placeholder text only (looked right,
+  `state` stayed empty); SDXL had no read-back code at all. Fixed in all seven.
+- Turbo mode (not just the Turbo LoRA beside it) is now remembered as soon as you change
+  it, not only after pressing Settings → Save All.
+- `mmh3_media_info` raised `NameError: re is not defined` — `re` was only imported
+  inside two unrelated functions, never at module scope.
+
+---
+
 ## v1.25.1 (2026-09-11)
 
 ### MiniMax H3 — PDD Acc is core-native now; two accel packs dropped
