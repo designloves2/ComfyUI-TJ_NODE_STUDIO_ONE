@@ -1370,20 +1370,11 @@ app.registerExtension({
               const modeSel = select([{ value: "seconds", label: "By seconds" }, { value: "count", label: "By count" }], mode, v => { state.ltxSegmentMode = v; persist(); renderSegWrap(); });
               const valueField = mode === "count" ? numberField(state.ltxSegmentCount ?? 2, v => { state.ltxSegmentCount = Math.max(1, Math.round(v)); persist(); updateSegHint(); }, 1) : numberField(state.ltxSegmentSeconds ?? 5, v => { state.ltxSegmentSeconds = Math.max(0, Math.round(v)); persist(); updateSegHint(); }, 1);
             const captionLabel = label(mode === "count" ? "Piece count (1 = whole clip)" : "Seconds per piece (0 = whole clip)");
-            captionLabel.style.whiteSpace = "nowrap";
-            const captionCol = el("div", { style: { flex: "1", minWidth: "max-content", display: "flex", flexDirection: "column", gap: "2px" } }, [
+            segWrap.append(el("div", { style: { display: "flex", flexDirection: "column", gap: "4px" } }, [
+              el("div", { style: { display: "flex", alignItems: "center", gap: "4px" } }, [label("Split mode"), el("span", { text: "❔", title: "Splitting a long/large clip into fixed-length pieces upscales each on its own queue turn (VRAM freed between turns) then ffmpeg-concats — each piece is first-frame-anchored + low-denoise so the joins are seamless.", style: { cursor: "help", fontSize: "11px" } })]),
+              row([col([modeSel]), col([valueField])]),
               captionLabel,
               segHint,
-            ]);
-            segWrap.append(el("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } }, [
-              row([
-                col([el("div", { style: { display: "flex", alignItems: "center", gap: "4px" } }, [label("Split mode"), el("span", { text: "❔", title: "Splitting a long/large clip into fixed-length pieces upscales each on its own queue turn (VRAM freed between turns) then ffmpeg-concats — each piece is first-frame-anchored + low-denoise so the joins are seamless.", style: { cursor: "help", fontSize: "11px" } })]), modeSel]),
-                col([el("div", { style: { visibility: "hidden", display: "flex", alignItems: "center", gap: "4px" } }, [label("Split mode"), el("span", { text: "❔" })]), valueField]),
-              ]),
-              row([
-                col([el("div", {})]),
-                captionCol,
-              ]),
             ]));
             }
             renderSegWrap();
