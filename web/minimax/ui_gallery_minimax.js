@@ -10,7 +10,7 @@ import { listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage, get
          copyOutputToInput, discardInputCopy, getVideoInfo, queuePrompt, waitForHistory, historyEntry,
          getClipLastFrame, getSystemPrompt, analyzeImagesNative, writeBriefNative } from "./api_minimax.js";
 import { buildUpscaleGraph, buildInterpolateGraph } from "./graph_builder_minimax.js";
-import { attachSensitiveToggle, mediaKey, isBlurred } from "../shared/ui_sensitive_media.js";
+import { attachSensitiveToggle, mediaKey, isBlurred, isSensitive, setSensitive } from "../shared/ui_sensitive_media.js";
 
 const STITCH_MAX = 10;
 
@@ -886,19 +886,74 @@ export function createGalleryOverlay(state, ctx) {
   }});
   pTop.append(pTitle, pPos, pClose);
 
+  // Wrapped so the blur shade + reveal toggle can sit over the video only, not the
+  // whole player (title bar / footer stay clickable underneath).
+  const pVideoWrap = el("div", { style: { position: "relative", flex: "1", minHeight: "0", display: "flex" } });
   const pVideo = el("video", { controls: "", playsinline: "", style: {
     flex: "1", minHeight: "0", width: "100%", objectFit: "contain", background: "#000",
   }});
+  // 눈가리기 sync for the fullscreen player — a blurred clip never gets a real `src` (not
+  // just a CSS blur a viewer could strip), so double-clicking into it or stepping [ / ]
+  // to it can't actually expose the video; the same 👁 toggle used on the grid tile is
+  // transplanted here so revealing it doesn't require leaving fullscreen.
+  const pShade = el("div", { style: {
+    position: "absolute", inset: "0", zIndex: "2", display: "none",
+    background: "rgba(10,10,14,0.92)", flexDirection: "column", alignItems: "center",
+    justifyContent: "center", gap: "10px", textAlign: "center", color: "#cfcfcf",
+    fontFamily: "'Segoe UI',sans-serif", fontSize: "13px", cursor: "pointer",
+  }});
+  pShade.innerHTML = "🔒 Hidden — click the 👁 to reveal";
+  const pEye = el("button", { type: "button", style: {
+    position: "absolute", top: "10px", right: "10px", zIndex: "3",
+    width: "34px", height: "34px", borderRadius: "8px", cursor: "pointer",
+    background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", fontSize: "16px",
+  }});
+  let curSensKey = null;
+  function renderPlayerBlur() {
+    if (!curSensKey) return;
+    const marked = isSensitive(curSensKey);
+    pShade.style.display = isBlurred(curSensKey) ? "flex" : "none";
+    pEye.textContent = marked ? "⊘" : "\u{1F441}︎";
+    pEye.title = marked ? "Reveal this clip" : "Hide this clip";
+  }
+  const revealAndPlay = () => {
+    if (!curSensKey) return;
+    setSensitive(curSensKey, false);
+    loadPlayerVideo(shown()[playIndex]);
+  };
+  pShade.addEventListener("click", revealAndPlay);
+  pEye.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!curSensKey) return;
+    if (isSensitive(curSensKey)) revealAndPlay();
+    else { setSensitive(curSensKey, true); loadPlayerVideo(shown()[playIndex]); }
+  });
+  pVideoWrap.append(pVideo, pShade, pEye);
   const pFoot = el("div", { style: {
     flexShrink: "0", padding: "8px 14px 14px", color: "#7a7a7a", fontSize: "11px",
     textAlign: "center", fontFamily: "'Segoe UI',sans-serif",
   }});
   pFoot.innerHTML = "<b>space</b> play/pause · <b>← →</b> ±5s · <b>Shift+← →</b> ±1s · "
     + "<b>[ ]</b> previous / next clip · <b>f</b> browser fullscreen · <b>Esc</b> close";
-  player.append(pTop, pVideo, pFoot);
+  player.append(pTop, pVideoWrap, pFoot);
 
   let playIndex = -1;
   function shown() { return filterFull ? videos.filter(v => v.is_full) : videos; }
+
+  // A blurred clip never gets a real `src` — no frame ever reaches the <video>, so
+  // pausing/scrubbing/devtools can't recover it either. Revealing it (the shade or the
+  // 👁) calls this again to actually load and play.
+  function loadPlayerVideo(v) {
+    if (!v) return;
+    if (isBlurred(curSensKey)) {
+      try { pVideo.pause(); } catch {}
+      pVideo.removeAttribute("src"); pVideo.load?.();
+    } else {
+      pVideo.src = viewURL(v);
+      pVideo.play?.().catch(() => {});
+    }
+    renderPlayerBlur();
+  }
 
   function openPlayer(i) {
     const list = shown();
@@ -906,11 +961,11 @@ export function createGalleryOverlay(state, ctx) {
     stopGridVideos();   // the card under the player must not keep looping behind it
     playIndex = Math.max(0, Math.min(i, list.length - 1));
     const v = list[playIndex];
-    pVideo.src = viewURL(v);
+    curSensKey = mediaKey(v.filename, v.subfolder || "");
     pTitle.textContent = v.filename;
     pPos.textContent = `${playIndex + 1} / ${list.length}`;
     player.style.display = "flex";
-    pVideo.play?.().catch(() => {});
+    loadPlayerVideo(v);
     setTimeout(() => pVideo.focus(), 30);
   }
   function closePlayer() {
