@@ -817,6 +817,11 @@ export function defaultState(saved) {
     frSelectIndex:  saved.frSelectIndex  ?? 0,
     frConfidence:   saved.frConfidence   ?? 0.35,  // face detector score floor
     frConfirmedPick: saved.frConfirmedPick || "",  // "0,1,1" — one face index per shot, from Pick Faces
+    // Multi-person chain (§12): an ORDERED list of face indices to refine one at a time,
+    // each pass over the previous pass's own output — "5 people, only 3,5,7 in this
+    // order" from Pick Faces. Single shot only (no per-shot picks per chain step yet).
+    // Empty/1-length = the normal single-subject path (frConfirmedPick as-is).
+    frChainPicks: Array.isArray(saved.frChainPicks) ? saved.frChainPicks.slice() : [],
     frCutDetection: saved.frCutDetection ?? false, // maps to "auto (pyscenedetect)" | "none"
     frCutThreshold: saved.frCutThreshold ?? 3.0,
     frIdentityTrack: saved.frIdentityTrack ?? true,

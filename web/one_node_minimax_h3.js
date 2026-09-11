@@ -1249,7 +1249,7 @@ app.registerExtension({
       // SPEC_MINIMAX_H3_FACE_REFINE.md §6-B).
       function setFrSource(inputFilename, kind, item) {
         state.frSource = inputFilename; state.frSourceKind = kind;
-        state.frConfirmedPick = "";   // a different video/skip/cap invalidates any prior pick
+        state.frConfirmedPick = ""; state.frChainPicks = [];   // a different video/skip/cap invalidates any prior pick
         let m = (item && item.meta) || {};
         if (typeof m === "string") { try { m = JSON.parse(m); } catch { m = {}; } }
         const p = (item && item.prompt) || m.prompt || (Array.isArray(m.prompts) && m.prompts[0]) || "";
@@ -1505,14 +1505,232 @@ app.registerExtension({
 
       // H3 Face Refine — post-process pass on a finished/uploaded clip. Same category as
       // LTX Upscale (source card + accordions, no shot-list prompt), see
-      // SPEC_MINIMAX_H3_FACE_REFINE.md §5. NOTE: Manual Select's "Pick Faces" picker (§6-B)
-      // is not wired yet — select stays on the ranking-rule modes for now; the graph
-      // builder and state already support Manual (frConfirmedPick) for when it lands.
+      // SPEC_MINIMAX_H3_FACE_REFINE.md §5/§6.
       const FR_SELECT_MODES = [
         "largest_face", "smallest_face", "left_most", "right_most",
-        "top_most", "bottom_most", "centre_most", "detector_score",
-        // "manual",  // re-enable once the Pick Faces modal is wired
+        "top_most", "bottom_most", "centre_most", "detector_score", "manual",
       ];
+
+      // Manual Select's "Pick Faces" dialog — the front end for ComfyUI-H3-FaceRefine's
+      // own two-stage backend (SPEC_MINIMAX_H3_FACE_REFINE.md §6-A): POST /h3_facerefine/scan
+      // runs the detector across the whole clip once (cached, GPU-busy-guarded on the
+      // server), returns one card per shot with every detected face boxed and numbered;
+      // the user's answer becomes `confirmed_pick` ("0,1,-1", one index per shot, -1 =
+      // "not in this shot"), which H3FaceSelect re-reads at actual graph-execution time.
+      async function openFacePickModal() {
+        if (!state.frSource) { showPopup("Pick a source clip first.", true); return; }
+
+        const overlay = el("div", { style: {
+          position: "fixed", inset: "0", background: "rgba(0,0,0,0.75)", zIndex: "10000",
+          display: "flex", alignItems: "center", justifyContent: "center", padding: "20px",
+        }});
+        const modal = el("div", { style: {
+          background: C.bg, border: `1px solid ${C.border}`, borderRadius: "10px",
+          width: "min(900px, 100%)", maxHeight: "90vh", overflowY: "auto", padding: "16px",
+          display: "flex", flexDirection: "column", gap: "12px", boxSizing: "border-box",
+        }});
+        const title = el("div", { text: "Pick Faces", style: { fontSize: "14px", fontWeight: "700", color: C.text } });
+        const status = el("div", { text: "Scanning the clip for faces and cuts…", style: { fontSize: "12px", color: C.muted } });
+        const cardsWrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "12px" } });
+        const closeBtn = button("✕ Cancel", () => overlay.remove(), "default");
+        const useBtn = button("✓ Use these", () => {}, "primary");
+        useBtn.disabled = true; useBtn.style.opacity = "0.5";
+        const footer = el("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end" } }, [closeBtn, useBtn]);
+        modal.append(title, status, cardsWrap, footer);
+        overlay.appendChild(modal);
+        overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+        document.body.appendChild(overlay);
+
+        let shots = [];
+        const picks = [];      // per-shot single chosen face index (multi-shot path); -1 = "not in this shot"; null = unanswered
+        const order = [];      // single-shot path: ORDERED list of face indices to chain through — §12
+
+        try {
+          const body = {
+            video: state.frSource, detector: state.faceDetector, confidence: state.frConfidence ?? 0.35,
+            cut_detection: state.frCutDetection ? "auto (pyscenedetect)" : "none",
+            cut_threshold: state.frCutThreshold ?? 3.0,
+            skip_first_frames: 0, frame_load_cap: 0, select_every_nth: 1,
+          };
+          const r = await fetch("/h3_facerefine/scan", {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+          });
+          const d = await r.json();
+          if (d.error) throw new Error(d.error + (d.busy ? " (retry once the queue is clear)" : ""));
+          shots = d.shots || [];
+          if (!shots.length) throw new Error("No shots found.");
+
+          if (shots.length === 1) {
+            // ── single-shot clip: pick MULTIPLE faces, in the order to chain them ──
+            // Each pick becomes its own H3 Face Refine pass over the PREVIOUS pass's own
+            // output (runFaceRefine's chain loop, §12) — "5 faces found, only 3/5/7 in
+            // this order" is exactly clicking them in that order here.
+            const shot = shots[0];
+            status.textContent = `${shot.faces} face(s) found — click them in the order to refine (skip anyone you don't want).`;
+            const imgWrap = el("div", { style: {
+              position: "relative", width: "100%", background: "#000", borderRadius: "6px", overflow: "hidden",
+            }});
+            const chipsWrap = el("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } });
+            const orderLine = el("div", { style: { fontSize: "11px", color: C.muted } });
+
+            function renderChips() {
+              clear(chipsWrap);
+              for (let fi = 0; fi < shot.faces; fi++) {
+                const pos = order.indexOf(fi);
+                const on = pos >= 0;
+                const chip = el("button", { type: "button", text: on ? `${fi} (${pos + 1})` : String(fi), style: {
+                  minWidth: "34px", height: "26px", borderRadius: "13px", cursor: "pointer", fontSize: "11px",
+                  padding: "0 8px", border: `1px solid ${on ? BRAND : C.border}`, background: on ? BRAND : C.bg2,
+                  color: on ? "#fff" : C.text,
+                }});
+                chip.addEventListener("click", () => {
+                  const p = order.indexOf(fi);
+                  if (p >= 0) order.splice(p, 1); else order.push(fi);
+                  renderChips(); renderBoxes();
+                });
+                chipsWrap.appendChild(chip);
+              }
+              orderLine.textContent = order.length
+                ? `Order: ${order.join(" → ")} (${order.length} pass${order.length > 1 ? "es" : ""})` : "Nothing picked yet.";
+              useBtn.disabled = order.length === 0;
+              useBtn.style.opacity = useBtn.disabled ? "0.5" : "1";
+            }
+            function renderBoxes() {
+              clear(imgWrap);
+              if (!shot.jpg) {
+                imgWrap.appendChild(el("div", { text: "no face found", style: {
+                  color: C.muted, fontSize: "11px", padding: "24px", textAlign: "center" } }));
+                return;
+              }
+              imgWrap.appendChild(el("img", { src: `data:image/jpeg;base64,${shot.jpg}`,
+                style: { width: "100%", display: "block" } }));
+              (shot.boxes || []).forEach((b, fi) => {
+                const [x0, y0, x1, y1] = b;
+                const pos = order.indexOf(fi);
+                const on = pos >= 0;
+                const box = el("div", { title: `Face ${fi}`, style: {
+                  position: "absolute", left: `${x0 * 100}%`, top: `${y0 * 100}%`,
+                  width: `${(x1 - x0) * 100}%`, height: `${(y1 - y0) * 100}%`,
+                  border: `2px solid ${on ? BRAND : "rgba(255,255,255,0.7)"}`, borderRadius: "3px",
+                  cursor: "pointer", boxSizing: "border-box",
+                }});
+                if (on) box.appendChild(el("div", { text: String(pos + 1), style: {
+                  position: "absolute", top: "-9px", left: "-9px", width: "18px", height: "18px",
+                  borderRadius: "9px", background: BRAND, color: "#fff", fontSize: "10px",
+                  display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700",
+                }}));
+                box.addEventListener("click", () => {
+                  const p = order.indexOf(fi);
+                  if (p >= 0) order.splice(p, 1); else order.push(fi);
+                  renderChips(); renderBoxes();
+                });
+                imgWrap.appendChild(box);
+              });
+            }
+            renderBoxes(); renderChips();
+            cardsWrap.appendChild(el("div", { style: {
+              border: `1px solid ${C.border}`, borderRadius: "8px", padding: "8px",
+              display: "flex", flexDirection: "column", gap: "6px",
+            }}, [imgWrap, chipsWrap, orderLine]));
+          } else {
+            // ── multiple shots (cuts): one subject per shot, no cross-person chain ──
+            status.textContent = `${shots.length} shot(s) found${d.cached ? " (cached scan)" : ""} — click a face per shot.`;
+            const prior = String(state.frConfirmedPick || "").split(",").map(s => parseInt(s.trim(), 10));
+            const priorValid = prior.length === shots.length && prior.every(n => !Number.isNaN(n));
+
+            shots.forEach((shot, i) => {
+              picks[i] = priorValid ? prior[i] : null;
+              const card = el("div", { style: {
+                border: `1px solid ${C.border}`, borderRadius: "8px", padding: "8px",
+                display: "flex", flexDirection: "column", gap: "6px",
+              }});
+              const imgWrap = el("div", { style: {
+                position: "relative", width: "100%", background: "#000", borderRadius: "6px", overflow: "hidden",
+              }});
+              const chipsWrap = el("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } });
+
+              function renderChips() {
+                clear(chipsWrap);
+                for (let fi = 0; fi < shot.faces; fi++) {
+                  const on = picks[i] === fi;
+                  const chip = el("button", { type: "button", text: String(fi), style: {
+                    width: "26px", height: "26px", borderRadius: "13px", cursor: "pointer", fontSize: "11px",
+                    border: `1px solid ${on ? BRAND : C.border}`, background: on ? BRAND : C.bg2,
+                    color: on ? "#fff" : C.text,
+                  }});
+                  chip.addEventListener("click", () => { picks[i] = fi; renderChips(); renderBoxes(); });
+                  chipsWrap.appendChild(chip);
+                }
+                const noneOn = picks[i] === -1;
+                const noneChip = el("button", { type: "button", text: "not in this shot", style: {
+                  padding: "4px 8px", borderRadius: "6px", cursor: "pointer", fontSize: "11px",
+                  border: `1px solid ${noneOn ? BRAND : C.border}`, background: noneOn ? BRAND : C.bg2,
+                  color: noneOn ? "#fff" : C.text,
+                }});
+                noneChip.addEventListener("click", () => { picks[i] = -1; renderChips(); renderBoxes(); });
+                chipsWrap.appendChild(noneChip);
+                useBtn.disabled = picks.some(p => p == null);
+                useBtn.style.opacity = useBtn.disabled ? "0.5" : "1";
+              }
+
+              function renderBoxes() {
+                clear(imgWrap);
+                if (!shot.jpg) {
+                  imgWrap.appendChild(el("div", { text: "no face found in this shot", style: {
+                    color: C.muted, fontSize: "11px", padding: "24px", textAlign: "center" } }));
+                  return;
+                }
+                imgWrap.appendChild(el("img", { src: `data:image/jpeg;base64,${shot.jpg}`,
+                  style: { width: "100%", display: "block" } }));
+                (shot.boxes || []).forEach((b, fi) => {
+                  const [x0, y0, x1, y1] = b;
+                  const on = picks[i] === fi;
+                  const box = el("div", { title: `Face ${fi}`, style: {
+                    position: "absolute", left: `${x0 * 100}%`, top: `${y0 * 100}%`,
+                    width: `${(x1 - x0) * 100}%`, height: `${(y1 - y0) * 100}%`,
+                    border: `2px solid ${on ? BRAND : "rgba(255,255,255,0.7)"}`, borderRadius: "3px",
+                    cursor: "pointer", boxSizing: "border-box",
+                  }});
+                  box.addEventListener("click", () => { picks[i] = fi; renderChips(); renderBoxes(); });
+                  imgWrap.appendChild(box);
+                });
+              }
+
+              renderBoxes(); renderChips();
+              card.append(
+                el("div", { text: `Shot ${i + 1} — frame ${shot.frame} — ${shot.faces} face(s) detected`,
+                  style: { fontSize: "11px", color: C.muted } }),
+                imgWrap, chipsWrap,
+              );
+              cardsWrap.appendChild(card);
+            });
+            useBtn.disabled = picks.some(p => p == null);
+            useBtn.style.opacity = useBtn.disabled ? "0.5" : "1";
+          }
+        } catch (e) {
+          status.textContent = `Error: ${e.message}`;
+          status.style.color = C.warn;
+        }
+
+        useBtn.addEventListener("click", () => {
+          if (shots.length === 1) {
+            if (!order.length) return;
+            state.frChainPicks = order.slice();
+            state.frConfirmedPick = String(order[0]);
+            persist();
+            overlay.remove();
+            showPopup(`Face picks saved — ${order.length} pass${order.length > 1 ? "es" : ""} queued.`, false);
+          } else {
+            if (picks.some(p => p == null)) return;
+            state.frChainPicks = [];
+            state.frConfirmedPick = picks.join(",");
+            persist();
+            overlay.remove();
+            showPopup(`Face picks saved — ${shots.length} shot(s).`, false);
+          }
+          renderLeft();
+        });
+      }
       function renderFaceRefineLeft() {
         const prevScroll = leftPanel.scrollTop;
         clear(leftPanel);
@@ -1545,7 +1763,7 @@ app.registerExtension({
           card.appendChild(el("button", { type: "button", text: "✕", title: "Clear source", style: {
             position: "absolute", top: "6px", right: "6px", zIndex: "3", width: "24px", height: "24px",
             border: "none", borderRadius: "6px", background: "rgba(0,0,0,0.7)", color: "#fff", cursor: "pointer", fontSize: "12px",
-          }, onclick: () => { state.frSource = ""; state.frSourceKind = "gallery"; state.frSourceMeta = null; state.frConfirmedPick = ""; persist(); renderLeft(); renderPrompts(); } }));
+          }, onclick: () => { state.frSource = ""; state.frSourceKind = "gallery"; state.frSourceMeta = null; state.frConfirmedPick = ""; state.frChainPicks = []; persist(); renderLeft(); renderPrompts(); } }));
         } else {
           card.appendChild(el("div", { text: "no source clip", style: { color: C.muted, fontSize: "12px" } }));
         }
@@ -1579,21 +1797,37 @@ app.registerExtension({
         leftPanel.appendChild(panel([label("Prompt"), promptTa]));
 
         // ── face selection ────────────────────────────────────────────────────
-        leftPanel.appendChild(panel([
+        const isManualSelect = state.frSelect === "manual";
+        const faceKids = [
           label("Face"),
           row([
             col([label("Select"), select(FR_SELECT_MODES.map(s => ({ value: s, label: s })),
-              state.frSelect || "largest_face", v => { state.frSelect = v; persist(); })]),
+              state.frSelect || "largest_face", v => { state.frSelect = v; persist(); renderLeft(); })]),
             col([label("Confidence"), numberField(state.frConfidence ?? 0.35, v => { state.frConfidence = Math.min(0.95, Math.max(0.05, v)); persist(); }, 0.05)]),
           ]),
           row([
             col([checkboxRow("Cut detection", state.frCutDetection, v => { state.frCutDetection = v; persist(); })]),
             col([checkboxRow("Identity tracking", state.frIdentityTrack !== false, v => { state.frIdentityTrack = v; persist(); })]),
           ]),
-          el("div", { text: "Which face is the subject, chosen once per shot (or per clip if Cut detection is off). "
+        ];
+        if (isManualSelect) {
+          const chainN = (state.frChainPicks || []).length;
+          const pickCount = chainN > 1 ? chainN : (String(state.frConfirmedPick || "").trim()
+            ? String(state.frConfirmedPick).split(",").length : 0);
+          const label_ = chainN > 1 ? `🎯 Pick Faces — ${chainN} pass chain (${state.frChainPicks.join("→")})`
+            : pickCount ? `🎯 Pick Faces — ${pickCount} shot(s) picked` : "🎯 Pick Faces";
+          const pickBtn = button(label_, () => openFacePickModal(), pickCount ? "default" : "primary");
+          pickBtn.style.width = "100%";
+          faceKids.push(pickBtn);
+          if (!pickCount) faceKids.push(el("div", { text: "⚠ Manual is selected but no face has been picked yet — click Pick Faces.",
+            style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
+        }
+        faceKids.push(el("div", { text: isManualSelect
+            ? "Manual: you choose the subject per shot in Pick Faces. A different source clip, detector, confidence or cut setting clears the pick."
+            : "Which face is the subject, chosen once per shot (or per clip if Cut detection is off). "
               + "Identity tracking holds one person through a crowd once a face is locked on.",
-            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-        ]));
+          style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
+        leftPanel.appendChild(panel(faceKids));
 
         // ── crop / canvas ─────────────────────────────────────────────────────
         leftPanel.appendChild(panel([
@@ -3080,11 +3314,15 @@ app.registerExtension({
       // tracker itself, so there's no seconds/count plan to build — see
       // SPEC_MINIMAX_H3_FACE_REFINE.md §4/§10, unlike LTX Upscale which can split a long
       // clip across queue turns).
+      // Multi-person chain (SPEC_MINIMAX_H3_FACE_REFINE.md §12): frChainPicks (>1 entry) is
+      // an ORDERED list of face indices — each pass refines one person over the PREVIOUS
+      // pass's own output, so the final save has every picked person refined in one clip.
+      // A 0-or-1-length frChainPicks is the plain single-subject path (frConfirmedPick as-is).
       async function runFaceRefine() {
         if (running) return;
         if (!faceRefineReady(state)) { showPopup("Set a face detector in ⚙ Settings → Models first — missing: " + faceRefineMissing(state).join(", "), true); return; }
         if (!state.frSource) { showPopup("Pick a source clip (gallery) or upload a video.", true); return; }
-        if (state.frSelect === "manual" && !String(state.frConfirmedPick || "").trim()) {
+        if (state.frSelect === "manual" && !String(state.frConfirmedPick || "").trim() && !(state.frChainPicks || []).length) {
           showPopup("Select is Manual but no face has been picked yet.", true); return;
         }
 
@@ -3093,6 +3331,8 @@ app.registerExtension({
         else if (state.seedMode === "decrement") { state.seed = Math.max(0, (state.seed || 0) - 1); seedInput.value = state.seed; }
         persist();
         const rs = JSON.parse(JSON.stringify(state));
+        const chain = rs.frSelect === "manual" && Array.isArray(rs.frChainPicks) && rs.frChainPicks.length > 1
+          ? rs.frChainPicks : null;
 
         running = true; stopRequested = false;
         startWakeAudio(); startQueueWatch();
@@ -3107,18 +3347,39 @@ app.registerExtension({
             ctx.availability = av.available || {}; ctx.availabilityInfo = av;
           }
           mem = watchMemory();
-          setStatus("Face Refine · queued (tracking + per-frame img2img)");
-          const built = buildFaceRefineGraph(rs, ctx.availability, {
-            nodeId: self.id, sourceFile: rs.frSource, promptText: rs.frPrompt, seed: rs.seed,
-            refImages: rs.refImages,
-          });
-          let r;
+
+          let out = null;
+          let sourceFile = rs.frSource;
+          let lastMeta = null;
+          const steps = chain || [null];   // null = single-subject run, uses rs.frConfirmedPick as-is
+
           try {
-            r = await queuePrompt(built.graph, {
-              onProgress: (v, m) => setStepProgress(v, m), samplerNode: "MM:sampler",
-            });
+            for (let i = 0; i < steps.length; i++) {
+              if (stopRequested) throw new Error("Stopped.");
+              const passLabel = chain ? ` — pass ${i + 1}/${chain.length} (face ${chain[i]})` : "";
+              setStatus(`Face Refine${passLabel} · queued (tracking + per-frame img2img)`);
+              const prog = (v, m) => setStepProgress(
+                chain ? (i + (v || 0)) / chain.length : v,
+                chain ? `pass ${i + 1}/${chain.length}${m ? " — " + m : ""}` : m);
+
+              const built = buildFaceRefineGraph(rs, ctx.availability, {
+                nodeId: self.id, sourceFile, promptText: rs.frPrompt, seed: rs.seed,
+                refImages: rs.refImages,
+                confirmedPickOverride: steps[i] != null ? String(steps[i]) : undefined,
+              });
+              lastMeta = built.meta;
+              const r = await queuePrompt(built.graph, { onProgress: prog, samplerNode: "MM:sampler" });
+              out = firstOutput(r.byNode, "FR:save");
+              if (!out) throw new Error(`Face Refine${passLabel} produced no output.`);
+
+              // Not the last pass: this pass's own output becomes the next pass's source —
+              // copy_to_input so the next VHS_LoadVideo/H3FaceSelect can read it.
+              if (i < steps.length - 1) {
+                sourceFile = await copyOutputToInput(out.filename, out.subfolder || "", "output");
+                try { await freeMemory(); } catch {}
+              }
+            }
           } finally { mem.stop(); }
-          const out = firstOutput(r.byNode, "FR:save");
           if (!out) throw new Error("Face Refine produced no output.");
 
           const memPeak = mem ? mem.peak() : null;
@@ -3128,8 +3389,9 @@ app.registerExtension({
             faceRefine: {
               select: rs.frSelect, detector: rs.faceDetector, cropFactor: rs.frCropFactor,
               canvasMode: rs.frCanvasMode, denoise: rs.frDenoise,
+              ...(chain ? { chainPicks: chain } : {}),
             },
-            steps: built.meta.steps, seed: built.meta.seed,
+            steps: lastMeta.steps, seed: lastMeta.seed,
             elapsedSec: (Date.now() - (runStart || Date.now())) / 1000,
             ...(memPeak || {}),
           };

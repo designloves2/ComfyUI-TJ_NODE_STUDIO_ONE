@@ -1028,12 +1028,16 @@ const FR = {
 };
 
 export function buildFaceRefineGraph(state, avail, opts = {}) {
-  const { nodeId, sourceFile, promptText, seed, refImages } = opts;
+  const { nodeId, sourceFile, promptText, seed, refImages, confirmedPickOverride } = opts;
   if (!sourceFile) throw new Error("Face Refine: pick a source clip (gallery or upload).");
   if (!state.faceDetector || state.faceDetector === "none")
     throw new Error("Face Refine: set a face detector in ⚙ Settings → Models — Face Refine.");
   const isManual = state.frSelect === "manual";
-  if (isManual && !String(state.frConfirmedPick || "").trim())
+  // Chain runs (multi-person, §12) pass a per-step pick here instead of reading the
+  // single frConfirmedPick — each step is its own single-subject H3FaceSelect run over
+  // whatever the previous step produced.
+  const confirmedPick = confirmedPickOverride ?? state.frConfirmedPick;
+  if (isManual && !String(confirmedPick || "").trim())
     throw new Error("Face Refine: pick a face for every shot first (Pick Faces button) — select is set to Manual.");
 
   const g = {};
@@ -1050,7 +1054,7 @@ export function buildFaceRefineGraph(state, avail, opts = {}) {
   if (isManual && has(avail, "H3FaceSelect")) {
     g[FR.select] = { class_type: "H3FaceSelect", inputs: {
       video: sourceFile, detector: state.faceDetector, confidence: state.frConfidence ?? 0.35,
-      select: "manual", select_index: 0, confirmed_pick: state.frConfirmedPick || "",
+      select: "manual", select_index: 0, confirmed_pick: confirmedPick || "",
       cut_detection: cutMode, cut_threshold: state.frCutThreshold ?? 3.0,
       skip_first_frames: 0, frame_load_cap: 0, select_every_nth: 1,
     }};

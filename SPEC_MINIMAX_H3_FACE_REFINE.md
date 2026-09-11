@@ -1,14 +1,13 @@
 # SPEC — H3 Face Refine
 
-**상태: 1차 구현 완료 (랭킹 규칙 경로), 실기기 스모크 테스트 통과 (2026-09-12).** 그래프
-빌더·Settings·좌측 패널 UI 전부 커밋됨(node — 커밋 해시는 git log 참고), 그리고 실제로
-큐에 올려서 `H3FaceTrackCrop → H3InjectVideoLatent → TJ_H3_AudioLock → H3PerFrameDenoise →
-샘플링 → H3FaceStitch → SaveVideo` 전체 그래프가 처음부터 끝까지 에러 없이 완주해서 실제
-영상이 나오는 것까지 확인했다. 과정에서 TJ_NODE 쪽 실제 버그 하나를 발견·수정했다 — §11.
-아직 남은 것: (1) Manual Select(Pick Faces 모달)는 프런트가 없어 select 드롭다운에서
-빠져 있음(§10 5번), (2) 이번 스모크 테스트는 3인 그룹샷(원래 얼굴이 작지 않은 클립)으로
-그래프 동작만 확인한 것 — **진짜 작은 얼굴 클립으로 화질 개선 여부는 아직 실사용 검증 전**,
-(3) VRAM 실측(§9-5) 아직 안 함. 웹 미러링은 이 나머지가 끝난 뒤 진행(사용자 지시).
+**상태: 1차 구현 + Manual Select(단일/다인 체인) 전부 완료, 실기기로 4개 시나리오 검증
+통과 (2026-09-12): 랭킹 규칙 단독 1인 클립, 랭킹 규칙 3인 그룹샷, Manual Select 단일 인물
+지정, **Manual Select 다인 체인(왼쪽→중앙→오른쪽 3인 순차 리파인, 최종 영상 1개)**.** 그래프
+빌더·Settings·좌측 패널 UI·Pick Faces 모달·체인 실행기까지 전부 커밋됨. 과정에서 TJ_NODE
+쪽 실제 버그 하나(§11)와 ComfyUI 크래시 사고 하나(§13)를 겪었다.
+아직 남은 것: (1) VRAM 실측(§9-5) 안 함, (2) 화질 개선 자체(작은 얼굴이 실제로 얼마나
+나아지는지)는 사용자가 직접 눈으로 판단할 몫 — 이 세션은 그래프가 에러 없이 도는지와
+설계가 맞는지만 검증. 웹 미러링은 이 나머지가 끝난 뒤 진행(사용자 지시).
 이 문서는 원래 `github.com/Carasibana/ComfyUI-H3-FaceRefine`
 (MIT, 2026-09 기준 v1.1.0)를 그대로 우리 STUDIO_ONE에 "완성된 H3 클립을 후처리하는 기능"으로
 붙이기 위한 조사·설계 기록이다.
@@ -329,13 +328,13 @@ Pick Faces 모달만 새로 만들면 된다** — 백엔드 재구현 불필요
    (face_detector 필수 + fallback/SAM/CLIP Vision 선택), `nodes.py`
    `mmh3_get_models`/`mmh3_get_config`/`mmh3_save_config`에 `face_*` 키 추가
    (`_scan_ultralytics()` 헬퍼 — Impact Pack 없이도 `models/ultralytics/{bbox,segm}` 직접 스캔).
-5. **부분 완료.** 좌측 패널 UI(`renderFaceRefineLeft`) + 단일 큐 실행(`runFaceRefine`, 세그먼트
-   없음 — 프레임수가 트래커 출력이라 사전 분할 자체가 불가능) — 소스 카드/프롬프트/Face 선택
-   (랭킹 규칙만)/Crop·Canvas/Denoise/Stitch 아코디언까지. **Pick Faces 모달(§6-B)은 아직
-   미구현** — select 드롭다운에서 "manual"을 일부러 뺐다(그래프·상태는 준비됐지만 프런트가
-   없어서 골라도 실행이 안 됨). 필요해지면 다음 라운드에서 붙이면 됨(백엔드는 이미 있음, §6-A).
-6. 실기기 검증 (사용자가 메인 백엔드에서 직접 진행): 얼굴 작은 클립으로 리파인 전/후 비교,
-   `auto_capped_768` VRAM 실측(§9-5), 무음 클립 케이스(§9-3), 랭킹 규칙 select 동작.
+5. ~~좌측 패널 UI + Pick Faces 모달~~ → **완료.** `renderFaceRefineLeft` + `openFacePickModal`
+   + `runFaceRefine`(단일 큐 실행, 세그먼트 없음 — 프레임수가 트래커 출력이라 사전 분할 자체가
+   불가능). Pick Faces는 단일-샷 클립에서 **여러 얼굴을 순서대로 클릭 → 체인**(§12) 또는
+   컷이 있는 클립에서 샷별 1명 선택, 둘 다 지원.
+6. ~~실기기 검증~~ → **핵심 시나리오 4개 통과.** 랭킹 규칙 1인/3인, Manual Select 단일 인물,
+   Manual Select 다인 체인(§12) — 전부 그래프 완주 확인. VRAM 실측(§9-5)과 "실제 화질이
+   얼마나 나아지는지"는 사용자 판단 몫으로 남음.
 7. **완전 검증 끝난 뒤에만** 웹(AI_One_Studio)에 미러링 — 검증 전 포팅 금지(사용자 지시)
 
 ### 진행 방침 (사용자 지시, 2026-09-12)
@@ -375,3 +374,78 @@ Mapping)`이면 `dict(audio)`로 변환. TJ_NODE가 정정된 수정을 반영 �
 
 **교훈**: 노드 소스만 읽고 추정한 진단은 실제 실행 전까진 확정이 아니다 — 이번 것도 실제로 큐에
 올려서 진짜 에러 메시지를 받아보고 나서야 두 번째 진단(Mapping)이 맞다는 게 확인됐다.
+
+---
+
+## 12. Manual Select — 다인 체인 (사용자 확정, 2026-09-12)
+
+**사용자 지적**: "영상 한 개를 왼쪽 돌리고 출력을 입력으로 다시 넣어서 중간 돌리고, 출력을
+다시 입력으로 넣어서 오른쪽 돌리고 — 영상 3개 아니고 1개로 나와야 함." 즉 여러 사람을 각각
+별도 영상으로 리파인하는 게 아니라, **한 사람씩 순서대로 이전 결과 위에 이어서** 리파인해서
+최종적으로 전원이 리파인된 영상 하나만 나와야 한다. 그리고 검출 인원이 많을 때(예: 10명 중
+3명만) "3,5,7" 식으로 원하는 사람만 순서대로 골라 체인 처리하는 것도 가능해야 한다고 확정.
+
+**실기기로 직접 증명**: 3인 그룹샷 클립으로 왼쪽(얼굴 2번, 좌측 좌표) → 그 출력을 input/에
+복사 → 중앙(1번) → 그 출력을 다시 input/에 복사 → 오른쪽(0번) — 3번의 개별 `/prompt` 큐잉을
+`copy_to_input`으로 이어붙여 **최종 영상 1개**(3명 모두 리파인됨)를 만들어 실제로 확인했다.
+이 체인을 실제 제품 코드에 그대로 반영:
+
+### 12-A. 그래프 빌더
+
+`buildFaceRefineGraph(state, avail, opts)`에 `opts.confirmedPickOverride` 추가 — 넘기면
+`state.frConfirmedPick` 대신 이 값을 `H3FaceSelect.confirmed_pick`에 씀. 체인의 각 스텝이
+전역 state를 안 건드리고 자기 몫의 pick만 넘길 수 있게 하기 위함.
+
+### 12-B. state
+
+`frChainPicks: number[]` — 순서 있는 얼굴 인덱스 목록(예: `[2,1,0]`). 0~1개면 기존
+단일-인물 경로(`frConfirmedPick` 그대로), 2개 이상이면 체인 모드. 소스 클립/검출기/신뢰도/
+컷 설정이 바뀌면 `frConfirmedPick`과 함께 초기화됨(기존 무효화 규칙과 동일).
+
+### 12-C. Pick Faces 모달 (`openFacePickModal`)
+
+샷이 **1개(컷 없음)**일 때만 다인 체인 UI를 보여줌 — 얼굴 칩/박스를 원하는 순서대로 클릭하면
+누른 순서대로 번호 배지(1st, 2nd, ...)가 붙고, 확정하면 `state.frChainPicks`에 그 순서 그대로
+저장(+ `frConfirmedPick`은 체인 1번째 값으로 맞춰둠, 하위호환용). **샷이 2개 이상(컷 있음)**
+이면 기존처럼 샷당 1명 선택 UI로 돌아감 — 컷과 다인 체인을 동시에 지원하는 건 스코프 밖(아래
+열린 질문 참고).
+
+### 12-D. 실행기 (`runFaceRefine`)
+
+`frChainPicks.length > 1`이면 체인 루프: 스텝마다 `buildFaceRefineGraph`를
+`confirmedPickOverride=String(chainPicks[i])`, `sourceFile=(첫 스텝은 frSource, 이후는
+직전 스텝 결과를 `copyOutputToInput`으로 넘긴 파일명)`으로 호출 → 큐잉 → 대기 → (마지막
+스텝이 아니면) 결과를 input/에 복사해 다음 스텝의 소스로. 진행률 바는 `(i + 스텝내진행률) /
+전체스텝수`로 표시. 마지막 스텝의 출력만 갤러리에 저장되고, 메타에 `faceRefine.chainPicks`로
+전체 순서를 기록.
+
+### 12-E. 열린 질문 (남은 스코프)
+
+- **컷(여러 샷) + 다인 체인 동시 지원**: 지금은 컷이 있으면 샷당 1명(다인 체인 없음), 다인
+  체인은 컷 없는 단일 샷만 지원. 둘 다 필요해지면 "샷마다 별도 체인 순서" 같은 훨씬 복잡한
+  UI/데이터 모델이 필요 — 지금은 손대지 않음(사용자 요청 없었음).
+- **체인 스텝 사이의 크롭/디노이즈 파라미터**: 지금은 전 스텝이 같은 `state` 설정(crop_factor,
+  denoise 등)을 그대로 씀. 사람마다 다른 설정(예: 얼굴 크기가 서로 달라 face_px_small/large를
+  다르게 주고 싶은 경우)은 지원 안 함 — 필요해지면 `frChainPicks`를 `{index, cropFactor,
+  denoise, ...}` 객체 배열로 확장하는 방향.
+
+---
+
+## 13. 사고: 렌더 중 스캔 강제 실행으로 ComfyUI 크래시 (2026-09-12)
+
+3인 랭킹 규칙 렌더가 `queue_running` 중일 때, 제가 `/h3_facerefine/scan`을
+`force: true`(FaceRefine 자체 GPU-충돌 가드를 우회)로 동시에 호출해서 **ComfyUI 프로세스
+자체가 죽었다** (`python` 프로세스가 조회되지 않음 — 응답 없음이 아니라 크래시). `force`는
+"렌더 중이어도 스캔을 강행한다"는 옵션인데, 팩 자체가 "렌더 중 스캔은 GPU를 나눠 쓰게 돼서
+위험하다"고 경고해둔 걸 무시하고 쓴 것 — 실제로 두 GPU 작업(얼굴 검출 + H3 샘플링)이 동시에
+전체 프로세스를 죽일 만큼 충돌한 것으로 보임.
+
+**복구**: `C:\Users\desig\OneDrive\Desktop\Start ComfyUI SageAttention.lnk` →
+`C:\AI\ComfyUI-Easy-Install\Start ComfyUI SageAttention.bat`로 사용자가 지정한 재시작
+스크립트 실행, 콜드 스타트 약 50초 후 정상 복귀. 진행 중이던 솔로 클립 렌더는 유실 → 재시작
+후 다시 큐잉해서 성공.
+
+**교훈 (이후 항상 지킴)**: `/h3_facerefine/scan`은 **렌더가 전혀 없을 때만** 호출한다 —
+`force: true`는 절대 쓰지 않는다. 큐를 확인하고(`GET /queue`), 비어있을 때만 스캔하고, 스캔이
+끝난 뒤에 다음 렌더를 큐잉한다(동시 실행 금지). 3인 체인 테스트(§12)는 이 규칙을 지켜서
+문제없이 끝났다.
