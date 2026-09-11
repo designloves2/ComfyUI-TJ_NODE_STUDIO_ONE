@@ -485,3 +485,54 @@ Mapping)`이면 `dict(audio)`로 변환. TJ_NODE가 정정된 수정을 반영 �
 (LTX Upscale의 세그먼트 로직과 유사하지만 "몇 프레임 나올지"가 아니라 "몇 프레임 넣을지"
 기준이라 더 단순할 수 있음). 지금은 사용자가 클립 길이/해상도를 보고 판단해야 함 — Settings나
 좌측 패널에 "이 클립은 크다" 경고 정도는 추가할 수 있음(아직 안 함).
+
+---
+
+## 15. Settings 재편 — H3/UpScale/FaceRefine 3개 탭 + Face Refine 전용 모델 (사용자 확정, 2026-09-12)
+
+**사용자 요청**: (1) Face Refine이 H3 메인 모델을 그대로 쓸지, 아니면 별도(더 가볍거나 빠른
+GGUF 등) 모델을 쓸지 고를 수 있게. (2) Settings 상단 탭을 "Models" 하나가 아니라 **H3
+Model / UpScale Model / FaceRefine Model** 3개로 세분화. (3) 커스텀 모델 체크박스를 켜면
+검색 드롭다운이 활성화되는 방식.
+
+**구현**:
+- Settings 탭 바: `["H3 Model", "UpScale Model", "FaceRefine Model", "LLM Setting", "Preview",
+  "Output"]` — 기존 `modelsTab()`을 `h3ModelTab()`/`upscaleModelTab()`/`faceRefineModelTab()`
+  셋으로 쪼갬(`ui_app_settings_minimax.js`). 공통 "서드파티 팩 상태" 패널은 `packStatusPanel()`
+  로 분리해 세 탭 전부에서 재사용.
+  - **H3 Model**: UNET First/Last · UNET Reference · Text Encoder · Video/Audio VAE (H3
+    메인 렌더 전용, 딱 그것만)
+  - **UpScale Model**: 기존 Upscale Model 드롭다운 + LTX 2.5 Upscale의 모델 세트 전체
+  - **FaceRefine Model**: 얼굴 검출기(필수)/폴백/SAM/CLIP Vision + "Use a separate model"
+    체크박스(꺼짐 기본) + 켜면 Face Refine 전용 UNET/Text Encoder 검색 드롭다운 노출
+- **state**: `frUseCustomModel`(bool, 기본 false), `frUnet`, `frClip` — 커스텀 모델일 때만
+  씀. 꺼져 있으면 기존 그대로 H3의 Reference UNET/Text Encoder/VAE를 재사용.
+- **그래프 빌더** (`buildFaceRefineGraph`): `useCustomModel`이면 `unetReference`/`clipName`
+  자리에 `frUnet`/`frClip`을 대신 넣어서 `buildModelChain`/CLIP 로더를 호출 — 터보/어텐션/
+  캐시 파이프라인은 동일하게 다 적용되고 **불러오는 파일만** 바뀜. UNET은 기존
+  `unetNode()`가 이미 `.gguf` 분기 지원(변경 불필요); CLIP은 `.gguf`면 `CLIPLoaderGGUF`,
+  아니면 기존 `CLIPLoader`(둘 다 `type: "minimax"`)로 새로 분기 추가.
+- **VAE는 항상 공유** — Face Refine이 커스텀 모델이어도 video/audio VAE는 H3 Model 탭의
+  것을 그대로 씀(사용자가 UNET/Text Encoder만 분리해달라고 했음).
+- `generationModesFor`의 facerefine 게이팅도 수정: 커스텀 모델이면 H3의 Reference UNET이
+  없어도 활성화되게(그 UNET을 안 쓰니까), `faceRefineReady`/`faceRefineMissing`도 커스텀
+  모델일 때 `frUnet`/`frClip` 필수로 체크하도록 확장.
+- **설정 저장/로드**: `nodes.py`에 `face_use_custom_model`/`face_unet`/`face_clip` config
+  키 추가(get 에코만 — save 라우트는 이미 범용 `cfg.update(patch)`라 추가 작업 불필요),
+  `ui_app_settings_minimax.js`의 `saveAll()`/config-load `take()` 블록에 세 키 반영.
+
+**부수 수정 (사용자가 같은 대화에서 지적)**: H3 Model 탭의 Text Encoder 드롭다운이 지금까지
+`.gguf` 파일을 목록에서 빼는 `text_encoders`(safetensors 전용) 리스트를 썼음 — LTX Upscale이
+이미 쓰던 `text_encoders_all`(gguf 포함) 리스트로 교체. H3 자체의 GGUF 텍스트 인코더 지원은
+**아직 검증 안 됨** — 이전 조사(TJ_NODE 세션)에서 H3의 텍스트 인코더가 잘린 Qwen3-VL이라
+mmproj 병합·텐서 리매핑이 필요할 수 있다고 나왔던 것과 같은 사안. 목록엔 뜨지만 실제로 골라서
+써봐야 확인됨 — UI 라벨에 "unverified" 코멘트로 표시해둠.
+
+**설정이 저장 안 되는 것처럼 보이는 문제 (사용자 문의)**: 서버 config 자체는 정상 저장/로드됨
+(`GET /minimax_h3_one/config`로 직접 확인). 실제 원인은 `getConfig().then(cfg => {...})`의
+`take()` 헬퍼가 **"라이브 상태값이 이미 있으면 절대 덮어쓰지 않는다"**는 규칙으로 동작하기
+때문 — 브라우저 localStorage에 예전 값이 남아있으면, 서버에 새로 저장한 값이 있어도 그 브라우저
+에서는 계속 예전 값이 보임(다른 세션의 선택을 실수로 덮어쓰지 않으려는 의도적 설계). 즉 버그가
+아니라 "한 번 로컬에 값이 잡히면 그 이후로는 로컬이 항상 이김"이라는 동작 방식 — 새 값을
+반영해서 보려면 그 값을 UI에서 직접 다시 고르거나(그러면 즉시 localStorage도 갱신됨),
+브라우저의 로컬 저장소를 지워야 함.

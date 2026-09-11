@@ -74,8 +74,8 @@ export function createSettingsOverlay(state, ctx) {
   ov.appendChild(topRow);
 
   // ── tab bar ────────────────────────────────────────────────────────────────
-  const TABS = ["Models", "LLM Setting", "Preview", "Output"];
-  let activeTab = "Models";
+  const TABS = ["H3 Model", "UpScale Model", "FaceRefine Model", "LLM Setting", "Preview", "Output"];
+  let activeTab = "H3 Model";
   const tabBar = el("div", { style: { display: "flex", gap: "6px", flexShrink: "0" } });
   const bodyWrap = el("div", { style: { flex: "1", overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px", paddingRight: "4px" } });
   bodyWrap.className = "mmh3-lp";
@@ -100,96 +100,9 @@ export function createSettingsOverlay(state, ctx) {
   let modelData = { diffusion_models: [], text_encoders: [], vaes: [], loras: [], upscale_models: [], vae_approx: [] };
   let availability = { available: {}, missing_optional: [] };
 
-  function modelsTab() {
-    const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } });
-    const diff = ["none", ...(modelData.diffusion_models || []).filter(x => x !== "none")];
-    const te   = ["none", ...(modelData.text_encoders    || []).filter(x => x !== "none")];
-    const vae  = ["none", ...(modelData.vaes             || []).filter(x => x !== "none")];
-    const lor  = ["none", ...(modelData.loras            || []).filter(x => x !== "none")];
-    const ups  = ["none", ...(modelData.upscale_models   || []).filter(x => x !== "none")];
-
-    // the mode pills and the continuity list are gated on these, so re-render them
-    const uFL = searchableSelect(diff, state.unetFirstLast || "none", v => { state.unetFirstLast = v; ctx.persist(); ctx.refreshModes?.(); });
-    const uRF = searchableSelect(diff, state.unetReference || "none", v => { state.unetReference = v; ctx.persist(); ctx.refreshModes?.(); });
-    wrap.appendChild(panel([
-      label("Diffusion Models — the reference workflow keeps these separate on purpose"),
-      row([
-        col([label("UNET · First/Last (FL2VA)"), uFL.el]),
-        col([label("UNET · Reference (REF2VA)"), uRF.el]),
-      ]),
-      el("div", { html: "Text-only and First/Last modes use the FL2VA model; Reference mode uses the REF2VA one. → <code>models/diffusion_models/</code>", style: { fontSize: "10px", color: C.muted } }),
-    ]));
-
-    const cl = searchableSelect(te,  state.clipName || "none", v => { state.clipName = v; ctx.persist(); });
-    const vv = searchableSelect(vae, state.vaeVideo || "none", v => { state.vaeVideo = v; ctx.persist(); });
-    const va = searchableSelect(vae, state.vaeAudio || "none", v => { state.vaeAudio = v; ctx.persist(); });
-    wrap.appendChild(panel([
-      label("Text Encoder & VAEs"),
-      col([label("Text Encoder (CLIPLoader type=minimax)"), cl.el]),
-      row([col([label("Video VAE"), vv.el]), col([label("Audio VAE"), va.el])]),
-      el("div", { html: "→ <code>models/text_encoders/</code> · <code>models/vae/</code>", style: { fontSize: "10px", color: C.muted } }),
-    ]));
-
-    const um = searchableSelect(ups, state.upscaleModel || "none", v => { state.upscaleModel = v; ctx.persist(); });
-    wrap.appendChild(panel([
-      label("Upscale"),
-      col([label("Upscale Model (used when Upscale = Upscale Model)"), um.el]),
-      el("div", { text: "Turbo LoRAs, attention, block cache, Spectrum and the model patches now live in "
-        + "the node's left panel — they are per-run choices, so they sit next to the run.",
-        style: { fontSize: "10px", color: C.muted, lineHeight: "1.55" } }),
-    ]));
-
-    // ── LTX 2.5 Upscale mode — its own model set (generationMode "ltxupscale") ──
-    const lup  = ["none", ...(modelData.latent_upscale_models || []).filter(x => x !== "none")];
-    const lte  = ["none", ...(modelData.text_encoders_all || modelData.text_encoders || []).filter(x => x !== "none")];
-    const lxU  = searchableSelect(diff, state.ltxUnet           || "none", v => { state.ltxUnet = v === "none" ? "" : v;           ctx.persist(); ctx.refreshModes?.(); });
-    const lxLU = searchableSelect(lup,  state.ltxLatentUpscaler || "none", v => { state.ltxLatentUpscaler = v === "none" ? "" : v; ctx.persist(); ctx.refreshModes?.(); });
-    const lxC  = searchableSelect(lte,  state.ltxClip           || "none", v => { state.ltxClip = v === "none" ? "" : v;           ctx.persist(); ctx.refreshModes?.(); });
-    const lxVV = searchableSelect(vae,  state.ltxVaeVideo       || "none", v => { state.ltxVaeVideo = v === "none" ? "" : v;       ctx.persist(); ctx.refreshModes?.(); });
-    const lxVA = searchableSelect(vae,  state.ltxVaeAudio       || "none", v => { state.ltxVaeAudio = v === "none" ? "" : v;       ctx.persist(); ctx.refreshModes?.(); });
-    wrap.appendChild(panel([
-      label("LTX 2.5 Upscale — models for the LTX Upscale generation mode"),
-      row([col([label("LTX unet (.gguf or .safetensors)"), lxU.el]),
-           col([label("Latent spatial upscaler (x2)"), lxLU.el])]),
-      col([label("Text encoder (.gguf → LTX25 CLIP GGUF LOADER (TJ); else CLIPLoader type ltxv)"), lxC.el]),
-      row([col([label("LTX video VAE"), lxVV.el]), col([label("LTX audio VAE"), lxVA.el])]),
-      el("div", { text: "The preview TAE (taeltx2*) lives in the Preview tab, next to LTX Upscale's live-preview switch.",
-        style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-      el("div", { html: "Files: LTX unet → <code>models/diffusion_models/</code> · latent upscaler → <code>models/latent_upscale_models/</code> · "
-        + "text encoder → <code>models/text_encoders/</code> · VAEs → <code>models/vae/</code>. The gemma4 GGUF text encoder needs the "
-        + "<code>ComfyUI-TJ_NODE</code> pack (<code>TJ_LTX25ClipLoaderGGUF</code>); the int8 safetensors works with core <code>CLIPLoader</code>.",
-        style: { fontSize: "10px", color: C.muted, lineHeight: "1.6" } }),
-    ]));
-
-    // (the ✨ vision model + instruction for this mode live under the LLM Setting tab)
-
-    // ── H3 Face Refine mode — its own face detector, reuses H3's own unet/clip/vae ──
-    const fdList = ["none", ...(modelData.face_detectors || []).filter(x => x !== "none")];
-    const ffList = ["none", ...(modelData.face_fallback_detectors || []).filter(x => x !== "none")];
-    const samList = ["none", ...(modelData.sam_models || []).filter(x => x !== "none")];
-    const cvList  = ["none", ...(modelData.clip_vision || []).filter(x => x !== "none")];
-    const fdSel = searchableSelect(fdList, state.faceDetector || "none",
-      v => { state.faceDetector = v === "none" ? "" : v; ctx.persist(); ctx.refreshModes?.(); });
-    const ffSel = searchableSelect(ffList, state.faceFallbackDetector || "none",
-      v => { state.faceFallbackDetector = v; ctx.persist(); });
-    const samSel = searchableSelect(samList, state.faceSamModel || "none",
-      v => { state.faceSamModel = v; ctx.persist(); });
-    const cvSel = searchableSelect(cvList, state.faceIdentityClipVision || "none",
-      v => { state.faceIdentityClipVision = v; ctx.persist(); });
-    wrap.appendChild(panel([
-      label("H3 Face Refine — post-process pass on a finished clip (re-renders a small/distant face)"),
-      row([col([label("Face detector (required)"), fdSel.el]),
-           col([label("Fallback detector (optional — body/person model)"), ffSel.el])]),
-      row([col([label("SAM model (optional — face-shaped mask)"), samSel.el]),
-           col([label("Identity CLIP Vision (optional — identity_model=clip_vision)"), cvSel.el])]),
-      el("div", { html: "Runs H3's own unet/text-encoder/VAE from the panels above (Reference mode's UNET). "
-        + "Files: face detector → <code>models/ultralytics/bbox/</code> (e.g. face_yolov8m.pt from "
-        + "Bingsu/adetailer) · fallback → <code>models/ultralytics/segm/</code> · SAM → "
-        + "<code>models/sams/</code> · CLIP Vision → <code>models/clip_vision/</code>. Manual Select "
-        + "(Pick Faces) and Impact Pack are not required for the basic ranking-rule modes.",
-        style: { fontSize: "10px", color: C.muted, lineHeight: "1.6" } }),
-    ]));
-
+  // Third-party pack status panel — shared by all three model tabs so whichever one is
+  // open, missing-node warnings are still visible right there.
+  function packStatusPanel() {
     const missing = availability.missing_optional || [];
     const missCore = availability.missing_core || [];
     const availNote = el("div", { style: { fontSize: "10px", lineHeight: "1.6", color: (missing.length || missCore.length) ? C.warn : C.ok } });
@@ -214,7 +127,139 @@ export function createSettingsOverlay(state, ctx) {
         `Mac / Linux:  bash "${dir}/${availability.install_script_nix || "install_requirements.sh"}"`;
       kids.push(fix, cmd);
     }
+    return panel(kids);
+  }
+
+  // ── H3 Model — the base render's own unet/clip/vae only ──────────────────────
+  function h3ModelTab() {
+    const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } });
+    const diff = ["none", ...(modelData.diffusion_models || []).filter(x => x !== "none")];
+    const teAll = ["none", ...(modelData.text_encoders_all || modelData.text_encoders || []).filter(x => x !== "none")];
+    const vae  = ["none", ...(modelData.vaes             || []).filter(x => x !== "none")];
+
+    // the mode pills and the continuity list are gated on these, so re-render them
+    const uFL = searchableSelect(diff, state.unetFirstLast || "none", v => { state.unetFirstLast = v; ctx.persist(); ctx.refreshModes?.(); });
+    const uRF = searchableSelect(diff, state.unetReference || "none", v => { state.unetReference = v; ctx.persist(); ctx.refreshModes?.(); });
+    wrap.appendChild(panel([
+      label("Diffusion Models — the reference workflow keeps these separate on purpose"),
+      row([
+        col([label("UNET · First/Last (FL2VA)"), uFL.el]),
+        col([label("UNET · Reference (REF2VA)"), uRF.el]),
+      ]),
+      el("div", { html: "Text-only and First/Last modes use the FL2VA model; Reference mode uses the REF2VA one. → <code>models/diffusion_models/</code>", style: { fontSize: "10px", color: C.muted } }),
+    ]));
+
+    const cl = searchableSelect(teAll,  state.clipName || "none", v => { state.clipName = v; ctx.persist(); });
+    const vv = searchableSelect(vae, state.vaeVideo || "none", v => { state.vaeVideo = v; ctx.persist(); });
+    const va = searchableSelect(vae, state.vaeAudio || "none", v => { state.vaeAudio = v; ctx.persist(); });
+    wrap.appendChild(panel([
+      label("Text Encoder & VAEs"),
+      col([label("Text Encoder (CLIPLoader type=minimax — .gguf listed too, unverified for H3's own truncated Qwen3-VL)"), cl.el]),
+      row([col([label("Video VAE"), vv.el]), col([label("Audio VAE"), va.el])]),
+      el("div", { html: "→ <code>models/text_encoders/</code> · <code>models/vae/</code>", style: { fontSize: "10px", color: C.muted } }),
+    ]));
+
+    wrap.appendChild(el("div", { text: "Turbo LoRAs, attention, block cache, Spectrum and the model patches now live in "
+      + "the node's left panel — they are per-run choices, so they sit next to the run.",
+      style: { fontSize: "10px", color: C.muted, lineHeight: "1.55" } }));
+    wrap.appendChild(packStatusPanel());
+    return wrap;
+  }
+
+  // ── UpScale Model — plain Upscale model + LTX 2.5 Upscale's own model set ────
+  function upscaleModelTab() {
+    const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } });
+    const diff = ["none", ...(modelData.diffusion_models || []).filter(x => x !== "none")];
+    const vae  = ["none", ...(modelData.vaes             || []).filter(x => x !== "none")];
+    const ups  = ["none", ...(modelData.upscale_models   || []).filter(x => x !== "none")];
+
+    const um = searchableSelect(ups, state.upscaleModel || "none", v => { state.upscaleModel = v; ctx.persist(); });
+    wrap.appendChild(panel([
+      label("Upscale"),
+      col([label("Upscale Model (used when Upscale = Upscale Model)"), um.el]),
+    ]));
+
+    // ── LTX 2.5 Upscale mode — its own model set (generationMode "ltxupscale") ──
+    const lup  = ["none", ...(modelData.latent_upscale_models || []).filter(x => x !== "none")];
+    const lte  = ["none", ...(modelData.text_encoders_all || modelData.text_encoders || []).filter(x => x !== "none")];
+    const lxU  = searchableSelect(diff, state.ltxUnet           || "none", v => { state.ltxUnet = v === "none" ? "" : v;           ctx.persist(); ctx.refreshModes?.(); });
+    const lxLU = searchableSelect(lup,  state.ltxLatentUpscaler || "none", v => { state.ltxLatentUpscaler = v === "none" ? "" : v; ctx.persist(); ctx.refreshModes?.(); });
+    const lxC  = searchableSelect(lte,  state.ltxClip           || "none", v => { state.ltxClip = v === "none" ? "" : v;           ctx.persist(); ctx.refreshModes?.(); });
+    const lxVV = searchableSelect(vae,  state.ltxVaeVideo       || "none", v => { state.ltxVaeVideo = v === "none" ? "" : v;       ctx.persist(); ctx.refreshModes?.(); });
+    const lxVA = searchableSelect(vae,  state.ltxVaeAudio       || "none", v => { state.ltxVaeAudio = v === "none" ? "" : v;       ctx.persist(); ctx.refreshModes?.(); });
+    wrap.appendChild(panel([
+      label("LTX 2.5 Upscale — models for the LTX Upscale generation mode"),
+      row([col([label("LTX unet (.gguf or .safetensors)"), lxU.el]),
+           col([label("Latent spatial upscaler (x2)"), lxLU.el])]),
+      col([label("Text encoder (.gguf → LTX25 CLIP GGUF LOADER (TJ); else CLIPLoader type ltxv)"), lxC.el]),
+      row([col([label("LTX video VAE"), lxVV.el]), col([label("LTX audio VAE"), lxVA.el])]),
+      el("div", { text: "The preview TAE (taeltx2*) lives in the Preview tab, next to LTX Upscale's live-preview switch.",
+        style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+      el("div", { html: "Files: LTX unet → <code>models/diffusion_models/</code> · latent upscaler → <code>models/latent_upscale_models/</code> · "
+        + "text encoder → <code>models/text_encoders/</code> · VAEs → <code>models/vae/</code>. The gemma4 GGUF text encoder needs the "
+        + "<code>ComfyUI-TJ_NODE</code> pack (<code>TJ_LTX25ClipLoaderGGUF</code>); the int8 safetensors works with core <code>CLIPLoader</code>.",
+        style: { fontSize: "10px", color: C.muted, lineHeight: "1.6" } }),
+    ]));
+    // (the ✨ vision model + instruction for this mode live under the LLM Setting tab)
+    wrap.appendChild(packStatusPanel());
+    return wrap;
+  }
+
+  // ── FaceRefine Model — face detectors + optional separate unet/clip (§15) ───
+  function faceRefineModelTab() {
+    const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } });
+    const diff = ["none", ...(modelData.diffusion_models || []).filter(x => x !== "none")];
+    const teAll = ["none", ...(modelData.text_encoders_all || modelData.text_encoders || []).filter(x => x !== "none")];
+    const fdList = ["none", ...(modelData.face_detectors || []).filter(x => x !== "none")];
+    const ffList = ["none", ...(modelData.face_fallback_detectors || []).filter(x => x !== "none")];
+    const samList = ["none", ...(modelData.sam_models || []).filter(x => x !== "none")];
+    const cvList  = ["none", ...(modelData.clip_vision || []).filter(x => x !== "none")];
+
+    const useCustomChk = checkbox("Use a separate model for Face Refine (unchecked = share H3's Reference unet/clip above)",
+      state.frUseCustomModel, v => { state.frUseCustomModel = v; ctx.persist(); ctx.refreshModes?.(); renderBody(); });
+
+    const kids = [
+      label("H3 Face Refine — post-process pass on a finished clip (re-renders a small/distant face)"),
+      useCustomChk,
+    ];
+    if (state.frUseCustomModel) {
+      const fuSel = searchableSelect(diff, state.frUnet || "none",
+        v => { state.frUnet = v === "none" ? "" : v; ctx.persist(); ctx.refreshModes?.(); });
+      const fcSel = searchableSelect(teAll, state.frClip || "none",
+        v => { state.frClip = v === "none" ? "" : v; ctx.persist(); ctx.refreshModes?.(); });
+      kids.push(
+        row([col([label("Face Refine UNET (.gguf or .safetensors)"), fuSel.el]),
+             col([label("Face Refine text encoder (.gguf or .safetensors)"), fcSel.el])]),
+        el("div", { text: "Runs on its OWN model instead of H3's Reference unet/clip — e.g. a lighter/faster "
+          + "GGUF quant just for the refine pass. Video/audio VAE are always shared with H3 (above).",
+          style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+      );
+    } else {
+      kids.push(el("div", { text: "Runs H3's own unet/text-encoder/VAE from the H3 Model tab (Reference mode's UNET).",
+        style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
+    }
+
+    const fdSel = searchableSelect(fdList, state.faceDetector || "none",
+      v => { state.faceDetector = v === "none" ? "" : v; ctx.persist(); ctx.refreshModes?.(); });
+    const ffSel = searchableSelect(ffList, state.faceFallbackDetector || "none",
+      v => { state.faceFallbackDetector = v; ctx.persist(); });
+    const samSel = searchableSelect(samList, state.faceSamModel || "none",
+      v => { state.faceSamModel = v; ctx.persist(); });
+    const cvSel = searchableSelect(cvList, state.faceIdentityClipVision || "none",
+      v => { state.faceIdentityClipVision = v; ctx.persist(); });
+    kids.push(
+      row([col([label("Face detector (required)"), fdSel.el]),
+           col([label("Fallback detector (optional — body/person model)"), ffSel.el])]),
+      row([col([label("SAM model (optional — face-shaped mask)"), samSel.el]),
+           col([label("Identity CLIP Vision (optional — identity_model=clip_vision)"), cvSel.el])]),
+      el("div", { html: "Files: face detector → <code>models/ultralytics/bbox/</code> (e.g. face_yolov8m.pt from "
+        + "Bingsu/adetailer) · fallback → <code>models/ultralytics/segm/</code> · SAM → "
+        + "<code>models/sams/</code> · CLIP Vision → <code>models/clip_vision/</code>. Manual Select "
+        + "(Pick Faces) and Impact Pack are not required for the basic ranking-rule modes.",
+        style: { fontSize: "10px", color: C.muted, lineHeight: "1.6" } }),
+    );
     wrap.appendChild(panel(kids));
+    wrap.appendChild(packStatusPanel());
     return wrap;
   }
 
@@ -524,7 +569,10 @@ export function createSettingsOverlay(state, ctx) {
 
   function renderBody() {
     clear(bodyWrap);
-    const fn = { Models: modelsTab, "LLM Setting": samplingTab, Preview: previewTab, Output: outputTab }[activeTab];
+    const fn = {
+      "H3 Model": h3ModelTab, "UpScale Model": upscaleModelTab, "FaceRefine Model": faceRefineModelTab,
+      "LLM Setting": samplingTab, Preview: previewTab, Output: outputTab,
+    }[activeTab];
     bodyWrap.appendChild(fn());
   }
 
@@ -558,6 +606,9 @@ export function createSettingsOverlay(state, ctx) {
       face_fallback_detector:     state.faceFallbackDetector     || "none",
       face_sam_model:             state.faceSamModel             || "none",
       face_identity_clip_vision:  state.faceIdentityClipVision   || "none",
+      face_use_custom_model:      state.frUseCustomModel         ?? false,
+      face_unet:                  state.frUnet                   || "",
+      face_clip:                  state.frClip                   || "",
       turbo_lora:      state.turboLora     || "",
       turbo_lora_strength: state.turboLoraStrength ?? 1.0,
       upscale_model:   state.upscaleModel  || "",
@@ -674,6 +725,9 @@ export function createSettingsOverlay(state, ctx) {
     take("faceFallbackDetector",    cfg.face_fallback_detector);
     take("faceSamModel",            cfg.face_sam_model);
     take("faceIdentityClipVision",  cfg.face_identity_clip_vision);
+    if (cfg.face_use_custom_model != null) state.frUseCustomModel = cfg.face_use_custom_model;
+    take("frUnet", cfg.face_unet);
+    take("frClip", cfg.face_clip);
     // These always have a value already (defaultState()'s `?? 8`/`?? true`/etc. fallback),
     // so the `take()`/`== null` guard used above can never fire for them — same situation
     // avg_minutes_per_clip already had, handled the same way: unconditional overwrite here

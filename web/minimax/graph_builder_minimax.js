@@ -1092,15 +1092,25 @@ export function buildFaceRefineGraph(state, avail, opts = {}) {
   const canvasW = [FR.track, 4], canvasH = [FR.track, 5], frameCount = [FR.track, 6];
   const cropsLink = [FR.track, 0], transformLink = [FR.track, 1];
 
-  // ── loaders + model chain (H3's own — same ⚙ Settings as Reference mode) ─────
+  // ── loaders + model chain ─────────────────────────────────────────────────────
   // Face Refine always conditions like Reference mode (refs + prompt, no first/last
   // keyframes), so buildModelChain/buildConditioning are called with generationMode
   // coerced to "reference" for this call only — requireModels() picks unetReference.
-  const refState = { ...state, generationMode: "reference" };
+  // frUseCustomModel (§15) swaps in Face Refine's OWN unet/clip file (GGUF-aware) instead
+  // of reusing H3's Reference model — same turbo/attention/cache pipeline either way,
+  // only the loaded file changes.
+  const useCustomModel = !!state.frUseCustomModel;
+  const unetFile = useCustomModel ? state.frUnet : state.unetReference;
+  const clipFile = useCustomModel ? state.frClip : state.clipName;
+  if (useCustomModel && (!unetFile || unetFile === "none"))
+    throw new Error("Face Refine: set its own UNET in ⚙ Settings → FaceRefine Model (or turn off 'use a separate model').");
+  if (useCustomModel && (!clipFile || clipFile === "none"))
+    throw new Error("Face Refine: set its own text encoder in ⚙ Settings → FaceRefine Model (or turn off 'use a separate model').");
+  const refState = { ...state, generationMode: "reference", unetReference: unetFile };
   const modelLink0 = buildModelChain(g, refState, avail);
-  g[N.clip] = { class_type: "CLIPLoader", inputs: {
-    clip_name: state.clipName, type: "minimax", device: "default",
-  }};
+  g[N.clip] = String(clipFile || "").toLowerCase().endsWith(".gguf")
+    ? { class_type: "CLIPLoaderGGUF", inputs: { clip_name: clipFile, type: "minimax" } }
+    : { class_type: "CLIPLoader", inputs: { clip_name: clipFile, type: "minimax", device: "default" } };
   g[N.vaeV] = { class_type: "VAELoader", inputs: { vae_name: state.vaeVideo } };
   g[N.vaeA] = { class_type: "VAELoader", inputs: { vae_name: state.vaeAudio } };
   const modelLink1 = applyFusedModulation(g, refState, avail, modelLink0);

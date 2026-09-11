@@ -2119,6 +2119,11 @@ async def mmh3_get_config(request):
         "face_fallback_detector":   cfg.get("face_fallback_detector",   "none"),
         "face_sam_model":           cfg.get("face_sam_model",           "none"),
         "face_identity_clip_vision": cfg.get("face_identity_clip_vision", "none"),
+        # Face Refine's own separate model set (off by default — shares H3's Reference
+        # unet/clip). See SPEC_MINIMAX_H3_FACE_REFINE.md §15.
+        "face_use_custom_model":   cfg.get("face_use_custom_model", False),
+        "face_unet":               cfg.get("face_unet", ""),
+        "face_clip":               cfg.get("face_clip", ""),
         "stitch_at_end":         cfg.get("stitch_at_end",         True),
         "trim_last_clip":        cfg.get("trim_last_clip",        False),
         "unload_between_clips":  cfg.get("unload_between_clips",  True),

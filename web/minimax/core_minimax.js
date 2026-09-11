@@ -353,16 +353,26 @@ export function ltxUpscaleMissing(state) {
   return Object.keys(map).filter(k => !state[k] || state[k] === "none").map(k => map[k]);
 }
 
-// H3 Face Refine mode is also a standalone post-process pass, but it runs H3's OWN
-// unet/clip/vae (already required for every other mode) plus one extra model this mode
-// alone needs: a face detector (.pt, from models/ultralytics/bbox — see
-// SPEC_MINIMAX_H3_FACE_REFINE.md §2). Nothing else is a hard requirement — fallback
-// detector, SAM model and identity CLIP Vision are all optional.
+// H3 Face Refine mode defaults to H3's OWN unet/clip/vae (already required for every
+// other mode) — but it can also run its own SEPARATE model set (frUseCustomModel),
+// e.g. a lighter/faster GGUF quant just for the refine pass while the main render keeps
+// the full-quality one. Either way it needs a face detector (.pt, from
+// models/ultralytics/bbox — see SPEC_MINIMAX_H3_FACE_REFINE.md §2/§15). Fallback
+// detector, SAM model and identity CLIP Vision are always optional.
 export function faceRefineReady(state) {
-  return !!(state.faceDetector && state.faceDetector !== "none");
+  const hasDetector = !!(state.faceDetector && state.faceDetector !== "none");
+  if (!hasDetector) return false;
+  if (!state.frUseCustomModel) return true;
+  return !!(state.frUnet && state.frUnet !== "none" && state.frClip && state.frClip !== "none");
 }
 export function faceRefineMissing(state) {
-  return state.faceDetector && state.faceDetector !== "none" ? [] : ["face detector"];
+  const missing = [];
+  if (!state.faceDetector || state.faceDetector === "none") missing.push("face detector");
+  if (state.frUseCustomModel) {
+    if (!state.frUnet || state.frUnet === "none") missing.push("Face Refine unet");
+    if (!state.frClip || state.frClip === "none") missing.push("Face Refine text encoder");
+  }
+  return missing;
 }
 
 /** Turn the tensor errors these packs throw into something actionable. */
@@ -640,11 +650,13 @@ export function generationModesFor(state) {
         `Set the LTX 2.5 models in ⚙ Settings (missing: ${ltxUpscaleMissing(state).join(", ")})` };
     }
     if (m.key === "facerefine") {
-      // Uses MiniMaxH3ReferenceToVideo (same as Reference mode) plus its own face detector.
-      const ok = a.ref && faceRefineReady(state);
-      const missing = [...(a.ref ? [] : ["the Reference UNET"]), ...faceRefineMissing(state)];
+      // Uses MiniMaxH3ReferenceToVideo's conditioning shape either way; the Reference
+      // UNET is only required when NOT running Face Refine's own separate model set.
+      const needsMainRef = !state.frUseCustomModel;
+      const ok = (needsMainRef ? a.ref : true) && faceRefineReady(state);
+      const missing = [...(needsMainRef && !a.ref ? ["the Reference UNET"] : []), ...faceRefineMissing(state)];
       return { ...m, enabled: ok, reason: ok ? "" :
-        `Set these in ⚙ Settings — Models (missing: ${missing.join(", ")})` };
+        `Set these in ⚙ Settings — FaceRefine Model (missing: ${missing.join(", ")})` };
     }
     const ok = m.key === "reference" ? a.ref : a.fl;
     return { ...m, enabled: ok, reason: ok ? "" :
@@ -855,6 +867,12 @@ export function defaultState(saved) {
     faceFallbackDetector: saved.faceFallbackDetector || "none", // optional — models/ultralytics/segm/*.pt
     faceSamModel:        saved.faceSamModel        || "none",   // optional — Impact Pack SAMLoader
     faceIdentityClipVision: saved.faceIdentityClipVision || "none", // optional — identity_model=clip_vision
+    // Face Refine's OWN model set — off by default (shares H3's Reference unet/clip/vae,
+    // the original design). Turn on to run the refine pass on a different file (e.g. a
+    // lighter/faster GGUF quant just for this pass) — see SPEC_MINIMAX_H3_FACE_REFINE.md §15.
+    frUseCustomModel: saved.frUseCustomModel ?? false,
+    frUnet: saved.frUnet || "",   // .gguf → UnetLoaderGGUF; else UNETLoader
+    frClip: saved.frClip || "",   // .gguf → CLIPLoaderGGUF; else CLIPLoader (both type=minimax)
 
     accelMode:      saved.accelMode      || "solattn",   // legacy — kept only so old
                                                          // workflows can be migrated below
