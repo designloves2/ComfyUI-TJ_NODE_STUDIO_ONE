@@ -166,14 +166,22 @@ export function createGalleryOverlay(state, ctx) {
   // its own. Set only for the duration of one showPicker() call; a card click copies the
   // clip into input/ and hands it to the callback, same shape as the old dedicated picker.
   let pickCallback = null;    // (inputFilename, videoItem) => void, or null when not picking
+  let pickOpts = null;        // { mode: "video" | "frame" }
   async function pickClip(v) {
     if (!pickCallback) return;
+    // A hidden clip stays hidden even in pick mode — reveal it (👁 on the card) first,
+    // never silently hand its frame/video to whatever asked for it.
+    const key = mediaKey(v.filename, v.subfolder || "");
+    if (isBlurred(key)) { ctx.showPopup?.("Hidden — click 👁 on the card to reveal it first.", true); return; }
     const cb = pickCallback;
+    const frameMode = pickOpts?.mode === "frame";
     try {
-      const name = await copyOutputToInput(v.filename, v.subfolder || "", "output");
+      const name = frameMode
+        ? await getClipLastFrame(v.filename, v.subfolder || "")
+        : await copyOutputToInput(v.filename, v.subfolder || "", "output");
       cb(name, v);
     } catch (e) { ctx.showPopup?.(e.message || "Could not use that clip.", true); return; }
-    pickCallback = null;
+    pickCallback = null; pickOpts = null;
     hide();
   }
 
@@ -1393,7 +1401,7 @@ export function createGalleryOverlay(state, ctx) {
     closePlayer(); stopGridVideos(); ov.style.display = "none";
     clear(grid);
     if (!postRunning) setMode(null, false);
-    pickCallback = null;
+    pickCallback = null; pickOpts = null;
     deleteConfirmOv.style.display = "none"; pendingDelete = null;
   }
 
@@ -1404,7 +1412,7 @@ export function createGalleryOverlay(state, ctx) {
     // Open this same gallery in "pick a clip" mode — a card click copies it into input/
     // and hands (inputFilename, videoItem) to onPick, then closes. Used wherever a
     // feature needs a source clip instead of a separate, badge-less picker of its own.
-    showPicker(onPick) { pickCallback = onPick; ov.style.display = "flex"; refresh(); },
+    showPicker(onPick, opts) { pickCallback = onPick; pickOpts = opts || null; ov.style.display = "flex"; refresh(); },
     hide,
     isOpen: () => ov.style.display !== "none",
     isPlaying: () => player.style.display !== "none",

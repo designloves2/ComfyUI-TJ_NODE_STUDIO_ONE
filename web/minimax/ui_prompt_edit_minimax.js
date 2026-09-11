@@ -466,7 +466,7 @@ This cannot be undone.`,
     display: "none",
   }});
   fiGalleryBtn.addEventListener("click", () => {
-    openVideoGalleryPicker((inputFilename, clip) => {
+    (ctx.pickVideoFromGallery || openVideoGalleryPicker)((inputFilename, clip) => {
       if (!Array.isArray(state._resumeSnapshot)) {
         state._resumeSnapshot = (state.prompts || []).map(p => normPrompt(p).enabled !== false);
       }
