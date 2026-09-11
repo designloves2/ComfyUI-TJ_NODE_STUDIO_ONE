@@ -1351,32 +1351,34 @@ app.registerExtension({
             function renderSegWrap() {
               clear(segWrap);
               const mode = state.ltxSegmentMode === "count" ? "count" : "seconds";
-              const segHint = el("div", { style: { fontSize: "13px", fontWeight: "700", color: BRAND, whiteSpace: "pre-line", lineHeight: "1.5" } });
+              const segHint = el("div", { style: { fontSize: "13px", fontWeight: "700", color: BRAND, whiteSpace: "nowrap" } });
               const updateSegHint = () => {
                 const d = durNow();
                 if (mode === "count") {
                   const n = Math.max(1, Math.round(Number(state.ltxSegmentCount) || 1));
                   if (n <= 1) segHint.textContent = "1 = whole clip, one pass";
                   else if (!d) segHint.textContent = `${n} piece(s) — pick a source to see the length`;
-                  else segHint.textContent = `${n} piece(s) → ~${(d / n).toFixed(1)}s each\nTotal : ${d.toFixed(1)}s clip`;
+                  else segHint.textContent = `${n} piece(s) → ~${(d / n).toFixed(1)}s each      Total : ${d.toFixed(1)}s clip`;
                 } else {
                   const s = Math.max(0, Number(state.ltxSegmentSeconds) || 0);
                   if (!s) segHint.textContent = "0 = whole clip, one pass";
                   else if (!d) segHint.textContent = `${s}s per piece — pick a source to see the piece count`;
-                  else segHint.textContent = `${s}s per piece → ${Math.max(1, Math.round(d / s))} piece(s)\nTotal : ${d.toFixed(1)}s clip`;
+                  else segHint.textContent = `${s}s per piece → ${Math.max(1, Math.round(d / s))} piece(s)      Total : ${d.toFixed(1)}s clip`;
                 }
               };
               updateSegHint();
               const modeSel = select([{ value: "seconds", label: "By seconds" }, { value: "count", label: "By count" }], mode, v => { state.ltxSegmentMode = v; persist(); renderSegWrap(); });
               const valueField = mode === "count" ? numberField(state.ltxSegmentCount ?? 2, v => { state.ltxSegmentCount = Math.max(1, Math.round(v)); persist(); updateSegHint(); }, 1) : numberField(state.ltxSegmentSeconds ?? 5, v => { state.ltxSegmentSeconds = Math.max(0, Math.round(v)); persist(); updateSegHint(); }, 1);
-            const captionCol = el("div", { style: { flex: "1", minWidth: "0", display: "flex", flexDirection: "column", gap: "2px" } }, [
-              label(mode === "count" ? "Piece count (1 = whole clip)" : "Seconds per piece (0 = whole clip)"),
+            const captionLabel = label(mode === "count" ? "Piece count (1 = whole clip)" : "Seconds per piece (0 = whole clip)");
+            captionLabel.style.whiteSpace = "nowrap";
+            const captionCol = el("div", { style: { flex: "1", minWidth: "max-content", display: "flex", flexDirection: "column", gap: "2px" } }, [
+              captionLabel,
               segHint,
             ]);
             segWrap.append(el("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } }, [
               row([
                 col([el("div", { style: { display: "flex", alignItems: "center", gap: "4px" } }, [label("Split mode"), el("span", { text: "❔", title: "Splitting a long/large clip into fixed-length pieces upscales each on its own queue turn (VRAM freed between turns) then ffmpeg-concats — each piece is first-frame-anchored + low-denoise so the joins are seamless.", style: { cursor: "help", fontSize: "11px" } })]), modeSel]),
-                col([valueField]),
+                col([el("div", { style: { visibility: "hidden", display: "flex", alignItems: "center", gap: "4px" } }, [label("Split mode"), el("span", { text: "❔" })]), valueField]),
               ]),
               row([
                 col([el("div", {})]),
