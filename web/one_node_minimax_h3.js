@@ -1531,12 +1531,13 @@ app.registerExtension({
         }});
         const title = el("div", { text: "Pick Faces", style: { fontSize: "14px", fontWeight: "700", color: C.text } });
         const status = el("div", { text: "Scanning the clip for faces and cuts…", style: { fontSize: "12px", color: C.muted } });
+        const capWarn = el("div", { style: { fontSize: "11px", color: C.warn, display: "none" } });
         const cardsWrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "12px" } });
         const closeBtn = button("✕ Cancel", () => overlay.remove(), "default");
         const useBtn = button("✓ Use these", () => {}, "primary");
         useBtn.disabled = true; useBtn.style.opacity = "0.5";
         const footer = el("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end" } }, [closeBtn, useBtn]);
-        modal.append(title, status, cardsWrap, footer);
+        modal.append(title, status, capWarn, cardsWrap, footer);
         overlay.appendChild(modal);
         overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
         document.body.appendChild(overlay);
@@ -1545,18 +1546,38 @@ app.registerExtension({
         const picks = [];      // per-shot single chosen face index (multi-shot path); -1 = "not in this shot"; null = unanswered
         const order = [];      // single-shot path: ORDERED list of face indices to chain through — §12
 
+        // FaceRefine's /h3_facerefine/scan decodes the WHOLE clip into memory up front
+        // (same class of issue ui_gallery_minimax.js's chunked post-process already works
+        // around) — CPU+RAM, not GPU/VRAM, so a long/large clip can exhaust system RAM and
+        // hang the whole ComfyUI process rather than erroring cleanly (hit this for real,
+        // 2026-09-12 — see SPEC §13). Cap frame_load_cap with the same byte-budget formula
+        // (1.25 GB / (w*h*16), clamped 8..240) so a long clip only scans its opening window
+        // instead of loading everything.
+        let scanFrameCap = 0;
+        try {
+          const info = await getVideoInfo(state.frSource, "", "input");
+          const totalFrames = info.frames || 0;
+          const perFrameBytes = Math.max(1, (info.width || 0) * (info.height || 0) * 16);
+          const budgetFrames = Math.max(8, Math.min(240, Math.floor((1.25 * 1024 ** 3) / perFrameBytes)));
+          if (totalFrames > budgetFrames) scanFrameCap = budgetFrames;
+        } catch { /* video_info unavailable — scan uncapped, same as before */ }
+
         try {
           const body = {
             video: state.frSource, detector: state.faceDetector, confidence: state.frConfidence ?? 0.35,
             cut_detection: state.frCutDetection ? "auto (pyscenedetect)" : "none",
             cut_threshold: state.frCutThreshold ?? 3.0,
-            skip_first_frames: 0, frame_load_cap: 0, select_every_nth: 1,
+            skip_first_frames: 0, frame_load_cap: scanFrameCap, select_every_nth: 1,
           };
           const r = await fetch("/h3_facerefine/scan", {
             method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
           });
           const d = await r.json();
           if (d.error) throw new Error(d.error + (d.busy ? " (retry once the queue is clear)" : ""));
+          if (scanFrameCap) {
+            capWarn.textContent = `⚠ Large clip — scan capped to the first ${scanFrameCap} frames to avoid exhausting RAM. Cuts after that point won't show up here.`;
+            capWarn.style.display = "";
+          }
           shots = d.shots || [];
           if (!shots.length) throw new Error("No shots found.");
 
