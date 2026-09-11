@@ -1621,7 +1621,19 @@ app.registerExtension({
           display: "flex", flexDirection: "column", gap: "12px", boxSizing: "border-box",
         }});
         const title = el("div", { text: "Pick Faces", style: { fontSize: "14px", fontWeight: "700", color: C.text } });
-        const status = el("div", { text: "Scanning the clip for faces and cuts…", style: { fontSize: "12px", color: C.muted } });
+        // The scan is one blocking request with nothing to show yet (no cards, no boxes) -
+        // make that wait obvious with the same big-centered-purple treatment as the main
+        // render's own "preparing" banner, then drop back to small/muted once real content
+        // (shot cards, or an error) has something to show.
+        const status = el("div", { text: "🔍 Scanning the clip for faces and cuts…", style: {
+          fontSize: "18px", fontWeight: "700", color: "#b57bff", textAlign: "center",
+          padding: "24px 16px", textShadow: "0 0 12px rgba(181,123,255,0.5)",
+        }});
+        const scanningStyle = () => {
+          status.style.fontSize = "12px"; status.style.fontWeight = "400";
+          status.style.color = C.muted; status.style.textAlign = "left";
+          status.style.padding = "0"; status.style.textShadow = "none";
+        };
         const capWarn = el("div", { style: { fontSize: "11px", color: C.warn, display: "none" } });
         const cardsWrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "12px" } });
         const closeBtn = button("✕ Cancel", () => overlay.remove(), "default");
@@ -1673,6 +1685,7 @@ app.registerExtension({
           });
           const d = await r.json();
           if (d.error) throw new Error(d.error + (d.busy ? " (retry once the queue is clear)" : ""));
+          scanningStyle();
           if (scanFrameCap) {
             capWarn.textContent = `⚠ Large clip — scan capped to the first ${scanFrameCap} frames to avoid exhausting RAM. Cuts after that point won't show up here.`;
             capWarn.style.display = "";
@@ -1828,6 +1841,7 @@ app.registerExtension({
             useBtn.style.opacity = useBtn.disabled ? "0.5" : "1";
           }
         } catch (e) {
+          scanningStyle();
           status.textContent = `Error: ${e.message}`;
           status.style.color = C.warn;
         }
