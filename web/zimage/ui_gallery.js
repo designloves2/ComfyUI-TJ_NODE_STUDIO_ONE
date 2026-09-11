@@ -3,7 +3,7 @@ import { C, el, clear } from "./core.js";
 import { button, row } from "./ui_common.js";
 import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, copyOutputToInput } from "./api.js";
 import { SUBFOLDER } from "./core.js";
-import { attachSensitiveToggle, mediaKey } from "../shared/ui_sensitive_media.js";
+import { attachSensitiveToggle, mediaKey, isBlurred, isSensitive, setSensitive } from "../shared/ui_sensitive_media.js";
 
 const SEND_TARGETS = [
   { mode:"i2i",        field:"i2iImage",       label:"→ I2I" },
@@ -80,7 +80,37 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
     prevBtn.onclick=(e)=>{ e.stopPropagation(); nav(-1); };
     nextBtn.onclick=(e)=>{ e.stopPropagation(); nav(+1); };
 
-    const big=el("img",{src:url,style:{maxWidth:"90vw",maxHeight:"68vh",borderRadius:"8px",objectFit:"contain"}});
+    const sensKey = mediaKey(img.filename, img.subfolder || "");
+    const bigBox = el("div", { style: {
+      position: "relative", maxWidth: "90vw", maxHeight: "68vh",
+      display: "flex", alignItems: "center", justifyContent: "center",
+    }});
+    function renderBig() {
+      clear(bigBox);
+      if (isBlurred(sensKey)) {
+        const shade = el("div", { text: "🔒 Hidden — click to reveal", style: {
+          width: "360px", height: "360px", maxWidth: "80vw", maxHeight: "60vh", borderRadius: "8px",
+          background: "rgba(20,20,24,0.92)", display: "flex", alignItems: "center", justifyContent: "center",
+          color: "#cfcfcf", fontSize: "13px", fontFamily: "inherit", cursor: "pointer", textAlign: "center", padding: "20px",
+        }});
+        shade.addEventListener("click", () => { setSensitive(sensKey, false); renderBig(); });
+        bigBox.appendChild(shade);
+      } else {
+        bigBox.appendChild(el("img", { src: url, style: { maxWidth: "90vw", maxHeight: "68vh", borderRadius: "8px", objectFit: "contain" } }));
+      }
+    }
+    renderBig();
+    const eyeBtn = el("button", { type: "button", text: isSensitive(sensKey) ? "⊘" : "\u{1F441}︎", title: "Hide / reveal this image", style: {
+      position: "absolute", top: "-2px", right: "-2px", zIndex: "3", width: "32px", height: "32px",
+      borderRadius: "8px", background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", fontSize: "15px", cursor: "pointer",
+    }});
+    eyeBtn.addEventListener("click", e => {
+      e.stopPropagation();
+      setSensitive(sensKey, !isSensitive(sensKey));
+      eyeBtn.textContent = isSensitive(sensKey) ? "⊘" : "\u{1F441}︎";
+      renderBig();
+    });
+    bigBox.appendChild(eyeBtn);
 
     // Counter
     const counter=el("div",{text:`${imgIdx+1} / ${loadedImages.length}`,style:{color:C.muted,fontSize:"11px"}});
@@ -119,7 +149,7 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
 
     ov2.appendChild(prevBtn);
     ov2.appendChild(nextBtn);
-    ov2.appendChild(big);
+    ov2.appendChild(bigBox);
     ov2.appendChild(counter);
     ov2.appendChild(row([closeB,reuseB,folderB,deleteB],"8px"));
     ov2.appendChild(sendRow);
