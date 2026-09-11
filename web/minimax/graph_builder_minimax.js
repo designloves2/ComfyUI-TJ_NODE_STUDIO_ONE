@@ -1114,7 +1114,11 @@ export function buildFaceRefineGraph(state, avail, opts = {}) {
   g[N.vaeV] = { class_type: "VAELoader", inputs: { vae_name: state.vaeVideo } };
   g[N.vaeA] = { class_type: "VAELoader", inputs: { vae_name: state.vaeAudio } };
   const modelLink1 = applyFusedModulation(g, refState, avail, modelLink0);
-  const modelLink = applySla(g, refState, avail, modelLink1);
+  // Live sampling preview — same ModelPreviewOverrideKJ + previewNodeKey(nodeId) wiring
+  // buildClipGraph uses, so Face Refine streams into the same preview box every other
+  // mode already shows.
+  const modelLink2 = applyPreview(g, refState, avail, modelLink1, nodeId);
+  const modelLink = applySla(g, refState, avail, modelLink2);
 
   // ── conditioning — width/height/length come from the TRACKER's outputs (links, not
   // literals): canvas_mode "auto_*" only knows the real size once the crop is built, so
