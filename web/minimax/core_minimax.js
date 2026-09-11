@@ -837,7 +837,15 @@ export function defaultState(saved) {
     frCutDetection: saved.frCutDetection ?? false, // maps to "auto (pyscenedetect)" | "none"
     frCutThreshold: saved.frCutThreshold ?? 3.0,
     frIdentityTrack: saved.frIdentityTrack ?? true,
-    frIdentityThreshold: saved.frIdentityThreshold ?? 0.28,
+    // 0.28 (the pack's own stock default) is too low to ever reject a false match -
+    // a real render logged same-person InsightFace scores around 0.57 while the
+    // threshold sat at 0.28, so identity verification never intervened even once.
+    // That let continuity tracking silently drift onto a different person when two
+    // faces crossed paths mid-clip (reported: picked the right-side face, the
+    // refined output showed the left face, then drifted to the center face by the
+    // end) - see SPEC_MINIMAX_H3_FACE_REFINE.md sec 19. 0.45 sits below observed
+    // same-person scores but above chance cross-person similarity.
+    frIdentityThreshold: saved.frIdentityThreshold ?? 0.45,
     frIdentityModel: saved.frIdentityModel || "insightface", // insightface | clip_vision | ccip
     // H3FaceTrackCrop crop/canvas params
     frCropFactor:   saved.frCropFactor   ?? 2.5,

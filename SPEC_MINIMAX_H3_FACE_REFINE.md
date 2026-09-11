@@ -646,3 +646,62 @@ PDD-8step 프리셋을 그냥 쓰게 해달라. 터보를 켜고 끌 수 있게 
 - **메인 렌더는 절대 안 건드림**: `refState`는 `{...state, ...}`로 만든 얕은 복사본이라
   `applyPreset`이 그 위에 값을 써도 실제 `state`(다른 모드가 보는 것과 동일 객체)는 그대로.
   Face Refine에서 터보를 켰다 껐다 해도 T2VA/FL2VA/REF2VA 쪽 터보 설정엔 아무 영향 없음.
+
+---
+
+## 19. "픽한 얼굴과 다른 얼굴이 리파인됨" 버그 — 진짜 원인은 identity_threshold (2026-09-12)
+
+**사용자 리포트**: "미리보기 보고 있는데 내가 픽한거랑 다른걸 리파인하는데." 이어서 구체적으로:
+"오른쪽을 골랐는데 왼쪽이 보이다가 센터에서 끝나는데." — 즉 고정된 채 처음부터 다른 사람이
+나온 게 아니라, **클립 도중에 드리프트**했다 (오른쪽 → 왼쪽 → 센터).
+
+**처음 세운 가설(§13/§14 연장선), 로그로 반증됨**: Pick Faces 스캔에만 걸린
+`frame_load_cap`(§13 메모리 안전장치, 스캔 전용, 렌더는 항상 `frame_load_cap: 0`) 때문에
+스캔이 본 shot 경계/락 프레임이 실제 렌더와 달라서 얼굴 번호가 어긋난 게 아닌가 — 하고
+`C:\AI\user\comfyui_8188.log`를 직접 열어 실제 제출된 잡의 리포트 라인을 확인:
+
+```
+[H3FaceSelect] subject: select=manual  [reviewed - face [1] across 1 of 1 shot(s)]
+[H3FaceSelect]   shot 1   frames 0-242 (243): face 1, locked at frame 0
+...
+[H3FaceRefine] subject: from face_pick, one per shot, locked on per shot at 0 of 243
+```
+
+스캔과 렌더가 완전히 일치 — 둘 다 shot 1개, 둘 다 face 1을 frame 0에서 락. **frame_load_cap
+가설은 이 버그의 원인이 아니었다** (반증됨 — §13 자체는 여전히 유효한 메모리 안전장치이고
+계속 유지).
+
+**진짜 원인은 바로 다음 줄에 로그가 스스로 알려주고 있었다**:
+
+```
+[H3FaceRefine] identity: insightface  threshold=0.280  scores min=0.570 mean=0.570 max=0.570
+[H3FaceRefine] frames=243  face=238 (98%)  body-fallback=0  interpolated=5
+[H3FaceRefine] !! every identity score cleared identity_threshold=0.280, so it rejected nothing.
+   Lowest seen was 0.570. Raise it, or set identity_threshold to 0 for insightface's own default.
+```
+
+`H3FaceTrackCrop`은 프레임 간 얼굴을 기본적으로 **continuity(직전 프레임과 가장 가까운 박스)**
+로 따라가고, continuity가 애매할 때만 identity(InsightFace 임베딩 유사도)로 보정한다.
+그런데 우리 기본값 `frIdentityThreshold`가 **0.28**이었던 반면 실제 렌더에서 같은 사람의
+유사도 점수는 **0.57 근처**로 측정됨 — threshold가 관측되는 점수보다 한참 낮으니 identity가
+단 한 번도 거부를 발동하지 못했다(로그가 명시: "rejected nothing"). 즉 두 얼굴이 화면에서
+가까워지거나 스쳐 지나가는 순간 continuity가 조용히 다른 사람 박스로 넘어가도, 그걸 막아줄
+identity 안전장치가 사실상 꺼져 있었던 것 — 이게 "오른쪽 픽 → 왼쪽으로 보이다 센터에서 끝남"
+드리프트의 실제 메커니즘이다. `1 ambiguous (1 resolved by identity)` 로 로그에 잡힌 건 단
+1프레임뿐이었고, threshold가 너무 낮아 저지되지 않은 조용한 드리프트는애초에 "ambiguous"로도
+잡히지 않는다.
+
+**수정**: `frIdentityThreshold` 기본값을 0.28 → **0.45**로 올림 (`core_minimax.js`). InsightFace
+buffalo_l 코사인 유사도 기준 0.45는 이번에 관측된 동일인 점수(0.57)보다는 낮고, 무관한 두
+사람 사이의 우연한 유사도보다는 높게 잡은 값 — 이제 continuity가 다른 사람으로 넘어가려 하면
+identity가 실제로 거부하고 continuity 쪽 박스 선택을 막을 수 있다.
+
+**주의(웹 세션에도 동일 적용 필요)**: 브라우저 localStorage에 이미 저장된 `frIdentityThreshold:
+0.28`이 있으면 §15에서 설명한 `take()`의 "살아있는 값은 절대 덮지 않음" 규칙 때문에 새 기본값
+0.45가 적용되지 않는다 — 기존에 Face Refine을 한 번이라도 써본 브라우저는 Settings에서 값을
+직접 다시 설정하거나 localStorage를 비워야 새 기본값을 받는다. (UI에 identity_threshold를
+직접 조절하는 슬라이더는 아직 없음 — 필요하면 추가 검토.)
+
+**아직 남은 확인 사항**: 실제로 사용자가 새 기본값(0.45)으로 같은 클립을 다시 렌더링해
+드리프트가 사라지는지 확인 필요 — 로그 기반으로 원인은 확정했지만 수정 후 재현 테스트는
+아직 하지 않음.
