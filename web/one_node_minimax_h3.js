@@ -32,7 +32,7 @@ import { downloadAgentJob, agentStamp } from "./shared/agent_job.js";
 import { panel, label, button, select, loraSelect, numberField, slider, row, col, modeBar, iconBtn, openVideoFullscreen }
   from "./klein/ui_common.js";
 import {
-  queuePrompt, waitForHistory, interrupt, freeMemory, setLastResult, stitchClips, getVideoInfo,
+  queuePrompt, waitForHistory, historyEntry, interrupt, freeMemory, setLastResult, stitchClips, getVideoInfo,
   copyOutputToInput, getNodeAvailability, getModels, saveMeta, pickChainFrame, getLoraTriggers, deleteImage,
   getMediaFiles, uploadMedia, getVramStats, listVideos,
   saveConfig, analyzeImagesNative, analyzeImagesOpenRouter, writeBriefNative, writeBriefOpenRouter, getMediaInfo,
@@ -2634,69 +2634,102 @@ app.registerExtension({
         };
       }
 
-      // ── LTX 2.5 Upscale run — one queue, no relay ───────────────────────────
-      async function runLtxUpscale() {
+      // ── LTX 2.5 Upscale run — segmented, survives a page reload ─────────────
+      // Each segment is queued as its own /prompt; state._ltxRelay persists the plan +
+      // finished parts + the in-flight prompt_id after every step. A tab switch that
+      // reloads the page kills this JS loop but not ComfyUI's queue — checkResumeLtx()
+      // below rebuilds the loop from _ltxRelay, reconnects to the running segment, and
+      // finishes the concat.
+      async function resolveInFlightSegment(pid, prog) {
+        if (!pid) return null;
+        try {
+          const e = await historyEntry(pid);
+          if (e && e.status && e.status.completed && e.status.status_str !== "error") {
+            return { byNode: e.outputs || {} };
+          }
+        } catch {}
+        try {
+          const q = await (await api.fetchApi("/queue")).json();
+          const live = [...(q.queue_running || []), ...(q.queue_pending || [])].some(it => it[1] === pid);
+          if (live) return await waitForHistory(pid, { onProgress: prog, samplerNode: "LX:sampler" });
+        } catch {}
+        return null;   // gone — the caller re-queues this segment fresh
+      }
+
+      async function runLtxUpscale(resume = null) {
         if (running) return;
-        if (state.seedMode === "randomize")      { state.seed = randomSeed(); seedInput.value = state.seed; }
-        else if (state.seedMode === "increment") { state.seed = (state.seed || 0) + 1; seedInput.value = state.seed; }
-        else if (state.seedMode === "decrement") { state.seed = Math.max(0, (state.seed || 0) - 1); seedInput.value = state.seed; }
-        persist();
-        const rs = JSON.parse(JSON.stringify(state));
-        if (!ltxUpscaleReady(rs)) { showPopup("Set the LTX 2.5 models in ⚙ Settings first — missing: " + ltxUpscaleMissing(rs).join(", "), true); return; }
-        if (!rs.ltxSource)        { showPopup("Pick a source clip (gallery) or upload a video.", true); return; }
+
+        let rs, passes, parts, segSec, sourceFile, folder;
+        if (resume) {
+          const R = state._ltxRelay;
+          if (!R || !Array.isArray(R.passes) || !Array.isArray(R.parts) || !R.rs) {
+            delete state._ltxRelay; persist(); return;
+          }
+          rs = R.rs; passes = R.passes; parts = R.parts.slice(); segSec = R.segSec || 0;
+        } else {
+          if (state.seedMode === "randomize")      { state.seed = randomSeed(); seedInput.value = state.seed; }
+          else if (state.seedMode === "increment") { state.seed = (state.seed || 0) + 1; seedInput.value = state.seed; }
+          else if (state.seedMode === "decrement") { state.seed = Math.max(0, (state.seed || 0) - 1); seedInput.value = state.seed; }
+          persist();
+          rs = JSON.parse(JSON.stringify(state));
+          if (!ltxUpscaleReady(rs)) { showPopup("Set the LTX 2.5 models in ⚙ Settings first — missing: " + ltxUpscaleMissing(rs).join(", "), true); return; }
+          if (!rs.ltxSource)        { showPopup("Pick a source clip (gallery) or upload a video.", true); return; }
+          // Every segment shares one seed so the low-denoise refine stays coherent across
+          // the joins (the reroll above already stamped rs.seed).
+          rs.seedMode = "fixed";
+        }
+        sourceFile = rs.ltxSource;
+        folder = (rs.saveSubfolder || SUBFOLDER).replace(/\\/g, "/");
 
         running = true; stopRequested = false;
         startWakeAudio(); startQueueWatch();
         genBtn.disabled = true; genBtn.textContent = "⏳ LTX Upscale…";
         nextGenBtn.style.display = "none";
-        resetPreview(); barInner.style.width = "0%"; startClock();
+        if (!resume) { resetPreview(); barInner.style.width = "0%"; }
+        startClock();
         let mem = null;
         try {
           if (!ctx.availability || !Object.keys(ctx.availability).length) {
             const av = await getNodeAvailability();
             ctx.availability = av.available || {}; ctx.availabilityInfo = av;
           }
-          // Both the gallery picker and the upload button leave the file sitting in
-          // ComfyUI's input/, which is the only place VHS_LoadVideo reads from.
-          const sourceFile = rs.ltxSource;
-          const folder = (rs.saveSubfolder || SUBFOLDER).replace(/\\/g, "/");
-          // Every segment shares one seed so the low-denoise refine stays coherent across
-          // the joins (the reroll at the top already stamped rs.seed).
-          rs.seedMode = "fixed";
 
-          // ── plan the passes ──────────────────────────────────────────────────
-          // segSec > 0 → split the source into fixed windows, upscale each on its own
-          // queue turn (ComfyUI frees VRAM between turns), then ffmpeg-concat the parts.
-          // Each window is anchored to its own first frame + refined at low denoise, so a
-          // plain concat has no visible seam.
-          const segSec = Math.max(0, Number(rs.ltxSegmentSeconds) || 0);
-          let passes = [{ window: null, suffix: "" }];
-          if (segSec > 0) {
-            let srcInfo = null;
-            try { srcInfo = await getVideoInfo(sourceFile, "", "input"); } catch {}
-            const sFps = (srcInfo && srcInfo.fps) || rs.ltxSourceMeta?.fps || FPS;
-            const total = (srcInfo && srcInfo.frames)
-              || Math.round(((rs.ltxSourceMeta?.duration) || 0) * sFps) || 0;
-            let seg = Math.max(8, Math.round((segSec * sFps) / 8) * 8);   // LTX temporal align
-            if (total > seg) {
-              passes = [];
-              for (let skip = 0, k = 0; skip < total; skip += seg, k++) {
-                let cap = Math.min(seg, total - skip);
-                // fold a sub-window tail into this window rather than run a stub
-                if (total - (skip + cap) > 0 && total - (skip + cap) < 8) cap = total - skip;
-                passes.push({ window: { skip, cap }, suffix: `_seg${String(k).padStart(2, "0")}` });
-                if (skip + cap >= total) break;
+          // ── plan the passes (fresh run only) ────────────────────────────────
+          if (!resume) {
+            const s = Math.max(0, Number(rs.ltxSegmentSeconds) || 0);
+            segSec = s;
+            passes = [{ window: null, suffix: "" }];
+            if (s > 0) {
+              let srcInfo = null;
+              try { srcInfo = await getVideoInfo(sourceFile, "", "input"); } catch {}
+              const sFps = (srcInfo && srcInfo.fps) || rs.ltxSourceMeta?.fps || FPS;
+              const total = (srcInfo && srcInfo.frames)
+                || Math.round(((rs.ltxSourceMeta?.duration) || 0) * sFps) || 0;
+              let seg = Math.max(8, Math.round((s * sFps) / 8) * 8);   // LTX temporal align
+              if (total > seg) {
+                passes = [];
+                for (let skip = 0, k = 0; skip < total; skip += seg, k++) {
+                  let cap = Math.min(seg, total - skip);
+                  if (total - (skip + cap) > 0 && total - (skip + cap) < 8) cap = total - skip;
+                  passes.push({ window: { skip, cap }, suffix: `_seg${String(k).padStart(2, "0")}` });
+                  if (skip + cap >= total) break;
+                }
               }
             }
+            parts = [];
+            state._ltxRelay = { rs, passes, parts, segSec, curPromptId: null }; persist();
           }
 
           mem = watchMemory();
-          const parts = [];
           let meta = null;
+          let inFlightId = resume ? (state._ltxRelay?.curPromptId || null) : null;
           try {
-            for (let i = 0; i < passes.length; i++) {
+            for (let i = parts.length; i < passes.length; i++) {
               if (stopRequested) throw new Error("Stopped.");
               const p = passes[i];
+              const prog = (v, m) => setStepProgress(
+                passes.length > 1 ? (i + (v || 0)) / passes.length : v,
+                passes.length > 1 ? `seg ${i + 1}/${passes.length}${m ? " — " + m : ""}` : m);
               setStatus(passes.length > 1
                 ? `LTX Upscale · segment ${i + 1}/${passes.length}${p.window ? ` (frames ${p.window.skip}–${p.window.skip + p.window.cap})` : ""}`
                 : "LTX Upscale · queued (≈6 min sampling on 16GB)");
@@ -2704,15 +2737,25 @@ app.registerExtension({
                 nodeId: self.id, sourceFile, window: p.window, saveSuffix: p.suffix,
               });
               meta = built.meta;
-              const r = await queuePrompt(built.graph, {
-                onProgress: (v, m) => setStepProgress(
-                  passes.length > 1 ? (i + (v || 0)) / passes.length : v,
-                  passes.length > 1 ? `seg ${i + 1}/${passes.length}${m ? " — " + m : ""}` : m),
-                samplerNode: "LX:sampler",
-              });
+
+              let r = null;
+              if (inFlightId) {
+                setStatus(`Reconnecting to segment ${i + 1}/${passes.length} after reload…`);
+                r = await resolveInFlightSegment(inFlightId, prog);
+                inFlightId = null;
+              }
+              if (!r) {
+                r = await queuePrompt(built.graph, {
+                  onProgress: prog, samplerNode: "LX:sampler",
+                  onQueued: (pid) => {
+                    if (state._ltxRelay) { state._ltxRelay.curPromptId = pid; persist(); }
+                  },
+                });
+              }
               const out = firstOutput(r.byNode, "LX:save");
               if (!out) throw new Error(`LTX Upscale segment ${i + 1} produced no output.`);
               parts.push(out);
+              if (state._ltxRelay) { state._ltxRelay.parts = parts; state._ltxRelay.curPromptId = null; persist(); }
               try { await freeMemory(); } catch {}
             }
           } finally { mem.stop(); }
@@ -2734,6 +2777,7 @@ app.registerExtension({
             }
           }
           if (!vid) throw new Error("LTX Upscale finished but produced no video output.");
+          delete state._ltxRelay; persist();
           meta = meta || {};
           const memPeak = mem ? mem.peak() : null;
           const clipMeta = {
@@ -2766,6 +2810,10 @@ app.registerExtension({
           barInner.style.width = "100%";
           try { galleryOv?.refresh?.(); } catch {}
         } catch (e) {
+          // A real failure (or an explicit Stop) — drop the relay so a later load doesn't
+          // try to resume a dead run. A page reload never reaches here (JS is killed), so
+          // _ltxRelay survives that and checkResumeLtx picks it up.
+          delete state._ltxRelay; persist();
           const why = explainGenerationError(e.message);
           setStatus(why ? `Error: ${why}` : `Error: ${e.message}`);
           showPopup(why || e.message, true);
@@ -3536,6 +3584,21 @@ app.registerExtension({
           prevCheckpointName: saved.prevCheckpointName, clipRecords: saved.clipRecords,
           runState: saved.runState, inFlightPromptId,
         });
+      })();
+
+      // Same idea for a segmented LTX Upscale run: state._ltxRelay carries the plan +
+      // finished parts + the in-flight segment's prompt_id. A tab-switch reload that
+      // kills the JS loop leaves ComfyUI still churning through the queued segments —
+      // rebuild the loop and let it finish + concat.
+      (async function checkResumeLtxRunning() {
+        const R = state._ltxRelay;
+        if (!R || !Array.isArray(R.passes) || !Array.isArray(R.parts) || !R.rs
+            || !(R.parts.length < R.passes.length)) {
+          if (R) { delete state._ltxRelay; persist(); }
+          return;
+        }
+        setStatus(`Resuming LTX Upscale segment ${R.parts.length + 1}/${R.passes.length} after reload…`);
+        runLtxUpscale({ resumed: true });
       })();
     };
   },
