@@ -3259,7 +3259,10 @@ app.registerExtension({
           const queued = (!stopRequested && nextQueue.length) ? nextQueue.shift() : null;
           if (stopRequested) nextQueue = [];
           if (!queued && lastResultURL) showResultVideo(lastResultURL, { final: true });
-          if (!queued) { stopWakeAudio(); stopQueueWatch(); }   // truly idle now — anything queued keeps these going across the handoff
+          // Truly idle now (nothing queued to hand off to) — Next Gen only makes sense
+          // while a run is live to append behind, so hide it instead of leaving it sitting
+          // there forever after the first Generate of the session.
+          if (!queued) { stopWakeAudio(); stopQueueWatch(); nextGenBtn.style.display = "none"; }
           running = false; stopRequested = false;
           genBtn.disabled = false; genBtn.textContent = "▶ Generate";
           renderNextQueue();
