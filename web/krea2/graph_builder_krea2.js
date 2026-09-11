@@ -2,9 +2,22 @@
 import { SUBFOLDER, safeDepthCkpt } from "./core_krea2.js";
 
 function unetNode(name) {
+  // Krea 2 GGUF: city96 UnetLoaderGGUF gates on general.architecture and doesn't
+  // know "krea2" — TJ_NODE_Krea2UnetLoaderGGUF wraps it and patches the allowlist
+  // at load time (pure additive gate fix, same MODEL output). Falls back to the
+  // plain city96 loader if the TJ node isn't installed (older TJ_NODE pack).
   if ((name || "").toLowerCase().endsWith(".gguf"))
-    return { class_type: "UnetLoaderGGUF", inputs: { unet_name: name } };
+    return { class_type: "TJ_NODE_Krea2UnetLoaderGGUF", inputs: { unet_name: name } };
   return { class_type: "UNETLoader", inputs: { unet_name: name, weight_dtype: "default" } };
+}
+
+function clipNode(clipName) {
+  // Same story on the text-encoder side: TJ_NODE_Krea2ClipLoaderGGUF reads the
+  // file's actual general.architecture and adds it to TXT_ARCH_LIST if missing,
+  // then delegates to city96 CLIPLoaderGGUF with type="krea2" (CLIPType.KREA2).
+  if ((clipName || "").toLowerCase().endsWith(".gguf"))
+    return { class_type: "TJ_NODE_Krea2ClipLoaderGGUF", inputs: { clip_name: clipName } };
+  return { class_type: "CLIPLoader", inputs: { clip_name: clipName, type: "krea2", device: "default" } };
 }
 
 function withLoraChain(modelLink, loras) {
@@ -52,11 +65,7 @@ function baseGraph(state, promptText) {
   g["K2:unet"] = unetNode(modelName);
 
   // Krea2 CLIP: Qwen3-VL type
-  if ((clipName || "").toLowerCase().endsWith(".gguf")) {
-    g["K2:clip"] = { class_type: "CLIPLoaderGGUF", inputs: { clip_name: clipName, type: "krea2" } };
-  } else {
-    g["K2:clip"] = { class_type: "CLIPLoader", inputs: { clip_name: clipName, type: "krea2", device: "default" } };
-  }
+  g["K2:clip"] = clipNode(clipName);
 
   g["K2:vae"] = { class_type: "VAELoader", inputs: { vae_name: vaeName } };
 
@@ -302,10 +311,7 @@ export function buildIdentityGraph(state) {
   const g = {};
   g["K2:unet"] = unetNode(modelName);
 
-  if ((clipName || "").toLowerCase().endsWith(".gguf"))
-    g["K2:clip"] = { class_type: "CLIPLoaderGGUF", inputs: { clip_name: clipName, type: "krea2" } };
-  else
-    g["K2:clip"] = { class_type: "CLIPLoader", inputs: { clip_name: clipName, type: "krea2", device: "default" } };
+  g["K2:clip"] = clipNode(clipName);
 
   g["K2:vae"] = { class_type: "VAELoader", inputs: { vae_name: vaeName } };
 
