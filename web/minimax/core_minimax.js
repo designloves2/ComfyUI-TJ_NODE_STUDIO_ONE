@@ -873,6 +873,11 @@ export function defaultState(saved) {
     frUseCustomModel: saved.frUseCustomModel ?? false,
     frUnet: saved.frUnet || "",   // .gguf → UnetLoaderGGUF; else UNETLoader
     frClip: saved.frClip || "",   // .gguf → CLIPLoaderGGUF; else CLIPLoader (both type=minimax)
+    // Face Refine's OWN LoRA list (e.g. a face-detail LoRA) — never state.loras, which is
+    // the main render's own list and stays applied via buildModelChain regardless.
+    frLoras: Array.isArray(saved.frLoras) ? saved.frLoras.map(l => ({
+      name: l.name || "none", strength: l.strength ?? 1.0, enabled: l.enabled !== false,
+    })) : [],
 
     accelMode:      saved.accelMode      || "solattn",   // legacy — kept only so old
                                                          // workflows can be migrated below

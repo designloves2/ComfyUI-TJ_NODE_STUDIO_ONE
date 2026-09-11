@@ -1912,6 +1912,47 @@ app.registerExtension({
           style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
         leftPanel.appendChild(panel(faceKids));
 
+        // ── Face LoRA (own list — e.g. a face-detail LoRA, never state.loras) ─────
+        const frLoraOpts = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
+        const frL = state.frLoras ||= [];
+        const frLoraWrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } });
+        function renderFrLoras() {
+          clear(frLoraWrap);
+          frL.forEach((l, i) => {
+            const off = l.enabled === false;
+            const card = el("div", { style: {
+              border: `1px solid ${off ? C.dim : C.border}`, borderRadius: "6px", padding: "6px",
+              display: "flex", flexDirection: "column", gap: "5px", opacity: off ? "0.55" : "1" } });
+            const head = el("div", { style: { display: "flex", alignItems: "center", gap: "5px" } });
+            const tog = el("button", { type: "button", text: off ? "OFF" : "ON", style: {
+              flexShrink: "0", cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "3px 9px",
+              borderRadius: "10px", border: "none", fontWeight: "700", background: off ? "#444" : BRAND, color: "#fff" },
+              onclick: () => { l.enabled = off; persist(); renderFrLoras(); } });
+            const strWrap = el("div", { style: { flexShrink: "0", width: "62px" } });
+            strWrap.appendChild(numberField(l.strength ?? 1.0, v => { l.strength = v; persist(); }, 0.05));
+            const del = el("button", { type: "button", text: "✕", title: "Remove", style: {
+              flexShrink: "0", cursor: "pointer", background: "transparent", color: C.err, border: "none", fontSize: "11px", padding: "2px 4px" },
+              onclick: () => { frL.splice(i, 1); persist(); renderFrLoras(); } });
+            head.append(tog, el("div", { style: { flex: "1" } }), strWrap, del);
+            const sel = loraSelect(frLoraOpts, l.name || "none", v => { l.name = v; persist(); });
+            card.append(head, sel.el);
+            frLoraWrap.appendChild(card);
+          });
+          const add = el("button", { type: "button", text: "+ Add LoRA", style: {
+            cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 10px", borderRadius: "6px",
+            background: C.bg2, color: C.text, border: `1px solid ${C.border}` },
+            onclick: () => { frL.push({ name: "none", strength: 1.0, enabled: true }); persist(); renderFrLoras(); } });
+          frLoraWrap.appendChild(add);
+          frLoraWrap.appendChild(el("div", { text: "Applied on top of the model this run uses (H3's own, or Face Refine's separate model if "
+              + "'use a separate model' is on) — e.g. a face-detail LoRA. Separate from the main H3 LoRA list.",
+            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
+        }
+        renderFrLoras();
+        leftPanel.appendChild(accordion("frlora", "Face LoRA",
+          frL.filter(l => l?.name && l.name !== "none" && l.enabled !== false).length
+            ? `${frL.filter(l => l?.name && l.name !== "none" && l.enabled !== false).length} on` : "OFF",
+          () => [frLoraWrap]));
+
         // ── crop / canvas ─────────────────────────────────────────────────────
         leftPanel.appendChild(panel([
           label("Crop / Canvas"),
@@ -3472,6 +3513,7 @@ app.registerExtension({
             faceRefine: {
               select: rs.frSelect, detector: rs.faceDetector, cropFactor: rs.frCropFactor,
               canvasMode: rs.frCanvasMode, denoise: rs.frDenoise,
+              turboMode: lastMeta.turboMode, loras: lastMeta.loras || [],
               ...(chain ? { chainPicks: chain } : {}),
             },
             steps: lastMeta.steps, seed: lastMeta.seed,

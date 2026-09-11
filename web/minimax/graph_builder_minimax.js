@@ -1025,6 +1025,7 @@ const FR = {
   stitch:  "FR:stitch",
   video:   "FR:video",
   save:    "FR:save",
+  lora:    (i) => `FR:lora${i}`,   // Face Refine's own LoRA chain — see §17, never state.loras
 };
 
 export function buildFaceRefineGraph(state, avail, opts = {}) {
@@ -1113,7 +1114,21 @@ export function buildFaceRefineGraph(state, avail, opts = {}) {
     : { class_type: "CLIPLoader", inputs: { clip_name: clipFile, type: "minimax", device: "default" } };
   g[N.vaeV] = { class_type: "VAELoader", inputs: { vae_name: state.vaeVideo } };
   g[N.vaeA] = { class_type: "VAELoader", inputs: { vae_name: state.vaeAudio } };
-  const modelLink1 = applyFusedModulation(g, refState, avail, modelLink0);
+
+  // ── Face Refine's OWN LoRA chain (e.g. a face-detail LoRA) — never state.loras, which
+  // buildModelChain already applied above for the main render's own LoRA list. Same
+  // pattern as LTX Upscale's ltxLoras: its own list, applied after the shared chain so it
+  // sits closest to the sampler. ──
+  let modelLoraLink = modelLink0;
+  (state.frLoras || []).forEach((lora, i) => {
+    if (!lora?.name || lora.name === "none" || lora.enabled === false) return;
+    const s = parseFloat(lora.strength ?? 1.0);
+    if (!(s > 0)) return;
+    g[FR.lora(i)] = { class_type: "LoraLoaderModelOnly", inputs: { model: modelLoraLink, lora_name: lora.name, strength_model: s } };
+    modelLoraLink = [FR.lora(i), 0];
+  });
+
+  const modelLink1 = applyFusedModulation(g, refState, avail, modelLoraLink);
   // Live sampling preview — same ModelPreviewOverrideKJ + previewNodeKey(nodeId) wiring
   // buildClipGraph uses, so Face Refine streams into the same preview box every other
   // mode already shows.
@@ -1153,13 +1168,29 @@ export function buildFaceRefineGraph(state, avail, opts = {}) {
   const denoisedModel = [FR.denoise, 2];
 
   // ── sample ─────────────────────────────────────────────────────────────────
+  // buildModelChain already patched the turbo LoRA into modelLink0 (if one's active in
+  // Settings) — but a turbo accelerator needs its OWN step count / sampler to mean
+  // anything (PDD's head bank is trained for its exact NFE grid, larryvrh needs its
+  // dedicated sampler node), so those have to follow it here too, exactly like
+  // buildClipGraph does. frSteps/frSampler only apply when no turbo is active — with one
+  // on, effectiveSteps() overrides them (frDenoise still trims the resulting schedule).
+  const turboMode = effectiveTurbo(refState, avail).mode;
+  const useTurboSampler = turboMode === "larryvrh" && has(avail, "MiniMaxH3TurboSampler");
+  const steps = turboMode === "none" ? Math.max(1, Math.round(state.frSteps ?? 8)) : effectiveSteps(refState, avail);
+
   const useSeed = state.seedMode === "randomize"
     ? Math.floor(Math.random() * 1e15) : (seed ?? state.seed ?? 0);
   g[N.noise] = { class_type: "RandomNoise", inputs: { noise_seed: useSeed } };
-  g[N.sampSel] = { class_type: "KSamplerSelect", inputs: { sampler_name: state.frSampler || "euler" } };
+  if (useTurboSampler) {
+    g[N.sampSel] = { class_type: "MiniMaxH3TurboSampler", inputs: {} };
+  } else if (turboMode === "pdd") {
+    g[N.sampSel] = { class_type: "KSamplerSelect", inputs: { sampler_name: "euler" } };
+  } else {
+    g[N.sampSel] = { class_type: "KSamplerSelect", inputs: { sampler_name: state.frSampler || "euler" } };
+  }
   g[N.sched] = { class_type: "BasicScheduler", inputs: {
     model: denoisedModel, scheduler: state.frScheduler || "simple",
-    steps: Math.max(1, Math.round(state.frSteps ?? 8)), denoise: state.frDenoise ?? 0.40,
+    steps, denoise: state.frDenoise ?? 0.40,
   }};
   let condLink = [N.cond, 0];
   if (has(avail, "TJ_FreeTextEncoderVRAM")) {
@@ -1189,9 +1220,11 @@ export function buildFaceRefineGraph(state, avail, opts = {}) {
     video: [FR.video, 0], filename_prefix: `${folder}/${stem}_FACEREFINE`, format: "auto", codec: "auto",
   }};
 
+  const usedLoras = (state.frLoras || []).filter(l => l?.name && l.name !== "none" && l.enabled !== false)
+    .map(l => ({ name: l.name, strength: l.strength ?? 1.0 }));
   return { graph: g, meta: {
     faceRefine: true, source: sourceFile, select: state.frSelect,
-    denoise: state.frDenoise ?? 0.40, steps: Math.max(1, Math.round(state.frSteps ?? 8)),
+    denoise: state.frDenoise ?? 0.40, steps, turboMode, loras: usedLoras,
     seed: useSeed, videoNode: FR.save, lastFrameNode: null,
   } };
 }

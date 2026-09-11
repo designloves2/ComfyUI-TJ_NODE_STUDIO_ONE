@@ -570,3 +570,49 @@ Impact Pack이 없었다면(§9-1 검증 당시 상태) 이 문제가 안 생겼
 (`H3FaceMaskSAM`은 §3에서 이미 1차 구현 스킵으로 명시 — SAM_MODEL은 문자열이 아니라 소켓
 타입이라 지금 설계로는 연결 불가) 값이 뭐든 영향이 없었을 것 — 진짜 원인은 fallback_detector
 하나였다. 우연히 같이 none으로 바꿔서 같이 "고쳐진 것처럼" 보였을 뿐.
+
+---
+
+## 17. 미리보기 없음 · 터보 스텝/샘플러 불일치 · 전용 LoRA 부재 (사용자 지적, 2026-09-12)
+
+세 가지를 한 번에 지적받음 — 셋 다 실제 결함이었다.
+
+### 17-A. 실시간 미리보기 없음
+
+`buildFaceRefineGraph()`에 `applyPreview()` 호출 자체가 아예 빠져 있었다 — 모델 체인이
+`unet → fusedModulation → sla`로만 이어져서 `ModelPreviewOverrideKJ` 노드가 그래프에 없었고,
+그래서 샘플링 중 프레임이 전혀 스트리밍되지 않았다(다른 모든 모드엔 있음). `buildClipGraph`와
+같은 순서(`fusedModulation → preview → sla`)로 추가, 같은 `previewNodeKey(nodeId)`를 써서
+프런트 리스너가 모드 상관없이 그대로 잡아냄. H3 자체 Preview 설정(Settings → Preview)을
+그대로 재사용 — Face Refine 전용 프리뷰 설정은 새로 안 만듦.
+
+### 17-B. 터보 LoRA는 적용되는데 스텝/샘플러가 안 맞음
+
+`buildModelChain(refState, avail)`이 터보 LoRA(PDD/larryvrh/lightx2v)를 모델에 패치하는 건
+정상 동작했지만, `BasicScheduler`의 스텝 수와 샘플러 선택은 `state.frSteps`/`state.frSampler`
+(Face Refine 전용, 터보 무관)로 고정돼 있었다. 실제 H3 렌더(`buildClipGraph`)는 터보가
+켜지면 `effectiveSteps()`가 그 터보의 고정 NFE(PDD는 학습된 인터벌 그리드, larryvrh는
+`turboSteps`)로 스텝 수 자체를 덮어쓰고, PDD면 샘플러를 `euler`로, larryvrh면
+`MiniMaxH3TurboSampler` 노드로 강제 교체한다 — Face Refine엔 이 조율이 하나도 없었다.
+기본값(frSteps=8, frSampler=euler)이 우연히 PDD 8-step + euler와 맞아떨어져서 처음엔 안
+드러났을 뿐, 사용자가 "스텝이 8인데 터보 로라가 적용되는거야?"라고 확인 요청한 게 정확한
+지적 — 실제로 스텝/샘플러가 터보와 별개로 놀고 있었다.
+
+**수정**: `buildFaceRefineGraph`에 `effectiveTurbo(refState, avail)`/`effectiveSteps` 도입 —
+터보가 꺼져 있을 때만 `frSteps`/`frSampler`를 쓰고, 켜져 있으면 `buildClipGraph`와 똑같이
+스텝·샘플러 노드를 그 터보에 맞춰 강제 교체(`frDenoise`는 그대로 살아서 그 스케줄을 잘라내는
+partial-denoise 역할은 유지 — 이게 H3 img2img의 정석 패턴: 풀 스텝 스케줄을 만들고 denoise로
+뒷부분만 씀).
+
+### 17-C. Face 전용 LoRA 목록이 없었음
+
+"얼굴 로라 사용할 수도 있는데 로라가 없네" — 맞는 지적. `buildModelChain`이 이미
+`state.loras`(메인 H3 렌더용 목록)를 적용하긴 하지만, Face Refine만을 위한 **별도 목록**은
+없었다. LTX Upscale의 `ltxLoras`(자기 unet 전용, `state.loras`와 별개)와 같은 패턴으로
+`frLoras`를 신설 — `buildModelChain` 뒤, `fusedModulation` 앞에 자체 `LoraLoaderModelOnly`
+체인으로 얹음(샘플러에 가장 가까운 자리). `use a separate model`이 꺼져 있어도(H3 메인
+모델 그대로 써도) `frLoras`는 독립적으로 항상 적용됨 — 예: 메인 렌더는 터보만 쓰고, Face
+Refine 패스에서만 얼굴 디테일 LoRA를 추가로 얹는 것도 가능.
+
+좌측 패널에 "Face LoRA" 아코디언 신설(LTX LoRA와 동일한 UI: 토글/강도/삭제/추가), `state`에
+`frLoras`(`{name, strength, enabled}[]`) 추가, 메타에 `faceRefine.loras`/`turboMode` 기록.
