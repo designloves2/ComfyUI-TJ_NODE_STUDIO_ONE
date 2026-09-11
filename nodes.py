@@ -818,7 +818,10 @@ async def fk_get_seedvr2_models(request):
 @PromptServer.instance.routes.get("/flux_klein/models")
 async def fk_get_models(request):
     try:
-        diff = _scan("diffusion_models")
+        # graph_builder_klein.js already emits UnetLoaderGGUF for a .gguf unet_name —
+        # _scan()'s default extensions never included .gguf, so one could never actually
+        # be picked here even though the graph builder was ready for it.
+        diff = _scan("diffusion_models", [".safetensors", ".gguf", ".ckpt", ".pt", ".pth"])
     except Exception:
         diff = ["none"]
     try:
@@ -912,7 +915,7 @@ async def zit_get_seedvr2_models(request):
 @PromptServer.instance.routes.get("/z_image_turbo/models")
 async def zit_get_models(request):
     try:
-        diff = _scan("diffusion_models")
+        diff = _scan("diffusion_models", [".safetensors", ".gguf", ".ckpt", ".pt", ".pth"])
     except Exception:
         diff = ["none"]
     try:
@@ -1037,7 +1040,7 @@ async def k2_get_seedvr2_models(request):
 @PromptServer.instance.routes.get("/krea2_one/models")
 async def k2_get_models(request):
     try:
-        diff = _scan("diffusion_models")
+        diff = _scan("diffusion_models", [".safetensors", ".gguf", ".ckpt", ".pt", ".pth"])
     except Exception:
         diff = ["none"]
     try:
@@ -1131,11 +1134,11 @@ async def sdxl_get_models(request):
     except Exception:
         checkpoints = ["none"]
     try:
-        unets = _scan("unet") if hasattr(folder_paths, "get_folder_paths") else ["none"]
+        unets = _scan("unet", [".safetensors", ".gguf", ".ckpt", ".pt", ".pth"]) if hasattr(folder_paths, "get_folder_paths") else ["none"]
     except Exception:
         unets = ["none"]
     try:
-        diff = _scan("diffusion_models")
+        diff = _scan("diffusion_models", [".safetensors", ".gguf", ".ckpt", ".pt", ".pth"])
     except Exception:
         diff = ["none"]
     all_unets = list(dict.fromkeys([m for m in unets + diff if m != "none"])) or ["none"]
@@ -1328,7 +1331,7 @@ async def qe_post_config(request):
 @PromptServer.instance.routes.get("/qwen2511_one/models")
 async def qe_get_models(request):
     try:
-        diff = _scan("diffusion_models")
+        diff = _scan("diffusion_models", [".safetensors", ".gguf", ".ckpt", ".pt", ".pth"])
     except Exception:
         diff = ["none"]
     try:
