@@ -517,10 +517,7 @@ app.registerExtension({
       }});
       editBtn.addEventListener("click", () => {
         if (state.generationMode === "ltxupscale") { openLtxPromptEdit(); return; }
-        // Face Refine's prompt is the single plain-text field in the left panel — no
-        // dedicated modal yet (only the H3 shot-list editor exists, which is the wrong
-        // shape for this mode).
-        if (state.generationMode === "facerefine") { showPopup("Edit the prompt in the left panel (under the source card).", false); return; }
+        if (state.generationMode === "facerefine") { openFaceRefinePromptEdit(); return; }
         promptEditOv?.show();
       });
       promptHdr.appendChild(editBtn);
@@ -587,19 +584,15 @@ app.registerExtension({
         const isLtx = state.generationMode === "ltxupscale";
         const isFaceRefine = state.generationMode === "facerefine";
         // The bottom prompt area is per-mode: the H3 shot list, or (LTX Upscale / Face
-        // Refine) one prompt field that lives in the left panel instead. Common / Split /
-        // Add are H3-only.
+        // Refine) one plain prompt box down here — same spot every mode uses, not the
+        // left panel. Common / Split / Add are H3-only.
         commonBtn.style.display = (isLtx || isFaceRefine) ? "none" : "";
         splitBtn.style.display  = (isLtx || isFaceRefine) ? "none" : "";
         addBtn.style.display    = (isLtx || isFaceRefine) ? "none" : "";
-        promptTitle.textContent = isLtx ? "UPSCALE PROMPT" : isFaceRefine ? "FACE REFINE" : "PROMPTS";
+        promptTitle.textContent = isLtx ? "UPSCALE PROMPT" : isFaceRefine ? "FACE REFINE PROMPT" : "PROMPTS";
         promptList.style.gap = (isLtx || isFaceRefine) ? "6px" : "4px";
         if (isLtx) { renderLtxPrompt(); return; }
-        if (isFaceRefine) {
-          promptList.appendChild(el("div", { text: "Prompt is in the left panel, under the source card.",
-            style: { fontSize: "11px", color: C.muted, padding: "6px 2px" } }));
-          return;
-        }
+        if (isFaceRefine) { renderFaceRefinePrompt(); return; }
         const plan = currentPlan();
         const onCount = state.prompts.filter(p => promptEnabled(p)).length;
         promptCount.textContent = `(${plan.promptCount} prompt${plan.promptCount > 1 ? "s" : ""} · ${onCount} on → ${plan.count} clip${plan.count > 1 ? "s" : ""} · ${plan.actualSeconds.toFixed(2)}s)`;
@@ -917,6 +910,81 @@ app.registerExtension({
         renderLlmPicker();
         body.append(label("LLM"), llmWrap, label("Prompt"), bigTA, label("Negative"), bigNeg,
           row([enh2, conv2, el("div", { style: { flex: "1" } }), llmLabel]));
+
+        const foot = el("div", { style: {
+          display: "flex", gap: "8px", padding: "10px 12px", borderTop: `1px solid ${C.border}`, flexShrink: "0", justifyContent: "flex-end" } });
+        foot.append(
+          button("✕ Cancel", () => finish(false), "default"),
+          button("✓ Apply", () => finish(true), "primary"),
+        );
+
+        box.append(head, body, foot);
+        document.body.appendChild(ov);
+        bigTA.focus();
+      }
+
+      // Face Refine's bottom prompt strip — same spot every mode's prompt lives in, not
+      // the left panel (LTX Upscale's own pattern, moved here per user feedback: the left
+      // panel is for the source card + refine params, not the prompt text).
+      function renderFaceRefinePrompt() {
+        clear(promptList);
+        promptCount.textContent = state.frSource ? "" : "(no source clip)";
+        const ta = el("textarea", {
+          placeholder: "Describe the clip (character, scene) — helps H3 re-render the face consistently.",
+          style: { flex: "1", width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+                   border: `1px solid ${C.border}`, borderRadius: "6px", padding: "8px", fontSize: "12px",
+                   fontFamily: "inherit", outline: "none", resize: "none", minHeight: "0" },
+        });
+        ta.value = state.frPrompt || "";   // textarea content must be set as a property
+        ta.addEventListener("input", () => { state.frPrompt = ta.value; persist(); });
+        ta.addEventListener("focus", () => ta.style.borderColor = BRAND);
+        ta.addEventListener("blur", () => ta.style.borderColor = C.border);
+        promptList.style.gap = "6px";
+        promptList.append(ta);
+      }
+
+      // "Prompt Edit" in Face Refine mode → a modal: source clip on top, prompt below,
+      // view/edit only (no LLM write button — Face Refine has no vision feature yet).
+      function openFaceRefinePromptEdit() {
+        const snap = { p: state.frPrompt || "" };
+        const box = el("div", { style: {
+          background: "#0e0e0e", border: `1px solid ${C.border}`, borderRadius: "10px",
+          width: "760px", maxWidth: "94%", maxHeight: "90vh", display: "flex", flexDirection: "column",
+          overflow: "hidden", boxShadow: "0 16px 50px rgba(0,0,0,0.65)" } });
+        const head = el("div", { style: {
+          display: "flex", alignItems: "center", gap: "8px", padding: "10px 12px",
+          borderBottom: `1px solid ${C.border}`, flexShrink: "0" } },
+          [el("div", { text: "📝 Face Refine prompt", style: { color: "#fff", fontSize: "13px", fontWeight: "700", flex: "1" } })]);
+        const ov = el("div", { style: {
+          position: "fixed", inset: "0", zIndex: "100050", display: "flex", alignItems: "center",
+          justifyContent: "center", background: "rgba(0,0,0,0.72)" } }, [box]);
+        const finish = (apply) => {
+          if (!apply) state.frPrompt = snap.p;
+          persist(); ov.remove();
+          try { renderPrompts(); } catch (e) { console.warn("[MMH3] Face Refine prompt sync:", e); }
+        };
+        ov.addEventListener("mousedown", e => { if (e.target === ov) finish(true); });
+        head.appendChild(el("button", { type: "button", text: "✕ Cancel", style: {
+          cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "4px 10px", borderRadius: "6px",
+          background: "transparent", color: C.err, border: `1px solid ${C.border}` }, onclick: () => finish(false) }));
+
+        const body = el("div", { style: { display: "flex", flexDirection: "column", gap: "10px", padding: "12px", overflow: "auto" } });
+        if (state.frSource) {
+          const pv = el("video", { src: `/view?filename=${encodeURIComponent(state.frSource)}&type=input`,
+            controls: true, muted: true, loop: true, preload: "metadata",
+            style: { width: "100%", maxHeight: "300px", objectFit: "contain", borderRadius: "6px", background: "#000" } });
+          body.append(pv);
+        } else {
+          body.append(el("div", { text: "No source clip — pick one in the left panel.", style: { fontSize: "11px", color: C.warn } }));
+        }
+
+        const bigTA = el("textarea", { style: {
+          width: "100%", minHeight: "200px", boxSizing: "border-box", background: C.bg2, color: C.text,
+          border: `1px solid ${C.border}`, borderRadius: "6px", padding: "10px", fontSize: "13px",
+          fontFamily: "inherit", outline: "none", resize: "vertical" } });
+        bigTA.value = state.frPrompt || "";
+        bigTA.addEventListener("input", () => { state.frPrompt = bigTA.value; persist(); });
+        body.append(label("Prompt"), bigTA);
 
         const foot = el("div", { style: {
           display: "flex", gap: "8px", padding: "10px 12px", borderTop: `1px solid ${C.border}`, flexShrink: "0", justifyContent: "flex-end" } });
@@ -1808,14 +1876,8 @@ app.registerExtension({
               + "then stitches it back onto the original frames.",
           style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
         leftPanel.appendChild(panel(srcKids));
-
-        // ── prompt (plain text — no shot list, this reconditions the whole clip) ──
-        const promptTa = el("textarea", { rows: "3", placeholder: "Describe the clip (character, scene) — helps H3 re-render the face consistently.",
-          style: { width: "100%", boxSizing: "border-box", resize: "vertical", background: C.bg2, color: C.text,
-            border: `1px solid ${C.border}`, borderRadius: "6px", padding: "7px", fontSize: "12px", fontFamily: "inherit" } });
-        promptTa.value = state.frPrompt || "";
-        promptTa.addEventListener("input", () => { state.frPrompt = promptTa.value; persist(); });
-        leftPanel.appendChild(panel([label("Prompt"), promptTa]));
+        // Prompt lives in the bottom strip now (renderFaceRefinePrompt), same spot every
+        // other mode's prompt uses — not here in the left panel.
 
         // ── face selection ────────────────────────────────────────────────────
         const isManualSelect = state.frSelect === "manual";
