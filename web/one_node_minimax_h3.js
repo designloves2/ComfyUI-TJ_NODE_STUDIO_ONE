@@ -1676,7 +1676,7 @@ app.registerExtension({
           () => {
             const rows = [
               col([label("Turbo"), select(TURBO_MODES.map(t => ({ value: t.key, label: t.label })),
-                turboMode, v => { state.turboMode = v; persist(); renderLeft(); })]),
+                turboMode, v => { state.turboMode = v; rememberLora({ turbo_mode: v }); renderLeft(); })]),
               warn((TURBO_MODES.find(t => t.key === turboMode) || {}).node),
               (() => {
                 const eff = effectiveTurbo(state, ctx.availability);
