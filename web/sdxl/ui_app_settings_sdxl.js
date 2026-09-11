@@ -262,6 +262,9 @@ export function createSettingsOverlay(state, ctx) {
     if (!state.clipL && cfg.selected_clip_l) { state.clipL = cfg.selected_clip_l; }
     if (!state.clipG && cfg.selected_clip_g) { state.clipG = cfg.selected_clip_g; }
     if (!state.vae   && cfg.selected_vae)    { state.vae   = cfg.selected_vae; }
+    // Was never read back at all — the saved path lived in the config file but every
+    // fresh node/workflow fell back to the hardcoded default subfolder.
+    if (!state.saveSubfolder && cfg.save_subfolder) { state.saveSubfolder = cfg.save_subfolder; pathIn.value = cfg.save_subfolder; }
     ctx.persist();
   }).catch(() => {});
 

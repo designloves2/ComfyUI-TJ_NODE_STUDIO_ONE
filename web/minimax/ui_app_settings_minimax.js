@@ -711,6 +711,10 @@ export function createSettingsOverlay(state, ctx) {
     if (cfg.h3_or_model_brief)        state.h3OrModelBrief   = cfg.h3_or_model_brief;
     if (cfg.h3_or_model_vision)       state.h3OrModelVision  = cfg.h3_or_model_vision;
     if (cfg.filename_prefix)          state.filenamePrefix   = cfg.filename_prefix;
+    // save_subfolder was written on every Save All but never read back — the Output tab
+    // (and the gallery, and every "From gallery" picker) always came back to the
+    // hardcoded SUBFOLDER default until you retyped it, every single session.
+    if (cfg.save_subfolder && !state.saveSubfolder) state.saveSubfolder = cfg.save_subfolder;
     if (cfg.stitch_at_end != null)          state.stitchAtEnd        = cfg.stitch_at_end;
     if (cfg.trim_last_clip != null)         state.trimLastClip       = cfg.trim_last_clip;
     if (cfg.unload_between_clips != null)   state.unloadBetweenClips = cfg.unload_between_clips;

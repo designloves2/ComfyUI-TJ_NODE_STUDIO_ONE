@@ -270,7 +270,7 @@ export function createSettingsOverlay(state, ctx) {
     // Identity Edit LoRA config
     if ((!state.identityLora || state.identityLora === "none") && cfg.identity_lora && cfg.identity_lora !== "none") state.identityLora = cfg.identity_lora;
     if (cfg.identity_lora_strength != null) { state.identityLoraStrength = cfg.identity_lora_strength; idStrIn.value = state.identityLoraStrength; }
-    if (cfg.save_subfolder  && !state.saveSubfolder)  pathIn.placeholder = cfg.save_subfolder;
+    if (cfg.save_subfolder && !state.saveSubfolder) { state.saveSubfolder = cfg.save_subfolder; pathIn.value = cfg.save_subfolder; }
     visChk.checked = cfg.output_mode_visible !== false;
     if (ctx.appConfig) ctx.appConfig.output_mode_visible = visChk.checked;
     ctx._refreshToggle?.(); ctx.renderToggle?.();

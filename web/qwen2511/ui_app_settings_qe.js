@@ -225,7 +225,7 @@ export function createSettingsOverlay(state, ctx) {
   getConfig().then(cfg => {
     if (cfg.negative_prompt && !state.negativePrompt) { state.negativePrompt = cfg.negative_prompt; negTA.value = cfg.negative_prompt; }
     if (cfg.prompt_suffix   && !state.promptSuffix)   { state.promptSuffix   = cfg.prompt_suffix;   suffixIn.value = cfg.prompt_suffix; }
-    if (cfg.save_subfolder  && !state.saveSubfolder)  pathIn.placeholder = cfg.save_subfolder;
+    if (cfg.save_subfolder && !state.saveSubfolder) { state.saveSubfolder = cfg.save_subfolder; pathIn.value = cfg.save_subfolder; }
     visChk.checked = cfg.output_mode_visible !== false;
     if (ctx.appConfig) ctx.appConfig.output_mode_visible = visChk.checked;
     ctx._refreshToggle?.(); ctx.renderToggle?.();
