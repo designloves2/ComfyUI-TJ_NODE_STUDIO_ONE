@@ -326,13 +326,19 @@ app.registerExtension({
       }});
       const placeholder = el("div", { style: { color: C.muted, fontSize: "12px", textAlign: "center", lineHeight: "1.7" } });
       placeholder.innerHTML = "▶ Generate to render the first clip<br><span style='font-size:10px'>live sampling frames appear here</span>";
-      // Face Refine's detection/tracking pass (H3FaceSelect/H3FaceTrackCrop) runs BEFORE
-      // sampling starts and streams no live-preview frames of its own — from the frontend
-      // it's just silent time, with only the small left-aligned status-strip text saying
-      // so. That read as "is it even doing anything?", so this sits centered and large in
-      // the preview box itself for that stretch (hidden once the first real sampling
-      // progress event arrives — see runFaceRefine's prog()).
-      const frDetectBanner = el("div", { text: "🔍 Detecting & tracking faces…", style: {
+      // Face Refine's model-load + detection/tracking pass (H3FaceSelect/H3FaceTrackCrop)
+      // runs BEFORE sampling starts and streams no live-preview frames of its own — from the
+      // frontend it's just silent time, with only the small left-aligned status-strip text
+      // saying so. That read as "is it even doing anything?", so this sits centered and
+      // large in the preview box for that whole stretch. Kept generic ("Preparing
+      // generation…", not "Detecting faces…") because that stretch also covers plain model
+      // loading, not just face tracking — a user seeing "detecting faces" while the model is
+      // still loading assumed it belonged only inside the Pick Faces popup. Hidden the
+      // moment ANY real sampling activity appears — either the numeric step-progress
+      // callback (runFaceRefine's prog()) or a live preview frame (showPreviewFrame()),
+      // since a preview frame can arrive over its own websocket message ahead of the first
+      // progress callback and previously left the banner showing next to the image.
+      const frDetectBanner = el("div", { text: "⏳ Preparing generation…", style: {
         display: "none", color: "#b57bff", fontSize: "18px", fontWeight: "700",
         textAlign: "center", padding: "0 16px", textShadow: "0 0 12px rgba(181,123,255,0.5)",
       }});
@@ -376,6 +382,12 @@ app.registerExtension({
       function showPreviewFrame(dataURL, mime) {
         if (previewLocked) return;
         placeholder.style.display = "none";
+        // A live preview frame arrives over its own websocket message, independent of the
+        // numeric step-progress callback that normally hides this banner (prog() in
+        // runFaceRefine) - so if a preview frame lands first, the banner and the live image
+        // showed at once, squeezing each other sideways. Any preview frame means sampling
+        // has visibly started, so always clear it here too.
+        frDetectBanner.style.display = "none";
         // Same bug as resetPreview originally had, other direction: hiding resultVid
         // here doesn't stop it. If the user pressed play on clip N's finished result and
         // the next clip's live preview then takes over this box, clip N kept playing in
@@ -3511,6 +3523,11 @@ app.registerExtension({
         nextGenBtn.style.display = "none";
         resetPreview(); barInner.style.width = "0%";
         startClock();
+        // Editing the prompt or opening the editor mid-run can't affect the job already
+        // queued (the graph is built once, up front) - disable both while running so that
+        // isn't implied.
+        editBtn.disabled = true; editBtn.style.opacity = "0.4"; editBtn.style.pointerEvents = "none";
+        promptList.style.opacity = "0.5"; promptList.style.pointerEvents = "none";
         let mem = null;
         try {
           if (!ctx.availability || !Object.keys(ctx.availability).length) {
@@ -3591,6 +3608,8 @@ app.registerExtension({
           showPopup(why || e.message, true);
         } finally {
           frDetectBanner.style.display = "none";
+          editBtn.disabled = false; editBtn.style.opacity = "1"; editBtn.style.pointerEvents = "";
+          promptList.style.opacity = "1"; promptList.style.pointerEvents = "";
           try { await freeMemory(); } catch {}
           stopWakeAudio(); stopQueueWatch();
           running = false; stopRequested = false;
