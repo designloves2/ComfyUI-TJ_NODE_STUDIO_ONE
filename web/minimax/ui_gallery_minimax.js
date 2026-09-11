@@ -1143,12 +1143,13 @@ export function createGalleryOverlay(state, ctx) {
 
       // Post-decode frame ops, bottom-left — set the same way whether the pass ran inline
       // at generation time (buildClipGraph meta) or afterward from this gallery
-      // (writePostMeta). Ⓛ = LTX 2.5 Upscale, ⇪ = upscaled, ✧ = deblurred,
-      // ⇄ = interpolated; any can show, in that order.
+      // (writePostMeta). Ⓛ = LTX 2.5 Upscale, Ⓕ = H3 Face Refine, ⇪ = upscaled,
+      // ✧ = deblurred, ⇄ = interpolated; any can show, in that order.
       {
         const m = v.meta || {};
         const marks = [];
         if (m.mode === "ltxupscale") marks.push(["Ⓛ", `LTX 2.5 Upscale${m.segments > 1 ? ` — ${m.segments} segments stitched` : ""}`]);
+        if (m.mode === "facerefine") marks.push(["Ⓕ", `H3 Face Refine${(m.faceRefine?.chainPicks?.length > 1) ? ` — ${m.faceRefine.chainPicks.length}-person chain` : ""}`]);
         if (m.upscale) marks.push(["⇪", m.upscale.method === "rtx"
           ? `Upscaled — RTX VSR ×${m.upscale.scale} (${m.upscale.quality})`
           : `Upscaled — ${String(m.upscale.model || "model").split(/[\\/]/).pop()}`]);
