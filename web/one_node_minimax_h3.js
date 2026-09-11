@@ -326,6 +326,16 @@ app.registerExtension({
       }});
       const placeholder = el("div", { style: { color: C.muted, fontSize: "12px", textAlign: "center", lineHeight: "1.7" } });
       placeholder.innerHTML = "▶ Generate to render the first clip<br><span style='font-size:10px'>live sampling frames appear here</span>";
+      // Face Refine's detection/tracking pass (H3FaceSelect/H3FaceTrackCrop) runs BEFORE
+      // sampling starts and streams no live-preview frames of its own — from the frontend
+      // it's just silent time, with only the small left-aligned status-strip text saying
+      // so. That read as "is it even doing anything?", so this sits centered and large in
+      // the preview box itself for that stretch (hidden once the first real sampling
+      // progress event arrives — see runFaceRefine's prog()).
+      const frDetectBanner = el("div", { text: "🔍 Detecting & tracking faces…", style: {
+        display: "none", color: "#b57bff", fontSize: "18px", fontWeight: "700",
+        textAlign: "center", padding: "0 16px", textShadow: "0 0 12px rgba(181,123,255,0.5)",
+      }});
       // width/height 100% (not max-*) so a small latent preview is scaled UP to fill the
       // box on its long edge; object-fit keeps the aspect ratio.
       const FIT = { width: "100%", height: "100%", objectFit: "contain", display: "none" };
@@ -345,7 +355,7 @@ app.registerExtension({
         color: "#fff", border: "none", borderRadius: "4px", width: "22px", height: "22px",
         cursor: "pointer", fontSize: "12px", padding: "0", display: "none",
       }});
-      previewBox.append(placeholder, previewImg, previewVid, resultVid, badge, fsBtn);
+      previewBox.append(placeholder, frDetectBanner, previewImg, previewVid, resultVid, badge, fsBtn);
 
       let lastResultURL = null;
       // openFullscreen() (shared/klein/ui_common.js) renders the target inside an <img> —
@@ -402,6 +412,7 @@ app.registerExtension({
       function resetPreview() {
         previewLocked = false;
         placeholder.style.display = "block";
+        frDetectBanner.style.display = "none";
         previewImg.style.display = "none";
         previewVid.style.display = "none";
         // Hiding a playing <video> does not stop it — previewVid has autoplay+loop for the
@@ -3510,9 +3521,17 @@ app.registerExtension({
               if (stopRequested) throw new Error("Stopped.");
               const passLabel = chain ? ` — pass ${i + 1}/${chain.length} (face ${chain[i]})` : "";
               setStatus(`Face Refine${passLabel} · queued (tracking + per-frame img2img)`);
-              const prog = (v, m) => setStepProgress(
-                chain ? (i + (v || 0)) / chain.length : v,
-                chain ? `pass ${i + 1}/${chain.length}${m ? " — " + m : ""}` : m);
+              // Detection/tracking runs before sampling and streams nothing of its own —
+              // show the big centered banner for that silent stretch, hide it the moment
+              // real sampling progress starts arriving (see prog() below).
+              placeholder.style.display = "none";
+              frDetectBanner.style.display = "block";
+              const prog = (v, m) => {
+                frDetectBanner.style.display = "none";
+                setStepProgress(
+                  chain ? (i + (v || 0)) / chain.length : v,
+                  chain ? `pass ${i + 1}/${chain.length}${m ? " — " + m : ""}` : m);
+              };
 
               const built = buildFaceRefineGraph(rs, ctx.availability, {
                 nodeId: self.id, sourceFile, promptText: rs.frPrompt, seed: rs.seed,
@@ -3563,6 +3582,7 @@ app.registerExtension({
           setStatus(why ? `Error: ${why}` : `Error: ${e.message}`);
           showPopup(why || e.message, true);
         } finally {
+          frDetectBanner.style.display = "none";
           try { await freeMemory(); } catch {}
           stopWakeAudio(); stopQueueWatch();
           running = false; stopRequested = false;
