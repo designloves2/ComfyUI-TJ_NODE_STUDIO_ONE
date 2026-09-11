@@ -30,8 +30,14 @@ function baseGraph(state, promptText, unetName) {
   if (!vaeName)   throw new Error("No VAE selected. Please set one in ⚙ Settings.");
 
   const g = {};
-  g["AN:unet"] = { class_type: "UNETLoader", inputs: { unet_name: modelName, weight_dtype: "default" } };
-  g["AN:clip"] = { class_type: "CLIPLoader", inputs: { clip_name: clipName, type: "stable_diffusion", device: "default" } };
+  // .gguf unet/clip → the GGUF loaders (same convention as every other tool here —
+  // klein/krea2/sdxl/zimage/qwen2511 all branch on the filename the same way).
+  g["AN:unet"] = modelName.toLowerCase().endsWith(".gguf")
+    ? { class_type: "UnetLoaderGGUF", inputs: { unet_name: modelName } }
+    : { class_type: "UNETLoader", inputs: { unet_name: modelName, weight_dtype: "default" } };
+  g["AN:clip"] = clipName.toLowerCase().endsWith(".gguf")
+    ? { class_type: "CLIPLoaderGGUF", inputs: { clip_name: clipName, type: "stable_diffusion" } }
+    : { class_type: "CLIPLoader", inputs: { clip_name: clipName, type: "stable_diffusion", device: "default" } };
   g["AN:vae"]  = { class_type: "VAELoader",  inputs: { vae_name: vaeName } };
 
   let modelOut = ["AN:unet", 0];

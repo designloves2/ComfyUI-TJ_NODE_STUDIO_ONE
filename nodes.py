@@ -2927,11 +2927,12 @@ async def anima_save_config(request):
 @PromptServer.instance.routes.get("/anima_one/models")
 async def anima_get_models(request):
     try:
-        diff = _scan("diffusion_models")
+        # graph_builder_anima.js now branches on .gguf same as every other tool here.
+        diff = _scan("diffusion_models", [".safetensors", ".gguf", ".ckpt", ".pt", ".pth"])
     except Exception:
         diff = ["none"]
     try:
-        te = _scan("text_encoders")
+        te = _scan("text_encoders", [".safetensors", ".gguf", ".ckpt", ".pt", ".pth"])
     except Exception:
         te = ["none"]
     try:
