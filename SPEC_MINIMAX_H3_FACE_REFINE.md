@@ -27,6 +27,13 @@ Impact Pack의 FaceDetailer를 정지 이미지에서 영상으로 이식한 구
 "새 생성 모드"가 아니라 LTX Upscale과 같은 급의 "완성된 클립을 골라 후처리하는 파이프라인"**이다
 — 갤러리에서 클립을 고르고, 별도 그래프를 큐에 올리고, 결과를 다시 갤러리에 저장하는 흐름.
 
+**사용자 확정 (2026-09-12): LTX 2.5 Upscale과 H3 Face Refine 둘 다 "후처리(Post-process)"라는
+같은 상위 메뉴 아래 항목으로 묶는다.** 지금은 LTX Upscale이 H3 도구의 4번째 생성 모드
+(`T2VA/FL2VA/REF2VA/LTX UPSCALE`)처럼 배선돼 있는데, Face Refine을 붙이는 시점에 두 기능을
+"생성 모드" 목록에서 분리해 별도의 "후처리" 메뉴/탭으로 재편할지 여부는 UI 설계(§5) 단계에서
+LTX Upscale의 기존 UI와 함께 다시 검토한다 — 지금 이 스펙에서 확정하는 건 "두 기능이 같은
+카테고리"라는 사실뿐, 실제 메뉴 구조 변경은 별도 작업.
+
 ---
 
 ## 2. 새 의존성
@@ -41,16 +48,33 @@ Impact Pack의 FaceDetailer를 정지 이미지에서 영상으로 이식한 구
 
 **모델 파일 (사용자가 직접 받아야 함)**:
 
-| 모델 | 위치 | 용도 |
-|---|---|---|
-| `face_yolov8m.pt` (Bingsu/adetailer) | `models/ultralytics/bbox/` | 얼굴 검출 — **유일한 필수 모델** |
-| `person_yolov8m-seg.pt` (선택) | `models/ultralytics/segm/` | 얼굴 검출 실패 프레임의 폴백 (몸통에서 머리 위치 추정) |
-| SAM 모델 (선택) | `models/sams/` | 얼굴 모양 마스크 — 기본은 사각형 마스크로도 충분, README도 "대체로 사각형이 더 낫다"고 적어둠 |
-| CLIP Vision (선택) | `models/clip_vision/` | identity_model=clip_vision — IPAdapter/Redux용으로 이미 있을 가능성 높음 |
-| MiniMax H3 unet/clip/vae, 터보 LoRA | 이미 우리가 씀 | 그대로 재사용 |
+| 모델 | 위치 | 용도 | 상태 |
+|---|---|---|---|
+| `face_yolov8m.pt` (Bingsu/adetailer) | `models/ultralytics/bbox/` | 얼굴 검출 — **유일한 필수 모델** | ✅ **이미 모델 폴더에 있음** (2026-09-12 확인) |
+| `person_yolov8m-seg.pt` (선택) | `models/ultralytics/segm/` | 얼굴 검출 실패 프레임의 폴백 (몸통에서 머리 위치 추정) | ✅ **이미 모델 폴더에 있음** (2026-09-12 확인) |
+| SAM 모델 (선택) | `models/sams/` | 얼굴 모양 마스크 — 기본은 사각형 마스크로도 충분, README도 "대체로 사각형이 더 낫다"고 적어둠 | 미확인, 필요 시 나중에 |
+| CLIP Vision (선택) | `models/clip_vision/` | identity_model=clip_vision — IPAdapter/Redux용으로 이미 있을 가능성 높음 | 미확인, 필요 시 나중에 |
+| MiniMax H3 unet/clip/vae, 터보 LoRA | 이미 우리가 씀 | 그대로 재사용 | ✅ |
 
 anime/일러스트 얼굴은 `face_yolov8m.pt`가 못 잡을 수 있음 — 별도 애니메 얼굴 검출기 필요
 (`deepghs/anime_face_detection` 등). 이건 사용자가 실제 소재를 보고 나중에 판단할 부분.
+
+**필수 모델이 이미 준비돼 있으므로 §10 구현 순서의 "모델 준비" 단계는 스킵 가능.**
+
+### 2-A. H3 GGUF 조합 (12GB 대상, 참고용 — 우리는 16GB라 필수 아님)
+
+FaceRefine 예제 워크플로(`H3_Face_Refine_Auto_Select.json`)에 실제 저장된 GGUF 로더 값
+(뮤트된 "GGUF alternative" 쌍, 직접 JSON 확인 2026-09-12):
+
+| 용도 | GGUF 파일명 |
+|---|---|
+| H3 디퓨전 모델 | `minimaxH3GGUFFl2vaRef2va_v10.gguf` |
+| 텍스트 인코더 (Qwen3-VL) | `qwen3vl_32b_minimax_h3-Q4_K_M.gguf` |
+
+(참고: 같은 워크플로의 stock/safetensors 쌍은 `minimax_h3_fl2va_pruned_int8_convrot.safetensors`
++ `qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors`.) 우리 그래프 빌더는 어차피 `.gguf` 파일명이면
+자동으로 GGUF 로더로 분기하므로(기존 H3 패턴 재사용), 이 조합은 실기기 VRAM 검증 시 참고용으로만
+필요 — 별도 구현 작업 없음.
 
 ---
 
@@ -210,7 +234,7 @@ README에 따르면 이 팩의 진짜 강점은 "누가 봐도 주인공이 아�
 ## 10. 구현 순서 제안
 
 1. `ComfyUI-H3-FaceRefine` + `ComfyUI-H3-NativeAudioLock`을 로컬에 수동 설치, `nodes.py` 읽고
-   §3/§9-1,2,3 확정
+   §3/§9-1,2,3 확정 (얼굴 검출 모델은 §2에서 이미 준비 완료 확인됨 — 이 단계는 생략 가능)
 2. `buildFaceRefineGraph()` — 랭킹 규칙(select)만 지원하는 최소 그래프부터 (Manual pick 제외)
 3. Settings → Models "H3 Face Refine" 패널 + 가용성 리스트 양쪽 반영
 4. 좌측 패널 UI — 소스 카드 + Face/Crop/Denoise/Stitch 아코디언
