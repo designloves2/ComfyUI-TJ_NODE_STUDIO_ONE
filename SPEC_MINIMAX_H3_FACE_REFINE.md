@@ -1,8 +1,14 @@
 # SPEC — H3 Face Refine
 
-**상태: 1차 구현 완료 (랭킹 규칙 경로), 실기기 미검증.** 그래프 빌더·Settings·좌측 패널 UI까지
-전부 커밋됨(node — 커밋 해시는 git log 참고). Manual Select(Pick Faces 모달)만 아직 프런트가
-없어 select 드롭다운에서 빠져 있음 — §10 5번 참고. 웹 미러링은 실기기 검증 후 진행(사용자 지시).
+**상태: 1차 구현 완료 (랭킹 규칙 경로), 실기기 스모크 테스트 통과 (2026-09-12).** 그래프
+빌더·Settings·좌측 패널 UI 전부 커밋됨(node — 커밋 해시는 git log 참고), 그리고 실제로
+큐에 올려서 `H3FaceTrackCrop → H3InjectVideoLatent → TJ_H3_AudioLock → H3PerFrameDenoise →
+샘플링 → H3FaceStitch → SaveVideo` 전체 그래프가 처음부터 끝까지 에러 없이 완주해서 실제
+영상이 나오는 것까지 확인했다. 과정에서 TJ_NODE 쪽 실제 버그 하나를 발견·수정했다 — §11.
+아직 남은 것: (1) Manual Select(Pick Faces 모달)는 프런트가 없어 select 드롭다운에서
+빠져 있음(§10 5번), (2) 이번 스모크 테스트는 3인 그룹샷(원래 얼굴이 작지 않은 클립)으로
+그래프 동작만 확인한 것 — **진짜 작은 얼굴 클립으로 화질 개선 여부는 아직 실사용 검증 전**,
+(3) VRAM 실측(§9-5) 아직 안 함. 웹 미러링은 이 나머지가 끝난 뒤 진행(사용자 지시).
 이 문서는 원래 `github.com/Carasibana/ComfyUI-H3-FaceRefine`
 (MIT, 2026-09 기준 v1.1.0)를 그대로 우리 STUDIO_ONE에 "완성된 H3 클립을 후처리하는 기능"으로
 붙이기 위한 조사·설계 기록이다.
@@ -337,9 +343,35 @@ Pick Faces 모달만 새로 만들면 된다** — 백엔드 재구현 불필요
 - **UI는 지금 구현하되, 검증은 나중에** — 화면 확인은 사용자가 메인 백엔드에서 실제 GGUF 없는
   safetensors 조합으로 직접 테스트. 구현 단계에서는 오류 없이 짜는 데 집중하고, 불확실한 부분은
   이 문서에 계속 기록하며 진행(토큰 낭비 없이 — 이미 답이 나온 질문을 다시 조사하지 않기).
-- **TJ_NODE 세션에 요청할 것 없음** — 이번 조사로 필요한 노드(`H3FaceSelect` 등)가 전부 서드파티
-  팩(`ComfyUI-H3-FaceRefine`) 소스에 이미 있고, 오디오락도 TJ_NODE의 기존 `TJ_H3_AudioLock`을
-  그대로 재사용하기로 했음 — 새 TJ_NODE 개발 불필요. (나중에 실기기 검증 중 이 팩 자체의 버그를
-  만나면 그때 TJ_NODE에 "동반 노드로 패치" 요청을 검토 — 지금까지의 Krea2/LTX25 GGUF 패턴과 동일)
+- ~~TJ_NODE 세션에 요청할 것 없음~~ → **틀렸음, 실제로 하나 나왔다 — §11.** "새 노드 개발은
+  불필요"는 맞았지만, 기존 `TJ_H3_AudioLock`이 이 새로운 조합(VHS_LoadVideo 오디오 출력)에서
+  실제로 깨지는 버그가 있었고 TJ_NODE가 패치했다. 스모크 테스트로 실제 큐에 올려보지 않았으면
+  못 찾았을 버그 — "실기기 검증 전엔 모른다"는 게 그대로 증명된 사례.
 - **웹 미러링은 검증 완료 후** — PORT_LEDGER.md에도 "구현 중, 미검증" 상태로만 기록하고, 실제
   포팅 요청은 실기기 검증이 끝난 뒤에 보낸다.
+
+---
+
+## 11. 스모크 테스트에서 발견·수정한 버그 (2026-09-12)
+
+`buildFaceRefineGraph()`가 만드는 그래프를 손으로 재구성해 직접 `/prompt`에 큐잉해서 검증하는
+과정에서 실제 버그를 하나 찾았다 — 이 스펙/그래프 설계가 아니라 **TJ_NODE의 기존
+`TJ_H3_AudioLock`**(`nodes/video/h3_audio_lock.py`) 쪽 문제였다.
+
+**증상**: `VHS_LoadVideo`의 AUDIO 출력(index 2)을 `TJ_H3_AudioLock.audio`에 연결하면 항상
+`audio 입력이 비어 있거나 형식이 올바르지 않습니다` 에러.
+
+**근본 원인**: `TJ_H3_AudioLock`은 지금까지 항상 코어 `LoadAudio`(바로 `dict` 반환)랑만 짝지어
+써서, `_encode_audio()`가 `isinstance(audio, dict)`만 체크해도 문제가 없었다. 그런데
+`VHS_LoadVideo`의 AUDIO 출력은 `comfyui-videohelpersuite`의 `LazyAudioMap` — `dict`가 아니라
+`collections.abc.Mapping`을 구현한 지연평가 래퍼(`__getitem__` 호출 시점에 실제 오디오를 디코드).
+Face Refine이 이 조합(VHS_LoadVideo → TJ_H3_AudioLock)을 처음 만든 케이스라 이번에 처음 드러남.
+
+**시행착오**: 처음엔 "callable 래퍼"로 잘못 진단해 `if callable(audio): audio = audio()`를
+제안했는데, `LazyAudioMap`은 callable이 아니라 `Mapping`이라 그 체크가 항상 False — 재검증에서
+같은 에러가 그대로 나서 오진단임을 확인. `LazyAudioMap`의 실제 정의
+(`comfyui-videohelpersuite/videohelpersuite/utils.py`)를 직접 읽고서야 정정: `isinstance(audio,
+Mapping)`이면 `dict(audio)`로 변환. TJ_NODE가 정정된 수정을 반영 → 재검증 성공(§ 상단 상태 참고).
+
+**교훈**: 노드 소스만 읽고 추정한 진단은 실제 실행 전까진 확정이 아니다 — 이번 것도 실제로 큐에
+올려서 진짜 에러 메시지를 받아보고 나서야 두 번째 진단(Mapping)이 맞다는 게 확인됐다.
