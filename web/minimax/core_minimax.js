@@ -878,6 +878,11 @@ export function defaultState(saved) {
     frLoras: Array.isArray(saved.frLoras) ? saved.frLoras.map(l => ({
       name: l.name || "none", strength: l.strength ?? 1.0, enabled: l.enabled !== false,
     })) : [],
+    // Face Refine's OWN turbo switch — independent of the main render's turboMode (see
+    // SPEC_MINIMAX_H3_FACE_REFINE.md §18). OFF (default): no turbo LoRA, frSteps is the
+    // real step count. ON: applies the named saved preset's full accel recipe.
+    frTurboOn: saved.frTurboOn ?? false,
+    frTurboPreset: saved.frTurboPreset || "",   // a preset id from allPresets(), e.g. "u:PDD-8step"
 
     accelMode:      saved.accelMode      || "solattn",   // legacy — kept only so old
                                                          // workflows can be migrated below

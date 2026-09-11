@@ -1971,10 +1971,38 @@ app.registerExtension({
         ].filter(Boolean)));
 
         // ── denoise ────────────────────────────────────────────────────────────
+        // Face Refine's own Turbo switch — independent of whatever the main H3
+        // generation modes are set to (turning turbo on/off here never touches those).
+        // OFF: no turbo LoRA at all, Steps below is the real step count. ON: applies a
+        // saved preset's full accel recipe (turbo LoRA + its trained step count) — the
+        // Steps field is ignored while it's on, since a turbo LoRA's step count is not a
+        // preference (SPEC_MINIMAX_H3_FACE_REFINE.md §17-B/§18).
+        const frUserPresets = Array.isArray(state.userPresets) ? state.userPresets : [];
+        const frPresetEntries = allPresets(frUserPresets).filter(p => p.turbo && p.turbo !== "none");
+        const frTurboRow = [
+          checkboxRow("Turbo", !!state.frTurboOn, v => { state.frTurboOn = v; persist(); renderLeft(); }),
+        ];
+        if (state.frTurboOn) {
+          if (frPresetEntries.length) {
+            const curId = state.frTurboPreset || frPresetEntries[0].id;
+            frTurboRow.push(select(frPresetEntries.map(p => ({ value: p.id, label: p.label || p.id })),
+              curId, v => { state.frTurboPreset = v; persist(); }));
+            if (!state.frTurboPreset) { state.frTurboPreset = curId; persist(); }
+          } else {
+            frTurboRow.push(el("div", { text: "No turbo preset found — save one (with a turbo LoRA set) from the main panel's Preset menu first.",
+              style: { fontSize: "10px", color: C.warn } }));
+          }
+        }
         leftPanel.appendChild(panel([
           label("Denoise"),
+          row([col(frTurboRow)]),
           row([
-            col([label("Steps"), numberField(state.frSteps ?? 8, v => { state.frSteps = Math.max(1, Math.round(v)); persist(); }, 1)]),
+            col([label(state.frTurboOn ? "Steps (fixed by the turbo preset)" : "Steps"),
+              (() => {
+                const nf = numberField(state.frSteps ?? 8, v => { state.frSteps = Math.max(1, Math.round(v)); persist(); }, 1);
+                if (state.frTurboOn) { nf.disabled = true; nf.style.opacity = "0.5"; }
+                return nf;
+              })()]),
             col([label("Base denoise"), numberField(state.frDenoise ?? 0.40, v => { state.frDenoise = Math.min(1, Math.max(0.01, v)); persist(); }, 0.01)]),
           ]),
           row([

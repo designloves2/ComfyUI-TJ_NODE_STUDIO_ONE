@@ -616,3 +616,33 @@ Refine 패스에서만 얼굴 디테일 LoRA를 추가로 얹는 것도 가능.
 
 좌측 패널에 "Face LoRA" 아코디언 신설(LTX LoRA와 동일한 UI: 토글/강도/삭제/추가), `state`에
 `frLoras`(`{name, strength, enabled}[]`) 추가, 메타에 `faceRefine.loras`/`turboMode` 기록.
+
+---
+
+## 18. Face Refine 전용 터보 스위치 (사용자 확정, 2026-09-12)
+
+§17-B는 "메인 렌더의 `turboMode`를 그대로 물려받되 스텝/샘플러만 맞춰라"는 전제였는데,
+사용자가 다시 짚어준 요구는 달랐다: **"터보 로라를 어떤 걸 쓰는지부터 헷갈린다. 내가 만든
+PDD-8step 프리셋을 그냥 쓰게 해달라. 터보를 켜고 끌 수 있게 해달라. 끄면 마지막에 입력한
+스텝값을 쓰고."** — 즉 Face Refine이 메인 렌더의 `turboMode`에 몰래 얹혀가는 게 아니라,
+**완전히 독립된 자기 자신의 터보 스위치**를 가져야 한다는 것.
+
+**구현**:
+- **state**: `frTurboOn`(bool, 기본 false), `frTurboPreset`(저장된 프리셋의 id 문자열, 예
+  `"u:PDD-8step"`).
+- **좌측 패널**: Denoise 패널 맨 위에 "Turbo" 체크박스 + (켜면) 저장된 프리셋 중 터보가 있는
+  것만 골라 보여주는 드롭다운(`allPresets(state.userPresets)`에서 `p.turbo !== "none"`인 것만
+  필터). 켜져 있으면 Steps 필드는 비활성화("Steps (fixed by the turbo preset)")로 표시 —
+  터보의 스텝 수는 취향이 아니라 그 터보가 학습된 고정값이라서(§17-B와 같은 이유).
+- **그래프 빌더**: `refState` 만든 직후, `state.frTurboOn`이 꺼져 있으면 **`refState.turboMode
+  = "none"`을 강제로 덮어씀** — 메인 렌더가 지금 PDD든 뭐든 쓰고 있어도 Face Refine의
+  `refState`(얕은 복사본이라 원본 `state`엔 영향 없음)에서는 무조건 꺼짐. 켜져 있으면
+  `allPresets()`에서 `frTurboPreset` id로 프리셋을 찾아 `applyPreset(refState, preset)`을
+  호출 — 이 함수가 `turboMode`/`attnBackend`/`attnForward`/`blockCache`/`pddNfe`/
+  `pddFile`/`pddFileReference` 등 프리셋이 들고 있는 축 전부를 `refState`에 그대로 써준다
+  (기존 프리셋 시스템 그대로 재사용, 새로 안 만듦). 이후 `buildModelChain(refState, avail)`과
+  §17-B의 `effectiveTurbo(refState, avail)`가 이 값을 그대로 읽으므로 스텝/샘플러 조율도
+  자동으로 맞아떨어짐 — 별도 분기 필요 없음.
+- **메인 렌더는 절대 안 건드림**: `refState`는 `{...state, ...}`로 만든 얕은 복사본이라
+  `applyPreset`이 그 위에 값을 써도 실제 `state`(다른 모드가 보는 것과 동일 객체)는 그대로.
+  Face Refine에서 터보를 켰다 껐다 해도 T2VA/FL2VA/REF2VA 쪽 터보 설정엔 아무 영향 없음.

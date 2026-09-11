@@ -8,7 +8,7 @@
 // Optional third-party nodes are gated on `avail` (from /minimax_h3_one/node_availability):
 // a missing pack disables that one feature rather than failing the whole prompt.
 import { SUBFOLDER, FPS, resolveResolution, effectiveTurbo, effectiveSteps, turboLoraForMode, pddFileForMode, blockCacheBlockedReason, h3OptimizerBlockedReason, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES } from "./core_minimax.js";
-import { matchPreset } from "./presets_minimax.js";
+import { matchPreset, allPresets, applyPreset } from "./presets_minimax.js";
 
 const N = {
   unet:   "MM:unet",
@@ -1108,6 +1108,18 @@ export function buildFaceRefineGraph(state, avail, opts = {}) {
   if (useCustomModel && (!clipFile || clipFile === "none"))
     throw new Error("Face Refine: set its own text encoder in ⚙ Settings → FaceRefine Model (or turn off 'use a separate model').");
   const refState = { ...state, generationMode: "reference", unetReference: unetFile };
+  // Face Refine's OWN turbo switch (§18) — independent of the main render's turboMode.
+  // OFF: force "none" here regardless of what the main generation modes have set, so no
+  // turbo LoRA leaks in by accident. ON: apply the chosen saved preset's full accel
+  // recipe onto refState (a shallow copy — the real `state`/main render is untouched).
+  if (state.frTurboOn) {
+    const entries = allPresets(Array.isArray(state.userPresets) ? state.userPresets : []);
+    const preset = entries.find(p => p.id === state.frTurboPreset) || entries.find(p => p.turbo && p.turbo !== "none");
+    if (preset) applyPreset(refState, preset);
+    else refState.turboMode = "none";
+  } else {
+    refState.turboMode = "none";
+  }
   const modelLink0 = buildModelChain(g, refState, avail);
   g[N.clip] = String(clipFile || "").toLowerCase().endsWith(".gguf")
     ? { class_type: "CLIPLoaderGGUF", inputs: { clip_name: clipFile, type: "minimax" } }
