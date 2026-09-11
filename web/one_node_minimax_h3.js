@@ -23,6 +23,7 @@ import {
   h3OptimizerBlockedReason, h3OptimizerOverlapNote,
   effectiveTurbo, effectiveSteps, migrateLegacyAccel,
   continuityModesFor, generationModesFor, configIssues, ltxUpscaleReady, ltxUpscaleMissing,
+  faceRefineReady, faceRefineMissing,
   clipPlan, formatDuration, formatClock, framesToSeconds, alignFrameCount, FPS, ONE_TAKE_OVERLAP_FRAMES, resolveResolution,
   parseBrief, groupShots, composeClipPrompt, composeStitchedPrompt,
   turboLoraForMode, pddFileForMode, clipAssets, explainGenerationError,
@@ -37,7 +38,7 @@ import {
   getMediaFiles, uploadMedia, getVramStats, listVideos,
   saveConfig, analyzeImagesNative, analyzeImagesOpenRouter, writeBriefNative, writeBriefOpenRouter, getMediaInfo,
 } from "./minimax/api_minimax.js";
-import { buildClipGraph, buildLtxUpscaleGraph, NODE_IDS, previewNodeKey } from "./minimax/graph_builder_minimax.js";
+import { buildClipGraph, buildLtxUpscaleGraph, buildFaceRefineGraph, NODE_IDS, previewNodeKey } from "./minimax/graph_builder_minimax.js";
 import { PIPELINE_PRESETS, allPresets, captureAxes, matchPreset, applyPreset } from "./minimax/presets_minimax.js";
 import { createPresetDialogs } from "./minimax/ui_presets_minimax.js";
 import { createSettingsOverlay } from "./minimax/ui_app_settings_minimax.js";
@@ -516,6 +517,10 @@ app.registerExtension({
       }});
       editBtn.addEventListener("click", () => {
         if (state.generationMode === "ltxupscale") { openLtxPromptEdit(); return; }
+        // Face Refine's prompt is the single plain-text field in the left panel — no
+        // dedicated modal yet (only the H3 shot-list editor exists, which is the wrong
+        // shape for this mode).
+        if (state.generationMode === "facerefine") { showPopup("Edit the prompt in the left panel (under the source card).", false); return; }
         promptEditOv?.show();
       });
       promptHdr.appendChild(editBtn);
@@ -580,14 +585,21 @@ app.registerExtension({
       function renderPrompts() {
         clear(promptList);
         const isLtx = state.generationMode === "ltxupscale";
-        // The bottom prompt area is per-mode: the H3 shot list, or (LTX Upscale) one
-        // prompt + a ✨ LLM button. Common / Split / Add are H3-only.
-        commonBtn.style.display = isLtx ? "none" : "";
-        splitBtn.style.display  = isLtx ? "none" : "";
-        addBtn.style.display    = isLtx ? "none" : "";
-        promptTitle.textContent = isLtx ? "UPSCALE PROMPT" : "PROMPTS";
-        promptList.style.gap = isLtx ? "6px" : "4px";
+        const isFaceRefine = state.generationMode === "facerefine";
+        // The bottom prompt area is per-mode: the H3 shot list, or (LTX Upscale / Face
+        // Refine) one prompt field that lives in the left panel instead. Common / Split /
+        // Add are H3-only.
+        commonBtn.style.display = (isLtx || isFaceRefine) ? "none" : "";
+        splitBtn.style.display  = (isLtx || isFaceRefine) ? "none" : "";
+        addBtn.style.display    = (isLtx || isFaceRefine) ? "none" : "";
+        promptTitle.textContent = isLtx ? "UPSCALE PROMPT" : isFaceRefine ? "FACE REFINE" : "PROMPTS";
+        promptList.style.gap = (isLtx || isFaceRefine) ? "6px" : "4px";
         if (isLtx) { renderLtxPrompt(); return; }
+        if (isFaceRefine) {
+          promptList.appendChild(el("div", { text: "Prompt is in the left panel, under the source card.",
+            style: { fontSize: "11px", color: C.muted, padding: "6px 2px" } }));
+          return;
+        }
         const plan = currentPlan();
         const onCount = state.prompts.filter(p => promptEnabled(p)).length;
         promptCount.textContent = `(${plan.promptCount} prompt${plan.promptCount > 1 ? "s" : ""} · ${onCount} on → ${plan.count} clip${plan.count > 1 ? "s" : ""} · ${plan.actualSeconds.toFixed(2)}s)`;
@@ -1231,6 +1243,24 @@ app.registerExtension({
         loadLtxSrcInfo();
       }
 
+      // Gallery pick / upload for H3 Face Refine — mirrors setLtxSource above (same
+      // sidecar-meta prompt load), but a video/detector/cut change also invalidates any
+      // Manual Select pick (those shots no longer describe this clip — see
+      // SPEC_MINIMAX_H3_FACE_REFINE.md §6-B).
+      function setFrSource(inputFilename, kind, item) {
+        state.frSource = inputFilename; state.frSourceKind = kind;
+        state.frConfirmedPick = "";   // a different video/skip/cap invalidates any prior pick
+        let m = (item && item.meta) || {};
+        if (typeof m === "string") { try { m = JSON.parse(m); } catch { m = {}; } }
+        const p = (item && item.prompt) || m.prompt || (Array.isArray(m.prompts) && m.prompts[0]) || "";
+        if (kind === "gallery" && String(p).trim()) state.frPrompt = String(p);
+        const durM = m.durationSeconds || m.seconds || (m.frames && m.fps ? m.frames / m.fps : 0) || 0;
+        state.frSourceMeta = (m.w || m.h || m.fps || m.frames || durM)
+          ? { w: m.w || 0, h: m.h || 0, fps: m.fps || 0, frames: m.frames || 0, duration: durM }
+          : null;
+        persist(); renderLeft(); renderPrompts();
+      }
+
       function renderLtxUpscaleLeft() {
         const prevScroll = leftPanel.scrollTop;
         clear(leftPanel);
@@ -1473,6 +1503,153 @@ app.registerExtension({
         leftPanel.scrollTop = prevScroll;
       }
 
+      // H3 Face Refine — post-process pass on a finished/uploaded clip. Same category as
+      // LTX Upscale (source card + accordions, no shot-list prompt), see
+      // SPEC_MINIMAX_H3_FACE_REFINE.md §5. NOTE: Manual Select's "Pick Faces" picker (§6-B)
+      // is not wired yet — select stays on the ranking-rule modes for now; the graph
+      // builder and state already support Manual (frConfirmedPick) for when it lands.
+      const FR_SELECT_MODES = [
+        "largest_face", "smallest_face", "left_most", "right_most",
+        "top_most", "bottom_most", "centre_most", "detector_score",
+        // "manual",  // re-enable once the Pick Faces modal is wired
+      ];
+      function renderFaceRefineLeft() {
+        const prevScroll = leftPanel.scrollTop;
+        clear(leftPanel);
+
+        if (!faceRefineReady(state)) {
+          leftPanel.appendChild(panel([
+            el("div", { html: "⚙ <b>H3 Face Refine</b> needs a face detector set first.<br>Open <b>⚙ Settings → Models → H3 Face Refine</b> and pick one.", style: { fontSize: "12px", lineHeight: "1.6" } }),
+            el("div", { text: "missing: " + faceRefineMissing(state).join(", "), style: { fontSize: "11px", color: C.warn, marginTop: "4px" } }),
+          ]));
+          leftOuter.appendChild(seedGenWrap);
+          leftPanel.scrollTop = prevScroll;
+          return;
+        }
+
+        // ── source clip ────────────────────────────────────────────────────────
+        const hasSrc = !!state.frSource;
+        const srcKids = [label("Source clip")];
+        const card = el("div", { style: {
+          position: "relative", width: "100%", aspectRatio: "16 / 9", background: "#000",
+          borderRadius: "8px", overflow: "hidden", border: `1px solid ${hasSrc ? BRAND : C.border}`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }});
+        if (hasSrc) {
+          const vid = el("video", {
+            src: `/view?filename=${encodeURIComponent(state.frSource)}&type=input`,
+            controls: true, muted: true, preload: "metadata",
+            style: { width: "100%", height: "100%", objectFit: "contain", background: "#000", display: "block" },
+          });
+          card.appendChild(vid);
+          card.appendChild(el("button", { type: "button", text: "✕", title: "Clear source", style: {
+            position: "absolute", top: "6px", right: "6px", zIndex: "3", width: "24px", height: "24px",
+            border: "none", borderRadius: "6px", background: "rgba(0,0,0,0.7)", color: "#fff", cursor: "pointer", fontSize: "12px",
+          }, onclick: () => { state.frSource = ""; state.frSourceKind = "gallery"; state.frSourceMeta = null; state.frConfirmedPick = ""; persist(); renderLeft(); renderPrompts(); } }));
+        } else {
+          card.appendChild(el("div", { text: "no source clip", style: { color: C.muted, fontSize: "12px" } }));
+        }
+        srcKids.push(card);
+
+        const fileInp = el("input", { type: "file", accept: "video/*", style: { display: "none" } });
+        fileInp.addEventListener("change", async () => {
+          const f = fileInp.files[0]; fileInp.value = "";
+          if (!f) return;
+          try { showPopup("Uploading…", false); const name = await uploadMedia(f); setFrSource(name, "upload"); }
+          catch (e) { showPopup(e.message, true); }
+        });
+        const galBtn = button("🖼 From gallery", () => galleryOv?.showPicker((inputFilename, item) =>
+          setFrSource(inputFilename, "gallery", item)));
+        const upBtn = button("⬆ Upload", () => fileInp.click(), "default");
+        galBtn.style.flex = "1"; upBtn.style.flex = "1";
+        srcKids.push(el("div", { style: { display: "flex", gap: "8px" } }, [galBtn, upBtn]));
+        srcKids.push(fileInp);
+        srcKids.push(el("div", {
+          text: "Tracks the face per frame, crops it to fill a canvas, re-renders it through H3, "
+              + "then stitches it back onto the original frames.",
+          style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
+        leftPanel.appendChild(panel(srcKids));
+
+        // ── prompt (plain text — no shot list, this reconditions the whole clip) ──
+        const promptTa = el("textarea", { rows: "3", placeholder: "Describe the clip (character, scene) — helps H3 re-render the face consistently.",
+          style: { width: "100%", boxSizing: "border-box", resize: "vertical", background: C.bg2, color: C.text,
+            border: `1px solid ${C.border}`, borderRadius: "6px", padding: "7px", fontSize: "12px", fontFamily: "inherit" } });
+        promptTa.value = state.frPrompt || "";
+        promptTa.addEventListener("input", () => { state.frPrompt = promptTa.value; persist(); });
+        leftPanel.appendChild(panel([label("Prompt"), promptTa]));
+
+        // ── face selection ────────────────────────────────────────────────────
+        leftPanel.appendChild(panel([
+          label("Face"),
+          row([
+            col([label("Select"), select(FR_SELECT_MODES.map(s => ({ value: s, label: s })),
+              state.frSelect || "largest_face", v => { state.frSelect = v; persist(); })]),
+            col([label("Confidence"), numberField(state.frConfidence ?? 0.35, v => { state.frConfidence = Math.min(0.95, Math.max(0.05, v)); persist(); }, 0.05)]),
+          ]),
+          row([
+            col([checkboxRow("Cut detection", state.frCutDetection, v => { state.frCutDetection = v; persist(); })]),
+            col([checkboxRow("Identity tracking", state.frIdentityTrack !== false, v => { state.frIdentityTrack = v; persist(); })]),
+          ]),
+          el("div", { text: "Which face is the subject, chosen once per shot (or per clip if Cut detection is off). "
+              + "Identity tracking holds one person through a crowd once a face is locked on.",
+            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+        ]));
+
+        // ── crop / canvas ─────────────────────────────────────────────────────
+        leftPanel.appendChild(panel([
+          label("Crop / Canvas"),
+          row([
+            col([label("Crop factor"), numberField(state.frCropFactor ?? 2.5, v => { state.frCropFactor = Math.min(8, Math.max(1.2, v)); persist(); }, 0.1)]),
+            col([label("Canvas mode"), select([
+              { value: "auto_capped_768", label: "Auto (capped 768)" },
+              { value: "auto_no_downscale", label: "Auto (no downscale)" },
+              { value: "manual", label: "Manual" },
+            ], state.frCanvasMode || "auto_capped_768", v => { state.frCanvasMode = v; persist(); renderLeft(); })]),
+          ]),
+          state.frCanvasMode === "manual" ? row([
+            col([label("Canvas width"), numberField(state.frCanvasWidth ?? 768, v => { state.frCanvasWidth = Math.round(v); persist(); }, 32)]),
+            col([label("Canvas height"), numberField(state.frCanvasHeight ?? 768, v => { state.frCanvasHeight = Math.round(v); persist(); }, 32)]),
+          ]) : null,
+        ].filter(Boolean)));
+
+        // ── denoise ────────────────────────────────────────────────────────────
+        leftPanel.appendChild(panel([
+          label("Denoise"),
+          row([
+            col([label("Steps"), numberField(state.frSteps ?? 8, v => { state.frSteps = Math.max(1, Math.round(v)); persist(); }, 1)]),
+            col([label("Base denoise"), numberField(state.frDenoise ?? 0.40, v => { state.frDenoise = Math.min(1, Math.max(0.01, v)); persist(); }, 0.01)]),
+          ]),
+          row([
+            col([label("Small-face ×"), numberField(state.frDenoiseMulSmall ?? 1.0, v => { state.frDenoiseMulSmall = Math.min(1, Math.max(0, v)); persist(); }, 0.05)]),
+            col([label("Large-face ×"), numberField(state.frDenoiseMulLarge ?? 0.35, v => { state.frDenoiseMulLarge = Math.min(1, Math.max(0, v)); persist(); }, 0.05)]),
+          ]),
+          el("div", { text: "Base denoise and the two multipliers are tuned as a set — the default 0.40 base is "
+              + "gentled down per frame by these (small face = full strength, large face = ×0.35). "
+              + "Change one, expect to retune the others.",
+            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+        ]));
+
+        // ── stitch ─────────────────────────────────────────────────────────────
+        leftPanel.appendChild(panel([
+          label("Stitch"),
+          row([
+            col([label("Paste region"), select([
+              { value: "face_only", label: "Face only" },
+              { value: "face_ellipse", label: "Face (ellipse)" },
+              { value: "full_crop", label: "Full crop" },
+            ], state.frPasteRegion || "face_only", v => { state.frPasteRegion = v; persist(); })]),
+            col([label("Feather"), numberField(state.frFeather ?? 6, v => { state.frFeather = Math.max(0, Math.round(v)); persist(); }, 2)]),
+          ]),
+          row([
+            col([label("Colour match"), numberField(state.frColourMatch ?? 1.0, v => { state.frColourMatch = Math.min(1, Math.max(0, v)); persist(); }, 0.05)]),
+            col([label("Blend"), numberField(state.frBlend ?? 1.0, v => { state.frBlend = Math.min(1, Math.max(0, v)); persist(); }, 0.05)]),
+          ]),
+        ]));
+
+        leftOuter.appendChild(seedGenWrap);
+        leftPanel.scrollTop = prevScroll;
+      }
+
       function renderLeft() {
         // Every control in this column re-runs renderLeft(), which rebuilds the whole
         // panel — and a rebuilt scroll container starts back at the top. Ticking one
@@ -1480,6 +1657,7 @@ app.registerExtension({
         // down again for the next one. Remember where the column was and put it back
         // after the rebuild; the browser clamps for us if the new content is shorter.
         if (state.generationMode === "ltxupscale") { renderLtxUpscaleLeft(); return; }
+        if (state.generationMode === "facerefine") { renderFaceRefineLeft(); return; }
         const prevScroll = leftPanel.scrollTop;
         const contModes = continuityModesFor(state.generationMode, state);
         const lockAvailable = !!ctx.availability?.TJ_H3_AudioLock;
@@ -2898,9 +3076,90 @@ app.registerExtension({
         }
       }
 
+      // Single-queue run, no relay/segmenting (Face Refine's frame count comes off the
+      // tracker itself, so there's no seconds/count plan to build — see
+      // SPEC_MINIMAX_H3_FACE_REFINE.md §4/§10, unlike LTX Upscale which can split a long
+      // clip across queue turns).
+      async function runFaceRefine() {
+        if (running) return;
+        if (!faceRefineReady(state)) { showPopup("Set a face detector in ⚙ Settings → Models first — missing: " + faceRefineMissing(state).join(", "), true); return; }
+        if (!state.frSource) { showPopup("Pick a source clip (gallery) or upload a video.", true); return; }
+        if (state.frSelect === "manual" && !String(state.frConfirmedPick || "").trim()) {
+          showPopup("Select is Manual but no face has been picked yet.", true); return;
+        }
+
+        if (state.seedMode === "randomize")      { state.seed = randomSeed(); seedInput.value = state.seed; }
+        else if (state.seedMode === "increment") { state.seed = (state.seed || 0) + 1; seedInput.value = state.seed; }
+        else if (state.seedMode === "decrement") { state.seed = Math.max(0, (state.seed || 0) - 1); seedInput.value = state.seed; }
+        persist();
+        const rs = JSON.parse(JSON.stringify(state));
+
+        running = true; stopRequested = false;
+        startWakeAudio(); startQueueWatch();
+        genBtn.disabled = true; genBtn.textContent = "⏳ Face Refine…";
+        nextGenBtn.style.display = "none";
+        resetPreview(); barInner.style.width = "0%";
+        startClock();
+        let mem = null;
+        try {
+          if (!ctx.availability || !Object.keys(ctx.availability).length) {
+            const av = await getNodeAvailability();
+            ctx.availability = av.available || {}; ctx.availabilityInfo = av;
+          }
+          mem = watchMemory();
+          setStatus("Face Refine · queued (tracking + per-frame img2img)");
+          const built = buildFaceRefineGraph(rs, ctx.availability, {
+            nodeId: self.id, sourceFile: rs.frSource, promptText: rs.frPrompt, seed: rs.seed,
+            refImages: rs.refImages,
+          });
+          let r;
+          try {
+            r = await queuePrompt(built.graph, {
+              onProgress: (v, m) => setStepProgress(v, m), samplerNode: "MM:sampler",
+            });
+          } finally { mem.stop(); }
+          const out = firstOutput(r.byNode, "FR:save");
+          if (!out) throw new Error("Face Refine produced no output.");
+
+          const memPeak = mem ? mem.peak() : null;
+          const clipMeta = {
+            v: 1, prompt: String(rs.frPrompt || ""), mode: "facerefine",
+            source: rs.frSource, sourceKind: rs.frSourceKind,
+            faceRefine: {
+              select: rs.frSelect, detector: rs.faceDetector, cropFactor: rs.frCropFactor,
+              canvasMode: rs.frCanvasMode, denoise: rs.frDenoise,
+            },
+            steps: built.meta.steps, seed: built.meta.seed,
+            elapsedSec: (Date.now() - (runStart || Date.now())) / 1000,
+            ...(memPeak || {}),
+          };
+          try { await reconcileGeometry?.(clipMeta, out); } catch {}
+          saveMeta(out.filename, out.subfolder || "", clipMeta);
+
+          const url = `/view?filename=${encodeURIComponent(out.filename)}&subfolder=${encodeURIComponent(out.subfolder || "")}&type=output`;
+          lastResultURL = url;
+          showResultVideo(url, { final: true });
+          badge.textContent = "FACE REFINED";
+          setStatus(`Done — ${out.filename}`);
+          barInner.style.width = "100%";
+          try { galleryOv?.refresh?.(); } catch {}
+        } catch (e) {
+          const why = explainGenerationError(e.message);
+          setStatus(why ? `Error: ${why}` : `Error: ${e.message}`);
+          showPopup(why || e.message, true);
+        } finally {
+          try { await freeMemory(); } catch {}
+          stopWakeAudio(); stopQueueWatch();
+          running = false; stopRequested = false;
+          genBtn.disabled = false; genBtn.textContent = "▶ Generate";
+          stopClock();
+        }
+      }
+
       async function runGeneration(resume = null) {
         if (running) return;
         if (state.generationMode === "ltxupscale" && !resume) return runLtxUpscale();
+        if (state.generationMode === "facerefine" && !resume) return runFaceRefine();
         running = true; stopRequested = false;
         startWakeAudio();
         startQueueWatch();

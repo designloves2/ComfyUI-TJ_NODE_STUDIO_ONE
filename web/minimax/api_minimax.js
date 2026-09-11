@@ -62,6 +62,15 @@ export const MMH3_OPTIONAL_NODES = [
   "TJ_H3_LatentContinuation", "TJ_H3_SaveLatentCheckpoint", "TJ_H3_LoadLatentCheckpoint",
   // Native Image -> Brief vision pipeline (no Ollama needed)
   "TJ_MultiImageLoader", "TextGenerate", "TJStudioOneTextOutput",
+  // H3 Face Refine (Carasibana/ComfyUI-H3-FaceRefine, MIT) — post-process pass that
+  // tracks/crops a small face per frame, re-renders it through H3 as real img2img, then
+  // stitches it back. See SPEC_MINIMAX_H3_FACE_REFINE.md. TJ_H3_AudioLock (above) stands
+  // in for the pack's own MiniMaxH3NativeAudioLock — not installed, not needed.
+  "H3FaceSelect", "H3FaceTrackCrop", "H3InjectVideoLatent", "H3PerFrameDenoise",
+  "H3FaceStitch", "H3FaceTransformInfo",
+  // optional — true face-shaped paste masks instead of a rectangle (needs Impact Pack's
+  // SAMLoader for a SAM_MODEL; everything else in Face Refine works without it)
+  "H3FaceMaskSAM", "SAMLoader",
 ];
 
 /**

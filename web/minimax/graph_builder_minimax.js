@@ -1006,6 +1006,178 @@ export function buildLtxUpscaleGraph(state, avail, opts = {}) {
   } };
 }
 
+// ── H3 Face Refine ────────────────────────────────────────────────────────────
+// Post-process pass over a finished/uploaded H3 clip: tracks a small/distant face per
+// frame, crops it to fill a canvas, re-renders it through H3 as real img2img (via
+// ComfyUI-H3-FaceRefine's H3InjectVideoLatent — H3's own nodes have no img2img path),
+// then stitches the result back with colour match + feathering. See
+// SPEC_MINIMAX_H3_FACE_REFINE.md. Reuses H3's OWN unet/clip/vae (buildModelChain /
+// buildConditioning, same code path as Reference mode) — NOT a separate model set like
+// LTX Upscale. Our own TJ_H3_AudioLock stands in for the pack's own
+// MiniMaxH3NativeAudioLock (spec §4/§9-2: H3PerFrameDenoise doesn't depend on that node's
+// side effects, only on the noise_mask shape ours already produces).
+const FR = {
+  load:    "FR:load",
+  select:  "FR:select",      // H3FaceSelect — Manual Select only
+  track:   "FR:track",
+  inject:  "FR:inject",
+  denoise: "FR:denoise",
+  stitch:  "FR:stitch",
+  video:   "FR:video",
+  save:    "FR:save",
+};
+
+export function buildFaceRefineGraph(state, avail, opts = {}) {
+  const { nodeId, sourceFile, promptText, seed, refImages } = opts;
+  if (!sourceFile) throw new Error("Face Refine: pick a source clip (gallery or upload).");
+  if (!state.faceDetector || state.faceDetector === "none")
+    throw new Error("Face Refine: set a face detector in ⚙ Settings → Models — Face Refine.");
+  const isManual = state.frSelect === "manual";
+  if (isManual && !String(state.frConfirmedPick || "").trim())
+    throw new Error("Face Refine: pick a face for every shot first (Pick Faces button) — select is set to Manual.");
+
+  const g = {};
+  const folder = (state.saveSubfolder || SUBFOLDER).replace(/\\/g, "/");
+  const stem = state.filenamePrefix || "MMH3";
+  const cutMode = state.frCutDetection ? "auto (pyscenedetect)" : "none";
+
+  // ── source + (optional) manual face pick ────────────────────────────────────
+  // H3FaceSelect replaces the plain video loader when Manual Select is on: it detects
+  // once, up front, and hands its boxes to the tracker via face_pick so the tracker does
+  // not repeat the detection pass. Ranking-rule modes (largest_face etc.) skip this node
+  // entirely — the tracker does its own detection using `select` directly.
+  let imagesLink, audioLink, facePickLink = null;
+  if (isManual && has(avail, "H3FaceSelect")) {
+    g[FR.select] = { class_type: "H3FaceSelect", inputs: {
+      video: sourceFile, detector: state.faceDetector, confidence: state.frConfidence ?? 0.35,
+      select: "manual", select_index: 0, confirmed_pick: state.frConfirmedPick || "",
+      cut_detection: cutMode, cut_threshold: state.frCutThreshold ?? 3.0,
+      skip_first_frames: 0, frame_load_cap: 0, select_every_nth: 1,
+    }};
+    imagesLink = [FR.select, 0]; audioLink = [FR.select, 1]; facePickLink = [FR.select, 2];
+  } else {
+    g[FR.load] = { class_type: "VHS_LoadVideo", inputs: {
+      video: sourceFile, force_rate: 0, custom_width: 0, custom_height: 0,
+      frame_load_cap: 0, skip_first_frames: 0, select_every_nth: 1, format: "AnimateDiff",
+    }};
+    imagesLink = [FR.load, 0]; audioLink = [FR.load, 2];
+  }
+
+  // ── track + crop ─────────────────────────────────────────────────────────────
+  const trackInputs = {
+    images: imagesLink, detector: state.faceDetector, confidence: state.frConfidence ?? 0.35,
+    crop_factor: state.frCropFactor ?? 2.5,
+    canvas_width: state.frCanvasWidth ?? 768, canvas_height: state.frCanvasHeight ?? 768,
+    canvas_mode: state.frCanvasMode || "auto_capped_768",
+    smooth_window: state.frSmoothWindow ?? 21, size_smooth_window: 51,
+    smooth_method: "gaussian", size_mode: "per_frame",
+    identity_track: state.frIdentityTrack !== false,
+    identity_threshold: state.frIdentityThreshold ?? 0.28,
+    fallback_detector: state.faceFallbackDetector || "none",
+  };
+  if (facePickLink) {
+    trackInputs.face_pick = facePickLink;   // detection already done by H3FaceSelect
+  } else {
+    trackInputs.select = state.frSelect || "largest_face";
+    trackInputs.cut_detection = cutMode;
+    trackInputs.cut_threshold = state.frCutThreshold ?? 3.0;
+  }
+  if (state.frIdentityModel) trackInputs.identity_model = state.frIdentityModel;
+  g[FR.track] = { class_type: "H3FaceTrackCrop", inputs: trackInputs };
+  // RETURN_NAMES = (crops, transform, preview, report, canvas_w, canvas_h, frame_count)
+  const canvasW = [FR.track, 4], canvasH = [FR.track, 5], frameCount = [FR.track, 6];
+  const cropsLink = [FR.track, 0], transformLink = [FR.track, 1];
+
+  // ── loaders + model chain (H3's own — same ⚙ Settings as Reference mode) ─────
+  // Face Refine always conditions like Reference mode (refs + prompt, no first/last
+  // keyframes), so buildModelChain/buildConditioning are called with generationMode
+  // coerced to "reference" for this call only — requireModels() picks unetReference.
+  const refState = { ...state, generationMode: "reference" };
+  const modelLink0 = buildModelChain(g, refState, avail);
+  g[N.clip] = { class_type: "CLIPLoader", inputs: {
+    clip_name: state.clipName, type: "minimax", device: "default",
+  }};
+  g[N.vaeV] = { class_type: "VAELoader", inputs: { vae_name: state.vaeVideo } };
+  g[N.vaeA] = { class_type: "VAELoader", inputs: { vae_name: state.vaeAudio } };
+  const modelLink1 = applyFusedModulation(g, refState, avail, modelLink0);
+  const modelLink = applySla(g, refState, avail, modelLink1);
+
+  // ── conditioning — width/height/length come from the TRACKER's outputs (links, not
+  // literals): canvas_mode "auto_*" only knows the real size once the crop is built, so
+  // guessing a JS number here would disagree with what the sampler actually gets. ──
+  buildConditioning(g, refState, String(promptText || "").trim(), canvasW, canvasH, frameCount,
+    { refImages: refImages ?? state.refImages }, avail);
+
+  // ── img2img: encode the tracked crops into the video stream (H3 has no stock path) ──
+  g[FR.inject] = { class_type: "H3InjectVideoLatent", inputs: {
+    av_latent: [N.cond, 1], images: cropsLink, vae: [N.vaeV, 0],
+  }};
+
+  // ── audio lock — our own node, see the module doc-comment above for why ──────
+  g[N.audioLock] = { class_type: "TJ_H3_AudioLock", inputs: {
+    av_latent: [FR.inject, 0], audio: audioLink, audio_vae: [N.vaeA, 0],
+    mode: "lock", strength: 0.5, fit: "pad_silence",
+    get_name_av_latent: "(none)", get_name_audio: "(none)", get_name_audio_vae: "(none)",
+    auto_set: false,
+  }};
+
+  // ── per-frame denoise: small face = strong pass, large face = gentle ─────────
+  g[FR.denoise] = { class_type: "H3PerFrameDenoise", inputs: {
+    model: modelLink, av_latent: [N.audioLock, 0], transform: transformLink,
+    denoise_multiplier_small_face: state.frDenoiseMulSmall ?? 1.0,
+    denoise_multiplier_large_face: state.frDenoiseMulLarge ?? 0.35,
+    scale_mode: "absolute_px",
+    face_px_small: state.frFacePxSmall ?? 30.0, face_px_large: state.frFacePxLarge ?? 120.0,
+    gamma: 1.0, smooth_frames: 9,
+  }};
+  // RETURN_NAMES = (av_latent, report, model) — this model MUST reach the sampler, not
+  // modelLink: the two changes it makes are to the MODEL, not the latent (spec §4/§3).
+  const denoisedModel = [FR.denoise, 2];
+
+  // ── sample ─────────────────────────────────────────────────────────────────
+  const useSeed = state.seedMode === "randomize"
+    ? Math.floor(Math.random() * 1e15) : (seed ?? state.seed ?? 0);
+  g[N.noise] = { class_type: "RandomNoise", inputs: { noise_seed: useSeed } };
+  g[N.sampSel] = { class_type: "KSamplerSelect", inputs: { sampler_name: state.frSampler || "euler" } };
+  g[N.sched] = { class_type: "BasicScheduler", inputs: {
+    model: denoisedModel, scheduler: state.frScheduler || "simple",
+    steps: Math.max(1, Math.round(state.frSteps ?? 8)), denoise: state.frDenoise ?? 0.40,
+  }};
+  let condLink = [N.cond, 0];
+  if (has(avail, "TJ_FreeTextEncoderVRAM")) {
+    g[N.freeClipVram] = { class_type: "TJ_FreeTextEncoderVRAM", inputs: { clip: [N.clip, 0], trigger: condLink } };
+    condLink = [N.freeClipVram, 0];
+  }
+  g[N.guider] = { class_type: "BasicGuider", inputs: { model: denoisedModel, conditioning: condLink } };
+  g[N.sampler] = { class_type: "SamplerCustomAdvanced", inputs: {
+    noise: [N.noise, 0], guider: [N.guider, 0], sampler: [N.sampSel, 0], sigmas: [N.sched, 0],
+    latent_image: [FR.denoise, 0],
+  }};
+  g[N.decode] = { class_type: "VAEDecode", inputs: { samples: [N.sampler, 0], vae: [N.vaeV, 0] } };
+
+  // ── stitch the refined crop back onto the original frames, then save ─────────
+  g[FR.stitch] = { class_type: "H3FaceStitch", inputs: {
+    base_images: imagesLink, refined_crops: [N.decode, 0], transform: transformLink,
+    paste_region: state.frPasteRegion || "face_only",
+    mask_dilation: 16, feather: state.frFeather ?? 6,
+    colour_match: state.frColourMatch ?? 1.0, blend: state.frBlend ?? 1.0,
+    undetected_frames: state.frUndetected || "fade_out",
+  }};
+
+  g[FR.video] = { class_type: "CreateVideo", inputs: {
+    images: [FR.stitch, 0], fps: FPS, audio: [N.audioLock, 1],
+  }};
+  g[FR.save] = { class_type: "SaveVideo", inputs: {
+    video: [FR.video, 0], filename_prefix: `${folder}/${stem}_FACEREFINE`, format: "auto", codec: "auto",
+  }};
+
+  return { graph: g, meta: {
+    faceRefine: true, source: sourceFile, select: state.frSelect,
+    denoise: state.frDenoise ?? 0.40, steps: Math.max(1, Math.round(state.frSteps ?? 8)),
+    seed: useSeed, videoNode: FR.save, lastFrameNode: null,
+  } };
+}
+
 // ── post-processing an already-rendered clip ─────────────────────────────────
 // Upscaling and frame interpolation both follow the same shape: read the finished mp4
 // back in, run the frames through one node, and write a new mp4 beside it. They are

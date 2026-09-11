@@ -267,7 +267,13 @@ export const GENERATION_MODES = [
   { key: "t2v",        label: "Text only",        hint: "prompt only (T2VA)" },
   { key: "firstlast",  label: "First/Last Frame",  hint: "start + end keyframe (FL2VA)" },
   { key: "reference",  label: "Reference",         hint: "up to 9 reference images (REF2VA)" },
-  { key: "ltxupscale", label: "LTX Upscale",       hint: "2x refine an existing clip (LTX 2.5)" },
+  // Post-process pair — both refine a finished/uploaded clip instead of generating from
+  // scratch; grouped together per the user's 2026-09-12 call (see
+  // SPEC_MINIMAX_H3_FACE_REFINE.md §1). Left as two GENERATION_MODES entries for now —
+  // splitting them into their own "Post-process" menu is a UI-layer decision to revisit
+  // once Face Refine's own UI lands, not a data-model change.
+  { key: "ltxupscale",  label: "LTX Upscale",   hint: "2x refine an existing clip (LTX 2.5)" },
+  { key: "facerefine",  label: "Face Refine",   hint: "re-render a small/distant face per frame (H3)" },
 ];
 
 // The ✨ button's default system prompt — a ready-to-use LTX-2.5 prompt author, written
@@ -345,6 +351,18 @@ export function ltxUpscaleMissing(state) {
   const map = { ltxUnet: "LTX unet", ltxLatentUpscaler: "latent upscaler", ltxClip: "text encoder",
                 ltxVaeVideo: "video VAE", ltxVaeAudio: "audio VAE" };
   return Object.keys(map).filter(k => !state[k] || state[k] === "none").map(k => map[k]);
+}
+
+// H3 Face Refine mode is also a standalone post-process pass, but it runs H3's OWN
+// unet/clip/vae (already required for every other mode) plus one extra model this mode
+// alone needs: a face detector (.pt, from models/ultralytics/bbox — see
+// SPEC_MINIMAX_H3_FACE_REFINE.md §2). Nothing else is a hard requirement — fallback
+// detector, SAM model and identity CLIP Vision are all optional.
+export function faceRefineReady(state) {
+  return !!(state.faceDetector && state.faceDetector !== "none");
+}
+export function faceRefineMissing(state) {
+  return state.faceDetector && state.faceDetector !== "none" ? [] : ["face detector"];
 }
 
 /** Turn the tensor errors these packs throw into something actionable. */
@@ -621,6 +639,13 @@ export function generationModesFor(state) {
       return { ...m, enabled: ok, reason: ok ? "" :
         `Set the LTX 2.5 models in ⚙ Settings (missing: ${ltxUpscaleMissing(state).join(", ")})` };
     }
+    if (m.key === "facerefine") {
+      // Uses MiniMaxH3ReferenceToVideo (same as Reference mode) plus its own face detector.
+      const ok = a.ref && faceRefineReady(state);
+      const missing = [...(a.ref ? [] : ["the Reference UNET"]), ...faceRefineMissing(state)];
+      return { ...m, enabled: ok, reason: ok ? "" :
+        `Set these in ⚙ Settings — Models (missing: ${missing.join(", ")})` };
+    }
     const ok = m.key === "reference" ? a.ref : a.fl;
     return { ...m, enabled: ok, reason: ok ? "" :
       `Set the ${m.key === "reference" ? "Reference" : "First/Last"} UNET in ⚙ Settings → Models` };
@@ -778,6 +803,54 @@ export function defaultState(saved) {
     ltxVisionOrModel: saved.ltxVisionOrModel || "",             // openrouter: model id
     ltxLlmPrompt:      saved.ltxLlmPrompt      || LTX_UPSCALE_LLM_PROMPT,
     ltxConvertPrompt:  saved.ltxConvertPrompt  || LTX_CONVERT_LLM_PROMPT,
+
+    // ── H3 Face Refine mode (generationMode "facerefine") ─────────────────────
+    // Also a post-process pass over a finished/uploaded clip — see
+    // SPEC_MINIMAX_H3_FACE_REFINE.md. Runs H3's own unet/clip/vae (Settings → Models,
+    // same as Reference mode), not a separate model set like LTX Upscale.
+    frSource:     saved.frSource     || "",       // source video filename (gallery pick or upload)
+    frSourceKind: saved.frSourceKind || "gallery", // "gallery" | "upload"
+    frSourceMeta: saved.frSourceMeta || null,      // { w, h, fps, frames, duration }
+    frPrompt:     saved.frPrompt     || "",        // conditioning prompt (MiniMaxH3ReferenceToVideo)
+    // H3FaceTrackCrop / H3FaceSelect params
+    frSelect:       saved.frSelect       || "largest_face",  // 9 ranking modes, or "manual"
+    frSelectIndex:  saved.frSelectIndex  ?? 0,
+    frConfidence:   saved.frConfidence   ?? 0.35,  // face detector score floor
+    frConfirmedPick: saved.frConfirmedPick || "",  // "0,1,1" — one face index per shot, from Pick Faces
+    frCutDetection: saved.frCutDetection ?? false, // maps to "auto (pyscenedetect)" | "none"
+    frCutThreshold: saved.frCutThreshold ?? 3.0,
+    frIdentityTrack: saved.frIdentityTrack ?? true,
+    frIdentityThreshold: saved.frIdentityThreshold ?? 0.28,
+    frIdentityModel: saved.frIdentityModel || "insightface", // insightface | clip_vision | ccip
+    // H3FaceTrackCrop crop/canvas params
+    frCropFactor:   saved.frCropFactor   ?? 2.5,
+    frCanvasMode:   saved.frCanvasMode   || "auto_capped_768", // manual | auto_no_downscale | auto_capped_768
+    frCanvasWidth:  saved.frCanvasWidth  ?? 768,
+    frCanvasHeight: saved.frCanvasHeight ?? 768,
+    frSmoothWindow: saved.frSmoothWindow ?? 21,
+    // H3PerFrameDenoise params — base denoise (BasicScheduler) is separate from the
+    // small/large-face multipliers (see SPEC §4 "denoise 기본값 주의": these are tuned
+    // as a set, do not change one without the other).
+    frDenoise:            saved.frDenoise            ?? 0.40,
+    frDenoiseMulSmall:    saved.frDenoiseMulSmall     ?? 1.0,
+    frDenoiseMulLarge:    saved.frDenoiseMulLarge     ?? 0.35,
+    frFacePxSmall:        saved.frFacePxSmall         ?? 30.0,
+    frFacePxLarge:        saved.frFacePxLarge         ?? 120.0,
+    frSteps:    saved.frSteps    ?? 8,   // H3's own turbo-friendly step count, not LTX's
+    frSampler:  saved.frSampler  || "euler",
+    frScheduler: saved.frScheduler || "simple",
+    // H3FaceStitch params
+    frPasteRegion: saved.frPasteRegion || "face_only",   // face_only | face_ellipse | full_crop
+    frFeather:     saved.frFeather     ?? 6,
+    frColourMatch: saved.frColourMatch ?? 1.0,
+    frBlend:       saved.frBlend       ?? 1.0,
+    frUndetected:  saved.frUndetected  || "fade_out",    // fade_out | skip | composite_anyway
+    // configured once in ⚙ Settings → Models → "H3 Face Refine"
+    faceDetector:        saved.faceDetector        || "",  // required — models/ultralytics/bbox/*.pt
+    faceFallbackDetector: saved.faceFallbackDetector || "none", // optional — models/ultralytics/segm/*.pt
+    faceSamModel:        saved.faceSamModel        || "none",   // optional — Impact Pack SAMLoader
+    faceIdentityClipVision: saved.faceIdentityClipVision || "none", // optional — identity_model=clip_vision
+
     accelMode:      saved.accelMode      || "solattn",   // legacy — kept only so old
                                                          // workflows can be migrated below
     upscaleMode:    saved.upscaleMode    || "none",

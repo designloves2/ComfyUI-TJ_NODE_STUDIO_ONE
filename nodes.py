@@ -268,6 +268,23 @@ def _scan(folder_key, extensions=None):
     return sorted(found) if found else ["none"]
 
 
+def _scan_ultralytics(sub, extensions=None):
+    """Face-detector-style models (ultralytics YOLO .pt files).
+
+    Impact Pack's subpack registers the "ultralytics_bbox" / "ultralytics_segm" folder
+    keys with folder_paths, but H3 Face Refine's own nodes.py works without it — they
+    fall back to walking models/ultralytics/<sub> directly (see
+    SPEC_MINIMAX_H3_FACE_REFINE.md §9-1). Mirror that here so the Settings dropdown lists
+    the same files the node itself will find, whether or not Impact Pack is installed.
+    """
+    exts = extensions or [".pt"]
+    for key in (f"ultralytics_{sub}", "ultralytics"):
+        got = _scan(key, extensions=exts)
+        if got and got != ["none"]:
+            return got
+    return _scan_path(os.path.join(folder_paths.models_dir, "ultralytics", sub), extensions=exts)
+
+
 def _scan_path(path, extensions=None):
     exts = extensions or [".safetensors", ".ckpt", ".pt", ".pth"]
     if not os.path.isdir(path):
@@ -2096,6 +2113,12 @@ async def mmh3_get_config(request):
         "ltx_preview_fps":       cfg.get("ltx_preview_fps",       12),
         "ltx_preview_max_res":   cfg.get("ltx_preview_max_res",   512),
         "ltx_preview_quality":   cfg.get("ltx_preview_quality",   85),
+        # H3 Face Refine mode (generationMode "facerefine") — reuses H3's own
+        # unet/clip/vae, only needs its own face detector + optional extras.
+        "face_detector":            cfg.get("face_detector",            ""),
+        "face_fallback_detector":   cfg.get("face_fallback_detector",   "none"),
+        "face_sam_model":           cfg.get("face_sam_model",           "none"),
+        "face_identity_clip_vision": cfg.get("face_identity_clip_vision", "none"),
         "stitch_at_end":         cfg.get("stitch_at_end",         True),
         "trim_last_clip":        cfg.get("trim_last_clip",        False),
         "unload_between_clips":  cfg.get("unload_between_clips",  True),
@@ -2376,6 +2399,13 @@ async def mmh3_get_models(request):
         "latent_upscale_models": scan("latent_upscale_models"),
         # LTX text encoder can be GGUF (loaded via TJ_LTX25ClipLoaderGGUF) or safetensors
         "text_encoders_all":     scan("text_encoders", [".safetensors", ".gguf", ".pt", ".sft"]),
+        # H3 Face Refine — face_detectors is the only required one; the rest are optional
+        # (fallback detector, SAM mask, identity CLIP Vision). See
+        # SPEC_MINIMAX_H3_FACE_REFINE.md §2/§9-1 for why this doesn't need Impact Pack.
+        "face_detectors":          _scan_ultralytics("bbox"),
+        "face_fallback_detectors": _scan_ultralytics("segm"),
+        "sam_models":              scan("sams", [".pt", ".pth"]),
+        "clip_vision":             scan("clip_vision"),
     })
 
 
@@ -2427,6 +2457,15 @@ MMH3_OPTIONAL_NODES = [
     # analysis pass costs no separate server or model file. TJ_MultiImageLoader ships
     # with TJ_NODE; TextGenerate and TJStudioOneTextOutput are this package's own.
     "TJ_MultiImageLoader", "TextGenerate", "TJStudioOneTextOutput",
+    # H3 Face Refine (Carasibana/ComfyUI-H3-FaceRefine, MIT) — post-process pass that
+    # tracks/crops a small face per frame, re-renders it through H3 as real img2img,
+    # then stitches it back. See SPEC_MINIMAX_H3_FACE_REFINE.md. TJ_H3_AudioLock (above)
+    # stands in for the pack's own MiniMaxH3NativeAudioLock — not installed, not needed.
+    "H3FaceSelect", "H3FaceTrackCrop", "H3InjectVideoLatent", "H3PerFrameDenoise",
+    "H3FaceStitch", "H3FaceTransformInfo",
+    # optional — true face-shaped paste masks instead of a rectangle (needs Impact
+    # Pack's SAMLoader for a SAM_MODEL; everything else in Face Refine works without it)
+    "H3FaceMaskSAM", "SAMLoader",
 ]
 MMH3_CORE_NODES = [
     "MiniMaxH3ImageToVideo",

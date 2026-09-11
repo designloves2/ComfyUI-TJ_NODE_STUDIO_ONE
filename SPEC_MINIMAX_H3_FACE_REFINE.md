@@ -1,6 +1,9 @@
-# SPEC — H3 Face Refine (설계 문서, 구현 전)
+# SPEC — H3 Face Refine
 
-**상태: 설계 단계.** 아직 코드 한 줄도 없다. 이 문서는 `github.com/Carasibana/ComfyUI-H3-FaceRefine`
+**상태: 1차 구현 완료 (랭킹 규칙 경로), 실기기 미검증.** 그래프 빌더·Settings·좌측 패널 UI까지
+전부 커밋됨(node — 커밋 해시는 git log 참고). Manual Select(Pick Faces 모달)만 아직 프런트가
+없어 select 드롭다운에서 빠져 있음 — §10 5번 참고. 웹 미러링은 실기기 검증 후 진행(사용자 지시).
+이 문서는 원래 `github.com/Carasibana/ComfyUI-H3-FaceRefine`
 (MIT, 2026-09 기준 v1.1.0)를 그대로 우리 STUDIO_ONE에 "완성된 H3 클립을 후처리하는 기능"으로
 붙이기 위한 조사·설계 기록이다.
 
@@ -309,13 +312,24 @@ Pick Faces 모달만 새로 만들면 된다** — 백엔드 재구현 불필요
 1. ~~로컬 설치 + 소스 확인~~ → **완료.** `ComfyUI-H3-FaceRefine`을 `custom_nodes/`에 클론,
    `nodes.py`/`picker_api.py` 전체 확인 완료(§3/§6/§9). `ComfyUI-H3-NativeAudioLock`은 §9-2
    결론에 따라 설치 불필요.
-2. `nodes.py` `MMH3_OPTIONAL_NODES` + `api_minimax.js` `MMH3_OPTIONAL_NODES`에 §7의 노드 추가
-3. `buildFaceRefineGraph()` — §4 그래프 그대로, **랭킹 규칙 + Manual Select 둘 다 1차 구현에 포함**
-   (select==="manual"일 때 `H3FaceSelect`로 소스 로더 교체하는 분기까지)
-4. Settings → Models "H3 Face Refine" 패널
-5. 좌측 패널 UI — 소스 카드 + Face/Crop/Denoise/Stitch 아코디언 + Pick Faces 모달(§6-B)
+2. ~~가용성 리스트~~ → **완료.** `nodes.py` + `api_minimax.js` 둘 다 §7의 노드 추가.
+3. ~~`buildFaceRefineGraph()`~~ → **완료 (랭킹 규칙 경로).** `graph_builder_minimax.js`.
+   H3's 자체 unet/clip/vae + turbo/attention 체인을 `buildModelChain`/`buildConditioning`
+   재사용(Reference 모드로 강제 코어스). 캔버스 크기/프레임수는 트래커 출력에서 **링크로**
+   받음(리터럴 아님 — auto_capped_768 등 자동 모드가 그래프 실행 시점에만 실제 크기를 앎).
+   **Manual Select 분기(`select==="manual"`→`H3FaceSelect`)는 그래프 빌더 안에 이미 구현돼
+   있음** — `frConfirmedPick` state만 채워지면 바로 동작. 프런트 UI만 아직 없음(아래 5번).
+4. ~~Settings → Models "H3 Face Refine" 패널~~ → **완료.** `ui_app_settings_minimax.js`
+   (face_detector 필수 + fallback/SAM/CLIP Vision 선택), `nodes.py`
+   `mmh3_get_models`/`mmh3_get_config`/`mmh3_save_config`에 `face_*` 키 추가
+   (`_scan_ultralytics()` 헬퍼 — Impact Pack 없이도 `models/ultralytics/{bbox,segm}` 직접 스캔).
+5. **부분 완료.** 좌측 패널 UI(`renderFaceRefineLeft`) + 단일 큐 실행(`runFaceRefine`, 세그먼트
+   없음 — 프레임수가 트래커 출력이라 사전 분할 자체가 불가능) — 소스 카드/프롬프트/Face 선택
+   (랭킹 규칙만)/Crop·Canvas/Denoise/Stitch 아코디언까지. **Pick Faces 모달(§6-B)은 아직
+   미구현** — select 드롭다운에서 "manual"을 일부러 뺐다(그래프·상태는 준비됐지만 프런트가
+   없어서 골라도 실행이 안 됨). 필요해지면 다음 라운드에서 붙이면 됨(백엔드는 이미 있음, §6-A).
 6. 실기기 검증 (사용자가 메인 백엔드에서 직접 진행): 얼굴 작은 클립으로 리파인 전/후 비교,
-   `auto_capped_768` VRAM 실측(§9-5), 무음 클립 케이스(§9-3), Manual Select 실제 동작
+   `auto_capped_768` VRAM 실측(§9-5), 무음 클립 케이스(§9-3), 랭킹 규칙 select 동작.
 7. **완전 검증 끝난 뒤에만** 웹(AI_One_Studio)에 미러링 — 검증 전 포팅 금지(사용자 지시)
 
 ### 진행 방침 (사용자 지시, 2026-09-12)

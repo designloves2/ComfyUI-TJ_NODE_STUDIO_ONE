@@ -163,6 +163,33 @@ export function createSettingsOverlay(state, ctx) {
 
     // (the ✨ vision model + instruction for this mode live under the LLM Setting tab)
 
+    // ── H3 Face Refine mode — its own face detector, reuses H3's own unet/clip/vae ──
+    const fdList = ["none", ...(modelData.face_detectors || []).filter(x => x !== "none")];
+    const ffList = ["none", ...(modelData.face_fallback_detectors || []).filter(x => x !== "none")];
+    const samList = ["none", ...(modelData.sam_models || []).filter(x => x !== "none")];
+    const cvList  = ["none", ...(modelData.clip_vision || []).filter(x => x !== "none")];
+    const fdSel = searchableSelect(fdList, state.faceDetector || "none",
+      v => { state.faceDetector = v === "none" ? "" : v; ctx.persist(); ctx.refreshModes?.(); });
+    const ffSel = searchableSelect(ffList, state.faceFallbackDetector || "none",
+      v => { state.faceFallbackDetector = v; ctx.persist(); });
+    const samSel = searchableSelect(samList, state.faceSamModel || "none",
+      v => { state.faceSamModel = v; ctx.persist(); });
+    const cvSel = searchableSelect(cvList, state.faceIdentityClipVision || "none",
+      v => { state.faceIdentityClipVision = v; ctx.persist(); });
+    wrap.appendChild(panel([
+      label("H3 Face Refine — post-process pass on a finished clip (re-renders a small/distant face)"),
+      row([col([label("Face detector (required)"), fdSel.el]),
+           col([label("Fallback detector (optional — body/person model)"), ffSel.el])]),
+      row([col([label("SAM model (optional — face-shaped mask)"), samSel.el]),
+           col([label("Identity CLIP Vision (optional — identity_model=clip_vision)"), cvSel.el])]),
+      el("div", { html: "Runs H3's own unet/text-encoder/VAE from the panels above (Reference mode's UNET). "
+        + "Files: face detector → <code>models/ultralytics/bbox/</code> (e.g. face_yolov8m.pt from "
+        + "Bingsu/adetailer) · fallback → <code>models/ultralytics/segm/</code> · SAM → "
+        + "<code>models/sams/</code> · CLIP Vision → <code>models/clip_vision/</code>. Manual Select "
+        + "(Pick Faces) and Impact Pack are not required for the basic ranking-rule modes.",
+        style: { fontSize: "10px", color: C.muted, lineHeight: "1.6" } }),
+    ]));
+
     const missing = availability.missing_optional || [];
     const missCore = availability.missing_core || [];
     const availNote = el("div", { style: { fontSize: "10px", lineHeight: "1.6", color: (missing.length || missCore.length) ? C.warn : C.ok } });
@@ -526,6 +553,11 @@ export function createSettingsOverlay(state, ctx) {
       ltx_preview_fps:     state.ltxPreviewFps      ?? 12,
       ltx_preview_max_res: state.ltxPreviewMaxRes   ?? 512,
       ltx_preview_quality: state.ltxPreviewQuality  ?? 85,
+      // H3 Face Refine mode
+      face_detector:              state.faceDetector             || "",
+      face_fallback_detector:     state.faceFallbackDetector     || "none",
+      face_sam_model:             state.faceSamModel             || "none",
+      face_identity_clip_vision:  state.faceIdentityClipVision   || "none",
       turbo_lora:      state.turboLora     || "",
       turbo_lora_strength: state.turboLoraStrength ?? 1.0,
       upscale_model:   state.upscaleModel  || "",
@@ -638,6 +670,10 @@ export function createSettingsOverlay(state, ctx) {
     if (cfg.ltx_vision_backend)  state.ltxVisionBackend = cfg.ltx_vision_backend;
     take("ltxVisionClip",    cfg.ltx_vision_clip);
     if (cfg.ltx_vision_or_model && !String(state.ltxVisionOrModel || "").trim()) state.ltxVisionOrModel = cfg.ltx_vision_or_model;
+    take("faceDetector",            cfg.face_detector);
+    take("faceFallbackDetector",    cfg.face_fallback_detector);
+    take("faceSamModel",            cfg.face_sam_model);
+    take("faceIdentityClipVision",  cfg.face_identity_clip_vision);
     // These always have a value already (defaultState()'s `?? 8`/`?? true`/etc. fallback),
     // so the `take()`/`== null` guard used above can never fire for them — same situation
     // avg_minutes_per_clip already had, handled the same way: unconditional overwrite here
