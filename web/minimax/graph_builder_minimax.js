@@ -898,16 +898,20 @@ export function buildLtxUpscaleGraph(state, avail, opts = {}) {
     }};
     model = [L.sol, 0];
   }
-  if (state.previewEnabled && has(avail, "ModelPreviewOverrideKJ") && nodeId != null) {
+  if ((state.ltxPreviewEnabled ?? true) && has(avail, "ModelPreviewOverrideKJ") && nodeId != null) {
+    // Same key the JS live-preview listener matches on (previewNodeKey) — the inline
+    // "LX:preview" id used here before had a colon, which ComfyUI truncates in
+    // hidden.unique_id for dynamic-expansion paths, so the frames never reached the UI.
+    const key = previewNodeKey(nodeId);
     const pin = {
-      model, max_resolution: state.previewMaxRes ?? 1024, jpeg_quality: state.previewQuality ?? 80,
-      suppress_default_preview: true, preview_frames: Math.max(1, state.previewFrames ?? 250),
-      preview_fps: state.previewFps ?? fps,
+      model, max_resolution: state.ltxPreviewMaxRes ?? 512, jpeg_quality: state.ltxPreviewQuality ?? 85,
+      suppress_default_preview: true, preview_frames: Math.max(1, state.ltxPreviewFrames ?? 8),
+      preview_fps: state.ltxPreviewFps ?? fps,
     };
-    const tv = state.ltxTinyVae || state.previewTinyVae;
+    const tv = state.ltxTinyVae;
     if (tv && tv !== "none") pin.tiny_vae = tv;
-    g[L.preview] = { class_type: "ModelPreviewOverrideKJ", inputs: pin, _meta: { title: `MMH3 LTX preview #${nodeId}` } };
-    model = [L.preview, 0];
+    g[key] = { class_type: "ModelPreviewOverrideKJ", inputs: pin, _meta: { title: `MMH3 LTX preview #${nodeId}` } };
+    model = [key, 0];
   }
 
   // ── conditioning ───────────────────────────────────────────────────────────

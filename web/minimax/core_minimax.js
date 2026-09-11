@@ -751,6 +751,14 @@ export function defaultState(saved) {
     ltxVaeVideo:       saved.ltxVaeVideo       || "",
     ltxVaeAudio:       saved.ltxVaeAudio       || "",
     ltxTinyVae:        saved.ltxTinyVae        || "",   // preview TAE (taeltx2*) — falls back to the H3 preview tiny_vae if unset
+    // LTX Upscale's own live-preview switch + values (Settings → Preview → "LTX 2.5
+    // Upscale"), separate from the H3 preview above — it runs its own model, at its own
+    // resolution, so H3's numbers rarely fit it.
+    ltxPreviewEnabled: saved.ltxPreviewEnabled ?? true,
+    ltxPreviewFrames:  saved.ltxPreviewFrames   ?? 8,
+    ltxPreviewFps:     saved.ltxPreviewFps      ?? 12,
+    ltxPreviewMaxRes:  saved.ltxPreviewMaxRes   ?? 512,
+    ltxPreviewQuality: saved.ltxPreviewQuality  ?? 85,
     // The ✨ LLM in the upscale prompt area: analyses the source clip's first frame to
     // reconstruct a prompt that matches it. Its own backend + model (not shared with H3),
     // all configured in ⚙ Settings → LTX 2.5 Upscale and saved to the config.

@@ -1341,12 +1341,28 @@ app.registerExtension({
             col([label("Scheduler"), select(LTX_SCHEDULERS.map(s => ({ value: s, label: s })),
               state.ltxScheduler || "simple", v => { state.ltxScheduler = v; persist(); })]),
           ]),
-          row([
-            col([label("Segment (s) — 0 = whole clip"),
-              numberField(state.ltxSegmentSeconds ?? 5, v => { state.ltxSegmentSeconds = Math.max(0, Math.round(v)); persist(); }, 1)]),
-            col([el("div", { style: { height: "1px" } })]),
-          ]),
-          el("div", { text: "2x latent upscale + a light refine. Verified defaults: 3 steps / 0.15 denoise / euler_ancestral / simple. Splitting a long/large clip into segments upscales each on its own queue turn (VRAM freed between turns) then ffmpeg-concats — each window is first-frame-anchored + low-denoise so the joins are seamless. ~0.8MP / 8s per segment on 16GB (~6 min each).",
+          (() => {
+            // "Segment" = the LENGTH of each piece, in seconds — not a piece count. A
+            // number field alone left that ambiguous, so show the piece count it works out
+            // to, live, next to it.
+            const segHint = el("div", { style: { fontSize: "10px", color: C.muted, paddingTop: "6px" } });
+            const updateSegHint = () => {
+              const dur = (_ltxSrcInfo && _ltxSrcInfo.duration) || (state.ltxSourceMeta && state.ltxSourceMeta.duration) || 0;
+              const s = Math.max(0, Number(state.ltxSegmentSeconds) || 0);
+              if (!s) segHint.textContent = "0 = whole clip, one pass";
+              else if (!dur) segHint.textContent = `${s}s per piece — pick a source to see the piece count`;
+              else segHint.textContent = `${s}s per piece → ${Math.max(1, Math.ceil(dur / s))} piece(s) for this ${dur.toFixed(1)}s clip`;
+            };
+            updateSegHint();
+            return row([
+              col([label("Segment length — seconds per piece (0 = whole clip)"),
+                numberField(state.ltxSegmentSeconds ?? 5, v => {
+                  state.ltxSegmentSeconds = Math.max(0, Math.round(v)); persist(); updateSegHint();
+                }, 1)]),
+              col([label(" "), segHint]),
+            ]);
+          })(),
+          el("div", { text: "2x latent upscale + a light refine. Verified defaults: 3 steps / 0.15 denoise / euler_ancestral / simple. Splitting a long/large clip into fixed-length pieces upscales each on its own queue turn (VRAM freed between turns) then ffmpeg-concats — each piece is first-frame-anchored + low-denoise so the joins are seamless. ~0.8MP / 8s per piece on 16GB (~6 min each).",
             style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
         ]));
 

@@ -372,6 +372,33 @@ export function createSettingsOverlay(state, ctx) {
       })(),
       note,
     ]));
+
+    // LTX 2.5 Upscale runs its own model at its own resolution, so it gets its own
+    // switch + values here rather than inheriting H3's — the two are rarely a good fit
+    // for each other. The graph-side bug where this never actually reached the preview
+    // box (a colon in the KJ node's id truncated in ComfyUI's hidden.unique_id) is fixed
+    // in the graph builder; this panel is what turns it on and tunes it.
+    wrap.appendChild(panel([
+      label("LTX 2.5 Upscale — Live Preview"),
+      checkbox("Show live frames while sampling", state.ltxPreviewEnabled ?? true,
+        v => { state.ltxPreviewEnabled = v; ctx.persist(); }),
+      row([
+        col([label("Preview frames"), numField(state.ltxPreviewFrames ?? 8,
+          v => { state.ltxPreviewFrames = Math.max(1, Math.round(v)); ctx.persist(); }, { step: "1" })]),
+        col([label("Preview fps"), numField(state.ltxPreviewFps ?? 12,
+          v => { state.ltxPreviewFps = Math.max(1, Math.round(v)); ctx.persist(); }, { step: "1" })]),
+      ]),
+      row([
+        col([label("Max resolution"), numField(state.ltxPreviewMaxRes ?? 512,
+          v => { state.ltxPreviewMaxRes = Math.round(v); ctx.persist(); }, { step: "64" })]),
+        col([label("JPEG quality"), numField(state.ltxPreviewQuality ?? 85,
+          v => { state.ltxPreviewQuality = Math.round(v); ctx.persist(); }, { step: "1" })]),
+      ]),
+      el("div", {
+        text: "Separate from the H3 preview above — the preview VAE (tiny/TAE, taeltx2*) is set in Models → LTX 2.5 Upscale → Preview TAE.",
+        style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" },
+      }),
+    ]));
     return wrap;
   }
 
@@ -487,6 +514,11 @@ export function createSettingsOverlay(state, ctx) {
       ltx_vision_backend:  state.ltxVisionBackend  || "native",
       ltx_vision_clip:     state.ltxVisionClip     || "",
       ltx_vision_or_model: state.ltxVisionOrModel  || "",
+      ltx_preview_enabled: state.ltxPreviewEnabled  ?? true,
+      ltx_preview_frames:  state.ltxPreviewFrames   ?? 8,
+      ltx_preview_fps:     state.ltxPreviewFps      ?? 12,
+      ltx_preview_max_res: state.ltxPreviewMaxRes   ?? 512,
+      ltx_preview_quality: state.ltxPreviewQuality  ?? 85,
       turbo_lora:      state.turboLora     || "",
       turbo_lora_strength: state.turboLoraStrength ?? 1.0,
       upscale_model:   state.upscaleModel  || "",
@@ -609,6 +641,11 @@ export function createSettingsOverlay(state, ctx) {
     if (cfg.preview_fps     != null) state.previewFps     = cfg.preview_fps;
     if (cfg.preview_max_res != null) state.previewMaxRes  = cfg.preview_max_res;
     if (cfg.preview_quality != null) state.previewQuality = cfg.preview_quality;
+    if (cfg.ltx_preview_enabled != null) state.ltxPreviewEnabled = cfg.ltx_preview_enabled;
+    if (cfg.ltx_preview_frames  != null) state.ltxPreviewFrames  = cfg.ltx_preview_frames;
+    if (cfg.ltx_preview_fps     != null) state.ltxPreviewFps     = cfg.ltx_preview_fps;
+    if (cfg.ltx_preview_max_res != null) state.ltxPreviewMaxRes  = cfg.ltx_preview_max_res;
+    if (cfg.ltx_preview_quality != null) state.ltxPreviewQuality = cfg.ltx_preview_quality;
     if (cfg.turbo_lora_low_vram != null) state.turboLoraLowVram = cfg.turbo_lora_low_vram;
     if (cfg.sampler)             state.sampler        = cfg.sampler;
     if (cfg.scheduler)           state.scheduler      = cfg.scheduler;
