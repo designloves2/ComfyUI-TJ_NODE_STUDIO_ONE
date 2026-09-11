@@ -654,8 +654,12 @@ app.registerExtension({
       // "matches the original" is the whole job — for a gallery pick we already have the
       // clip's saved prompt; for an upload the vision model reconstructs one.
       let _ltxBusy = false;
-      async function grabFirstFrameFile() {
-        // client-side: draw frame 0 of the source video to a canvas, upload it as a PNG
+      async function grabSampleFrames() {
+        // client-side: sample several frames spread across the clip (not just frame 0) and
+        // upload each as a PNG — one frame alone can't show action or camera movement, and
+        // the LTX-2.5 prompt format needs both. Roughly 1.5 frames/sec of clip, clamped so
+        // a short clip still gets a minimum spread and a long one doesn't balloon the
+        // vision call — LTX Upscale's own ceiling is ~8s/pass anyway.
         if (!state.ltxSource) throw new Error("No source clip.");
         const v = document.createElement("video");
         v.src = `/view?filename=${encodeURIComponent(state.ltxSource)}&type=input`;
@@ -665,12 +669,21 @@ app.registerExtension({
           v.addEventListener("error", () => rej(new Error("Could not read the source video.")), { once: true });
           setTimeout(() => rej(new Error("Source video load timed out.")), 15000);
         });
-        try { v.currentTime = 0.05; await new Promise(r => v.addEventListener("seeked", r, { once: true })); } catch {}
+        const dur = Math.max(0.1, v.duration || 0);
+        const count = Math.min(10, Math.max(3, Math.round(dur * 1.5)));
         const cv = document.createElement("canvas");
         cv.width = v.videoWidth || 1024; cv.height = v.videoHeight || 576;
-        cv.getContext("2d").drawImage(v, 0, 0, cv.width, cv.height);
-        const blob = await new Promise(r => cv.toBlob(r, "image/png"));
-        return uploadMedia(new File([blob], `ltx_srcframe_${Date.now()}.png`, { type: "image/png" }));
+        const ctx2d = cv.getContext("2d");
+        const files = [];
+        for (let i = 0; i < count; i++) {
+          // spread across the clip, never quite touching either edge (encode padding / black frames)
+          const t = Math.min(dur - 0.05, Math.max(0.05, (dur * (i + 0.5)) / count));
+          try { v.currentTime = t; await new Promise(r => v.addEventListener("seeked", r, { once: true })); } catch {}
+          ctx2d.drawImage(v, 0, 0, cv.width, cv.height);
+          const blob = await new Promise(r => cv.toBlob(r, "image/png"));
+          files.push(await uploadMedia(new File([blob], `ltx_srcframe_${Date.now()}_${i}.png`, { type: "image/png" })));
+        }
+        return files;
       }
       // The ✨ vision setup, its own — not shared with H3. Configured in Settings.
       function ltxVisionLabel() {
@@ -690,13 +703,13 @@ app.registerExtension({
         }
         _ltxBusy = true; renderPrompts();
         try {
-          const frame = await grabFirstFrameFile();
+          const frames = await grabSampleFrames();
           const instr = (state.ltxLlmPrompt || "").trim()
             || "Describe this video frame as one text-to-image prompt matching exactly what is shown.";
           let text;
-          if (backend === "openrouter") text = await analyzeImagesOpenRouter([frame], instr, state.ltxVisionOrModel);
-          else                          text = await analyzeImagesNative(state.ltxVisionClip, [frame], instr);
-          if (text && text.trim()) { state.ltxPrompt = text.trim(); persist(); showPopup("Prompt written from the source clip's first frame.", false); }
+          if (backend === "openrouter") text = await analyzeImagesOpenRouter(frames, instr, state.ltxVisionOrModel);
+          else                          text = await analyzeImagesNative(state.ltxVisionClip, frames, instr);
+          if (text && text.trim()) { state.ltxPrompt = text.trim(); persist(); showPopup(`Prompt written from ${frames.length} frames sampled across the clip.`, false); }
           else showPopup("The vision model returned nothing — try again or write the prompt by hand.", true);
         } catch (e) { showPopup(e.message, true); }
         _ltxBusy = false; renderPrompts();
