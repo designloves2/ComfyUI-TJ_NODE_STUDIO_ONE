@@ -2721,14 +2721,26 @@ app.registerExtension({
               const sFps = (srcInfo && srcInfo.fps) || rs.ltxSourceMeta?.fps || FPS;
               const total = (srcInfo && srcInfo.frames)
                 || Math.round(((rs.ltxSourceMeta?.duration) || 0) * sFps) || 0;
-              let seg = Math.max(8, Math.round((s * sFps) / 8) * 8);   // LTX temporal align
+              // LTX 2.5's video VAE only takes 8n+1 pixel frames cleanly — anything else
+              // gets silently cropped to the nearest 8n+1 (comfy_extras/nodes_lt.py:
+              // "Must be 8*n + 1 frames"). A plain multiple-of-8 window would lose a frame
+              // off the END of every middle piece, which is a visible jump at every
+              // boundary — not the same 17k+5 rule H3's own transformer uses (unrelated;
+              // this pass never touches H3's graph), so it needs its own snap.
+              const snap8n1 = (n) => 8 * Math.max(0, Math.round((n - 1) / 8)) + 1;
+              const seg = Math.max(9, snap8n1(s * sFps));
               if (total > seg) {
                 passes = [];
-                for (let skip = 0, k = 0; skip < total; skip += seg, k++) {
-                  let cap = Math.min(seg, total - skip);
-                  if (total - (skip + cap) > 0 && total - (skip + cap) < 8) cap = total - skip;
+                for (let skip = 0, k = 0; skip < total; k++) {
+                  const remaining = total - skip;
+                  // Full middle pieces are exactly `seg` (already 8n+1). Only the final
+                  // piece's remainder needs its own snap — a leftover <9 frames (a
+                  // fraction of a second at the very end of the whole clip) is accepted
+                  // as-is rather than folded into a mid-clip boundary.
+                  const cap = remaining > seg ? seg : (remaining >= 9 ? snap8n1(remaining) : remaining);
+                  if (cap <= 0) break;
                   passes.push({ window: { skip, cap }, suffix: `_seg${String(k).padStart(2, "0")}` });
-                  if (skip + cap >= total) break;
+                  skip += cap;
                 }
               }
             }
