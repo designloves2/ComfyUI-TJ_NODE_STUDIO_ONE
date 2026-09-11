@@ -536,3 +536,37 @@ mmproj 병합·텐서 리매핑이 필요할 수 있다고 나왔던 것과 같�
 아니라 "한 번 로컬에 값이 잡히면 그 이후로는 로컬이 항상 이김"이라는 동작 방식 — 새 값을
 반영해서 보려면 그 값을 UI에서 직접 다시 고르거나(그러면 즉시 localStorage도 갱신됨),
 브라우저의 로컬 저장소를 지워야 함.
+
+---
+
+## 16. 실사용 버그: fallback_detector 목록 형식 불일치 (2026-09-12, 사용자 실제 렌더로 발견)
+
+**증상**: 실제로 "▶ Generate" 눌렀더니 큐 검증 단계에서 바로 실패:
+```
+H3FaceTrackCrop FR:track: Value not in list: fallback_detector: 'person_yolov8m-seg.pt'
+not in ['none', 'face_yolov8m.pt', ..., 'bbox\face_yolov8m.pt', ..., 'segm\person_yolov8m-seg.pt', ...]
+```
+
+**원인**: `H3FaceTrackCrop`의 실제 `_detector_list()`(팩 자체 코드)는 `detector`와
+`fallback_detector` 둘 다 **완전히 같은 하나의 전체 목록**(폴더 키 `"ultralytics_bbox"` +
+`"ultralytics"`를 union — 이름 그대로, 경로 보정 없이)을 쓴다. bbox/segm 구분이 아예 없다.
+그런데 우리 `nodes.py`의 `_scan_ultralytics()`는 **"segm" 서브폴더만 따로** 스캔하도록
+잘못 만들어져 있었고, Impact Pack이 설치돼있어 `"ultralytics"` 키가 실제로 등록된 상태라
+그 키가 반환하는 이름은 서브폴더 접두어가 붙은 형태(`segm\person_yolov8m-seg.pt`)인데, 우리
+폴백 로직이 디스크 직접 스캔(`_scan_path`)으로 빠지면서 접두어 없는 이름
+(`person_yolov8m-seg.pt`)을 돌려줘서 — Settings 드롭다운에는 그 값이 뜨고 선택도 되지만,
+실제 노드가 검증할 땐 그 정확한 문자열이 진짜 목록에 없어서 **큐 제출 자체가 거부**됨.
+Impact Pack이 없었다면(§9-1 검증 당시 상태) 이 문제가 안 생겼을 것 — 설치 여부에 따라 실제
+유효 목록의 "형태"가 달라지는 게 근본 원인.
+
+**수정** (`nodes.py`): `_scan_ultralytics(sub)`를 지우고 `_detector_choices()`로 교체 —
+팩의 `_detector_list()`와 **똑같은 union 로직**(`"ultralytics_bbox"` → `"ultralytics"` 순서,
+경로 그대로, 중복만 제거)을 그대로 재현. `face_detectors`/`face_fallback_detectors` 둘 다
+이 **같은 함수**를 쓰도록 통일(팩 자체도 두 입력을 구분 안 하므로). 이제 Settings에서 뭘
+골라도 실제 노드의 유효 목록과 100% 일치 보장됨.
+
+**참고**: 사용자가 이 와중에 "SAM/fallback/CLIP Vision을 전부 none으로 하니 됐다"고 확인했는데,
+실제로는 SAM 모델과 identity CLIP Vision은 **아직 그래프에 배선 자체가 안 돼 있어서**
+(`H3FaceMaskSAM`은 §3에서 이미 1차 구현 스킵으로 명시 — SAM_MODEL은 문자열이 아니라 소켓
+타입이라 지금 설계로는 연결 불가) 값이 뭐든 영향이 없었을 것 — 진짜 원인은 fallback_detector
+하나였다. 우연히 같이 none으로 바꿔서 같이 "고쳐진 것처럼" 보였을 뿐.

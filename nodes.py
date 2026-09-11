@@ -268,21 +268,36 @@ def _scan(folder_key, extensions=None):
     return sorted(found) if found else ["none"]
 
 
-def _scan_ultralytics(sub, extensions=None):
-    """Face-detector-style models (ultralytics YOLO .pt files).
-
-    Impact Pack's subpack registers the "ultralytics_bbox" / "ultralytics_segm" folder
-    keys with folder_paths, but H3 Face Refine's own nodes.py works without it — they
-    fall back to walking models/ultralytics/<sub> directly (see
-    SPEC_MINIMAX_H3_FACE_REFINE.md §9-1). Mirror that here so the Settings dropdown lists
-    the same files the node itself will find, whether or not Impact Pack is installed.
+def _detector_choices():
+    """The exact enum ComfyUI-H3-FaceRefine's H3FaceTrackCrop accepts for BOTH `detector`
+    and `fallback_detector` (its own _detector_list() — the pack does not split these two
+    inputs by bbox vs segm, both take the same full list, see
+    SPEC_MINIMAX_H3_FACE_REFINE.md §16). We used to scan "bbox" and "segm" separately for
+    our two dropdowns, which produced bare names (person_yolov8m-seg.pt) that don't match
+    what the node actually validates against once Impact Pack registers a generic
+    "ultralytics" folder key returning subfolder-prefixed names (segm\\person_yolov8m-
+    seg.pt) — a real "Value not in list" failure, not a modelling choice. Mirror the
+    pack's own union exactly (folder_paths keys "ultralytics_bbox" then "ultralytics", raw
+    names, no path-stripping) so anything we show here is guaranteed valid.
     """
-    exts = extensions or [".pt"]
-    for key in (f"ultralytics_{sub}", "ultralytics"):
-        got = _scan(key, extensions=exts)
-        if got and got != ["none"]:
-            return got
-    return _scan_path(os.path.join(folder_paths.models_dir, "ultralytics", sub), extensions=exts)
+    names = []
+    seen = set()
+    for key in ("ultralytics_bbox", "ultralytics"):
+        try:
+            for n in folder_paths.get_filename_list(key):
+                if n.lower().endswith(".pt") and n not in seen:
+                    seen.add(n)
+                    names.append(n)
+        except Exception:
+            pass
+    if names:
+        return names
+    # Neither folder key registered (Impact Pack not installed) — walk both subfolders
+    # directly, same fallback order the pack's own _load_detector() uses.
+    out = []
+    for sub in ("bbox", "segm"):
+        out.extend(n for n in _scan_path(os.path.join(folder_paths.models_dir, "ultralytics", sub), extensions=[".pt"]) if n != "none")
+    return out or ["none"]
 
 
 def _scan_path(path, extensions=None):
@@ -2407,8 +2422,10 @@ async def mmh3_get_models(request):
         # H3 Face Refine — face_detectors is the only required one; the rest are optional
         # (fallback detector, SAM mask, identity CLIP Vision). See
         # SPEC_MINIMAX_H3_FACE_REFINE.md §2/§9-1 for why this doesn't need Impact Pack.
-        "face_detectors":          _scan_ultralytics("bbox"),
-        "face_fallback_detectors": _scan_ultralytics("segm"),
+        # Same full list for both — the node itself doesn't split them (see
+        # _detector_choices()'s doc-comment).
+        "face_detectors":          _detector_choices(),
+        "face_fallback_detectors": _detector_choices(),
         "sam_models":              scan("sams", [".pt", ".pth"]),
         "clip_vision":             scan("clip_vision"),
     })
