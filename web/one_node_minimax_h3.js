@@ -372,6 +372,15 @@ app.registerExtension({
       previewBox.append(placeholder, frDetectBanner, previewImg, previewVid, resultVid, badge, fsBtn, compareBtn);
 
       let lastResultURL = null;
+      // Captured in showResultVideo() at the moment a result becomes the shown preview —
+      // NOT read live from state at click time. Switching the mode pill (t2v <-> facerefine
+      // <-> ltxupscale) never resets the preview box on its own, so a Face Refine result can
+      // still be sitting there with fsBtn/compareBtn visible after the user has switched to
+      // a different mode; reading state.frSource/ltxSource live at click time would then
+      // pair the OLD result with whatever source the NEW mode currently has — wrong
+      // original, wrong comparison. (Found via the web mirror's own audit of this same
+      // pattern; confirmed the same bug shape exists here by reading this file directly.)
+      let lastCompareSource = null;
       // openFullscreen() (shared/klein/ui_common.js) renders the target inside an <img> —
       // fine for the image tools it was written for, but a no-op here since lastResultURL
       // is a video file: an <img src="*.mp4"> shows nothing. Double-click on resultVid
@@ -381,11 +390,8 @@ app.registerExtension({
       // chrome/address bar stay visible, closes with ✕/ESC/outside-click.
       fsBtn.addEventListener("click", () => { if (lastResultURL) openVideoFullscreen(lastResultURL, { startAt: resultVid.currentTime || 0 }); });
       compareBtn.addEventListener("click", () => {
-        if (!lastResultURL) return;
-        const origFile = state.generationMode === "facerefine" ? state.frSource
-                        : state.generationMode === "ltxupscale" ? state.ltxSource : null;
-        if (!origFile) return;
-        openCompareViewer(`/view?filename=${encodeURIComponent(origFile)}&type=input`, lastResultURL);
+        if (!lastResultURL || !lastCompareSource) return;
+        openCompareViewer(`/view?filename=${encodeURIComponent(lastCompareSource)}&type=input`, lastResultURL);
       });
 
       // Original / Restored / Compare (wipe) / Side-by-side viewer for a finished
@@ -770,8 +776,11 @@ app.registerExtension({
         // Loaded and ready, but left paused — a clip finishing mid-run should not start
         // making noise on its own. The user presses play.
         try { resultVid.pause(); resultVid.currentTime = 0; } catch {}
-        const hasOriginal = (state.generationMode === "facerefine" && state.frSource)
-          || (state.generationMode === "ltxupscale" && state.ltxSource);
+        // Captured NOW, not read live later at compareBtn's click time — see
+        // lastCompareSource's own comment above.
+        lastCompareSource = state.generationMode === "facerefine" ? (state.frSource || null)
+                          : state.generationMode === "ltxupscale" ? (state.ltxSource || null) : null;
+        const hasOriginal = !!lastCompareSource;
         // The compare viewer already covers fullscreen viewing (its own overlay, zoom/pan)
         // for these two modes, so a separate fullscreen button is redundant there.
         fsBtn.style.display = hasOriginal ? "none" : "block";
@@ -779,6 +788,7 @@ app.registerExtension({
       }
       function resetPreview() {
         previewLocked = false;
+        lastCompareSource = null;
         placeholder.style.display = "block";
         frDetectBanner.style.display = "none";
         previewImg.style.display = "none";
