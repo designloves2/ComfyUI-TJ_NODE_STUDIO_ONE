@@ -585,17 +585,28 @@ app.registerExtension({
       previewResizeHandle.appendChild(previewResizeGrip);
       previewResizeHandle.addEventListener("mouseenter", () => { previewResizeGrip.style.background = BRAND; });
       previewResizeHandle.addEventListener("mouseleave", () => { previewResizeGrip.style.background = "rgba(255,255,255,0.35)"; });
-      previewResizeHandle.addEventListener("mousedown", (e) => {
+      // Pointer Capture, not window mousemove/mouseup: dragging this handle up crosses
+      // over previewVid's native <video> controls, and the browser's own control layer can
+      // swallow the mouseup there before it ever reaches a window-level listener - leaving
+      // the drag "stuck" engaged forever (reported: resize bar stays grabbed after the
+      // cursor passes over the playback toolbar). setPointerCapture pins ALL subsequent
+      // pointer events to the handle itself regardless of what's under the cursor,
+      // including native video controls, so pointerup always fires here.
+      previewResizeHandle.addEventListener("pointerdown", (e) => {
         e.preventDefault();
+        previewResizeHandle.setPointerCapture(e.pointerId);
         const startY = e.clientY, startH = previewH;
         const onMove = (ev) => applyPreviewH(startH + (ev.clientY - startY));
-        const onUp = () => {
-          window.removeEventListener("mousemove", onMove);
-          window.removeEventListener("mouseup", onUp);
+        const onUp = (ev) => {
+          previewResizeHandle.releasePointerCapture(ev.pointerId);
+          previewResizeHandle.removeEventListener("pointermove", onMove);
+          previewResizeHandle.removeEventListener("pointerup", onUp);
+          previewResizeHandle.removeEventListener("pointercancel", onUp);
           localStorage.setItem(PREVIEW_H_KEY, String(previewH));
         };
-        window.addEventListener("mousemove", onMove);
-        window.addEventListener("mouseup", onUp);
+        previewResizeHandle.addEventListener("pointermove", onMove);
+        previewResizeHandle.addEventListener("pointerup", onUp);
+        previewResizeHandle.addEventListener("pointercancel", onUp);
       });
       previewBox.appendChild(previewResizeHandle);
 
