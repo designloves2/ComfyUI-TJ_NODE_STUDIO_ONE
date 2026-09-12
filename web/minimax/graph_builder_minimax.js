@@ -837,7 +837,7 @@ const L = {
  * @param opts   { nodeId, sourceFile, fps }  sourceFile = filename in ComfyUI's input/
  */
 export function buildLtxUpscaleGraph(state, avail, opts = {}) {
-  const { nodeId, sourceFile, fps = FPS, window = null, saveSuffix = "" } = opts;
+  const { nodeId, sourceFile, fps = FPS, window = null, saveSuffix = "", anchorImage = null } = opts;
   // window = { skip, cap } — one segment of the source when the clip is split for VRAM.
   if (!sourceFile) throw new Error("LTX Upscale: pick a source clip (gallery or upload).");
   const need = { ltxUnet: "LTX unet", ltxLatentUpscaler: "latent upscaler", ltxClip: "text encoder",
@@ -937,7 +937,17 @@ export function buildLtxUpscaleGraph(state, avail, opts = {}) {
   g[L.upsamp] = { class_type: "LTXVLatentUpsampler", inputs: {
     samples: [L.enc, 0], upscale_model: [L.upmodel, 0], vae: vaeV,
   }};
-  g[L.firstF] = { class_type: "ImageFromBatch", inputs: { image: [L.load, 0], batch_index: 0, length: 1 } };
+  // Anchors this segment's img2video conditioning. Segment 1 (no anchorImage) uses its own
+  // window's own frame 0 — the clip's true first frame. Every later segment must instead
+  // anchor on the PREVIOUS segment's own (already-upscaled) LAST frame, not this window's
+  // frame 0 pulled from the un-upscaled original - otherwise each segment quietly
+  // re-anchors to the original source and the concatenated result can show a visible seam
+  // at every segment boundary (reported: "지금은 원본에서 이미지를 추출해서 넣고 있음").
+  if (anchorImage) {
+    g[L.firstF] = { class_type: "LoadImage", inputs: { image: anchorImage } };
+  } else {
+    g[L.firstF] = { class_type: "ImageFromBatch", inputs: { image: [L.load, 0], batch_index: 0, length: 1 } };
+  }
   g[L.i2v] = { class_type: "LTXVImgToVideoInplace", inputs: {
     strength: 1, bypass: false, vae: vaeV, image: [L.firstF, 0], latent: [L.upsamp, 0],
   }};

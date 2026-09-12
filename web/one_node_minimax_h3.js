@@ -37,7 +37,7 @@ import {
   copyOutputToInput, getNodeAvailability, getModels, saveMeta, pickChainFrame, getLoraTriggers, deleteImage,
   getMediaFiles, uploadMedia, getVramStats, listVideos,
   saveConfig, analyzeImagesNative, analyzeImagesOpenRouter, writeBriefNative, writeBriefOpenRouter, getMediaInfo,
-  listPromptSets, getPromptSet,
+  listPromptSets, getPromptSet, getClipLastFrame,
 } from "./minimax/api_minimax.js";
 import { buildClipGraph, buildLtxUpscaleGraph, buildFaceRefineGraph, NODE_IDS, previewNodeKey } from "./minimax/graph_builder_minimax.js";
 import { PIPELINE_PRESETS, allPresets, captureAxes, matchPreset, applyPreset } from "./minimax/presets_minimax.js";
@@ -3895,8 +3895,18 @@ app.registerExtension({
               setStatus(passes.length > 1
                 ? `LTX Upscale · segment ${i + 1}/${passes.length}${p.window ? ` (frames ${p.window.skip}–${p.window.skip + p.window.cap})` : ""}`
                 : "LTX Upscale · queued (≈6 min sampling on 16GB)");
+              // Segment 1 anchors on its own window's own frame 0 (the clip's true first
+              // frame, still the un-upscaled original — buildLtxUpscaleGraph's own default).
+              // Every later segment must instead anchor on the PREVIOUS segment's own
+              // (already-upscaled) LAST frame, or each segment quietly re-anchors to the
+              // original source and the stitched result shows a seam at every boundary.
+              let anchorImage = null;
+              if (i > 0) {
+                setStatus(`LTX Upscale · segment ${i + 1}/${passes.length} — reading the previous segment's last frame…`);
+                anchorImage = await getClipLastFrame(parts[i - 1].filename, parts[i - 1].subfolder || "");
+              }
               const built = buildLtxUpscaleGraph(rs, ctx.availability, {
-                nodeId: self.id, sourceFile, window: p.window, saveSuffix: p.suffix,
+                nodeId: self.id, sourceFile, window: p.window, saveSuffix: p.suffix, anchorImage,
               });
               meta = built.meta;
 
