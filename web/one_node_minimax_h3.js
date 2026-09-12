@@ -381,10 +381,10 @@ app.registerExtension({
       fsBtn.addEventListener("click", () => { if (lastResultURL) openVideoFullscreen(lastResultURL, { startAt: resultVid.currentTime || 0 }); });
       compareBtn.addEventListener("click", () => {
         if (!lastResultURL) return;
-        if (state.generationMode === "facerefine" && state.frSource) {
-          const origUrl = `/view?filename=${encodeURIComponent(state.frSource)}&type=input`;
-          openCompareViewer(origUrl, lastResultURL);
-        }
+        const origFile = state.generationMode === "facerefine" ? state.frSource
+                        : state.generationMode === "ltxupscale" ? state.ltxSource : null;
+        if (!origFile) return;
+        openCompareViewer(`/view?filename=${encodeURIComponent(origFile)}&type=input`, lastResultURL);
       });
 
       // Original / Restored / Compare (wipe) / Side-by-side viewer for a finished
@@ -688,7 +688,9 @@ app.registerExtension({
         // making noise on its own. The user presses play.
         try { resultVid.pause(); resultVid.currentTime = 0; } catch {}
         fsBtn.style.display = "block";
-        compareBtn.style.display = (state.generationMode === "facerefine" && state.frSource) ? "block" : "none";
+        const hasOriginal = (state.generationMode === "facerefine" && state.frSource)
+          || (state.generationMode === "ltxupscale" && state.ltxSource);
+        compareBtn.style.display = hasOriginal ? "block" : "none";
       }
       function resetPreview() {
         previewLocked = false;
