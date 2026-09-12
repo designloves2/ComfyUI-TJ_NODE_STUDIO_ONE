@@ -364,7 +364,7 @@ app.registerExtension({
       // Only meaningful for a post-process mode (Face Refine today) — there is an "Original"
       // to compare against. Sits left of fsBtn, same show/hide lifecycle.
       const compareBtn = el("button", { type: "button", text: "◐", title: "Compare with original", style: {
-        position: "absolute", top: "6px", right: "32px", zIndex: "6", background: "rgba(0,0,0,0.65)",
+        position: "absolute", top: "6px", right: "6px", zIndex: "6", background: "rgba(0,0,0,0.65)",
         color: "#fff", border: "none", borderRadius: "4px", width: "22px", height: "22px",
         cursor: "pointer", fontSize: "12px", padding: "0", display: "none",
       }});
@@ -745,9 +745,11 @@ app.registerExtension({
         // Loaded and ready, but left paused — a clip finishing mid-run should not start
         // making noise on its own. The user presses play.
         try { resultVid.pause(); resultVid.currentTime = 0; } catch {}
-        fsBtn.style.display = "block";
         const hasOriginal = (state.generationMode === "facerefine" && state.frSource)
           || (state.generationMode === "ltxupscale" && state.ltxSource);
+        // The compare viewer already covers fullscreen viewing (its own overlay, zoom/pan)
+        // for these two modes, so a separate fullscreen button is redundant there.
+        fsBtn.style.display = hasOriginal ? "none" : "block";
         compareBtn.style.display = hasOriginal ? "block" : "none";
       }
       function resetPreview() {
