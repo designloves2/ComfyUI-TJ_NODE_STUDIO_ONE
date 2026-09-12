@@ -361,7 +361,14 @@ app.registerExtension({
         color: "#fff", border: "none", borderRadius: "4px", width: "22px", height: "22px",
         cursor: "pointer", fontSize: "12px", padding: "0", display: "none",
       }});
-      previewBox.append(placeholder, frDetectBanner, previewImg, previewVid, resultVid, badge, fsBtn);
+      // Only meaningful for a post-process mode (Face Refine today) — there is an "Original"
+      // to compare against. Sits left of fsBtn, same show/hide lifecycle.
+      const compareBtn = el("button", { type: "button", text: "◐", title: "Compare with original", style: {
+        position: "absolute", top: "6px", right: "32px", zIndex: "6", background: "rgba(0,0,0,0.65)",
+        color: "#fff", border: "none", borderRadius: "4px", width: "22px", height: "22px",
+        cursor: "pointer", fontSize: "12px", padding: "0", display: "none",
+      }});
+      previewBox.append(placeholder, frDetectBanner, previewImg, previewVid, resultVid, badge, fsBtn, compareBtn);
 
       let lastResultURL = null;
       // openFullscreen() (shared/klein/ui_common.js) renders the target inside an <img> —
@@ -372,6 +379,267 @@ app.registerExtension({
       // doesn't already do. openVideoFullscreen() is the in-page overlay instead: tab
       // chrome/address bar stay visible, closes with ✕/ESC/outside-click.
       fsBtn.addEventListener("click", () => { if (lastResultURL) openVideoFullscreen(lastResultURL, { startAt: resultVid.currentTime || 0 }); });
+      compareBtn.addEventListener("click", () => {
+        if (!lastResultURL) return;
+        if (state.generationMode === "facerefine" && state.frSource) {
+          const origUrl = `/view?filename=${encodeURIComponent(state.frSource)}&type=input`;
+          openCompareViewer(origUrl, lastResultURL);
+        }
+      });
+
+      // Original / Restored / Compare (wipe) / Side-by-side viewer for a finished
+      // post-process result (Face Refine today) against the clip it started from. Wheel to
+      // zoom, drag to pan, double-click to reset — same gestures on Original/Restored/Compare;
+      // Side-by-side keeps both clips at 1:1 so a direct pixel comparison isn't distorted by
+      // an unsynced zoom on only one side.
+      function openCompareViewer(originalUrl, restoredUrl) {
+        let mode = "compare";      // original | restored | compare | side
+        let wipe = 50;             // percent, compare mode only
+        let zoom = 1, panX = 0, panY = 0;
+        const FPS = 24;            // this app's clips are constant-framerate 24fps throughout
+        let kh = null;
+
+        const ov = el("div", { style: {
+          position: "fixed", inset: "0", background: "rgba(10,10,14,0.97)", zIndex: "100060",
+          display: "flex", flexDirection: "column",
+        }});
+
+        const tabsWrap = el("div", { style: {
+          display: "flex", alignItems: "center", gap: "6px", padding: "10px 14px",
+          borderBottom: `1px solid ${C.border}`, background: "#14141a", flexShrink: "0",
+        }});
+        const closeBtn = el("button", { type: "button", text: "✕ Close", style: {
+          marginLeft: "auto", cursor: "pointer", fontFamily: "inherit", fontSize: "12px",
+          padding: "6px 12px", borderRadius: "6px", background: "transparent", color: C.err,
+          border: `1px solid ${C.border}`,
+        }});
+        function tabBtn(label, key) {
+          const on = mode === key;
+          const b = el("button", { type: "button", text: label, style: {
+            cursor: "pointer", fontFamily: "inherit", fontSize: "12px", fontWeight: "600",
+            padding: "6px 12px", borderRadius: "6px",
+            border: `1px solid ${on ? BRAND : C.border}`, background: on ? BRAND : "transparent",
+            color: on ? "#fff" : C.text,
+          }});
+          b.addEventListener("click", () => { mode = key; zoom = 1; panX = 0; panY = 0; renderTabs(); renderStage(); });
+          return b;
+        }
+        function renderTabs() {
+          clear(tabsWrap);
+          tabsWrap.append(
+            tabBtn("Original", "original"), tabBtn("Restored", "restored"),
+            tabBtn("◐ Compare", "compare"), tabBtn("▦ Side by side", "side"), closeBtn,
+          );
+        }
+
+        const stage = el("div", { style: {
+          flex: "1", position: "relative", overflow: "hidden", background: "#000",
+          display: "flex", alignItems: "center", justifyContent: "center", cursor: "grab",
+        }});
+        const stageInner = el("div", { style: {
+          position: "relative", width: "100%", height: "100%",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }});
+        stage.appendChild(stageInner);
+
+        const origVid = el("video", { src: originalUrl, loop: "", muted: "", playsinline: "",
+          style: { maxWidth: "100%", maxHeight: "100%", objectFit: "contain", position: "absolute" } });
+        const restVid = el("video", { src: restoredUrl, loop: "", muted: "", playsinline: "",
+          style: { maxWidth: "100%", maxHeight: "100%", objectFit: "contain", position: "absolute" } });
+        origVid.muted = true; restVid.muted = true;
+
+        const label = (text, side) => el("div", { text, style: {
+          position: "absolute", top: "10px", [side]: "10px", zIndex: "2",
+          color: "#fff", fontSize: "12px", fontWeight: "700", textShadow: "0 1px 4px rgba(0,0,0,0.8)",
+        }});
+        const origLabel = label("Original", "left");
+        const restLabel = label("Restored", "right");
+        const divider = el("div", { style: {
+          position: "absolute", top: "0", bottom: "0", width: "2px", background: "#fff",
+          left: "50%", zIndex: "3", cursor: "ew-resize", touchAction: "none",
+        }});
+        const divHandle = el("div", { text: "↔", style: {
+          position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
+          width: "34px", height: "34px", borderRadius: "50%", background: "#fff", color: "#111",
+          display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.5)", cursor: "ew-resize", touchAction: "none",
+        }});
+        divider.appendChild(divHandle);
+
+        // Side-by-side pane (built once, plain 1:1 — no zoom/pan, so left vs right stays a
+        // true pixel comparison rather than two independently-panned crops).
+        const sideWrap = el("div", { style: {
+          position: "absolute", inset: "0", display: "none", gap: "2px",
+        }});
+        const sideOrig = el("video", { src: originalUrl, loop: "", muted: "", playsinline: "",
+          style: { flex: "1", width: "0", height: "100%", objectFit: "contain", background: "#000" } });
+        const sideRest = el("video", { src: restoredUrl, loop: "", muted: "", playsinline: "",
+          style: { flex: "1", width: "0", height: "100%", objectFit: "contain", background: "#000" } });
+        sideOrig.muted = true; sideRest.muted = true;
+        const sideOrigWrap = el("div", { style: { position: "relative", flex: "1" } }, [sideOrig, label("Original", "left")]);
+        const sideRestWrap = el("div", { style: { position: "relative", flex: "1" } }, [sideRest, label("Restored", "left")]);
+        sideWrap.append(sideOrigWrap, sideRestWrap);
+
+        stageInner.append(origVid, restVid, origLabel, restLabel, divider);
+        stage.appendChild(sideWrap);
+
+        function applyTransform() {
+          stageInner.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+        }
+        function renderStage() {
+          const isSide = mode === "side";
+          stageInner.style.display = isSide ? "none" : "flex";
+          sideWrap.style.display = isSide ? "flex" : "none";
+          origVid.style.display = mode === "original" || mode === "compare" ? "block" : "none";
+          restVid.style.display = mode === "restored" || mode === "compare" ? "block" : "none";
+          origLabel.style.display = mode === "compare" ? "block" : "none";
+          restLabel.style.display = mode === "compare" ? "block" : "none";
+          divider.style.display = mode === "compare" ? "block" : "none";
+          restVid.style.clipPath = mode === "compare" ? `inset(0 0 0 ${wipe}%)` : "none";
+          wipeRow.style.display = mode === "compare" ? "flex" : "none";
+          applyTransform();
+        }
+
+        // ── wheel-zoom (cursor-anchored) + drag-to-pan + double-click reset ──
+        stage.addEventListener("wheel", (e) => {
+          if (mode === "side") return;
+          e.preventDefault();
+          const rect = stage.getBoundingClientRect();
+          const mx = e.clientX - rect.left - rect.width / 2;
+          const my = e.clientY - rect.top - rect.height / 2;
+          const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+          const nextZoom = Math.min(6, Math.max(1, zoom * factor));
+          panX = mx - (mx - panX) * (nextZoom / zoom);
+          panY = my - (my - panY) * (nextZoom / zoom);
+          zoom = nextZoom;
+          if (zoom === 1) { panX = 0; panY = 0; }
+          applyTransform();
+        }, { passive: false });
+        stage.addEventListener("pointerdown", (e) => {
+          if (mode === "side" || e.target === divider || e.target === divHandle) return;
+          stage.setPointerCapture(e.pointerId);
+          stage.style.cursor = "grabbing";
+          const startX = e.clientX, startY = e.clientY, baseX = panX, baseY = panY;
+          const onMove = (ev) => { panX = baseX + (ev.clientX - startX); panY = baseY + (ev.clientY - startY); applyTransform(); };
+          const onUp = (ev) => {
+            stage.releasePointerCapture(ev.pointerId);
+            stage.style.cursor = "grab";
+            stage.removeEventListener("pointermove", onMove);
+            stage.removeEventListener("pointerup", onUp);
+            stage.removeEventListener("pointercancel", onUp);
+          };
+          stage.addEventListener("pointermove", onMove);
+          stage.addEventListener("pointerup", onUp);
+          stage.addEventListener("pointercancel", onUp);
+        });
+        stage.addEventListener("dblclick", () => { zoom = 1; panX = 0; panY = 0; applyTransform(); });
+
+        // ── compare divider drag ──
+        const onDividerDown = (e) => {
+          e.stopPropagation();
+          divider.setPointerCapture(e.pointerId);
+          const onMove = (ev) => {
+            const rect = stage.getBoundingClientRect();
+            wipe = Math.min(100, Math.max(0, ((ev.clientX - rect.left) / rect.width) * 100));
+            divider.style.left = `${wipe}%`;
+            restVid.style.clipPath = `inset(0 0 0 ${wipe}%)`;
+            wipeSlider.value = String(Math.round(wipe));
+            wipeLabel.textContent = `${Math.round(wipe)}%`;
+          };
+          const onUp = (ev) => {
+            divider.releasePointerCapture(ev.pointerId);
+            divider.removeEventListener("pointermove", onMove);
+            divider.removeEventListener("pointerup", onUp);
+          };
+          divider.addEventListener("pointermove", onMove);
+          divider.addEventListener("pointerup", onUp);
+        };
+        divider.addEventListener("pointerdown", onDividerDown);
+        divHandle.addEventListener("pointerdown", onDividerDown);
+
+        // ── footer: sync play/pause + scrub across whichever videos are active ──
+        const footer = el("div", { style: {
+          display: "flex", flexDirection: "column", gap: "8px", padding: "10px 14px",
+          borderTop: `1px solid ${C.border}`, background: "#14141a", flexShrink: "0",
+        }});
+        const scrub = el("input", { type: "range", min: "0", max: "1000", value: "0", style: { width: "100%" } });
+        const timeRow = el("div", { style: { display: "flex", justifyContent: "space-between", fontSize: "11px", color: C.muted } });
+        const timeText = el("div", { text: "00:00.000 / 00:00.000" });
+        timeRow.append(timeText);
+        const ctrlRow = el("div", { style: { display: "flex", alignItems: "center", gap: "10px" } });
+        const playBtn = el("button", { type: "button", text: "▶", style: {
+          cursor: "pointer", fontFamily: "inherit", fontSize: "13px", width: "34px", height: "28px",
+          borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+        }});
+        const prevBtn = el("button", { type: "button", text: "◀|", style: {
+          cursor: "pointer", fontFamily: "inherit", fontSize: "11px", width: "34px", height: "28px",
+          borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+        }});
+        const nextBtn = el("button", { type: "button", text: "|▶", style: {
+          cursor: "pointer", fontFamily: "inherit", fontSize: "11px", width: "34px", height: "28px",
+          borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+        }});
+        const frameText = el("div", { text: "Frame 0 / 0", style: { fontSize: "11px", color: C.muted } });
+        const wipeRow = el("div", { style: { display: "none", alignItems: "center", gap: "8px", marginLeft: "auto" } });
+        const wipeSlider = el("input", { type: "range", min: "0", max: "100", value: "50", style: { width: "140px" } });
+        const wipeLabel = el("div", { text: "50%", style: { fontSize: "11px", color: C.muted, minWidth: "32px" } });
+        wipeRow.append(el("div", { text: "Wipe", style: { fontSize: "11px", color: C.muted } }), wipeSlider, wipeLabel);
+        ctrlRow.append(playBtn, prevBtn, nextBtn, frameText, wipeRow);
+        footer.append(scrub, timeRow, ctrlRow);
+
+        wipeSlider.addEventListener("input", () => {
+          wipe = parseFloat(wipeSlider.value);
+          divider.style.left = `${wipe}%`;
+          restVid.style.clipPath = `inset(0 0 0 ${wipe}%)`;
+          wipeLabel.textContent = `${Math.round(wipe)}%`;
+        });
+
+        function fmtT(s) {
+          s = Math.max(0, s || 0);
+          const m = Math.floor(s / 60), sec = s - m * 60;
+          return `${String(m).padStart(2, "0")}:${sec.toFixed(3).padStart(6, "0")}`;
+        }
+        // The "master" clock is always origVid — restVid (and the two side clips) are kept
+        // in lock-step with it, since a Face Refine output has the same frame count/fps as
+        // the clip it started from.
+        function allVids() { return [origVid, restVid, sideOrig, sideRest]; }
+        function syncTo(t) {
+          for (const v of allVids()) { if (Math.abs(v.currentTime - t) > 0.03) { try { v.currentTime = t; } catch {} } }
+        }
+        let playing = false;
+        function setPlaying(p) {
+          playing = p;
+          playBtn.textContent = playing ? "⏸" : "▶";
+          for (const v of allVids()) { try { playing ? v.play().catch(() => {}) : v.pause(); } catch {} }
+        }
+        playBtn.addEventListener("click", () => setPlaying(!playing));
+        prevBtn.addEventListener("click", () => { setPlaying(false); syncTo(Math.max(0, origVid.currentTime - 1 / FPS)); });
+        nextBtn.addEventListener("click", () => { setPlaying(false); syncTo(Math.min(origVid.duration || 0, origVid.currentTime + 1 / FPS)); });
+        scrub.addEventListener("input", () => {
+          setPlaying(false);
+          const dur = origVid.duration || 0;
+          syncTo((parseFloat(scrub.value) / 1000) * dur);
+        });
+        origVid.addEventListener("timeupdate", () => {
+          const dur = origVid.duration || 0;
+          if (dur > 0) scrub.value = String(Math.round((origVid.currentTime / dur) * 1000));
+          timeText.textContent = `${fmtT(origVid.currentTime)} / ${fmtT(dur)}`;
+          frameText.textContent = `Frame ${Math.round(origVid.currentTime * FPS)} / ${Math.round(dur * FPS)}`;
+        });
+
+        function close() {
+          document.removeEventListener("keydown", kh);
+          for (const v of allVids()) { try { v.pause(); v.removeAttribute("src"); v.load(); } catch {} }
+          document.body.removeChild(ov);
+        }
+        kh = (e) => { if (e.key === "Escape") close(); };
+        document.addEventListener("keydown", kh);
+        closeBtn.addEventListener("click", close);
+
+        renderTabs(); renderStage();
+        ov.append(tabsWrap, stage, footer);
+        document.body.appendChild(ov);
+      }
 
       // KJ encodes preview frames on a background thread, so the last few can land
       // after execution_success — and after the run has already put its final video in
@@ -420,6 +688,7 @@ app.registerExtension({
         // making noise on its own. The user presses play.
         try { resultVid.pause(); resultVid.currentTime = 0; } catch {}
         fsBtn.style.display = "block";
+        compareBtn.style.display = (state.generationMode === "facerefine" && state.frSource) ? "block" : "none";
       }
       function resetPreview() {
         previewLocked = false;
@@ -435,6 +704,7 @@ app.registerExtension({
         resultVid.style.display = "none";
         badge.style.display = "none";
         fsBtn.style.display = "none";
+        compareBtn.style.display = "none";
       }
 
       // Socket listener. ModelPreviewOverrideKJ stamps the event with its own graph key,
