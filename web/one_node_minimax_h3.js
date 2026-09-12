@@ -442,10 +442,18 @@ app.registerExtension({
         }});
         stage.appendChild(stageInner);
 
+        // Geometry (left/top/width/height) is set explicitly by layoutVideos() below, from
+        // origVid's own aspect ratio only - NOT objectFit:"contain" on each video
+        // independently. An upscale changes resolution, not framing, but letting each
+        // <video> auto-fit against its OWN native size independently still visibly
+        // mismatched the two pictures (reported with a screenshot: the upscaled side showed
+        // noticeably larger/closer subjects than the original side). objectFit:"fill" here
+        // is deliberate: it forces restVid's pixels to exactly match origVid's on-screen
+        // rectangle rather than trusting the file's own reported aspect ratio.
         const origVid = el("video", { src: originalUrl, loop: "", muted: "", playsinline: "",
-          style: { maxWidth: "100%", maxHeight: "100%", objectFit: "contain", position: "absolute" } });
+          style: { position: "absolute", objectFit: "fill" } });
         const restVid = el("video", { src: restoredUrl, loop: "", muted: "", playsinline: "",
-          style: { maxWidth: "100%", maxHeight: "100%", objectFit: "contain", position: "absolute" } });
+          style: { position: "absolute", objectFit: "fill" } });
         origVid.muted = true; restVid.muted = true;
 
         const label = (text, side) => el("div", { text, style: {
@@ -510,21 +518,34 @@ app.registerExtension({
           stageInner.style.transform = t;
           restInner.style.transform = t;
         }
-        // objectFit:"contain" can letterbox/pillarbox the video inside `stage` when its
-        // aspect ratio doesn't match the stage's - a wipe % of the whole STAGE width then
-        // lands somewhere other than that same % across the actual picture (reported:
-        // "컴패어 바가 두 영상의 경계랑 어긋나는 것도 확인했어?" / a screenshot showing the
-        // divider off the true centre of the frame). This maps wipe (0-100, meant as a % of
-        // the actual displayed video content) to a real screen pixel position instead.
+        // A "contain" fit inside `stage` can letterbox/pillarbox when the video's aspect
+        // ratio doesn't match the stage's - a wipe % of the whole STAGE width then lands
+        // somewhere other than that same % across the actual picture (reported: "컴패어 바가
+        // 두 영상의 경계랑 어긋나는 것도 확인했어?" / a screenshot showing the divider off the
+        // true centre of the frame). Computed from origVid's aspect ratio ONLY, and BOTH
+        // videos are explicitly sized/positioned to this exact rect (objectFit:"fill" on
+        // both, see their creation above) - an upscale changes resolution, not framing, but
+        // letting restVid auto-fit against its own (higher) native resolution independently
+        // still visibly mismatched the two pictures' apparent scale (reported with a
+        // screenshot: the upscaled side showed noticeably larger/closer subjects). Forcing
+        // one shared rect guarantees they always register at identical scale/position.
         function contentRect() {
           const cw = stage.clientWidth || 1, ch = stage.clientHeight || 1;
           const vw = origVid.videoWidth || cw, vh = origVid.videoHeight || ch;
           const fit = Math.min(cw / vw, ch / vh);
-          const dispW = vw * fit;
-          return { left: (cw - dispW) / 2, width: dispW };
+          const dispW = vw * fit, dispH = vh * fit;
+          return { left: (cw - dispW) / 2, top: (ch - dispH) / 2, width: dispW, height: dispH };
+        }
+        function layoutVideos() {
+          const r = contentRect();
+          for (const v of [origVid, restVid]) {
+            v.style.left = `${r.left}px`; v.style.top = `${r.top}px`;
+            v.style.width = `${r.width}px`; v.style.height = `${r.height}px`;
+          }
+          return r;
         }
         function wipePx() {
-          const r = contentRect();
+          const r = layoutVideos();
           return r.left + (wipe / 100) * r.width;
         }
         function renderStage() {
@@ -537,6 +558,7 @@ app.registerExtension({
           origLabel.style.display = mode === "compare" ? "block" : "none";
           restLabel.style.display = mode === "compare" ? "block" : "none";
           divider.style.display = mode === "compare" ? "block" : "none";
+          if (!isSide) layoutVideos();
           if (mode === "compare") {
             const px = wipePx();
             divider.style.left = `${px}px`;
@@ -694,9 +716,11 @@ app.registerExtension({
         document.addEventListener("keydown", kh);
         closeBtn.addEventListener("click", close);
 
-        renderTabs(); renderStage();
         ov.append(tabsWrap, stage, footer);
         document.body.appendChild(ov);
+        // Must attach to the document first - renderStage()/layoutVideos() read
+        // stage.clientWidth/Height, which are 0 on a detached element.
+        renderTabs(); renderStage();
       }
 
       // KJ encodes preview frames on a background thread, so the last few can land
