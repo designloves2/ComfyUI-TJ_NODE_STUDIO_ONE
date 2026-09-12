@@ -486,23 +486,46 @@ app.registerExtension({
         const sideWrap = el("div", { style: {
           position: "absolute", inset: "0", display: "none", gap: "2px",
         }});
+        // flex:1 belongs on the WRAPPER (the actual flex child of sideWrap) - putting it on
+        // the <video> itself did nothing (its parent isn't a flex container), and left
+        // width:0 as the only surviving rule, collapsing both videos to zero width (reported:
+        // "사이드 바이 사이드는 영상이 안나와").
         const sideOrig = el("video", { src: originalUrl, loop: "", muted: "", playsinline: "",
-          style: { flex: "1", width: "0", height: "100%", objectFit: "contain", background: "#000" } });
+          style: { width: "100%", height: "100%", objectFit: "contain", background: "#000" } });
         const sideRest = el("video", { src: restoredUrl, loop: "", muted: "", playsinline: "",
-          style: { flex: "1", width: "0", height: "100%", objectFit: "contain", background: "#000" } });
+          style: { width: "100%", height: "100%", objectFit: "contain", background: "#000" } });
         sideOrig.muted = true; sideRest.muted = true;
-        const sideOrigWrap = el("div", { style: { position: "relative", flex: "1" } }, [sideOrig, label("Original", "left")]);
-        const sideRestWrap = el("div", { style: { position: "relative", flex: "1" } }, [sideRest, label("Restored", "left")]);
+        const sideOrigWrap = el("div", { style: { position: "relative", flex: "1", height: "100%" } }, [sideOrig, label("Original", "left")]);
+        const sideRestWrap = el("div", { style: { position: "relative", flex: "1", height: "100%" } }, [sideRest, label("Restored", "left")]);
         sideWrap.append(sideOrigWrap, sideRestWrap);
 
-        stageInner.append(origVid, origLabel);
-        restInner.append(restVid, restLabel);
-        stage.append(restMask, divider, sideWrap);
+        stageInner.append(origVid);
+        restInner.append(restVid);
+        // Labels are fixed UI chrome, same reasoning as the divider - not appended inside
+        // stageInner/restInner, or they'd zoom/pan along with the footage too.
+        stage.append(restMask, divider, origLabel, restLabel, sideWrap);
 
         function applyTransform() {
           const t = `translate(${panX}px, ${panY}px) scale(${zoom})`;
           stageInner.style.transform = t;
           restInner.style.transform = t;
+        }
+        // objectFit:"contain" can letterbox/pillarbox the video inside `stage` when its
+        // aspect ratio doesn't match the stage's - a wipe % of the whole STAGE width then
+        // lands somewhere other than that same % across the actual picture (reported:
+        // "컴패어 바가 두 영상의 경계랑 어긋나는 것도 확인했어?" / a screenshot showing the
+        // divider off the true centre of the frame). This maps wipe (0-100, meant as a % of
+        // the actual displayed video content) to a real screen pixel position instead.
+        function contentRect() {
+          const cw = stage.clientWidth || 1, ch = stage.clientHeight || 1;
+          const vw = origVid.videoWidth || cw, vh = origVid.videoHeight || ch;
+          const fit = Math.min(cw / vw, ch / vh);
+          const dispW = vw * fit;
+          return { left: (cw - dispW) / 2, width: dispW };
+        }
+        function wipePx() {
+          const r = contentRect();
+          return r.left + (wipe / 100) * r.width;
         }
         function renderStage() {
           const isSide = mode === "side";
@@ -514,10 +537,21 @@ app.registerExtension({
           origLabel.style.display = mode === "compare" ? "block" : "none";
           restLabel.style.display = mode === "compare" ? "block" : "none";
           divider.style.display = mode === "compare" ? "block" : "none";
-          restMask.style.clipPath = mode === "compare" ? `inset(0 0 0 ${wipe}%)` : "none";
+          if (mode === "compare") {
+            const px = wipePx();
+            divider.style.left = `${px}px`;
+            restMask.style.clipPath = `inset(0 0 0 ${px}px)`;
+          } else {
+            restMask.style.clipPath = "none";
+          }
           wipeRow.style.display = mode === "compare" ? "flex" : "none";
           applyTransform();
         }
+        // videoWidth/videoHeight are 0 until metadata loads, and the modal's own size can
+        // change (window resize) - recompute the content rect whenever either happens.
+        origVid.addEventListener("loadedmetadata", () => renderStage());
+        const onWinResize = () => renderStage();
+        window.addEventListener("resize", onWinResize);
 
         // ── wheel-zoom (cursor-anchored) + drag-to-pan + double-click reset ──
         stage.addEventListener("wheel", (e) => {
@@ -559,9 +593,12 @@ app.registerExtension({
           divider.setPointerCapture(e.pointerId);
           const onMove = (ev) => {
             const rect = stage.getBoundingClientRect();
-            wipe = Math.min(100, Math.max(0, ((ev.clientX - rect.left) / rect.width) * 100));
-            divider.style.left = `${wipe}%`;
-            restMask.style.clipPath = `inset(0 0 0 ${wipe}%)`;
+            const r = contentRect();
+            const px = ev.clientX - rect.left;
+            wipe = Math.min(100, Math.max(0, ((px - r.left) / r.width) * 100));
+            const clampedPx = wipePx();
+            divider.style.left = `${clampedPx}px`;
+            restMask.style.clipPath = `inset(0 0 0 ${clampedPx}px)`;
             wipeSlider.value = String(Math.round(wipe));
             wipeLabel.textContent = `${Math.round(wipe)}%`;
           };
@@ -608,8 +645,9 @@ app.registerExtension({
 
         wipeSlider.addEventListener("input", () => {
           wipe = parseFloat(wipeSlider.value);
-          divider.style.left = `${wipe}%`;
-          restMask.style.clipPath = `inset(0 0 0 ${wipe}%)`;
+          const px = wipePx();
+          divider.style.left = `${px}px`;
+          restMask.style.clipPath = `inset(0 0 0 ${px}px)`;
           wipeLabel.textContent = `${Math.round(wipe)}%`;
         });
 
@@ -648,6 +686,7 @@ app.registerExtension({
 
         function close() {
           document.removeEventListener("keydown", kh);
+          window.removeEventListener("resize", onWinResize);
           for (const v of allVids()) { try { v.pause(); v.removeAttribute("src"); v.load(); } catch {} }
           document.body.removeChild(ov);
         }
