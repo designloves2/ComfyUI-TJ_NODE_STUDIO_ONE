@@ -264,16 +264,16 @@ export const SAMPLERS = [
 export const SCHEDULERS = ["simple", "normal", "karras", "exponential", "sgm_uniform", "beta", "ddim_uniform"];
 
 export const GENERATION_MODES = [
-  { key: "t2v",        label: "Text only",        hint: "prompt only (T2VA)" },
-  { key: "firstlast",  label: "First/Last Frame",  hint: "start + end keyframe (FL2VA)" },
-  { key: "reference",  label: "Reference",         hint: "up to 9 reference images (REF2VA)" },
+  { key: "t2v",        label: "Text To Video",        hint: "prompt only (T2VA)" },
+  { key: "firstlast",  label: "Image to Video (F/L)",  hint: "start + end keyframe (FL2VA)" },
+  { key: "reference",  label: "Reference to Video",         hint: "up to 9 reference images (REF2VA)" },
   // Post-process pair — both refine a finished/uploaded clip instead of generating from
   // scratch; grouped together per the user's 2026-09-12 call (see
   // SPEC_MINIMAX_H3_FACE_REFINE.md §1). Left as two GENERATION_MODES entries for now —
   // splitting them into their own "Post-process" menu is a UI-layer decision to revisit
   // once Face Refine's own UI lands, not a data-model change.
-  { key: "ltxupscale",  label: "LTX Upscale",   hint: "2x refine an existing clip (LTX 2.5)" },
-  { key: "facerefine",  label: "Face Refine",   hint: "re-render a small/distant face per frame (H3)" },
+  { key: "facerefine",  label: "Face Refine MMH3",   hint: "re-render a small/distant face per frame (H3)" },
+  { key: "ltxupscale",  label: "Upscale by LTX 2.5",   hint: "2x refine an existing clip (LTX 2.5)" },
 ];
 
 // The ✨ button's default system prompt — a ready-to-use LTX-2.5 prompt author, written
