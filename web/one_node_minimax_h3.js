@@ -454,9 +454,13 @@ app.registerExtension({
         }});
         const origLabel = label("Original", "left");
         const restLabel = label("Restored", "right");
+        // Divider lives directly on `stage`, NOT inside a transformed container - it must
+        // stay pinned at a fixed screen position while zoom/pan moves the footage
+        // underneath it, or comparing while zoomed in is pointless (reported: "컴패어 바가
+        // 같이 커지고 움직이면 어떻게 비교하니"). Same reasoning for restMask below.
         const divider = el("div", { style: {
           position: "absolute", top: "0", bottom: "0", width: "2px", background: "#fff",
-          left: "50%", zIndex: "3", cursor: "ew-resize", touchAction: "none",
+          left: "50%", zIndex: "3", cursor: "ew-resize", touchAction: "none", display: "none",
         }});
         const divHandle = el("div", { text: "↔", style: {
           position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
@@ -465,6 +469,17 @@ app.registerExtension({
           boxShadow: "0 2px 8px rgba(0,0,0,0.5)", cursor: "ew-resize", touchAction: "none",
         }});
         divider.appendChild(divHandle);
+
+        // restVid's own wrapper: `restMask` is screen-fixed (same as `stage`, never
+        // transformed) and does the wipe clipping in real screen pixels; `restInner` inside
+        // it gets the exact same pan/zoom transform as `stageInner` so the restored footage
+        // still zooms/pans in lock-step with the original - only the CUT LINE stays put.
+        const restMask = el("div", { style: { position: "absolute", inset: "0", overflow: "hidden" } });
+        const restInner = el("div", { style: {
+          position: "relative", width: "100%", height: "100%",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }});
+        restMask.appendChild(restInner);
 
         // Side-by-side pane (built once, plain 1:1 — no zoom/pan, so left vs right stays a
         // true pixel comparison rather than two independently-panned crops).
@@ -480,22 +495,26 @@ app.registerExtension({
         const sideRestWrap = el("div", { style: { position: "relative", flex: "1" } }, [sideRest, label("Restored", "left")]);
         sideWrap.append(sideOrigWrap, sideRestWrap);
 
-        stageInner.append(origVid, restVid, origLabel, restLabel, divider);
-        stage.appendChild(sideWrap);
+        stageInner.append(origVid, origLabel);
+        restInner.append(restVid, restLabel);
+        stage.append(restMask, divider, sideWrap);
 
         function applyTransform() {
-          stageInner.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+          const t = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+          stageInner.style.transform = t;
+          restInner.style.transform = t;
         }
         function renderStage() {
           const isSide = mode === "side";
           stageInner.style.display = isSide ? "none" : "flex";
+          restMask.style.display = isSide ? "none" : "block";
           sideWrap.style.display = isSide ? "flex" : "none";
           origVid.style.display = mode === "original" || mode === "compare" ? "block" : "none";
           restVid.style.display = mode === "restored" || mode === "compare" ? "block" : "none";
           origLabel.style.display = mode === "compare" ? "block" : "none";
           restLabel.style.display = mode === "compare" ? "block" : "none";
           divider.style.display = mode === "compare" ? "block" : "none";
-          restVid.style.clipPath = mode === "compare" ? `inset(0 0 0 ${wipe}%)` : "none";
+          restMask.style.clipPath = mode === "compare" ? `inset(0 0 0 ${wipe}%)` : "none";
           wipeRow.style.display = mode === "compare" ? "flex" : "none";
           applyTransform();
         }
@@ -542,7 +561,7 @@ app.registerExtension({
             const rect = stage.getBoundingClientRect();
             wipe = Math.min(100, Math.max(0, ((ev.clientX - rect.left) / rect.width) * 100));
             divider.style.left = `${wipe}%`;
-            restVid.style.clipPath = `inset(0 0 0 ${wipe}%)`;
+            restMask.style.clipPath = `inset(0 0 0 ${wipe}%)`;
             wipeSlider.value = String(Math.round(wipe));
             wipeLabel.textContent = `${Math.round(wipe)}%`;
           };
@@ -590,7 +609,7 @@ app.registerExtension({
         wipeSlider.addEventListener("input", () => {
           wipe = parseFloat(wipeSlider.value);
           divider.style.left = `${wipe}%`;
-          restVid.style.clipPath = `inset(0 0 0 ${wipe}%)`;
+          restMask.style.clipPath = `inset(0 0 0 ${wipe}%)`;
           wipeLabel.textContent = `${Math.round(wipe)}%`;
         });
 
