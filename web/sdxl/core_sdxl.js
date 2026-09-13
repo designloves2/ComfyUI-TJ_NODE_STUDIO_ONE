@@ -1,4 +1,5 @@
 // core_sdxl.js — constants, colors, state persistence for SDXL ONE (TJ)
+import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
 export const BRAND = "#7612DA";
 export const C = {
   lime: BRAND, bg0: "#0b0b0b", bg1: "#111111", bg2: "#181818",
@@ -194,7 +195,28 @@ export function createInputImageSlot(state, fieldName, uploadFn, ctx, { label = 
     document.body.appendChild(ov);
   });
 
-  box.appendChild(hint); box.appendChild(img); box.appendChild(expandBtn);
+  // Bottom-left, same spot/style MiniMax H3's own image slots use for this — pick an
+  // image from any tool's gallery (or the shared INPUT/OUTPUT folders) instead of only a
+  // local file. uploadFn (uploadImage, api_sdxl.js) passes a string straight through
+  // unchanged, so the same state-set path below works for a gallery pick too.
+  const galleryBtn = el("button", { type: "button", text: "🖼", title: "Load from gallery", style: {
+    position: "absolute", bottom: "4px", left: "4px", zIndex: "2",
+    background: "rgba(0,0,0,0.65)", color: "#fff", border: "none", borderRadius: "4px",
+    width: "22px", height: "22px", fontSize: "12px", cursor: "pointer", padding: "0",
+  }});
+  galleryBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openImageGalleryPicker(async (filename) => {
+      try {
+        const name = await uploadFn(filename);
+        state[fieldName] = name;
+        showImage(name);
+        ctx.persist();
+      } catch (err) { console.error("[SDXL slot] gallery pick error:", err); }
+    });
+  });
+
+  box.appendChild(hint); box.appendChild(img); box.appendChild(expandBtn); box.appendChild(galleryBtn);
 
   function showImage(name) {
     if (name) {

@@ -31,6 +31,12 @@ export async function saveConfig(patch) {
 }
 
 export async function uploadImage(file) {
+  // Every createImageUpload() card's onUpload passes its result straight through to this
+  // (const name = await uploadImage(f)) - so when the "file" is actually already an
+  // input/ filename (the gallery-picker button hands one over, no real upload needed),
+  // passing it straight back lets every existing onUpload/state-set call site work
+  // unchanged for a gallery pick too, not just a real file upload.
+  if (typeof file === "string") return file;
   const fd = new FormData();
   fd.append("image", file);
   fd.append("subfolder", "");

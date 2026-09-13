@@ -31,6 +31,9 @@ export async function saveConfig(patch) {
 }
 
 export async function uploadImage(file) {
+  // Lets a gallery-picked filename (already in input/, no upload needed) flow through the
+  // same onUpload/state-set call sites every image-upload card already has.
+  if (typeof file === "string") return file;
   const fd = new FormData();
   fd.append("image", file);
   fd.append("subfolder", "");

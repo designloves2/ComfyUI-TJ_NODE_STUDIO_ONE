@@ -2299,6 +2299,47 @@ async def tj_shared_input_gallery(request):
     return web.json_response({"images": rows[offset:offset + limit], "total": len(rows)})
 
 
+@PromptServer.instance.routes.get("/tj_shared/output_gallery")
+async def tj_shared_output_gallery(request):
+    """Every image anywhere under ComfyUI's output folder, newest first.
+
+    Same idea as /tj_shared/input_gallery's INPUT tab, but for OUTPUT — a picture made by
+    a tool with no gallery tab of its own here (or saved somewhere the five per-tool tabs
+    don't cover) is still reachable without a file dialog. Recursive, since every tool's
+    own output lives under its own subfolder of output/.
+    """
+    try:
+        offset = int(request.query.get("offset", 0))
+        limit  = min(200, int(request.query.get("limit", 48)))
+    except Exception:
+        offset, limit = 0, 48
+    base = _get_output_dir()
+    exts = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif")
+    rows = []
+    try:
+        for root, _dirs, files in os.walk(base):
+            for name in files:
+                if not name.lower().endswith(exts):
+                    continue
+                p = os.path.join(root, name)
+                if not os.path.isfile(p):
+                    continue
+                sub = os.path.relpath(root, base)
+                rows.append({
+                    "filename": name, "subfolder": "" if sub == "." else sub.replace("\\", "/"),
+                    "mtime": os.path.getmtime(p),
+                })
+    except Exception as e:
+        return web.json_response({"images": [], "total": 0, "error": str(e)})
+    rows.sort(key=lambda r: r["mtime"], reverse=True)
+    return web.json_response({"images": rows[offset:offset + limit], "total": len(rows)})
+
+
+# The new cross-tool "OUTPUT folder" gallery tab isn't tied to one tool, so it needs its own
+# copy_to_input rather than borrowing one of the per-tool ones above.
+PromptServer.instance.routes.post("/tj_shared/copy_to_input")(_make_copy_to_input_handler("out"))
+
+
 @PromptServer.instance.routes.post("/tj_shared/input_exists")
 async def tj_shared_input_exists(request):
     """Which of these filenames are still in ComfyUI's input folder.

@@ -12,6 +12,10 @@ export const IMAGE_GALLERY_TOOLS = [
   // lives, and where every previous pick was copied to — so it is the most likely place
   // to find the image being looked for, and it needs no copy step at all.
   { id: "input",    label: "INPUT folder",    api: "/tj_shared",     subfolder: "", input: true },
+  // OUTPUT right next to it (user: "위치는 INPUT 옆에 추가") — the whole output/ tree
+  // recursively, for a picture from a tool with no tab of its own here, or saved
+  // somewhere none of the per-tool tabs below would find it.
+  { id: "output",   label: "OUTPUT folder",   api: "/tj_shared",     subfolder: "", output: true },
   { id: "krea2",    label: "Krea2",           api: "/krea2_one",     subfolder: "one_krea2" },
   { id: "zimage",   label: "Z-Image",         api: "/z_image_turbo", subfolder: "one_z-image" },
   { id: "klein",    label: "Flux2 Klein",     api: "/flux_klein",    subfolder: "one_flux2-klein" },
@@ -26,6 +30,8 @@ async function fetchGallery(tool, offset, limit) {
   try {
     const url = tool.input
       ? `${tool.api}/input_gallery?offset=${offset}&limit=${limit}`
+      : tool.output
+      ? `${tool.api}/output_gallery?offset=${offset}&limit=${limit}`
       : `${tool.api}/gallery?offset=${offset}&limit=${limit}&subfolder=${encodeURIComponent(tool.subfolder)}`;
     const r = await fetch(url);
     if (!r.ok) throw new Error(String(r.status));
@@ -37,7 +43,10 @@ async function copyToInput(tool, img) {
   // Already in input/ — copying it onto itself would only make a duplicate under a new
   // unique name, so the existing filename is handed straight back.
   if (tool.input) return img.filename;
-  const r = await fetch(`${tool.api}/copy_to_input`, {
+  // The generic OUTPUT tab isn't one specific tool's own copy_to_input route (it browses
+  // every tool's output at once) — /tj_shared has its own for exactly this.
+  const api = tool.output ? "/tj_shared" : tool.api;
+  const r = await fetch(`${api}/copy_to_input`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ filename: img.filename, subfolder: img.subfolder || "", type: "output" }),

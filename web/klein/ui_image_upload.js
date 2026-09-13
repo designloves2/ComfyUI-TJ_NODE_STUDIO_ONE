@@ -1,6 +1,7 @@
 // ui_image_upload.js — shared 256x256 image upload box (long-edge fit, expand popup).
 import { C, el } from "./core_klein.js";
 import { button } from "./ui_common.js";
+import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
 
 export function createImageUpload({ label = "Image", onUpload, initialFilename = null, maxPixels = null, onLoad = null } = {}) {
   const BOX = 192;
@@ -69,9 +70,27 @@ export function createImageUpload({ label = "Image", onUpload, initialFilename =
   }
   img.addEventListener("load", checkResolution);
 
+  // Bottom-left, same spot/style MiniMax H3's own image slots use for this — pick an
+  // image from any tool's gallery (or the shared INPUT/OUTPUT folders) instead of only a
+  // local file. uploadImage() (api_klein.js) passes a string straight through unchanged,
+  // so onUpload's existing "upload then set state" call sites work for a gallery pick too.
+  const galleryBtn = el("button", { type: "button", text: "🖼", title: "Load from gallery", style: {
+    position: "absolute", bottom: "4px", left: "4px", zIndex: "2",
+    background: "rgba(0,0,0,0.65)", color: "#fff", border: "none", borderRadius: "4px",
+    width: "22px", height: "22px", fontSize: "12px", cursor: "pointer", padding: "0",
+  }});
+  galleryBtn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    openImageGalleryPicker(async (filename) => {
+      const name = await onUpload(filename);
+      show(name);
+    });
+  });
+
   box.appendChild(hint);
   box.appendChild(img);
   box.appendChild(expandBtn);
+  box.appendChild(galleryBtn);
 
   const fi = el("input", { type: "file", accept: "image/*", style: { display: "none" }});
 
