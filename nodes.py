@@ -2270,9 +2270,64 @@ async def mmh3_delete_prompt_set(request):
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 
 
+_TJ_SHARED_IMG_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif")
+
+
+def _tj_shared_scan_images(base, subfolder=""):
+    """Every image file under `base/subfolder`, recursive, newest first.
+
+    Shared by both input_gallery and output_gallery below - same scan, different root.
+    `subfolder` scopes the walk to start there instead of at `base` itself, so the
+    picker's folder dropdown can narrow a large tree down instead of always listing
+    everything at once.
+    """
+    try:
+        start = _safe_resolve_path(base, subfolder, "") if subfolder else base
+    except (ValueError, NameError):
+        start = base
+    rows = []
+    if not os.path.isdir(start):
+        return rows
+    for root, _dirs, files in os.walk(start):
+        for name in files:
+            if not name.lower().endswith(_TJ_SHARED_IMG_EXTS):
+                continue
+            p = os.path.join(root, name)
+            if not os.path.isfile(p):
+                continue
+            sub = os.path.relpath(root, base)
+            rows.append({
+                "filename": name, "subfolder": "" if sub == "." else sub.replace("\\", "/"),
+                "mtime": os.path.getmtime(p),
+            })
+    return rows
+
+
+def _tj_shared_folder_tree(base, max_depth=2):
+    """Folder names under `base`, nested up to `max_depth` levels, for the picker's folder
+    navigation dropdown - alphabetical, each entry {"name", "path", "children"}.
+    """
+    def walk(dir_path, depth):
+        out = []
+        try:
+            entries = sorted(e for e in os.listdir(dir_path) if os.path.isdir(os.path.join(dir_path, e)))
+        except Exception:
+            return out
+        for name in entries:
+            if name.startswith("."):
+                continue
+            full = os.path.join(dir_path, name)
+            rel = os.path.relpath(full, base).replace("\\", "/")
+            children = walk(full, depth - 1) if depth > 1 else []
+            out.append({"name": name, "path": rel, "children": children})
+        return out
+    return walk(base, max_depth)
+
+
 @PromptServer.instance.routes.get("/tj_shared/input_gallery")
 async def tj_shared_input_gallery(request):
-    """Images already sitting in ComfyUI's input folder, newest first.
+    """Images already sitting in ComfyUI's input folder (optionally scoped to a
+    subfolder), newest first.
 
     The cross-tool picker otherwise only offers the five image tools' *output* galleries,
     which means a picture the user put in input/ themselves — or one a previous pick
@@ -2283,16 +2338,10 @@ async def tj_shared_input_gallery(request):
         limit  = min(200, int(request.query.get("limit", 48)))
     except Exception:
         offset, limit = 0, 48
+    subfolder = request.query.get("subfolder", "") or ""
     base = folder_paths.get_input_directory()
-    exts = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif")
-    rows = []
     try:
-        for name in os.listdir(base):
-            if not name.lower().endswith(exts):
-                continue
-            p = os.path.join(base, name)
-            if os.path.isfile(p):
-                rows.append({"filename": name, "subfolder": "", "mtime": os.path.getmtime(p)})
+        rows = _tj_shared_scan_images(base, subfolder)
     except Exception as e:
         return web.json_response({"images": [], "total": 0, "error": str(e)})
     rows.sort(key=lambda r: r["mtime"], reverse=True)
@@ -2301,7 +2350,8 @@ async def tj_shared_input_gallery(request):
 
 @PromptServer.instance.routes.get("/tj_shared/output_gallery")
 async def tj_shared_output_gallery(request):
-    """Every image anywhere under ComfyUI's output folder, newest first.
+    """Every image under ComfyUI's output folder (optionally scoped to a subfolder),
+    newest first.
 
     Same idea as /tj_shared/input_gallery's INPUT tab, but for OUTPUT — a picture made by
     a tool with no gallery tab of its own here (or saved somewhere the five per-tool tabs
@@ -2313,26 +2363,29 @@ async def tj_shared_output_gallery(request):
         limit  = min(200, int(request.query.get("limit", 48)))
     except Exception:
         offset, limit = 0, 48
+    subfolder = request.query.get("subfolder", "") or ""
     base = _get_output_dir()
-    exts = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif")
-    rows = []
     try:
-        for root, _dirs, files in os.walk(base):
-            for name in files:
-                if not name.lower().endswith(exts):
-                    continue
-                p = os.path.join(root, name)
-                if not os.path.isfile(p):
-                    continue
-                sub = os.path.relpath(root, base)
-                rows.append({
-                    "filename": name, "subfolder": "" if sub == "." else sub.replace("\\", "/"),
-                    "mtime": os.path.getmtime(p),
-                })
+        rows = _tj_shared_scan_images(base, subfolder)
     except Exception as e:
         return web.json_response({"images": [], "total": 0, "error": str(e)})
     rows.sort(key=lambda r: r["mtime"], reverse=True)
     return web.json_response({"images": rows[offset:offset + limit], "total": len(rows)})
+
+
+@PromptServer.instance.routes.get("/tj_shared/gallery_folders")
+async def tj_shared_gallery_folders(request):
+    """Folder tree (2 levels deep) under input/ or output/, for the picker's folder
+    navigation dropdown - e.g. {"folders": [{"name":"Sheets","path":"Sheets",
+    "children":[{"name":"CharactersImage","path":"Sheets/CharactersImage","children":[]}]}]}.
+    """
+    root = request.query.get("root", "output")
+    base = folder_paths.get_input_directory() if root == "input" else _get_output_dir()
+    try:
+        folders = _tj_shared_folder_tree(base, max_depth=2)
+    except Exception as e:
+        return web.json_response({"folders": [], "error": str(e)})
+    return web.json_response({"folders": folders})
 
 
 # The new cross-tool "OUTPUT folder" gallery tab isn't tied to one tool, so it needs its own

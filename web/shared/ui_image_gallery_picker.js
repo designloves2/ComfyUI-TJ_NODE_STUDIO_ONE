@@ -26,17 +26,29 @@ export const IMAGE_GALLERY_TOOLS = [
 const BRAND = "#7612DA";
 const C = { bg1: "#111111", bg2: "#181818", border: "#2a2a2a", text: "#dedede", muted: "#565656" };
 
-async function fetchGallery(tool, offset, limit) {
+async function fetchGallery(tool, offset, limit, folderSubfolder = "") {
   try {
     const url = tool.input
-      ? `${tool.api}/input_gallery?offset=${offset}&limit=${limit}`
+      ? `${tool.api}/input_gallery?offset=${offset}&limit=${limit}&subfolder=${encodeURIComponent(folderSubfolder)}`
       : tool.output
-      ? `${tool.api}/output_gallery?offset=${offset}&limit=${limit}`
+      ? `${tool.api}/output_gallery?offset=${offset}&limit=${limit}&subfolder=${encodeURIComponent(folderSubfolder)}`
       : `${tool.api}/gallery?offset=${offset}&limit=${limit}&subfolder=${encodeURIComponent(tool.subfolder)}`;
     const r = await fetch(url);
     if (!r.ok) throw new Error(String(r.status));
     return await r.json();
   } catch { return { images: [], total: 0 }; }
+}
+
+// Folder tree (2 levels) for the INPUT/OUTPUT tabs' own navigation dropdown — these two
+// can otherwise be a huge flat pile of every image anywhere in that tree, pushing the
+// actual thumbnails off screen (user: "폴더가 너무 많으면 이미지가 다 밀려 보이니 불편").
+async function fetchFolders(root) {
+  try {
+    const r = await fetch(`/tj_shared/gallery_folders?root=${root}`);
+    if (!r.ok) throw new Error(String(r.status));
+    const d = await r.json();
+    return d.folders || [];
+  } catch { return []; }
 }
 
 async function copyToInput(tool, img) {
@@ -64,6 +76,7 @@ function viewUrl(img, tool) {
 export function openImageGalleryPicker(onPick, initialToolId) {
   let activeTool = IMAGE_GALLERY_TOOLS.find(t => t.id === initialToolId) || IMAGE_GALLERY_TOOLS[0];
   let offset = 0, total = 0, loading = false, picking = false;
+  let activeFolder = "";   // INPUT/OUTPUT only — "" = every image under the whole tree
 
   const ov = el("div", { style: { position: "fixed", inset: "0", background: "rgba(0,0,0,0.75)", zIndex: "100000", display: "flex", alignItems: "center", justifyContent: "center" } });
   const box = el("div", { style: { background: C.bg1, border: `1px solid ${C.border}`, borderRadius: "10px", padding: "12px", width: "min(1056px, 96vw)", height: "min(840px, 92vh)", minHeight: "0", boxShadow: "0 10px 40px rgba(0,0,0,0.6)", display: "flex", flexDirection: "column", gap: "10px" } });
@@ -84,11 +97,44 @@ export function openImageGalleryPicker(onPick, initialToolId) {
         background: active ? BRAND : C.bg2, color: active ? "#fff" : C.text,
         border: `1px solid ${active ? BRAND : C.border}`, fontWeight: active ? "700" : "400",
       }});
-      b.addEventListener("click", () => { if (activeTool.id !== t.id) { activeTool = t; reset(); } });
+      b.addEventListener("click", () => { if (activeTool.id !== t.id) { activeTool = t; activeFolder = ""; reset(); } });
       toolBar.appendChild(b);
     });
   }
   renderToolBar();
+
+  // Folder dropdown — only for INPUT/OUTPUT (the per-tool tabs already have one fixed
+  // subfolder each, nothing to navigate). One flat <select>, 2 levels deep, options
+  // indented with real spaces for the sub-level so the tree reads at a glance:
+  //   (All)
+  //   3D
+  //   Sheets
+  //     CharactersImage
+  //   video
+  const folderSel = el("select", { style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 8px",
+    borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+    display: "none", flexShrink: "0",
+  }});
+  folderSel.addEventListener("change", () => { activeFolder = folderSel.value; reset(); });
+
+  async function refreshFolderSel() {
+    if (!activeTool.input && !activeTool.output) {
+      folderSel.style.display = "none";
+      return;
+    }
+    folderSel.style.display = "block";
+    clear(folderSel);
+    folderSel.appendChild(el("option", { value: "", text: "(All)" }));
+    const folders = await fetchFolders(activeTool.input ? "input" : "output");
+    const addOpt = (f, depth) => {
+      const prefix = depth > 0 ? "  ".repeat(depth) : "";
+      folderSel.appendChild(el("option", { value: f.path, text: `${prefix}${f.name}` }));
+      (f.children || []).forEach(c => addOpt(c, depth + 1));
+    };
+    folders.forEach(f => addOpt(f, 0));
+    folderSel.value = activeFolder;
+  }
 
   const grid = el("div", { style: { display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gridAutoRows: "min-content", gap: "6px", overflowY: "auto", flex: "1", minHeight: "0", alignContent: "start" } });
   const statusEl = el("div", { style: { color: C.muted, fontSize: "11px", flexShrink: "0" } });
@@ -96,7 +142,7 @@ export function openImageGalleryPicker(onPick, initialToolId) {
   moreBtn.style.display = "none";
   moreBtn.addEventListener("click", () => loadMore());
 
-  box.append(topRow, toolBar, grid, statusEl, moreBtn);
+  box.append(topRow, toolBar, folderSel, grid, statusEl, moreBtn);
   ov.appendChild(box);
 
   function close() {
@@ -111,6 +157,7 @@ export function openImageGalleryPicker(onPick, initialToolId) {
     offset = 0; total = 0;
     clear(grid);
     renderToolBar();
+    refreshFolderSel();
     statusEl.textContent = "Loading…";
     loadMore();
   }
@@ -119,8 +166,9 @@ export function openImageGalleryPicker(onPick, initialToolId) {
     if (loading) return;
     loading = true;
     const tool = activeTool;
-    const data = await fetchGallery(tool, offset, 60);
-    if (tool.id !== activeTool.id) { loading = false; return; }
+    const folder = activeFolder;
+    const data = await fetchGallery(tool, offset, 60, folder);
+    if (tool.id !== activeTool.id || folder !== activeFolder) { loading = false; return; }
     total = data.total || 0;
     const imgs = data.images || [];
     imgs.forEach(img => {
