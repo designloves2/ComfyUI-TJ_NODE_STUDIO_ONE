@@ -2,6 +2,71 @@
 
 ---
 
+## v1.27.0 (2026-09-14)
+
+### MiniMax H3 gallery — filters, resolution overlay, Prompt View popup
+
+- Gallery filtering grew from a single "stitched only" toggle into a dropdown: All /
+  Original / Stitched / LTX Upscale / Face Refine / RTX Deblur / RTX VSR.
+- Each card's filename now sits under a `[0000x0000px / 0.0MP    16:9]` resolution line.
+- The button row is now a 2x2 grid — Reuse Setting / Extend Clip / Prompt View / Prompt
+  Copy — and Prompt View opens a popup with the clip, its full info, the complete
+  prompt text, and its own Reuse Setting / Extend Clip / Prompt Copy buttons (blur
+  state and its toggle carry over from the card).
+- The "stitched" indicator (card border, ★ badge, filter, Stitch mode button) moved off
+  the selection-purple onto its own amber so a stitched result and a selected card no
+  longer read as the same thing.
+- Fixed a real mislabel: LTX Upscale's segmented (VRAM-limited) concat output was
+  flagged "★ stitched" because its filename still carried `_full`, the same marker a
+  real multi-clip stitch uses — dropped `_full` from that name so only genuine stitches
+  (manual, or auto-stitched multi-clip runs) show the badge. Face Refine's own chain now
+  deletes each intermediate pass's scratch output after copying it forward, instead of
+  leaving it for the stitch flag to (wrongly) pick up.
+- LTX Upscale's and Face Refine's source-card video now share one aspect rule: a
+  landscape-through-square clip's card shrinks to the clip's own ratio; a portrait clip
+  stays capped at a 1:1 square — previously each mode had its own, mismatched box.
+
+### Cross-tool image gallery picker — OUTPUT tab + real folder navigation
+
+- The "Load from gallery" popup (until now MiniMax H3 only) gained an OUTPUT tab next to
+  INPUT, and is now wired into every other image tool's own upload cards (Krea2,
+  Z-Image, Klein, Qwen2511, SDXL) — one shared `openImageGalleryPicker()` for the whole
+  family. Existing `uploadImage(file)` functions needed no call-site changes: each one
+  now short-circuits `if (typeof file === "string") return file;`, since a gallery pick
+  already resolves to a real `input/` filename.
+- Krea2 / Qwen2511 / Anima had their own duplicated inline upload-box code instead of
+  the shared factory Klein/Z-Image/SDXL already used — consolidated into real
+  `createImageUpload()` factories (`ui_angle_qe.js`'s 3D camera-angle loader kept its
+  own mechanism deliberately, since it isn't a boxed upload card).
+- INPUT/OUTPUT are now real folder trees, not one flat recursive scan: a dropdown lists
+  each root's actual subfolders two levels deep, live-refreshed every 5s in the
+  background (a synchronous mousedown-triggered refresh was tried first but reopened
+  the dropdown at the top instead of the current selection — removed in favor of the
+  background poll, itself paused while the dropdown has focus). Every level, root
+  included, lists only that one folder's own images — no accidental "everything under
+  OUTPUT at once."
+
+### MiniMax H3 left panel
+
+- Images and LoRA moved up to sit right after Preset, instead of near the bottom after
+  Audio lock — picking a preset and then supplying its images is now one contiguous
+  step.
+- Long inline explanations (Clip length, Turbo → PDD Acc, Upscale → Deblur) that were
+  pushing the panel's height up are now a small circled "?" next to the field's label,
+  with the full text as a hover tooltip — the preset dropdown's own per-entry tooltip
+  was already like this; the panel-height culprits are the paragraphs that used to sit
+  below a field, which are gone now.
+- Fixed: the "Model patches" accordion's collapsed summary only ever joined Fused Mod +
+  Torch — fp16 accumulation was tracked in state but never read into that string, so
+  checking it showed no visible change next to the accordion title.
+- Fixed: LTX Upscale's segment chain fed every segment's anchor image from the
+  original clip's own first frame instead of the previous segment's last frame —
+  segment 2+ now anchors off `getClipLastFrame()` on the prior segment's own finished
+  output, segment 1 keeps the original-clip first frame.
+- The per-clip prompt textareas (H3 shot list) now remember a user's own resize height
+  across reloads, and resizing any one clip's box syncs the same height onto every other
+  currently-rendered clip's box.
+
 ## v1.26.1 (2026-09-11)
 
 ### Fixed
