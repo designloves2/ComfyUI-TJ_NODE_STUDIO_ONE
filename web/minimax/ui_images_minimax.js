@@ -11,10 +11,11 @@ import { uploadImage, getMediaFiles, uploadMedia, getMediaInfo } from "./api_min
 import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
 import { openAudioGalleryPicker } from "../shared/ui_audio_gallery_picker.js";
 
-// box default 132 -> 108: fits 3 reference-image slots per row instead of 2 (user: "미니맥스
-// 이미지 업로드 카드가 지금 한줄에 2개인데... 3개로 나오게"). Paired with LEFT_W/NODE_W both
-// +60 in core_minimax.js so the left panel has room without shrinking the preview area.
-export function imageSlot(labelText, initialFile, onSet, { box = 108 } = {}) {
+// box default 132 -> 92: fits 3 reference-image slots per row instead of 2 (user: "미니맥스
+// 이미지 업로드 카드가 지금 한줄에 2개인데... 3개로 나오게"), sized to still fit 3 per row
+// after LEFT_W was brought back down to 330 in core_minimax.js (92*3 + 2 gaps of 5 = 286,
+// fits inside a 330px panel with its own padding/scrollbar reserve).
+export function imageSlot(labelText, initialFile, onSet, { box = 92 } = {}) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "3px", alignItems: "center" } });
   const frame = el("div", { style: {
     width: `${box}px`, height: `${box}px`, background: "#000", borderRadius: "8px",

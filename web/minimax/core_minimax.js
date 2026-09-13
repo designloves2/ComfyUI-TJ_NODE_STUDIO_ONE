@@ -7,13 +7,12 @@ export const C = {
   warn: "#ffb347", err: "#ff6767", ok: "#5fd38d",
 };
 
-// LEFT_W +60 / NODE_W +60 together (keeps the right column's own width unchanged) so the
-// reference-image grid fits 3 image slots per row instead of 2 (user: "이미지 카드사이즈
-// 많이 줄어들면 왼쪽메뉴의 가로 폭을 조금 넓혀도 됨") — see imageSlot's own default box
-// size drop in ui_images_minimax.js for the other half of this.
-export const NODE_W       = 1310;   // widened 25% from 1000, then +60 for the 3-per-row image grid — the right column is flex:1, so the extra width goes to the preview
+// LEFT_W / NODE_W move together (keeps the right column's own width unchanged) — user
+// asked for 380 -> 330 after the 3-per-row image grid change (see imageSlot's own box
+// size in ui_images_minimax.js) had made the left panel wider than needed.
+export const NODE_W       = 1260;   // widened 25% from 1000, then adjusted alongside LEFT_W — the right column is flex:1, so the extra width goes to the preview
 export const PREVIEW_SIZE = 620;
-export const LEFT_W       = 380;
+export const LEFT_W       = 330;
 export const PAD          = 12;
 export const SUBFOLDER    = "one_minimax_h3";
 export const API          = "/minimax_h3_one";
