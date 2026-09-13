@@ -3953,9 +3953,14 @@ app.registerExtension({
             vid = parts[0];
           } else {
             setStatus(`Assembling ${parts.length} segments with ffmpeg…`);
+            // Deliberately no "_full" in this name — that substring is what flags a gallery
+            // card "★ stitched" (nodes.py's /minimax_h3_one/videos route: `"_full" in
+            // name.lower()`), and splitting into segments is a VRAM workaround for ONE
+            // upscale job, not a real multi-clip stitch. "★ stitched" is reserved for a
+            // manual gallery Stitch or a multi-clip generation's own auto-stitch result.
             const st = await stitchClips(
               parts.map(p => ({ filename: p.filename, subfolder: p.subfolder || "" })),
-              `${folder}/${rs.filenamePrefix || "MMH3"}_LTXUP_full`, null, null, null,
+              `${folder}/${rs.filenamePrefix || "MMH3"}_LTXUP`, null, null, null,
             );
             vid = { filename: st.filename, subfolder: st.subfolder || "", type: "output" };
             // the per-segment files were scratch — drop them so the gallery stays clean
