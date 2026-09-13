@@ -117,13 +117,13 @@ export function openImageGalleryPicker(onPick, initialToolId) {
     display: "none", flexShrink: "0",
   }});
   folderSel.addEventListener("change", () => { activeFolder = folderSel.value; reset(); });
-  // Real folders on disk can change any time (another tool saves into a new subfolder,
-  // the user makes one manually) — re-fetch the list every time the dropdown is about to
-  // open instead of only on tab-switch, so it never goes stale while the picker sits open
-  // (user: "실제 하위 폴더 목록을 만들어야 되고 실시간 갱신도 되야해"). Only refreshes
-  // the option list, not the grid — refreshFolderSel() already restores the current
-  // selection afterward.
-  folderSel.addEventListener("mousedown", () => { refreshFolderSel(); });
+  // NOT refreshed on mousedown/click - rebuilding the <option> list at the exact moment
+  // the native dropdown is about to open loses the browser's "scroll to the selected
+  // item" behavior, since the rebuild lands async (after fetchFolders resolves) rather
+  // than before the popup paints (reported: picking a folder, then reopening the
+  // dropdown, always jumped back to the top instead of showing the current selection).
+  // The periodic background refresh below covers "실시간 갱신" while the dropdown is
+  // closed, so it's already current by the time it's opened.
 
   async function refreshFolderSel() {
     if (!activeTool.input && !activeTool.output) {
@@ -161,7 +161,13 @@ export function openImageGalleryPicker(onPick, initialToolId) {
   // refresh-on-click above — real folders can appear mid-session (another tool saving
   // into a brand new subfolder), and "실시간 갱신" means the list should catch up on its
   // own, not only when something happens to touch the dropdown.
-  const folderPollTimer = setInterval(() => { refreshFolderSel(); }, 5000);
+  // Skipped while the dropdown itself is focused/open — same reason mousedown no longer
+  // triggers a refresh: rebuilding its options while the native popup is showing can
+  // disrupt or close it. It just waits for the next tick once the user's done with it.
+  const folderPollTimer = setInterval(() => {
+    if (document.activeElement === folderSel) return;
+    refreshFolderSel();
+  }, 5000);
 
   function close() {
     document.removeEventListener("keydown", onKey);
