@@ -2804,6 +2804,20 @@ app.registerExtension({
           ]));
         }
 
+        // images (mode-specific) — right after Preset, since picking a preset and
+        // then supplying the images it needs is the natural next step.
+        const imgPanel = mountImagePanel(state, ctx);
+        const imgCount = state.generationMode === "reference"
+          ? (state.refImages || []).filter(Boolean).length
+          : [state.firstFrameImage, state.lastFrameImage].filter(Boolean).length;
+        leftPanel.appendChild(accordion("images", "Images",
+          state.generationMode === "t2v" ? "Text only" : (imgCount ? `${imgCount} set` : "None"),
+          () => [imgPanel.el]));
+
+        const loraOn = (state.loras || []).filter(l => l && l.enabled !== false && l.name && l.name !== "none").length;
+        leftPanel.appendChild(accordion("lora", "LoRA", loraOn ? `${loraOn} active` : "None",
+          () => [mountLoraPanel()]));
+
         // pipeline options — each accel mode's knobs render right under the dropdown so
         // switching modes never means a round-trip through the Settings modal.
         // ── pipeline ──────────────────────────────────────────────────────────
@@ -3279,19 +3293,6 @@ app.registerExtension({
         // in Settings → Output → Relay, which also round-trips through the server config
         // so a new node inherits it. Two checkboxes for one value is just a way to end up
         // wondering which one won.
-
-        // images (mode-specific)
-        const imgPanel = mountImagePanel(state, ctx);
-        const imgCount = state.generationMode === "reference"
-          ? (state.refImages || []).filter(Boolean).length
-          : [state.firstFrameImage, state.lastFrameImage].filter(Boolean).length;
-        leftPanel.appendChild(accordion("images", "Images",
-          state.generationMode === "t2v" ? "Text only" : (imgCount ? `${imgCount} set` : "None"),
-          () => [imgPanel.el]));
-
-        const loraOn = (state.loras || []).filter(l => l && l.enabled !== false && l.name && l.name !== "none").length;
-        leftPanel.appendChild(accordion("lora", "LoRA", loraOn ? `${loraOn} active` : "None",
-          () => [mountLoraPanel()]));
 
         // Last in the scrolling column, directly above the pinned Seed/Generate block:
         // steps change per run far more often than the rest of the sampler config, which
