@@ -4,6 +4,7 @@ import { panel, label, button, slider, numberField, select, row, col } from "./u
 import { buildInpaintGraph, buildOutpaintGraph } from "./graph_builder_qwen2511.js";
 import { mountLoraSectionQE } from "./ui_common_qe.js";
 import { uploadImage } from "./api_qwen2511.js";
+import { createImageUpload } from "./ui_image_upload.js";
 
 const DISP_W = LEFT_W - 24;
 
@@ -185,25 +186,17 @@ export function mountInpaintLeft(leftEl, state, ctx) {
   }
 
   // Source image upload
-  const srcBox = el("div", { style:{ width:"192px", height:"192px", background:"#000", borderRadius:"10px", border:`1px solid ${C.border}`, position:"relative", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden" }});
-  const srcHint = el("div", { text:"Source Image\nClick to upload", style:{ color:C.muted, fontSize:"12px", textAlign:"center", whiteSpace:"pre", pointerEvents:"none" }});
-  const srcImg2  = el("img", { style:{ position:"absolute", inset:"0", width:"100%", height:"100%", objectFit:"contain", pointerEvents:"none", display:"none" }});
-  srcBox.appendChild(srcHint); srcBox.appendChild(srcImg2);
-  const srcInp = el("input", { type:"file", accept:"image/*", style:{ display:"none" }});
-  function setSourceFilename(name) {
-    if (name) { srcImg2.src=`/view?filename=${encodeURIComponent(name)}&type=input&t=${Date.now()}`; srcImg2.style.display="block"; srcHint.style.display="none"; }
-    else       { srcImg2.style.display="none"; srcHint.style.display=""; }
-  }
-  srcBox.appendChild(srcInp);
-  srcInp.addEventListener("change", async () => { if (srcInp.files[0]) { const n=await uploadImage(srcInp.files[0]); state.inpaintImage=n; state.inpaintMaskImage=null; ctx.persist(); setSourceFilename(n); loadSourceImage(n); srcInp.value=""; }});
-  srcBox.addEventListener("click", ()=>srcInp.click());
-  srcBox.addEventListener("dragover", e=>{e.preventDefault();srcBox.style.borderColor=C.brand;});
-  srcBox.addEventListener("dragleave", ()=>{srcBox.style.borderColor=C.border;});
-  srcBox.addEventListener("drop", async e=>{ e.preventDefault(); srcBox.style.borderColor=C.border; const f=e.dataTransfer.files[0]; if(f){const n=await uploadImage(f);state.inpaintImage=n;state.inpaintMaskImage=null;ctx.persist();setSourceFilename(n);loadSourceImage(n);}});
-  setSourceFilename(state.inpaintImage);
+  const { el: srcBoxEl, setFilename: setSourceFilename } = createImageUpload(
+    "Source Image", state.inpaintImage || null, async (f) => {
+      const n = await uploadImage(f);
+      state.inpaintImage = n; state.inpaintMaskImage = null; ctx.persist();
+      loadSourceImage(n);
+      return n;
+    },
+  );
 
   // ── Source image (공용) ───────────────────────────────────────────────────
-  wrap.appendChild(panel([label("Source Image"), el("div", { style:{ display:"flex", justifyContent:"center" }}, [srcBox])]));
+  wrap.appendChild(panel([label("Source Image"), srcBoxEl]));
 
   // ── Inpaint section ───────────────────────────────────────────────────────
   inpaintSection.appendChild(editorPanel);

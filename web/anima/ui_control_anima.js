@@ -4,6 +4,7 @@ import { panel, label, select, numberField, slider, row, col } from "../klein/ui
 import { uploadImage } from "./api_anima.js";
 import { createInlineMaskEditor } from "../shared/mask_paint.js";
 import { buildInpaintGraph, buildAnyControlGraph, buildDepthControlGraph } from "./graph_builder_anima.js";
+import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
 
 const THUMB_BOX = 192; // matches Z-Image's source-image upload thumbnail
 const DISP_W    = LEFT_W - 24; // mask-editor canvas — matches Z-Image's panel-width fit
@@ -22,11 +23,27 @@ function createImgUpload(labelText, initialFile, onUpload) {
     if (name) { img.src = `/view?filename=${encodeURIComponent(name)}&type=input&t=${Date.now()}`; img.style.display = "block"; hint.style.display = "none"; }
     else       { img.style.display = "none"; hint.style.display = ""; }
   }
-  box.appendChild(hint); box.appendChild(img); wrap.appendChild(box);
+  // Bottom-left, same spot/style every other ONE STUDIO tool's image slots use for this.
+  // uploadImage() (api_anima.js) passes a string straight through unchanged, so onUpload
+  // (upload then set state) works for a gallery pick too.
+  const galleryBtn = el("button", { type: "button", text: "🖼", title: "Load from gallery", style: {
+    position: "absolute", bottom: "4px", left: "4px", zIndex: "2",
+    background: "rgba(0,0,0,0.65)", color: "#fff", border: "none", borderRadius: "4px",
+    width: "22px", height: "22px", fontSize: "12px", cursor: "pointer", padding: "0",
+  }});
+  galleryBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openImageGalleryPicker(async (filename) => {
+      const n = await onUpload(filename);
+      setFilename(n);
+    });
+  });
+
+  box.appendChild(hint); box.appendChild(img); box.appendChild(galleryBtn); wrap.appendChild(box);
   const inp = el("input", { type: "file", accept: "image/*", style: { display: "none" } });
   wrap.appendChild(inp);
   inp.addEventListener("change", async () => { if (inp.files[0]) { const n = await onUpload(inp.files[0]); setFilename(n); inp.value = ""; }});
-  box.addEventListener("click", () => inp.click());
+  box.addEventListener("click", (e) => { if (e.target === galleryBtn) return; inp.click(); });
   box.addEventListener("dragover", e => { e.preventDefault(); box.style.borderColor = C.lime; });
   box.addEventListener("dragleave", () => { box.style.borderColor = C.border; });
   box.addEventListener("drop", async e => { e.preventDefault(); box.style.borderColor = C.border; const f = e.dataTransfer.files[0]; if (f) { const n = await onUpload(f); setFilename(n); }});

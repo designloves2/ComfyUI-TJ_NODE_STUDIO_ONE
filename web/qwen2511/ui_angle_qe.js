@@ -3,6 +3,7 @@ import { C, el, BRAND, buildAnglePrompt } from "./core_qwen2511.js";
 import { panel, label, numberField, select, row, col } from "./ui_common_qe.js";
 import { buildAngleGraph } from "./graph_builder_qwen2511.js";
 import { uploadImage } from "./api_qwen2511.js";
+import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
 
 // ─ Presets ───────────────────────────────────────────────────────────────────
 const H_OPTS = [
@@ -495,6 +496,26 @@ export function mountAngleLeft(leftEl, st, ctx) {
   });
   wrap.appendChild(fileInp);
 
+  // This scene doesn't use the standard image-upload-box factory (it loads straight into
+  // a canvas, not a box), so the gallery pick is its own small button here instead of
+  // living inside a shared factory — same underlying mechanism as everywhere else in the
+  // family (openImageGalleryPicker), just a different trigger.
+  function applyAngleImage(name) {
+    st.angleCameraImage = name;
+    imgEl.src = `/view?filename=${encodeURIComponent(name)}&type=input&t=${Date.now()}`;
+    imgEl.onload = () => { st._imgEl = imgEl; scene.draw(); };
+    ctx.persist();
+  }
+  const galleryBtn = mkDiv({
+    textAlign: "center", fontSize: "10px", color: C.brand || BRAND, marginTop: "2px", cursor: "pointer",
+  }, ["🖼 Load from gallery"]);
+  galleryBtn.addEventListener("click", () => {
+    openImageGalleryPicker(async (filename) => {
+      const name = await uploadImage(filename);
+      applyAngleImage(name);
+    });
+  });
+
   const uploadHint=mkDiv({textAlign:"center",fontSize:"10px",color:C.muted,marginTop:"2px",cursor:"pointer"},["Double-click or drag image onto scene"]);
   uploadHint.onclick=()=>fileInp.click();
   scene.el.addEventListener("dblclick",()=>fileInp.click());
@@ -519,6 +540,7 @@ export function mountAngleLeft(leftEl, st, ctx) {
   scenePanel.appendChild(scene.el);
   scenePanel.appendChild(ctrlBlock);
   scenePanel.appendChild(uploadHint);
+  scenePanel.appendChild(galleryBtn);
   wrap.appendChild(scenePanel);
 
   // ── Sampling params ───────────────────────────────────────────────────────

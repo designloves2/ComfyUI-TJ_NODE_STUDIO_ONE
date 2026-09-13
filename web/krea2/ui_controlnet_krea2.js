@@ -6,35 +6,7 @@ import { C, BRAND, el, clear, DEPTH_CKPTS, safeDepthCkpt } from "./core_krea2.js
 import { panel, label, slider, select, numberField, row, col } from "../klein/ui_common.js";
 import { uploadImage, queuePrompt } from "./api_krea2.js";
 import { buildControlPreviewGraph, controlLoraForType, controlOutputSize } from "./graph_builder_krea2.js";
-
-function ctrlImgUpload(labelText, initialFile, onUpload, onLoad) {
-  const BOX = 192;
-  const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "4px", alignItems: "center" } });
-  const box = el("div", { style: {
-    width: `${BOX}px`, height: `${BOX}px`, background: "#000", borderRadius: "10px",
-    border: `1px solid ${C.border}`, position: "relative", cursor: "pointer",
-    flexShrink: "0", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden",
-  }});
-  const hint = el("div", { text: `${labelText}\nClick or drag to upload`, style: { color: C.muted, fontSize: "12px", textAlign: "center", whiteSpace: "pre", pointerEvents: "none" }});
-  const img  = el("img", { style: { position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", pointerEvents: "none", display: "none" }});
-  img.addEventListener("load", () => { if (onLoad && img.naturalWidth > 0) onLoad(img.naturalWidth, img.naturalHeight); });
-  let currentFile = null;
-  function setFilename(name) {
-    currentFile = name;
-    if (name) { img.src = `/view?filename=${encodeURIComponent(name)}&type=input&t=${Date.now()}`; img.style.display = "block"; hint.style.display = "none"; }
-    else       { img.style.display = "none"; hint.style.display = ""; }
-  }
-  box.appendChild(hint); box.appendChild(img); wrap.appendChild(box);
-  const inp = el("input", { type: "file", accept: "image/*", style: { display: "none" } });
-  wrap.appendChild(inp);
-  inp.addEventListener("change", async () => { if (inp.files[0]) { const n = await onUpload(inp.files[0]); setFilename(n); inp.value = ""; }});
-  box.addEventListener("click", () => inp.click());
-  box.addEventListener("dragover", e => { e.preventDefault(); box.style.borderColor = C.lime; });
-  box.addEventListener("dragleave", () => { box.style.borderColor = C.border; });
-  box.addEventListener("drop", async e => { e.preventDefault(); box.style.borderColor = C.border; const f = e.dataTransfer.files[0]; if (f) { const n = await onUpload(f); setFilename(n); }});
-  setFilename(initialFile);
-  return { el: wrap, setFilename, getFilename: () => currentFile };
-}
+import { createImageUpload as ctrlImgUpload } from "./ui_image_upload.js";
 
 // mode: "t2i" | "i2i" — picks the enabled flag + control image state keys
 export function mountControlNetSection(wrapEl, state, ctx, mode) {
@@ -116,7 +88,7 @@ export function mountControlNetSection(wrapEl, state, ctx, mode) {
     }
     const { el: ctrlImgEl, getFilename } = ctrlImgUpload("Control Image (source photo)", state[imageKey] || null, async f => {
       const name = await uploadImage(f); state[imageKey] = name; ctx.persist(); return name;
-    }, (w, h) => { state[wKey] = w; state[hKey] = h; ctx.persist(); refreshSizeHint(); });
+    }, { onLoad: (w, h) => { state[wKey] = w; state[hKey] = h; ctx.persist(); refreshSizeHint(); } });
     getCtrlFile = getFilename;
     refreshSizeHint();
 

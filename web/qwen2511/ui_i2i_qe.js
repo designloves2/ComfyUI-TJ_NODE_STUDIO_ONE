@@ -4,6 +4,7 @@ import { panel, label, slider, numberField, select, row, col } from "./ui_common
 import { buildI2IGraph } from "./graph_builder_qwen2511.js";
 import { mountLoraSectionQE } from "./ui_common_qe.js";
 import { uploadImage } from "./api_qwen2511.js";
+import { createImageUpload as createImgUpload } from "./ui_image_upload.js";
 
 function snap8(v) { return Math.max(8, Math.round(v / 8) * 8); }
 
@@ -20,40 +21,6 @@ function makeSizeFields(state, ctx) {
   wIn.addEventListener("change", () => { state.i2iWidth = snap8(+wIn.value||512); wIn.value = state.i2iWidth; if (state.i2iLockRatio && aspect > 0) { state.i2iHeight = snap8(state.i2iWidth / aspect); hIn.value = state.i2iHeight; } else if (state.i2iHeight) aspect = state.i2iWidth / state.i2iHeight; ctx.persist(); });
   hIn.addEventListener("change", () => { state.i2iHeight = snap8(+hIn.value||512); hIn.value = state.i2iHeight; if (state.i2iLockRatio && aspect > 0) { state.i2iWidth = snap8(state.i2iHeight * aspect); wIn.value = state.i2iWidth; } else if (state.i2iWidth) aspect = state.i2iWidth / state.i2iHeight; ctx.persist(); });
   return { wIn, hIn, setAspect: a => { aspect = a; }, el: col([row([col([label("W"), wIn]), col([label("H"), hIn])]), lockLbl]) };
-}
-
-function createImgUpload(labelText, initialFile, onUpload, { maxPixels = null, onLoad = null } = {}) {
-  const BOX = 192;
-  const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "4px", alignItems: "center" } });
-  const box = el("div", { style: { width: `${BOX}px`, height: `${BOX}px`, background: "#000", borderRadius: "10px", border: `1px solid ${C.border}`, position: "relative", cursor: "pointer", flexShrink: "0", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }});
-  const hint = el("div", { text: `${labelText}\nClick or drag to upload`, style: { color: C.muted, fontSize: "12px", textAlign: "center", whiteSpace: "pre", pointerEvents: "none" }});
-  const img  = el("img", { style: { position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", pointerEvents: "none" }});
-  const warnEl = maxPixels ? el("div", { style: { fontSize: "10px", color: "#ffb347", textAlign: "center", display: "none", marginTop: "2px" } }) : null;
-  img.addEventListener("load", () => {
-    const w = img.naturalWidth, h = img.naturalHeight;
-    if (onLoad && w > 0) onLoad(w, h);
-    if (!maxPixels || !warnEl) return;
-    const px = w * h;
-    if (px > maxPixels) { const mp=(px/1e6).toFixed(1),maxMp=(maxPixels/1e6).toFixed(0); warnEl.textContent=`⚠ ${w}×${h} (${mp}MP) exceeds model max ~${maxMp}MP — adjust size below.`; warnEl.style.display="block"; }
-    else warnEl.style.display="none";
-  });
-  let currentFile = null;
-  function setFilename(name) {
-    currentFile = name;
-    if (name) { img.src = `/view?filename=${encodeURIComponent(name)}&type=input&t=${Date.now()}`; img.style.display = "block"; hint.style.display = "none"; }
-    else       { img.style.display = "none"; hint.style.display = ""; if(warnEl)warnEl.style.display="none"; }
-  }
-  box.appendChild(hint); box.appendChild(img); wrap.appendChild(box);
-  if (warnEl) wrap.appendChild(warnEl);
-  const inp = el("input", { type: "file", accept: "image/*", style: { display: "none" } });
-  wrap.appendChild(inp);
-  inp.addEventListener("change", async () => { if (inp.files[0]) { const n = await onUpload(inp.files[0]); setFilename(n); inp.value = ""; }});
-  box.addEventListener("click", () => inp.click());
-  box.addEventListener("dragover", e => { e.preventDefault(); box.style.borderColor = C.brand; });
-  box.addEventListener("dragleave", () => { box.style.borderColor = C.border; });
-  box.addEventListener("drop", async e => { e.preventDefault(); box.style.borderColor = C.border; const f = e.dataTransfer.files[0]; if (f) { const n = await onUpload(f); setFilename(n); }});
-  setFilename(initialFile);
-  return { el: wrap, setFilename, getFilename: () => currentFile };
 }
 
 export function mountI2ILeft(leftEl, state, ctx) {

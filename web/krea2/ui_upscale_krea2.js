@@ -3,28 +3,17 @@ import { C, el, clear, BRAND, SEEDVR2_ATTN_MODES, SEEDVR2_COLOR_MODES } from "./
 import { panel, label, button, select, numberField, row, col } from "../klein/ui_common.js";
 import { buildUpscaleGraph } from "./graph_builder_krea2.js";
 import { uploadImage, getSeedVR2Models } from "./api_krea2.js";
+import { createImageUpload } from "./ui_image_upload.js";
 
 export function mountUpscaleLeft(leftEl, state, ctx) {
   const wrap = el("div", { style:{ display:"flex", flexDirection:"column", gap:"6px" }});
   leftEl.appendChild(wrap);
 
   // ── Source image ─────────────────────────────────────────────────────────────
-  const BOX = 192;
-  const imgBox  = el("div",{style:{width:`${BOX}px`,height:`${BOX}px`,background:"#000",borderRadius:"10px",border:`1px solid ${C.border}`,position:"relative",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}});
-  const hint    = el("div",{text:"Source Image\nClick to upload",style:{color:C.muted,fontSize:"12px",textAlign:"center",whiteSpace:"pre",pointerEvents:"none"}});
-  const imgEl   = el("img",{style:{position:"absolute",inset:"0",width:"100%",height:"100%",objectFit:"contain",pointerEvents:"none",display:"none"}});
-  function setFilename(name){if(name){imgEl.src=`/view?filename=${encodeURIComponent(name)}&type=input&t=${Date.now()}`;imgEl.style.display="block";hint.style.display="none";}else{imgEl.style.display="none";hint.style.display="";}}
-  imgBox.appendChild(hint); imgBox.appendChild(imgEl);
-  const fi = el("input",{type:"file",accept:"image/*",style:{display:"none"}});
-  fi.addEventListener("change", async()=>{if(fi.files[0]){const n=await uploadImage(fi.files[0]);state.upscaleImage=n;setFilename(n);ctx.persist();fi.value="";}});
-  imgBox.addEventListener("click",()=>fi.click());
-  imgBox.addEventListener("dragover",e=>{e.preventDefault();imgBox.style.borderColor=BRAND;});
-  imgBox.addEventListener("dragleave",()=>{imgBox.style.borderColor=C.border;});
-  imgBox.addEventListener("drop",async e=>{e.preventDefault();imgBox.style.borderColor=C.border;const f=e.dataTransfer.files[0];if(f){const n=await uploadImage(f);state.upscaleImage=n;setFilename(n);ctx.persist();}});
-  wrap.appendChild(el("div",{style:{display:"none"}},[fi]));
-  const imgBoxCenter = el("div",{style:{display:"flex",justifyContent:"center"}},[imgBox]);
-  wrap.appendChild(panel([label("Source Image"), imgBoxCenter]));
-  setFilename(state.upscaleImage||null);
+  const { el: imgBoxEl, setFilename } = createImageUpload("Source Image", state.upscaleImage || null, async f => {
+    const n = await uploadImage(f); state.upscaleImage = n; ctx.persist(); return n;
+  });
+  wrap.appendChild(panel([label("Source Image"), el("div", { style: { display: "flex", justifyContent: "center" } }, [imgBoxEl])]));
 
   // ── Model selects ─────────────────────────────────────────────────────────────
   const ditWrap = el("div"), vaeWrap = el("div");

@@ -3,6 +3,7 @@ import { C, el, clear } from "./core_qwen2511.js";
 import { panel, label, button, row, col } from "./ui_common_qe.js";
 import { buildUpscaleGraph } from "./graph_builder_qwen2511.js";
 import { uploadImage, getSeedVR2Models } from "./api_qwen2511.js";
+import { createImageUpload as createImgUpload } from "./ui_image_upload.js";
 
 function searchableSelect(options, value, onChange) {
   const wrap = el("div", { style:{ display:"flex", flexDirection:"column", gap:"2px" }});
@@ -19,24 +20,6 @@ function searchableSelect(options, value, onChange) {
   search.addEventListener("input", ()=>{ const prev=sel.value; build(search.value); if([...sel.options].find(o=>o.value===prev)) sel.value=prev; });
   wrap.appendChild(search); wrap.appendChild(sel);
   return { el: wrap, getValue(){return sel.value;}, setValue(v){current=v;sel.value=v;} };
-}
-
-function createImgUpload(labelText, initialFile, onUpload) {
-  const BOX = 192;
-  const wrap = el("div",{style:{display:"flex",flexDirection:"column",gap:"4px",alignItems:"center"}});
-  const box  = el("div",{style:{width:`${BOX}px`,height:`${BOX}px`,background:"#000",borderRadius:"10px",border:`1px solid ${C.border}`,position:"relative",cursor:"pointer",flexShrink:"0",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}});
-  const hint = el("div",{text:`${labelText}\nClick to upload`,style:{color:C.muted,fontSize:"12px",textAlign:"center",whiteSpace:"pre",pointerEvents:"none"}});
-  const img  = el("img",{style:{position:"absolute",inset:"0",width:"100%",height:"100%",objectFit:"contain",pointerEvents:"none",display:"none"}});
-  function setFilename(name){if(name){img.src=`/view?filename=${encodeURIComponent(name)}&type=input&t=${Date.now()}`;img.style.display="block";hint.style.display="none";}else{img.style.display="none";hint.style.display="";}}
-  box.appendChild(hint); box.appendChild(img); wrap.appendChild(box);
-  const inp = el("input",{type:"file",accept:"image/*",style:{display:"none"}}); wrap.appendChild(inp);
-  inp.addEventListener("change", async()=>{if(inp.files[0]){const n=await onUpload(inp.files[0]);setFilename(n);inp.value="";}});
-  box.addEventListener("click",()=>inp.click());
-  box.addEventListener("dragover",e=>{e.preventDefault();box.style.borderColor=C.brand;});
-  box.addEventListener("dragleave",()=>{box.style.borderColor=C.border;});
-  box.addEventListener("drop",async e=>{e.preventDefault();box.style.borderColor=C.border;const f=e.dataTransfer.files[0];if(f){const n=await onUpload(f);setFilename(n);}});
-  setFilename(initialFile);
-  return {el:wrap, setFilename};
 }
 
 export function mountUpscaleLeft(leftEl, state, ctx) {
