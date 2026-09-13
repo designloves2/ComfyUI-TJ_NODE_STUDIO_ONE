@@ -14,6 +14,13 @@ import { attachSensitiveToggle, mediaKey, isBlurred, isSensitive, setSensitive }
 
 const STITCH_MAX = 10;
 
+// A stitched file's card border / badge, and the Stitch button's own active-state color —
+// deliberately NOT BRAND (purple), which a picked-in-stitch-mode card border also uses.
+// Sharing one color made "this file is a stitch result" and "this card is currently picked"
+// visually indistinguishable (reported: "선택색상과 동일한 컬러를 사용하고 있어 선택과
+// 스티치가 구분이 잘 안됨").
+const STITCH_COLOR = "#e0a530";
+
 // Overlap (39) plus four frames of guard — see the note on the trim field below.
 const DEFAULT_STITCH_TRIM_FRAMES = ONE_TAKE_OVERLAP_FRAMES + 4;
 
@@ -125,8 +132,8 @@ export function createGalleryOverlay(state, ctx) {
   }});
   fullBtn.addEventListener("click", () => {
     filterFull = !filterFull;
-    fullBtn.style.background = filterFull ? BRAND : C.bg2;
-    fullBtn.style.borderColor = filterFull ? BRAND : C.border;
+    fullBtn.style.background = filterFull ? STITCH_COLOR : C.bg2;
+    fullBtn.style.borderColor = filterFull ? STITCH_COLOR : C.border;
     renderGrid();
   });
   const refreshBtn = el("button", { type: "button", text: "↻", title: "Refresh", style: {
@@ -205,11 +212,12 @@ export function createGalleryOverlay(state, ctx) {
     stitchMode = (m === "stitch");
     postMode   = (m === "upscale" || m === "rife") ? m : null;
     stitchOrder = []; oneTakeUserSet = false; postPick = null;
-    const paint = (btn, on) => {
-      btn.style.background  = on ? BRAND : C.bg2;
-      btn.style.borderColor = on ? BRAND : C.border;
+    const paint = (btn, on, color = BRAND) => {
+      btn.style.background  = on ? color : C.bg2;
+      btn.style.borderColor = on ? color : C.border;
     };
-    paint(stitchBtn, stitchMode);
+    // Its own color, not the shared BRAND paint() below — see STITCH_COLOR's comment.
+    paint(stitchBtn, stitchMode, STITCH_COLOR);
     paint(upBtn,   postMode === "upscale");
     paint(rifeBtn, postMode === "rife");
     stitchBar.style.display        = stitchMode ? "flex" : "none";
@@ -1051,7 +1059,7 @@ export function createGalleryOverlay(state, ctx) {
       // never the video/img choice or preload — always this).
       const card = el("div", { style: {
         position: "relative",
-        background: C.bg1, border: `1px solid ${picked ? BRAND : (v.is_full ? BRAND : C.border)}`,
+        background: C.bg1, border: `1px solid ${picked ? BRAND : (v.is_full ? STITCH_COLOR : C.border)}`,
         borderRadius: "8px", cursor: "pointer",
         display: "flex", flexDirection: "column",
         opacity: (stitchMode && !picked && stitchOrder.length >= STITCH_MAX) ? "0.4"
@@ -1224,7 +1232,7 @@ export function createGalleryOverlay(state, ctx) {
         el("div", { text: `${durationText}${fmtSize(v.size)} · ${fmtWhen(v.mtime)}`, style: { fontSize: "9px", color: C.muted } }),
       );
       if (v.is_full) {
-        meta.appendChild(el("div", { text: "★ stitched", style: { fontSize: "9px", color: BRAND, fontWeight: "700" } }));
+        meta.appendChild(el("div", { text: "★ stitched", style: { fontSize: "9px", color: STITCH_COLOR, fontWeight: "700" } }));
       }
 
       // The prompt the clip was rendered from, plus a one-click way back into the editor.

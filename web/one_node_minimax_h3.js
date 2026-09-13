@@ -1833,6 +1833,19 @@ app.registerExtension({
         persist(); renderLeft(); renderPrompts();
       }
 
+      // Shared source-card sizing for LTX Upscale / Face Refine's left-panel source clip
+      // cards. Landscape-through-square clips get a card that shrinks to their own aspect
+      // ratio (no letterbox); portrait clips are capped at a 1:1 square (pillarboxed) so a
+      // tall clip doesn't blow out the left panel's height — this is the behaviour LTX
+      // Upscale's card already had. Face Refine's card used a fixed 16:9 box instead, so the
+      // two cards visibly differed in size for the same clip (reported: "face refine과
+      // upscale by LTX 2.5의 비디오 인풋 카드 사이즈가 다릅니다").
+      function applySourceCardAspect(card, vid) {
+        const w = vid.videoWidth, h = vid.videoHeight;
+        if (!w || !h) return;
+        card.style.aspectRatio = (w / h) >= 1 ? `${w} / ${h}` : "1 / 1";
+      }
+
       function renderLtxUpscaleLeft() {
         const prevScroll = leftPanel.scrollTop;
         clear(leftPanel);
@@ -1852,7 +1865,7 @@ app.registerExtension({
         const hasSrc = !!state.ltxSource;
 
         const card = el("div", { style: {
-          position: "relative", width: "100%", aspectRatio: "1 / 1", background: "#000",
+          position: "relative", width: "100%", aspectRatio: "16 / 9", background: "#000",
           borderRadius: "8px", overflow: "hidden",
           border: `1px solid ${hasSrc ? BRAND : C.border}`,
           display: "flex", alignItems: "center", justifyContent: "center",
@@ -1864,6 +1877,7 @@ app.registerExtension({
             muted: true, loop: true, playsInline: true, preload: "metadata",
             style: { width: "100%", height: "100%", objectFit: "contain", background: "#000", display: "block", cursor: "pointer" } });
           vid.addEventListener("click", () => { vid.paused ? vid.play() : vid.pause(); });
+          vid.addEventListener("loadedmetadata", () => applySourceCardAspect(card, vid));
           card.appendChild(vid);
           card.appendChild(el("button", { type: "button", text: "✕", title: "Clear source", style: {
             position: "absolute", top: "6px", right: "6px", zIndex: "3", width: "24px", height: "24px",
@@ -2374,6 +2388,7 @@ app.registerExtension({
             controls: true, muted: true, preload: "metadata",
             style: { width: "100%", height: "100%", objectFit: "contain", background: "#000", display: "block" },
           });
+          vid.addEventListener("loadedmetadata", () => applySourceCardAspect(card, vid));
           card.appendChild(vid);
           card.appendChild(el("button", { type: "button", text: "✕", title: "Clear source", style: {
             position: "absolute", top: "6px", right: "6px", zIndex: "3", width: "24px", height: "24px",
@@ -4076,7 +4091,14 @@ app.registerExtension({
               // Not the last pass: this pass's own output becomes the next pass's source —
               // copy_to_input so the next VHS_LoadVideo/H3FaceSelect can read it.
               if (i < steps.length - 1) {
-                sourceFile = await copyOutputToInput(out.filename, out.subfolder || "", "output");
+                const passOut = out;
+                sourceFile = await copyOutputToInput(passOut.filename, passOut.subfolder || "", "output");
+                // The pass's own output/ file was only ever scratch for the next pass to read
+                // (already copied into input/ above) - drop it so a multi-person chain
+                // doesn't leave every intermediate pass sitting in the gallery as its own
+                // untagged clip. Same cleanup LTX Upscale already does for its segment
+                // scratch files.
+                try { await deleteImage(passOut.filename, passOut.subfolder || ""); } catch {}
                 try { await freeMemory(); } catch {}
               }
             }
