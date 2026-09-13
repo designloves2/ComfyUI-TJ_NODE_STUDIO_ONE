@@ -10,7 +10,7 @@ import { listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage, get
          copyOutputToInput, discardInputCopy, getVideoInfo, queuePrompt, waitForHistory, historyEntry,
          getClipLastFrame, getSystemPrompt, analyzeImagesNative, writeBriefNative } from "./api_minimax.js";
 import { buildUpscaleGraph, buildInterpolateGraph } from "./graph_builder_minimax.js";
-import { attachSensitiveToggle, mediaKey, isBlurred, isSensitive, setSensitive } from "../shared/ui_sensitive_media.js";
+import { attachSensitiveToggle, makeSensitiveControl, mediaKey, isBlurred, isSensitive, setSensitive } from "../shared/ui_sensitive_media.js";
 
 const STITCH_MAX = 10;
 
@@ -23,6 +23,56 @@ const STITCH_COLOR = "#e0a530";
 
 // Overlap (39) plus four frames of guard — see the note on the trim field below.
 const DEFAULT_STITCH_TRIM_FRAMES = ONE_TAKE_OVERLAP_FRAMES + 4;
+
+// Named aspect ratios a real render is actually likely to land on — an exact GCD
+// reduction of e.g. 1344x768 gives an ugly "7:6", not the "16:9"-shaped label a person
+// reads at a glance. Nearest match within 1.5% relative error wins; otherwise falls back
+// to the GCD-reduced fraction so an unusual size still gets *something*.
+const NAMED_RATIOS = [
+  ["1:1", 1], ["16:9", 16 / 9], ["9:16", 9 / 16], ["4:3", 4 / 3], ["3:4", 3 / 4],
+  ["21:9", 21 / 9], ["3:2", 3 / 2], ["2:3", 2 / 3], ["5:4", 5 / 4], ["4:5", 4 / 5],
+];
+function aspectRatioLabel(w, h) {
+  if (!w || !h) return "";
+  const r = w / h;
+  let best = null, bestErr = Infinity;
+  for (const [label, val] of NAMED_RATIOS) {
+    const err = Math.abs(r - val) / val;
+    if (err < bestErr) { bestErr = err; best = label; }
+  }
+  if (best && bestErr <= 0.015) return best;
+  const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+  const g = gcd(w, h) || 1;
+  return `${w / g}:${h / g}`;
+}
+
+// Shared between the card's hover-info popup and the Prompt View popup below — the same
+// "what was this actually rendered with" read-out, just displayed two different places.
+function buildInfoLines(v) {
+  const m = v.meta || {};
+  const lines = [];
+  const ppLabel = m.postProcess || [
+    (m.deblur && m.deblur !== "none") ? "deblur" : null,
+    m.upscale ? (m.upscale.method === "rtx" ? "rtx upscale" : "upscale") : null,
+    m.interpolate ? "interpolation" : null,
+  ].filter(Boolean).join(" + ");
+  if (ppLabel) lines.push(`⚙ ${ppLabel}${m.sourceW ? ` (from ${m.sourceW}×${m.sourceH})` : ""}`);
+  if (m.w && m.h) lines.push(`${m.w}×${m.h}`);
+  if (m.frames) lines.push(`${m.frames} frames${m.fps ? ` @ ${Math.round(m.fps)}fps` : ""}`);
+  if (m.steps) lines.push(`${m.steps} steps`);
+  if (m.sampler) lines.push(String(m.sampler));
+  if (m.accel) lines.push(`accel: ${m.accel}`);
+  if (m.elapsedSec != null) {
+    const s = Math.round(m.elapsedSec);
+    lines.push(`took ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`);
+  }
+  if (m.turboLora) lines.push(`turbo LoRA: ${String(m.turboLora).split(/[\\/]/).pop()} (${m.turboLoraStrength ?? 1})`);
+  (m.loras || []).filter(l => l && l.name && l.name !== "none").forEach(l => {
+    lines.push(`${l.enabled === false ? "lora (off): " : "lora: "}${String(l.name).split(/[\\/]/).pop()} (${l.strength ?? 1})`);
+  });
+  if (m.seed != null) lines.push(`seed ${m.seed}`);
+  return lines;
+}
 
 function viewURL(v) {
   return `/view?filename=${encodeURIComponent(v.filename)}`
@@ -52,7 +102,29 @@ export function createGalleryOverlay(state, ctx) {
   }});
 
   let videos = [];
-  let filterFull = false;
+  // "all" | "stitched" | "ltxupscale" | "facerefine" | "deblur" | "rtxvsr" — replaces the
+  // old binary "★ stitched only" toggle with a proper filter (user: "필터 범위를 늘려서
+  // 드롭다운 방식으로 All(기본값)/스티치드/LTX Upscale/Face Refine/RTX Deblur/RTX VSR").
+  let galleryFilter = "all";
+  const GALLERY_FILTERS = [
+    { value: "all", label: "All" },
+    { value: "stitched", label: "Stitched" },
+    { value: "ltxupscale", label: "LTX Upscale" },
+    { value: "facerefine", label: "Face Refine" },
+    { value: "deblur", label: "RTX Deblur" },
+    { value: "rtxvsr", label: "RTX VSR" },
+  ];
+  function matchesGalleryFilter(v) {
+    const m = v.meta || {};
+    switch (galleryFilter) {
+      case "stitched":   return !!v.is_full;
+      case "ltxupscale": return m.mode === "ltxupscale";
+      case "facerefine": return m.mode === "facerefine";
+      case "deblur":     return !!(m.deblur && m.deblur !== "none");
+      case "rtxvsr":     return !!(m.upscale && m.upscale.method === "rtx");
+      default:           return true;
+    }
+  }
 
   // ── delete confirm — viewport-centered, like Prompt Edit's reset confirm, so it's
   // visible even if the node is scrolled off-screen ──────────────────────────────────
@@ -126,16 +198,13 @@ export function createGalleryOverlay(state, ctx) {
   const countTag = el("div", { style: { fontSize: "10.5px", color: C.muted, flex: "1" } });
   hdr.appendChild(countTag);
 
-  const fullBtn = el("button", { type: "button", text: "★ stitched only", style: {
-    cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "5px 11px",
-    borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
-  }});
-  fullBtn.addEventListener("click", () => {
-    filterFull = !filterFull;
-    fullBtn.style.background = filterFull ? STITCH_COLOR : C.bg2;
-    fullBtn.style.borderColor = filterFull ? STITCH_COLOR : C.border;
-    renderGrid();
-  });
+  const filterSel = el("select", {
+    style: {
+      cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "5px 8px",
+      borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+    },
+  }, GALLERY_FILTERS.map(f => el("option", { value: f.value, text: f.label })));
+  filterSel.addEventListener("change", () => { galleryFilter = filterSel.value; renderGrid(); });
   const refreshBtn = el("button", { type: "button", text: "↻", title: "Refresh", style: {
     cursor: "pointer", fontFamily: "inherit", fontSize: "12px", padding: "5px 11px",
     borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
@@ -229,7 +298,7 @@ export function createGalleryOverlay(state, ctx) {
   upBtn.addEventListener("click",   () => setMode(postMode === "upscale" ? null : "upscale"));
   rifeBtn.addEventListener("click", () => setMode(postMode === "rife"    ? null : "rife"));
 
-  hdr.append(fullBtn, stitchBtn, upBtn, rifeBtn, refreshBtn, folderBtn, button("✕ Close", () => hide(), "danger"));
+  hdr.append(filterSel, stitchBtn, upBtn, rifeBtn, refreshBtn, folderBtn, button("✕ Close", () => hide(), "danger"));
 
   const stitchBar = el("div", { style: {
     display: "none", flexShrink: "0", alignItems: "center", gap: "8px",
@@ -954,7 +1023,7 @@ export function createGalleryOverlay(state, ctx) {
   player.append(pTop, pVideoWrap, pFoot);
 
   let playIndex = -1;
-  function shown() { return filterFull ? videos.filter(v => v.is_full) : videos; }
+  function shown() { return videos.filter(matchesGalleryFilter); }
 
   // A blurred clip never gets a real `src` — no frame ever reaches the <video>, so
   // pausing/scrubbing/devtools can't recover it either. Revealing it (the shade or the
@@ -1040,11 +1109,12 @@ export function createGalleryOverlay(state, ctx) {
     stopGridVideos();
     clear(grid);
     const list = shown();
+    const filterLabel = GALLERY_FILTERS.find(f => f.value === galleryFilter)?.label || "All";
     countTag.textContent = `${list.length} clip${list.length === 1 ? "" : "s"}`
-      + (filterFull ? " (stitched)" : "") + ` · ${state.saveSubfolder || SUBFOLDER}`;
+      + (galleryFilter !== "all" ? ` (${filterLabel})` : "") + ` · ${state.saveSubfolder || SUBFOLDER}`;
     if (!list.length) {
       grid.appendChild(el("div", {
-        text: filterFull ? "No stitched videos yet." : "No clips yet — generate something first.",
+        text: galleryFilter !== "all" ? `No ${filterLabel} videos yet.` : "No clips yet — generate something first.",
         style: { color: C.muted, fontSize: "12px", gridColumn: "1 / -1", textAlign: "center", padding: "30px 0" } }));
       return;
     }
@@ -1100,34 +1170,7 @@ export function createGalleryOverlay(state, ctx) {
       infoBtn.addEventListener("click", e => e.stopPropagation());
       let infoPopup = null;
       infoBtn.addEventListener("mouseenter", () => {
-        const m = v.meta || {};
-        const lines = [];
-        // Gallery post-process writes `postProcess`; an inline generation-time pass writes
-        // only the structured deblur/upscale keys — synthesize a label from those.
-        const ppLabel = m.postProcess || [
-          (m.deblur && m.deblur !== "none") ? "deblur" : null,
-          m.upscale ? (m.upscale.method === "rtx" ? "rtx upscale" : "upscale") : null,
-          m.interpolate ? "interpolation" : null,
-        ].filter(Boolean).join(" + ");
-        if (ppLabel) {
-          lines.push(`⚙ ${ppLabel}${m.sourceW ? ` (from ${m.sourceW}×${m.sourceH})` : ""}`);
-        }
-        if (m.w && m.h) lines.push(`${m.w}×${m.h}`);
-        if (m.frames) lines.push(`${m.frames} frames${m.fps ? ` @ ${Math.round(m.fps)}fps` : ""}`);
-        if (m.steps) lines.push(`${m.steps} steps`);
-        if (m.sampler) lines.push(String(m.sampler));
-        if (m.accel) lines.push(`accel: ${m.accel}`);
-        if (m.elapsedSec != null) {
-          const s = Math.round(m.elapsedSec);
-          lines.push(`took ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`);
-        }
-        if (m.turboLora) {
-          lines.push(`turbo LoRA: ${String(m.turboLora).split(/[\\/]/).pop()} (${m.turboLoraStrength ?? 1})`);
-        }
-        (m.loras || []).filter(l => l && l.name && l.name !== "none").forEach(l => {
-          lines.push(`${l.enabled === false ? "lora (off): " : "lora: "}${String(l.name).split(/[\\/]/).pop()} (${l.strength ?? 1})`);
-        });
-        if (m.seed != null) lines.push(`seed ${m.seed}`);
+        const lines = buildInfoLines(v);
         infoPopup = el("div", { style: {
           position: "fixed", zIndex: "10001", background: "rgba(10,10,10,0.97)",
           border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px 8px",
@@ -1226,6 +1269,18 @@ export function createGalleryOverlay(state, ctx) {
       const durationSec = v.meta?.durationSeconds ?? (v.meta?.frames ? framesToSeconds(v.meta.frames) : null);
       const durationText = durationSec != null ? `${durationSec.toFixed(2)}s · ` : "";
       const meta = el("div", { style: { padding: "5px 7px", display: "flex", flexDirection: "column", gap: "1px" } });
+      // Resolution / megapixels / aspect ratio, above the filename, in white — the file's
+      // own dimensions at a glance without opening the ⓘ popup (user: "해상도 정보도
+      // 파일명 위에 화이트 글씨로 [0000x0000px / 0.0MP    16:9] 정보 표시에 같이 보였으면").
+      if (v.meta?.w && v.meta?.h) {
+        const mw = v.meta.w, mh = v.meta.h;
+        const mp = ((mw * mh) / 1_000_000).toFixed(1);
+        const ratio = aspectRatioLabel(mw, mh);
+        meta.appendChild(el("div", {
+          text: `[${mw}x${mh}px / ${mp}MP${ratio ? `    ${ratio}` : ""}]`,
+          style: { fontSize: "9px", color: "#fff", fontWeight: "600" },
+        }));
+      }
       meta.append(
         el("div", { text: v.filename, style: {
           fontSize: "10px", color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }),
@@ -1246,10 +1301,13 @@ export function createGalleryOverlay(state, ctx) {
         p.title = promptText;
         meta.appendChild(p);
 
-        const bar = el("div", { style: { display: "flex", gap: "4px", marginTop: "4px" } });
+        // 2x2 grid, not one row of 3 — Reuse Setting/Extend Clip on top, Prompt View/
+        // Prompt Copy below (user's own layout: "Reuse Setting / Extend Clip" then
+        // "Prompt View / Prompt Copy"). Prompt View opens the full-prompt popup below.
+        const bar = el("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px", marginTop: "4px" } });
         const mini = (txt, tip, fn) => {
           const b = el("button", { text: txt, style: {
-            flex: "1", fontSize: "9px", padding: "3px 0", cursor: "pointer",
+            fontSize: "9px", padding: "3px 0", cursor: "pointer",
             background: C.bg2, color: C.text, border: `1px solid ${C.border}`, borderRadius: "4px",
           }});
           b.title = tip;
@@ -1257,20 +1315,14 @@ export function createGalleryOverlay(state, ctx) {
           return b;
         };
         bar.append(
-          mini("↩ Reuse", "Restore this clip's prompt AND its render settings (resolution, steps, sampler, acceleration, LoRAs, seed) into the panel", () => {
-            const m = v.meta || { prompt: promptText };
-            const ok = (ctx.reuseAll || ctx.reusePrompt)?.(m);
-            ctx.showPopup?.(ok ? "Clip settings loaded into the panel." : "No prompt stored for this clip.", !ok);
-            if (ok) hide();
-          }),
-          mini("⧉ Copy", "Copy the prompt to the clipboard", () => {
-            navigator.clipboard?.writeText(promptText)
-              .then(() => ctx.showPopup?.("Prompt copied.", false))
-              .catch(() => ctx.showPopup?.("Copy failed.", true));
-          }),
-          mini("⏭ Extend", "Add a continuation from this clip's last frame — the result is one longer, stitched video", () => {
-            openExtendPopup(v, promptText);
-          }),
+          mini("↩ Reuse Setting", "Restore this clip's prompt AND its render settings (resolution, steps, sampler, acceleration, LoRAs, seed) into the panel",
+            () => doReuse(v, promptText)),
+          mini("⏭ Extend Clip", "Add a continuation from this clip's last frame — the result is one longer, stitched video",
+            () => openExtendPopup(v, promptText)),
+          mini("📄 Prompt View", "View the full prompt, clip and info in one popup",
+            () => openPromptViewPopup(v, promptText)),
+          mini("⧉ Prompt Copy", "Copy the prompt to the clipboard",
+            () => doCopyPrompt(promptText)),
         );
         meta.appendChild(bar);
       }
@@ -1289,6 +1341,106 @@ export function createGalleryOverlay(state, ctx) {
       videos = d.videos || [];
     } catch { videos = []; }
     renderGrid();
+  }
+
+  // Shared by the card's own mini-buttons and Prompt View popup's footer buttons below.
+  function doReuse(v, promptText) {
+    const m = v.meta || { prompt: promptText };
+    const ok = (ctx.reuseAll || ctx.reusePrompt)?.(m);
+    ctx.showPopup?.(ok ? "Clip settings loaded into the panel." : "No prompt stored for this clip.", !ok);
+    if (ok) hide();
+  }
+  function doCopyPrompt(promptText) {
+    navigator.clipboard?.writeText(promptText)
+      .then(() => ctx.showPopup?.("Prompt copied.", false))
+      .catch(() => ctx.showPopup?.("Copy failed.", true));
+  }
+
+  // ── Prompt View — full prompt + clip + info in one popup, with its own Reuse Setting /
+  // Extend Clip / Prompt Copy buttons (user's own layout: video preview left — masked the
+  // same way the card's thumbnail is, with its own reveal toggle — info line under it,
+  // full prompt on the right, action row spanning both underneath). ──────────────────────
+  function openPromptViewPopup(v, promptText) {
+    const sensKey = mediaKey(v.filename, v.subfolder || "");
+
+    const videoWrap = el("div", { style: {
+      position: "relative", width: "100%", aspectRatio: "16 / 9", background: "#000",
+      borderRadius: "6px", overflow: "hidden", border: `1px solid ${C.border}`, flexShrink: "0",
+    }});
+    const vid = el("video", { controls: true, muted: true, preload: "metadata", style: {
+      width: "100%", height: "100%", objectFit: "contain", background: "#000", display: "block" } });
+    videoWrap.appendChild(vid);
+    // A blurred clip never gets a real `src` — same rule the fullscreen player follows —
+    // so revealing it here is what actually loads it, not just a CSS filter.
+    const { eye, shade } = makeSensitiveControl(vid, sensKey, () => {
+      if (isBlurred(sensKey)) { try { vid.pause(); } catch {} vid.removeAttribute("src"); vid.load?.(); }
+      else if (!vid.getAttribute("src")) { vid.src = viewURL(v); vid.load?.(); }
+    });
+    if (!isBlurred(sensKey)) vid.src = viewURL(v);
+    eye.style.cssText += ";position:absolute;bottom:6px;right:6px;z-index:3;"
+      + "width:26px;height:26px;font-size:14px;background:rgba(0,0,0,0.7);border-radius:6px;";
+    videoWrap.append(shade, eye);
+
+    const infoBox = el("div", { style: {
+      fontSize: "10px", color: C.text, lineHeight: "1.6", whiteSpace: "pre-wrap",
+      background: C.bg2, border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px 8px",
+    }});
+    const lines = buildInfoLines(v);
+    infoBox.textContent = lines.length ? lines.join("\n") : "No settings saved for this clip.";
+
+    const leftCol = el("div", { style: {
+      display: "flex", flexDirection: "column", gap: "8px", flex: "1", minWidth: "0" } },
+      [videoWrap, infoBox]);
+
+    const promptBox = el("div", { style: {
+      flex: "1", minWidth: "0", background: C.bg2, border: `1px solid ${C.border}`, borderRadius: "6px",
+      padding: "10px", fontSize: "12px", color: C.text, lineHeight: "1.5", whiteSpace: "pre-wrap",
+      overflowY: "auto", maxHeight: "360px",
+    }});
+    promptBox.textContent = promptText || "(no prompt saved)";
+
+    const topRow = el("div", { style: { display: "flex", gap: "10px" } }, [leftCol, promptBox]);
+
+    const footBtn = (txt, tip, fn, primary) => {
+      const b = el("button", { type: "button", text: txt, style: {
+        flex: "1", cursor: "pointer", fontFamily: "inherit", fontSize: "12px", fontWeight: primary ? "700" : "400",
+        padding: "8px 0", borderRadius: "6px", border: `1px solid ${primary ? "transparent" : C.border}`,
+        background: primary ? BRAND : C.bg2, color: primary ? "#fff" : C.text,
+      }});
+      b.title = tip;
+      b.addEventListener("click", fn);
+      return b;
+    };
+    const footRow = el("div", { style: { display: "flex", gap: "8px" } }, [
+      footBtn("↩ Reuse Setting", "Restore this clip's prompt AND its render settings into the panel",
+        () => { closePop(); doReuse(v, promptText); }, true),
+      footBtn("⏭ Extend Clip", "Add a continuation from this clip's last frame",
+        () => { closePop(); openExtendPopup(v, promptText); }),
+      footBtn("⧉ Prompt Copy", "Copy the prompt to the clipboard", () => doCopyPrompt(promptText)),
+    ]);
+
+    const closeBtn = el("button", { type: "button", text: "✕", style: {
+      position: "absolute", top: "8px", right: "8px", width: "26px", height: "26px",
+      border: "none", borderRadius: "6px", background: "rgba(255,255,255,0.08)", color: C.text,
+      cursor: "pointer", fontSize: "13px",
+    }});
+
+    const box = el("div", { style: {
+      position: "relative", background: "#141414", border: `1px solid ${C.border}`, borderRadius: "10px",
+      width: "760px", maxWidth: "94%", padding: "16px", display: "flex", flexDirection: "column",
+      gap: "12px", boxShadow: "0 16px 50px rgba(0,0,0,0.65)",
+    }}, [
+      el("div", { text: "Prompt", style: { color: "#fff", fontSize: "13px", fontWeight: "700" } }),
+      topRow, footRow, closeBtn,
+    ]);
+    const pop = el("div", { style: {
+      position: "fixed", inset: "0", zIndex: "100060", display: "flex",
+      alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.72)",
+    }}, [box]);
+    const closePop = () => { try { vid.pause(); } catch {} pop.remove(); };
+    closeBtn.addEventListener("click", closePop);
+    pop.addEventListener("mousedown", e => { if (e.target === pop) closePop(); });
+    document.body.appendChild(pop);
   }
 
   // ── Extend — one continuation clip from this clip's last frame, auto-stitched ──
