@@ -1797,6 +1797,22 @@ app.registerExtension({
         return panel([head, ...(open ? body().filter(Boolean) : [])]);
       }
 
+      // A small circled "?" that carries the long explanation as a native title tooltip —
+      // for text that was pushing the left panel's height up without being read every time.
+      function helpDot(text) {
+        return el("span", { text: "?", title: text, style: {
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: "13px", height: "13px", borderRadius: "50%", flexShrink: "0",
+          background: C.border, color: C.muted, fontSize: "9px", fontWeight: "700",
+          cursor: "help", marginLeft: "5px" } });
+      }
+      function labelHelp(text, helpText) {
+        const l = label(text);
+        l.style.display = "flex"; l.style.alignItems = "center";
+        l.appendChild(helpDot(helpText));
+        return l;
+      }
+
       // ── LTX 2.5 Upscale mode left panel ─────────────────────────────────────
       // A standalone refine pass on the LTX 2.5 model — nothing to do with the H3
       // pipeline. Its prompt + LLM live in the bottom prompt area (renderPrompts), its
@@ -2688,7 +2704,9 @@ app.registerExtension({
           borderBottom: `1px solid ${C.border}`, marginBottom: "5px",
         }});
         leftPanel.appendChild(panel([
-          label("Clip length"),
+          labelHelp("Clip length", "Length follows the prompts: one prompt is one clip. Add a "
+            + "prompt (or split the brief into shots) to make the piece longer. Each clip is "
+            + "saved on its own; combine them afterwards from 🖼 Gallery → 🔗 Stitch."),
           select(
             [...CLIP_LENGTHS.map(c => ({ value: String(c.frames), label: c.label })), { value: "custom", label: "Custom (seconds)…" }],
             state.clipLengthCustom ? "custom" : String(state.clipFrames),
@@ -2711,10 +2729,6 @@ app.registerExtension({
           ])] : []),
           totalLine,
           planLine,
-          el("div", { text: "Length follows the prompts: one prompt is one clip. Add a prompt "
-            + "(or split the brief into shots) to make the piece longer. Each clip is saved "
-            + "on its own; combine them afterwards from 🖼 Gallery → 🔗 Stitch.",
-            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
         ]));
         refreshPlan();
 
@@ -2791,15 +2805,7 @@ app.registerExtension({
               return r;
             })(),
             el("div", {
-              text: activePreset
-                ? (activePreset.note || "Your own saved preset.")
-                : "The pipeline sections below do not match any preset. Pick one to set them "
-                  + "all at once, or keep tuning by hand.",
-              style: { fontSize: "10px", color: C.muted, lineHeight: "1.5", marginTop: "4px" } }),
-            el("div", {
-              text: "Presets set Turbo, Attention, Block cache, Spectrum and the model patches "
-                + "only — steps, seed, length and resolution stay as you have them. Hover an "
-                + "entry to see everything it turns on.",
+              text: "Hover a preset to see what it turns on.",
               style: { fontSize: "10px", color: C.muted, lineHeight: "1.5", marginTop: "4px" } }),
           ]));
         }
@@ -2894,17 +2900,22 @@ app.registerExtension({
               // Core-native PDD (v0.35.0+) loads the Acc file as a plain LoRA, so it comes
               // from the normal loras list — not the pdd_acc folder the old pack registered.
               const pddOpts = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
+              const pddHelp = "The release is per-variant: pair Ref2VA with the reference UNET and "
+                + "FL2VA with the first-last one. A mismatched pair does not error — it just renders "
+                + "badly. Use the ComfyUI-converted file (…_comfy.safetensors); the raw alibaba-pai "
+                + "one applies 0 patches.\n\nCore-native since ComfyUI v0.35.0 — the Acc file loads "
+                + "as a plain model-only LoRA (no separate pack). It expands the output projection "
+                + "into a per-interval head bank and euler runs on a normal schedule; the head for "
+                + "each step is picked from that schedule. nfe is the distilled step count (8 and 4 "
+                + "are official; others fall off the trained envelope). CFG is already 1.0, which is "
+                + "what PDD expects. Strength was trained at 1.0. Needs core ≥ v0.35.0.";
               rows.push(
-                col([label(`PDD Acc LoRA (First-Last / Text)${isRef ? "" : " ●"}`),
+                col([labelHelp(`PDD Acc LoRA (First-Last / Text)${isRef ? "" : " ●"}`, pddHelp),
                   loraSelect(pddOpts, state.pddFile || "none",
                     v => { state.pddFile = v; rememberLora({ pdd_file: v }); }).el]),
                 col([label(`PDD Acc LoRA (Reference)${isRef ? " ●" : ""}`),
                   loraSelect(pddOpts, state.pddFileReference || "none",
                     v => { state.pddFileReference = v; rememberLora({ pdd_file_reference: v }); }).el]),
-                el("div", { text: "● The release is per-variant: pair Ref2VA with the reference UNET and "
-                    + "FL2VA with the first-last one. A mismatched pair does not error — it just renders badly. "
-                    + "Use the ComfyUI-converted file (…_comfy.safetensors); the raw alibaba-pai one applies 0 patches.",
-                  style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
                 row([
                   col([label("nfe (steps)"), select(
                     PDD_NFE_CHOICES.map(x => ({ value: x, label: x })),
@@ -2913,13 +2924,6 @@ app.registerExtension({
                   col([label("lora strength"), numberField(state.pddLoraStrength ?? 1.0,
                     v => { state.pddLoraStrength = v; persist(); }, 0.05)]),
                 ]),
-                el("div", { text: "Core-native since ComfyUI v0.35.0 — the Acc file loads as a plain "
-                    + "model-only LoRA (no separate pack). It expands the output projection into a "
-                    + "per-interval head bank and euler runs on a normal schedule; the head for each "
-                    + "step is picked from that schedule. nfe is the distilled step count (8 and 4 are "
-                    + "official; others fall off the trained envelope). CFG is already 1.0, which is "
-                    + "what PDD expects. Strength was trained at 1.0. Needs core ≥ v0.35.0.",
-                  style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
               );
             } else if (turboMode === "lightx2v") {
               rows.push(
@@ -3180,7 +3184,9 @@ app.registerExtension({
         leftPanel.appendChild(accordion("upscale", "Upscale",
           deblurNow === "none" ? upNow : `Deblur ${deblurNow} → ${upNow}`,
           () => [
-            col([label("Deblur (before upscale)"), select(
+            col([labelHelp("Deblur (before upscale)", "Sharpens soft or motion-blurred frames at "
+              + "the clip's own resolution — it never changes the size. Runs before whichever "
+              + "upscale is set below, and works with Upscale set to None."), select(
               [{ value: "none", label: "None" }, { value: "LOW", label: "Low" },
                { value: "MEDIUM", label: "Medium" }, { value: "HIGH", label: "High" },
                { value: "ULTRA", label: "Ultra" }],
@@ -3188,8 +3194,7 @@ app.registerExtension({
             deblurNow !== "none" && !ctx.availability?.TJ_RTXDeblur
               ? el("div", { html: "⚠ <code>TJ_RTXDeblur</code> not installed — restart ComfyUI after updating this pack.",
                   style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } })
-              : el("div", { text: "Sharpens soft or motion-blurred frames at the clip's own resolution — it never changes the size. Runs before whichever upscale is set below, and works with Upscale set to None.",
-                  style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+              : null,
             col([label("Upscale"), select(UPSCALE_MODES.map(m => ({ value: m.key, label: m.label })),
               state.upscaleMode, v => { state.upscaleMode = v; persist(); renderLeft(); })]),
             state.upscaleMode === "rtx" ? row([
