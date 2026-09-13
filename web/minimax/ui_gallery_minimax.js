@@ -108,6 +108,9 @@ export function createGalleryOverlay(state, ctx) {
   let galleryFilter = "all";
   const GALLERY_FILTERS = [
     { value: "all", label: "All" },
+    // Nothing applied at all — not stitched, not a post-process mode, no upscale/deblur/
+    // interpolate mark. User: "아무것도 적용안된 원본 영상만."
+    { value: "original", label: "Original" },
     { value: "stitched", label: "Stitched" },
     { value: "ltxupscale", label: "LTX Upscale" },
     { value: "facerefine", label: "Face Refine" },
@@ -117,6 +120,8 @@ export function createGalleryOverlay(state, ctx) {
   function matchesGalleryFilter(v) {
     const m = v.meta || {};
     switch (galleryFilter) {
+      case "original":   return !v.is_full && m.mode !== "ltxupscale" && m.mode !== "facerefine"
+        && !(m.deblur && m.deblur !== "none") && !m.upscale && !m.interpolate;
       case "stitched":   return !!v.is_full;
       case "ltxupscale": return m.mode === "ltxupscale";
       case "facerefine": return m.mode === "facerefine";
