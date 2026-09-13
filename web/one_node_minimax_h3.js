@@ -3163,7 +3163,9 @@ app.registerExtension({
         }));
 
         leftPanel.appendChild(accordion("patches", "Model patches",
-          [state.useFusedModulation && "Fused Mod", state.useTorchPatch !== false && "Torch"].filter(Boolean).join(" + ") || "OFF",
+          [state.useFusedModulation && "Fused Mod",
+           state.useTorchPatch !== false && "Torch",
+           state.useTorchPatch !== false && state.fp16Accum !== false && "fp16"].filter(Boolean).join(" + ") || "OFF",
           () => [
             checkboxRow("Fused Modulation (AdaLN + gated residual)", !!state.useFusedModulation,
               v => { state.useFusedModulation = v; persist(); renderLeft(); },
