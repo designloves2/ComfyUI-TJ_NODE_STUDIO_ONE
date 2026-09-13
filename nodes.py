@@ -2274,12 +2274,13 @@ _TJ_SHARED_IMG_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif")
 
 
 def _tj_shared_scan_images(base, subfolder=""):
-    """Every image file under `base/subfolder`, recursive, newest first.
+    """Image files directly inside `base/subfolder` — NOT recursive, newest first.
 
     Shared by both input_gallery and output_gallery below - same scan, different root.
-    `subfolder` scopes the walk to start there instead of at `base` itself, so the
-    picker's folder dropdown can narrow a large tree down instead of always listing
-    everything at once.
+    A real folder browser, not a "everything under this branch" dump: the picker's own
+    2-level folder dropdown already lists every subfolder (and sub-subfolder) as its own
+    selectable entry, so picking one shows exactly what's in that one folder - go one
+    level deeper by picking the deeper entry instead.
     """
     try:
         start = _safe_resolve_path(base, subfolder, "") if subfolder else base
@@ -2288,18 +2289,20 @@ def _tj_shared_scan_images(base, subfolder=""):
     rows = []
     if not os.path.isdir(start):
         return rows
-    for root, _dirs, files in os.walk(start):
-        for name in files:
-            if not name.lower().endswith(_TJ_SHARED_IMG_EXTS):
-                continue
-            p = os.path.join(root, name)
-            if not os.path.isfile(p):
-                continue
-            sub = os.path.relpath(root, base)
-            rows.append({
-                "filename": name, "subfolder": "" if sub == "." else sub.replace("\\", "/"),
-                "mtime": os.path.getmtime(p),
-            })
+    try:
+        names = os.listdir(start)
+    except Exception:
+        return rows
+    for name in names:
+        if not name.lower().endswith(_TJ_SHARED_IMG_EXTS):
+            continue
+        p = os.path.join(start, name)
+        if not os.path.isfile(p):
+            continue
+        rows.append({
+            "filename": name, "subfolder": subfolder or "",
+            "mtime": os.path.getmtime(p),
+        })
     return rows
 
 

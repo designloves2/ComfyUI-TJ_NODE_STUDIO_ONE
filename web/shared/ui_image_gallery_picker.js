@@ -125,7 +125,12 @@ export function openImageGalleryPicker(onPick, initialToolId) {
     }
     folderSel.style.display = "block";
     clear(folderSel);
-    folderSel.appendChild(el("option", { value: "", text: "(All)" }));
+    // Root entry is labelled after the tool itself, not "(All)" — there is no "show
+    // everything at once" option any more (user: "ALL은 필요없어"). It shows only the
+    // images directly inside input/ or output/ itself, same as every other entry shows
+    // only what's directly inside that one folder — a real folder browser, not a merged
+    // dump of the whole tree.
+    folderSel.appendChild(el("option", { value: "", text: activeTool.label }));
     const folders = await fetchFolders(activeTool.input ? "input" : "output");
     const addOpt = (f, depth) => {
       const prefix = depth > 0 ? "  ".repeat(depth) : "";
