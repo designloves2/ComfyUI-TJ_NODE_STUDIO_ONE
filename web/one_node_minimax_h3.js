@@ -980,7 +980,36 @@ app.registerExtension({
       function normPrompt(p) {
         return typeof p === "string" ? { text: p, firstFrame: "", enabled: true } : p;
       }
+      // Per-clip prompt textareas (H3's shot list, one per clip): remembers a user's own
+      // resize (native resize:vertical drag) across reloads, same pattern as the preview
+      // box's own PREVIEW_H_KEY, and keeps every clip's field the same height as whichever
+      // one was just resized (user: "h3하단 프롬포트 필드도 사용자가 사이즈 조절했으면
+      // 기억하기. 그리고 추가된 어떤 클립이든 높이 사이즈를 조절하면 추가되어 있는 클립의
+      // 프롬포트 필드 높이도 전부 동기화 시키기.").
+      const PROMPT_TA_H_KEY = "mmh3_prompt_ta_h";
+      let promptTaH = Number(localStorage.getItem(PROMPT_TA_H_KEY)) || 120;
+      let promptTAs = [];          // this render's textareas, for cross-syncing
+      let promptTAObservers = [];  // disconnected before every re-render
+      let syncingPromptTAHeights = false;
+      function watchPromptTA(ta) {
+        promptTAs.push(ta);
+        ta.style.height = `${promptTaH}px`;
+        const ro = new ResizeObserver(() => {
+          if (syncingPromptTAHeights) return;
+          const h = Math.round(ta.getBoundingClientRect().height);
+          if (!h || h === promptTaH) return;
+          promptTaH = h;
+          localStorage.setItem(PROMPT_TA_H_KEY, String(promptTaH));
+          syncingPromptTAHeights = true;
+          promptTAs.forEach(other => { if (other !== ta) other.style.height = `${promptTaH}px`; });
+          syncingPromptTAHeights = false;
+        });
+        ro.observe(ta);
+        promptTAObservers.push(ro);
+      }
       function renderPrompts() {
+        promptTAObservers.forEach(ro => ro.disconnect());
+        promptTAObservers = []; promptTAs = [];
         clear(promptList);
         const isLtx = state.generationMode === "ltxupscale";
         const isFaceRefine = state.generationMode === "facerefine";
@@ -1033,6 +1062,7 @@ app.registerExtension({
             fontSize: "12px", fontFamily: "inherit", outline: "none", resize: "vertical",
           }});
           ta.value = promptText(p);
+          watchPromptTA(ta);
           ta.addEventListener("input", () => {
             state.prompts[i] = normPrompt(state.prompts[i]);
             state.prompts[i].text = ta.value;
