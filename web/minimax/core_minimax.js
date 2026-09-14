@@ -410,10 +410,15 @@ export function accelModesFor(generationMode) {
   return ACCEL_MODES.filter(m => !m.modes || m.modes.includes(generationMode || "t2v"));
 }
 export const UPSCALE_MODES = [
-  { key: "none",  label: "None" },
-  { key: "model", label: "Upscale Model" },
-  { key: "rtx",   label: "RTX VSR" },
+  { key: "none",     label: "None" },
+  { key: "model",    label: "Upscale Model" },
+  { key: "rtx",      label: "RTX VSR" },
+  { key: "flashvsr", label: "FlashVSR VSR" },
 ];
+// FlashVSRInitPipe's own combo choices (lihaoyun6/ComfyUI-FlashVSR_Ultra_Fast) — read
+// straight off /object_info/FlashVSRInitPipe, not guessed.
+export const FLASHVSR_MODELS = ["FlashVSR", "FlashVSR-v1.1"];
+export const FLASHVSR_MODES  = ["tiny", "tiny-long", "full"];
 
 // ── pipeline axis options ─────────────────────────────────────────────────────
 export const TURBO_MODES = [
@@ -1097,6 +1102,18 @@ export function defaultState(saved) {
     // upscale params
     rtxScale:   saved.rtxScale   ?? 2.0,
     rtxQuality: saved.rtxQuality || "ULTRA",
+    // FlashVSR VSR — defaults match the shipped API workflow (16GB, 2x, 384 tile). The
+    // rest of FlashVSRInitPipe/FlashVSRNodeAdv (alt_vae, force_offload, precision,
+    // device, attention_mode, tiled_vae/tiled_dit, unload_dit, sparse_ratio, kv_ratio,
+    // local_range) is fixed at that same API's values and not exposed in the UI.
+    flashvsrModel:      saved.flashvsrModel      || "FlashVSR-v1.1",
+    flashvsrMode:        saved.flashvsrMode        || "tiny",
+    flashvsrScale:        saved.flashvsrScale        ?? 2,
+    flashvsrColorFix:    saved.flashvsrColorFix    !== false,
+    flashvsrTileSize:    saved.flashvsrTileSize    ?? 384,
+    flashvsrTileOverlap: saved.flashvsrTileOverlap ?? 32,
+    flashvsrSeed:         saved.flashvsrSeed         ?? 42,
+    flashvsrSeedMode:    saved.flashvsrSeedMode    || "fixed",
 
     // preview (ModelPreviewOverrideKJ)
     previewEnabled:  saved.previewEnabled  ?? true,

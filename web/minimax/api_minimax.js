@@ -49,6 +49,9 @@ export const MMH3_OPTIONAL_NODES = [
   "MiniMaxH3ScheduledSolAttentionPatch", "MiniMaxH3FusedModulation",
   "MiniMaxH3TurboSampler", "MiniMaxH3TurboLoRA", "SolAttnPatch",
   "SpectrumApplyMiniMaxH3", "RTXVideoSuperResolution", "TJ_RTXDeblur",
+  // FlashVSR VSR (lihaoyun6/ComfyUI-FlashVSR-Ultra-Fast, GPL-3.0) — tiled diffusion video
+  // super-resolution, offered as a 4th Upscale option alongside RTX VSR.
+  "FlashVSRInitPipe", "FlashVSRNodeAdv",
   // LTX 2.5 Upscale mode — the LTXV* nodes + LatentUpscaleModelLoader are ComfyUI core;
   // only the GGUF text-encoder loader is ours (needed for the gemma4 LTX clip).
   "TJ_LTX25ClipLoaderGGUF",
@@ -396,16 +399,20 @@ export function queuePrompt(promptGraph, { onProgress, onNode, onQueued, sampler
     // ComfyUI's `progress` payload is {value, max, node, prompt_id}. Every node with a
     // progress bar — the per-step preview override, the video VAE decode (~one tick per
     // latent frame), upscale/deblur/RIFE — emits on the same event, so without a node
-    // filter the "step N/M" readout jumps to bogus totals. Forward only the sampler's
-    // own ticks; if we don't know its id (reconnect with no graph) forward everything.
+    // filter the "step N/M" readout jumps to bogus totals. Forward only the given node's
+    // (or nodes' — samplerNode may be a single id or an array, e.g. sampler + a following
+    // tiled post-process like FlashVSR) own ticks; if we don't know its id (reconnect with
+    // no graph) forward everything. The node id itself is passed through as a third arg
+    // so a caller watching more than one node can tell which one just ticked.
+    const samplerNodes = Array.isArray(samplerNode) ? samplerNode : (samplerNode ? [samplerNode] : null);
     const onProgressEvt = (ev) => {
       if (!onProgress) return;
       try {
         const d = ev.detail || {};
         if (d.prompt_id && promptId && d.prompt_id !== promptId) return;
-        if (samplerNode && d.node != null && d.node !== samplerNode) return;
+        if (samplerNodes && d.node != null && !samplerNodes.includes(d.node)) return;
         const { value, max } = d;
-        if (max) onProgress(value, max);
+        if (max) onProgress(value, max, d.node);
       } catch {}
     };
     const onExecutedEvt = (ev) => {
@@ -496,14 +503,15 @@ export function queuePrompt(promptGraph, { onProgress, onNode, onQueued, sampler
  * actually ran.
  */
 export async function waitForHistory(promptId, { onProgress, pollMs = 1500, samplerNode } = {}) {
+  const samplerNodes = Array.isArray(samplerNode) ? samplerNode : (samplerNode ? [samplerNode] : null);
   const onProgressEvt = (ev) => {
     if (!onProgress) return;
     try {
       const d = ev.detail || {};
       if (d.prompt_id && d.prompt_id !== promptId) return;
-      if (samplerNode && d.node != null && d.node !== samplerNode) return;
+      if (samplerNodes && d.node != null && !samplerNodes.includes(d.node)) return;
       const { value, max } = d;
-      if (max) onProgress(value, max);
+      if (max) onProgress(value, max, d.node);
     } catch {}
   };
   api.addEventListener("progress", onProgressEvt);

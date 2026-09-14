@@ -45,6 +45,8 @@ const N = {
   upModel:"MM:upscale_model",
   upApply:"MM:upscale",
   rtx:    "MM:rtx",
+  fvsrPipe: "MM:flashvsr_pipe",
+  fvsr:     "MM:flashvsr",
   deblurR:"MM:deblur",
   video:  "MM:video",
   save:   "MM:save_video",
@@ -76,6 +78,63 @@ const N = {
 export const TAIL_CANDIDATES = 8;
 
 const has = (avail, name) => !!(avail && avail[name]);
+
+// FlashVSR VSR (lihaoyun6/ComfyUI-FlashVSR-Ultra-Fast) — shared by the inline per-clip
+// upscale (buildClipGraph) and the gallery's standalone post-process (buildUpscaleGraph).
+// Only 8 fields are exposed in the UI (model/mode/scale/color fix/tile size/tile
+// overlap/seed/seed control); everything else below is fixed at the values from the
+// shipped API workflow ([TJ]FlashVSR-Upscale.json) and never surfaced.
+function buildFlashVSR(g, pipeId, nodeId, p, images) {
+  g[pipeId] = { class_type: "FlashVSRInitPipe", inputs: {
+    model: p.model || "FlashVSR-v1.1",
+    mode: p.mode || "tiny",
+    alt_vae: "none",
+    force_offload: true,
+    precision: "bf16",
+    device: "cuda:0",
+    attention_mode: "sparse_sage_attention",
+  }};
+  g[nodeId] = { class_type: "FlashVSRNodeAdv", inputs: {
+    pipe: [pipeId, 0],
+    frames: images,
+    // FlashVSRNodeAdv's own `scale` is an INT combo, 2-4 only (no 1x, no fractional).
+    scale: Math.min(4, Math.max(2, Math.round(p.scale ?? 2))),
+    color_fix: p.colorFix !== false,
+    tiled_vae: true,
+    tiled_dit: true,
+    tile_size: p.tileSize ?? 384,
+    tile_overlap: p.tileOverlap ?? 32,
+    unload_dit: false,
+    sparse_ratio: 2,
+    kv_ratio: 3,
+    local_range: 11,
+    seed: p.seed ?? 42,
+  }};
+}
+/** Normalizes a flashvsr params object (from state.* or an opts.flashvsr passthrough)
+ *  into the shape saved as clip metadata's upscale.* field. */
+export function flashvsrUsed(p) {
+  return {
+    method: "flashvsr",
+    model: p.model || "FlashVSR-v1.1",
+    mode: p.mode || "tiny",
+    scale: p.scale ?? 2,
+    colorFix: p.colorFix !== false,
+    tileSize: p.tileSize ?? 384,
+    tileOverlap: p.tileOverlap ?? 32,
+    seed: p.seed ?? 42,
+  };
+}
+/** state.flashvsr* -> the { model, mode, scale, colorFix, tileSize, tileOverlap, seed }
+ *  shape buildFlashVSR/flashvsrUsed take, so buildClipGraph's inline path and the
+ *  gallery's own opts.flashvsr passthrough share one params shape. */
+function flashvsrParamsFromState(state) {
+  return {
+    model: state.flashvsrModel, mode: state.flashvsrMode, scale: state.flashvsrScale,
+    colorFix: state.flashvsrColorFix, tileSize: state.flashvsrTileSize,
+    tileOverlap: state.flashvsrTileOverlap, seed: state.flashvsrSeed,
+  };
+}
 
 /**
  * Wire the lock, if it applies. Returns true when the sampler should read from it.
@@ -727,6 +786,11 @@ export function buildClipGraph(state, avail, opts = {}) {
     }};
     images = [N.rtx, 0];
     upscaleUsed = { method: "rtx", scale: state.rtxScale ?? 2.0, quality: state.rtxQuality || "ULTRA" };
+  } else if (up === "flashvsr" && has(avail, "FlashVSRNodeAdv")) {
+    const fvsrParams = flashvsrParamsFromState(state);
+    buildFlashVSR(g, N.fvsrPipe, N.fvsr, fvsrParams, images);
+    images = [N.fvsr, 0];
+    upscaleUsed = flashvsrUsed(fvsrParams);
   }
 
   // ── outputs ────────────────────────────────────────────────────────────────
@@ -1268,6 +1332,8 @@ const P = {
   model: "PP:upscale_model",
   apply: "PP:upscale",
   rtx:   "PP:rtx",
+  fvsrPipe: "PP:flashvsr_pipe",
+  fvsr:     "PP:flashvsr",
   rife:  "PP:rife",
   deblur:"PP:deblur",
   video: "PP:video",
@@ -1278,16 +1344,17 @@ const P = {
  * Upscale every frame of a finished clip and re-encode it, audio intact.
  *
  * @param opts.inputFile   filename already in ComfyUI's input folder
- * @param opts.method      "model" | "rtx"
+ * @param opts.method      "model" | "rtx" | "flashvsr"
  * @param opts.modelName   upscale model file, for method "model"
  * @param opts.rtxScale    multiplier, for method "rtx"
  * @param opts.rtxQuality  LOW | MEDIUM | HIGH | ULTRA
+ * @param opts.flashvsr    { model, mode, scale, colorFix, tileSize, tileOverlap, seed }, for method "flashvsr"
  * @param opts.folder      output subfolder
  * @param opts.stem        filename prefix
  */
 export function buildUpscaleGraph(opts, avail) {
   const {
-    inputFile, method, modelName, rtxScale, rtxQuality, folder, stem,
+    inputFile, method, modelName, rtxScale, rtxQuality, flashvsr, folder, stem,
     // Chunking: VHS_LoadVideo materializes every requested frame as a float32 array up
     // front, so a full stitched video (thousands of frames) loaded whole can exceed
     // available RAM. skipFirstFrames/frameLoadCap let the caller ask for one bounded
@@ -1333,6 +1400,11 @@ export function buildUpscaleGraph(opts, avail) {
       quality: rtxQuality || "ULTRA",
     }};
     images = [P.rtx, 0];
+  } else if (method === "flashvsr") {
+    if (!has(avail, "FlashVSRNodeAdv"))
+      throw new Error("FlashVSRInitPipe/FlashVSRNodeAdv is not installed.");
+    buildFlashVSR(g, P.fvsrPipe, P.fvsr, flashvsr || {}, images);
+    images = [P.fvsr, 0];
   } else {
     if (!modelName || modelName === "none")
       throw new Error("No upscale model selected.");

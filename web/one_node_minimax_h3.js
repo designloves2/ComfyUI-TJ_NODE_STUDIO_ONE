@@ -17,7 +17,7 @@ import { api } from "../../scripts/api.js";
 import {
   C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, SUBFOLDER,
   el, clear, loadState, saveState, lastUsedAt, defaultState, randomSeed,
-  CLIP_LENGTHS, ASPECTS, UPSCALE_MODES, SAMPLERS, SCHEDULERS,
+  CLIP_LENGTHS, ASPECTS, UPSCALE_MODES, FLASHVSR_MODELS, FLASHVSR_MODES, SAMPLERS, SCHEDULERS,
   TURBO_MODES, ATTN_BACKENDS, ATTN_FORWARDS, BLOCK_CACHES, H3_OPTIMIZERS, FBC_MODES, PDD_NFE_CHOICES,
   attnBlockedReason, attnForwardBlockedReason, attnForwardOverlapNote, blockCacheBlockedReason,
   h3OptimizerBlockedReason, h3OptimizerOverlapNote,
@@ -343,6 +343,14 @@ app.registerExtension({
         display: "none", color: "#b57bff", fontSize: "18px", fontWeight: "700",
         textAlign: "center", padding: "0 16px", textShadow: "0 0 12px rgba(181,123,255,0.5)",
       }});
+      // FlashVSR runs no live sampling preview of its own either — it's a tiled
+      // post-process pass over the already-sampled frames, minutes long, with the same
+      // "is it doing anything?" problem frDetectBanner solves for Face Refine's
+      // detection stretch. Same pattern, own color/text/glyph so the two aren't confused.
+      const fvsrBanner = el("div", { text: "◮ FlashVSR upscaling… please wait — no live preview for this pass", style: {
+        display: "none", color: "#e0a530", fontSize: "16px", fontWeight: "700",
+        textAlign: "center", padding: "0 16px", textShadow: "0 0 12px rgba(224,165,48,0.5)",
+      }});
       // width/height 100% (not max-*) so a small latent preview is scaled UP to fill the
       // box on its long edge; object-fit keeps the aspect ratio.
       const FIT = { width: "100%", height: "100%", objectFit: "contain", display: "none" };
@@ -369,7 +377,7 @@ app.registerExtension({
         color: "#fff", border: "none", borderRadius: "4px", width: "22px", height: "22px",
         cursor: "pointer", fontSize: "12px", padding: "0", display: "none",
       }});
-      previewBox.append(placeholder, frDetectBanner, previewImg, previewVid, resultVid, badge, fsBtn, compareBtn);
+      previewBox.append(placeholder, frDetectBanner, fvsrBanner, previewImg, previewVid, resultVid, badge, fsBtn, compareBtn);
 
       let lastResultURL = null;
       // Captured in showResultVideo() at the moment a result becomes the shown preview —
@@ -768,6 +776,8 @@ app.registerExtension({
         lastResultURL = url;
         if (final) previewLocked = true;
         placeholder.style.display = "none";
+        frDetectBanner.style.display = "none";
+        fvsrBanner.style.display = "none";
         previewImg.style.display = "none";
         try { previewVid.pause(); } catch {}
         previewVid.style.display = "none";
@@ -842,7 +852,23 @@ app.registerExtension({
         borderRadius: "5px", background: "rgba(230,160,20,0.15)", color: "#e6a014",
         border: "1px solid rgba(230,160,20,0.4)",
       }});
-      statusWrap.append(statusLine, barOuter, queueWarn);
+      // A gallery post-process job (Upscale/Deblur, FlashVSR especially — 7-18 minutes
+      // with its own popup that the user can hide or close) shows here regardless of
+      // whether the gallery itself is open, so closing either one never reads as "did it
+      // stop?" (user: "팝업창을 닫거나 갤러리를 닫아도 메인 화면에서도 진행중이면
+      // 진행상황 표시되게 해줘."). Wired via ctx.reportGalleryJob/clearGalleryJob, called
+      // by ui_gallery_minimax.js's runPost() on every progress tick.
+      const galleryJobPill = el("div", { style: {
+        display: "none", marginTop: "3px", fontSize: "10px", padding: "4px 8px",
+        borderRadius: "5px", background: "rgba(224,165,48,0.15)", color: "#e0a530",
+        border: "1px solid rgba(224,165,48,0.4)",
+      }});
+      statusWrap.append(statusLine, barOuter, queueWarn, galleryJobPill);
+      ctx.reportGalleryJob = (label, pct, text) => {
+        galleryJobPill.style.display = "block";
+        galleryJobPill.textContent = `◮ ${label} (gallery)${text ? ` — ${text}` : pct != null ? ` — ${Math.round(pct)}%` : "…"}`;
+      };
+      ctx.clearGalleryJob = () => { galleryJobPill.style.display = "none"; };
 
       let queuePollTimer = null;
       async function checkOtherQueue() {
@@ -878,6 +904,22 @@ app.registerExtension({
                                         : `● LIVE  step ${step}/${total}`;
         setStatus(totClip > 1 ? `Clip ${curClip}/${totClip} · step ${step}/${total}`
                               : `Sampling · step ${step}/${total}`);
+      }
+      // FlashVSR runs as a second node in the SAME graph submission, right after the
+      // sampler — its own tile-by-tile progress arrives on the same websocket event,
+      // distinguished only by node id (see the onProgress(v, m, nodeId) callbacks below).
+      // Sampling's own bar fraction (0..1 of this clip) is already spent by the time this
+      // fires, so the overall bar just continues past it rather than restarting.
+      function setFlashVSRProgress(tile, total) {
+        placeholder.style.display = "none";
+        fvsrBanner.style.display = "block";
+        const clipFrac = total ? tile / total : 0;
+        const overall = totClip ? ((curClip - 1) + clipFrac) / totClip : clipFrac;
+        barInner.style.width = `${Math.max(0, Math.min(100, overall * 100)).toFixed(1)}%`;
+        badge.textContent = totClip > 1 ? `● LIVE  CLIP ${curClip}/${totClip}  ·  FlashVSR tile ${tile}/${total}`
+                                        : `● LIVE  FlashVSR tile ${tile}/${total}`;
+        setStatus(totClip > 1 ? `Clip ${curClip}/${totClip} · FlashVSR upscaling · tile ${tile}/${total}`
+                              : `FlashVSR upscaling · tile ${tile}/${total}`);
       }
       function startClock() {
         runStart = Date.now();
@@ -3204,6 +3246,52 @@ app.registerExtension({
               col([label("Quality"), select(["LOW","MEDIUM","HIGH","ULTRA"].map(q => ({ value: q, label: q })),
                 state.rtxQuality || "ULTRA", v => { state.rtxQuality = v; persist(); })]),
             ]) : null,
+            // FlashVSR (lihaoyun6/ComfyUI-FlashVSR-Ultra-Fast) — only 8 fields are exposed;
+            // the rest of FlashVSRInitPipe/FlashVSRNodeAdv is fixed at the shipped API
+            // workflow's own values (see buildFlashVSR in graph_builder_minimax.js).
+            state.upscaleMode === "flashvsr" ? col([
+              row([
+                col([label("Model"), select(FLASHVSR_MODELS.map(m => ({ value: m, label: m })),
+                  state.flashvsrModel || "FlashVSR-v1.1", v => { state.flashvsrModel = v; persist(); })]),
+                col([label("Mode"), select(FLASHVSR_MODES.map(m => ({ value: m, label: m })),
+                  state.flashvsrMode || "tiny", v => { state.flashvsrMode = v; persist(); })]),
+              ]),
+              row([
+                col([label("Scale (×)"), numberField(state.flashvsrScale ?? 2,
+                  // FlashVSRNodeAdv's own `scale` is an INT combo, 2-4 only.
+                  v => { state.flashvsrScale = Math.min(4, Math.max(2, Math.round(v))); persist(); }, 1)]),
+                col([labelHelp("Tile size", "Set for a 16GB card at 2× — 384px tiles measured "
+                  + "~7m30s per clip. 3× is possible by dropping this to 256px, measured ~18min "
+                  + "per clip. A larger tile uses more VRAM; a smaller one trades VRAM for time."),
+                  numberField(state.flashvsrTileSize ?? 384,
+                    // FlashVSRNodeAdv's own range: 32-1024, step 32.
+                    v => { state.flashvsrTileSize = Math.min(1024, Math.max(32, Math.round(v))); persist(); }, 32)]),
+              ]),
+              row([
+                col([label("Tile overlap"), numberField(state.flashvsrTileOverlap ?? 32,
+                  // FlashVSRNodeAdv's own range: 8-512, step 8.
+                  v => { state.flashvsrTileOverlap = Math.min(512, Math.max(8, Math.round(v))); persist(); }, 8)]),
+                col([label("Seed"), numberField(state.flashvsrSeed ?? 42,
+                  v => { state.flashvsrSeed = v; persist(); }, 1)]),
+              ]),
+              row([
+                col([label("Seed control"), select(
+                  [{ value: "randomize", label: "Random" }, { value: "fixed", label: "Fixed" },
+                   { value: "increment", label: "+1" }, { value: "decrement", label: "-1" }],
+                  state.flashvsrSeedMode || "fixed", v => { state.flashvsrSeedMode = v; persist(); })]),
+              ]),
+              checkboxRow("Color fix", state.flashvsrColorFix !== false,
+                v => { state.flashvsrColorFix = v; persist(); }),
+              el("div", { text: `Currently set for a 16GB card at ${state.flashvsrScale ?? 2}× / `
+                  + `${state.flashvsrTileSize ?? 384}px tiles — the shipped default (2× / 384px) `
+                  + `measured ~7m30s per clip; 3× (tile 256px) measured ~18min. No live preview `
+                  + `during this pass — the preview box shows a waiting banner instead.`,
+                style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+              !ctx.availability?.FlashVSRNodeAdv ? el("div", {
+                html: "⚠ <code>FlashVSRInitPipe</code>/<code>FlashVSRNodeAdv</code> not installed "
+                  + "— install ComfyUI-FlashVSR-Ultra-Fast and restart ComfyUI.",
+                style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }) : null,
+            ]) : null,
             // Only meaningful once deblur or upscale is actually doing something — off it
             // just saves the final clip, on it saves the raw decode as a second file too.
             (deblurNow !== "none" || state.upscaleMode !== "none")
@@ -4340,6 +4428,12 @@ app.registerExtension({
             const isOneTake = rs.continuityMode === "onetake";
             const checkpointName = isOneTake ? `${self.id}_${i}` : null;
 
+            const fvsrOn = clipState.upscaleMode === "flashvsr";
+            const progressNodes = fvsrOn ? [NODE_IDS.sampler, NODE_IDS.fvsr] : NODE_IDS.sampler;
+            const onClipProgress = (v, m, nodeId) => {
+              if (nodeId === NODE_IDS.fvsr) setFlashVSRProgress(v, m);
+              else { fvsrBanner.style.display = "none"; setStepProgress(v, m); }
+            };
             let res;
             let mem = null;   // memory watcher for this clip; see watchMemory()
             // What the graph builder actually wired — sampler, effective step count and the
@@ -4353,8 +4447,8 @@ app.registerExtension({
               restore?.();
               setStatus(`Clip ${curClip}/${totClip} · reconnecting to in-flight render…`);
               res = await waitForHistory(resume.inFlightPromptId, {
-                onProgress: (v, m) => setStepProgress(v, m),
-                samplerNode: NODE_IDS.sampler,
+                onProgress: onClipProgress,
+                samplerNode: progressNodes,
               });
             } else {
               let built;
@@ -4387,11 +4481,12 @@ app.registerExtension({
               mem = watchMemory();
               try {
                 res = await queuePrompt(built.graph, {
-                  onProgress: (v, m) => setStepProgress(v, m),
-                  samplerNode: NODE_IDS.sampler,
+                  onProgress: onClipProgress,
+                  samplerNode: progressNodes,
                 });
               } finally { mem.stop(); }
             }
+            fvsrBanner.style.display = "none";
             if (isOneTake) prevCheckpointName = checkpointName;
 
             // Captured once, right after the clip actually finishes — reused for both the
@@ -4595,6 +4690,7 @@ app.registerExtension({
             if (why) console.warn("[MMH3] underlying error:", e.message);
           }
         } finally {
+          fvsrBanner.style.display = "none";
           delete state._extendFrom;   // one-shot: never let a stale flag stitch a later run
           // ComfyUI keeps the models resident after a prompt, so a finished run would
           // otherwise sit on the whole card until the next one. The run is over here —

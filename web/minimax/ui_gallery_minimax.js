@@ -4,12 +4,12 @@
 // mp4s written into the output subfolder and plays them full screen with the keyboard
 // shortcuts you'd expect from a review pass.
 import { composeStitchedPrompt, C, BRAND, el, clear, SUBFOLDER, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES,
-         UPSCALE_MODES, FPS } from "./core_minimax.js";
+         UPSCALE_MODES, FLASHVSR_MODELS, FLASHVSR_MODES, FPS } from "./core_minimax.js";
 import { button, select, numberField } from "../klein/ui_common.js";
 import { listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage, getMediaFiles,
          copyOutputToInput, discardInputCopy, getVideoInfo, queuePrompt, waitForHistory, historyEntry,
          getClipLastFrame, getSystemPrompt, analyzeImagesNative, writeBriefNative } from "./api_minimax.js";
-import { buildUpscaleGraph, buildInterpolateGraph } from "./graph_builder_minimax.js";
+import { buildUpscaleGraph, buildInterpolateGraph, flashvsrUsed } from "./graph_builder_minimax.js";
 import { attachSensitiveToggle, makeSensitiveControl, mediaKey, isBlurred, isSensitive, setSensitive } from "../shared/ui_sensitive_media.js";
 
 const STITCH_MAX = 10;
@@ -53,7 +53,8 @@ function buildInfoLines(v) {
   const lines = [];
   const ppLabel = m.postProcess || [
     (m.deblur && m.deblur !== "none") ? "deblur" : null,
-    m.upscale ? (m.upscale.method === "rtx" ? "rtx upscale" : "upscale") : null,
+    m.upscale ? (m.upscale.method === "rtx" ? "rtx upscale"
+      : m.upscale.method === "flashvsr" ? "flashvsr upscale" : "upscale") : null,
     m.interpolate ? "interpolation" : null,
   ].filter(Boolean).join(" + ");
   if (ppLabel) lines.push(`⚙ ${ppLabel}${m.sourceW ? ` (from ${m.sourceW}×${m.sourceH})` : ""}`);
@@ -116,6 +117,7 @@ export function createGalleryOverlay(state, ctx) {
     { value: "facerefine", label: "Face Refine" },
     { value: "deblur", label: "RTX Deblur" },
     { value: "rtxvsr", label: "RTX VSR" },
+    { value: "flashvsr", label: "FlashVSR" },
   ];
   function matchesGalleryFilter(v) {
     const m = v.meta || {};
@@ -127,6 +129,7 @@ export function createGalleryOverlay(state, ctx) {
       case "facerefine": return m.mode === "facerefine";
       case "deblur":     return !!(m.deblur && m.deblur !== "none");
       case "rtxvsr":     return !!(m.upscale && m.upscale.method === "rtx");
+      case "flashvsr":   return !!(m.upscale && m.upscale.method === "flashvsr");
       default:           return true;
     }
   }
@@ -454,6 +457,52 @@ export function createGalleryOverlay(state, ctx) {
       [el("span", { text: "quality" }), rtxQualSel]),
   );
 
+  // FlashVSR VSR — same 8 fields as the left panel's own Upscale accordion (model/mode/
+  // scale/color fix/tile size/tile overlap/seed/seed control), defaulting to whatever
+  // the left panel is currently set to.
+  const fvsrLbl = (t, node, tip) => {
+    const l = el("label", { title: tip || "", style: {
+      display: "flex", alignItems: "center", gap: "4px", fontSize: "10.5px", color: C.text } });
+    l.append(el("span", { text: t }), node);
+    return l;
+  };
+  const fvsrModelSel = el("select", { style: smallSelect("104px") },
+    FLASHVSR_MODELS.map(m => el("option", { value: m, text: m })));
+  fvsrModelSel.value = state.flashvsrModel || "FlashVSR-v1.1";
+  const fvsrModeSel = el("select", { style: smallSelect("58px") },
+    FLASHVSR_MODES.map(m => el("option", { value: m, text: m })));
+  fvsrModeSel.value = state.flashvsrMode || "tiny";
+  const fvsrScaleIn = el("input", { type: "number", min: "2", max: "4", step: "1", style: smallInput("40px") });
+  fvsrScaleIn.value = String(state.flashvsrScale ?? 2);
+  const fvsrColorFixCb = el("input", { type: "checkbox" });
+  fvsrColorFixCb.checked = state.flashvsrColorFix !== false;
+  fvsrColorFixCb.style.cursor = "pointer";
+  const fvsrColorFixWrap = el("label", { style: {
+    display: "flex", alignItems: "center", gap: "4px", fontSize: "10.5px", color: C.text, cursor: "pointer" } });
+  fvsrColorFixWrap.append(fvsrColorFixCb, el("span", { text: "color fix" }));
+  const fvsrTileIn = el("input", { type: "number", min: "32", max: "1024", step: "32", style: smallInput("54px") });
+  fvsrTileIn.value = String(state.flashvsrTileSize ?? 384);
+  const fvsrOverlapIn = el("input", { type: "number", min: "8", max: "512", step: "8", style: smallInput("48px") });
+  fvsrOverlapIn.value = String(state.flashvsrTileOverlap ?? 32);
+  const fvsrSeedIn = el("input", { type: "number", step: "1", style: smallInput("84px") });
+  fvsrSeedIn.value = String(state.flashvsrSeed ?? 42);
+  const fvsrSeedModeSel = el("select", { style: smallSelect("62px") },
+    [{ v: "randomize", t: "Random" }, { v: "fixed", t: "Fixed" }, { v: "increment", t: "+1" }, { v: "decrement", t: "-1" }]
+      .map(o => el("option", { value: o.v, text: o.t })));
+  fvsrSeedModeSel.value = state.flashvsrSeedMode || "fixed";
+  const fvsrWrap = el("div", { style: { display: "none", alignItems: "center", gap: "6px", flexWrap: "wrap" } });
+  fvsrWrap.append(
+    fvsrLbl("model", fvsrModelSel),
+    fvsrLbl("mode", fvsrModeSel),
+    fvsrLbl("scale", fvsrScaleIn),
+    fvsrColorFixWrap,
+    fvsrLbl("tile", fvsrTileIn, "384px = the shipped 16GB/2x default (~7m30s/clip). 256px "
+      + "enables 3x (~18min/clip)."),
+    fvsrLbl("overlap", fvsrOverlapIn),
+    fvsrLbl("seed", fvsrSeedIn),
+    fvsrLbl("seed ctl", fvsrSeedModeSel),
+  );
+
   // Deblur sharpens at the clip's own resolution and is a separate job from upscaling:
   // its own button runs it alone, and the select also feeds the Upscale button so one
   // pass can deblur then upscale without writing an intermediate file. Pressing one
@@ -481,17 +530,20 @@ export function createGalleryOverlay(state, ctx) {
 
   function refreshUpBar() {
     const isRtx = upMethod === "rtx";
+    const isFvsr = upMethod === "flashvsr";
     const isNone = upMethod === "none";
-    upModelWrap.style.display = (isRtx || isNone) ? "none" : "flex";
+    upModelWrap.style.display = (isRtx || isFvsr || isNone) ? "none" : "flex";
     rtxWrap.style.display     = isRtx ? "flex" : "none";
+    fvsrWrap.style.display    = isFvsr ? "flex" : "none";
     const rtxOk = !!ctx.availability?.RTXVideoSuperResolution;
+    const fvsrOk = !!ctx.availability?.FlashVSRNodeAdv;
     const deblurOn = deblurSel.value !== "none";
     const deblurOk = !!ctx.availability?.TJ_RTXDeblur;
     const noUpscale = upMethod === "none";
     // With Upscale = None the button runs the deblur pass alone, so it needs deblur set
-    // rather than a model or the RTX node.
+    // rather than a model or the RTX/FlashVSR node.
     const ready = !!postPick && !postRunning &&
-      (noUpscale ? (deblurOn && deblurOk) : (isRtx ? rtxOk : !!upModelSel.value));
+      (noUpscale ? (deblurOn && deblurOk) : (isRtx ? rtxOk : isFvsr ? fvsrOk : !!upModelSel.value));
     upGoBtn.disabled = !ready;
     upGoBtn.style.opacity = ready ? "1" : "0.5";
     const deblurReady = !!postPick && !postRunning && deblurOn && deblurOk;
@@ -501,7 +553,8 @@ export function createGalleryOverlay(state, ctx) {
     if (deblurOn && !deblurOk) upProg.idle("⚠ RTX Deblur node is not installed — restart ComfyUI.");
     else if (noUpscale && !deblurOn) upProg.idle("Pick a deblur strength, or an upscale method.");
     else if (isRtx && !rtxOk) upProg.idle("⚠ RTX VSR node is not installed.");
-    else if (!isRtx && !isNone && !upModelSel.value) upProg.idle("⚠ No upscale model installed.");
+    else if (isFvsr && !fvsrOk) upProg.idle("⚠ FlashVSR node is not installed.");
+    else if (!isRtx && !isFvsr && !isNone && !upModelSel.value) upProg.idle("⚠ No upscale model installed.");
     else if (!postPick) upProg.idle("Pick one clip to upscale.");
     else upProg.idle(pickName());
   }
@@ -510,7 +563,7 @@ export function createGalleryOverlay(state, ctx) {
   deblurSel.addEventListener("change", refreshUpBar);
 
   const upGoBtn = button("⬆ Upscale", () => runUpscale(), "primary");
-  upBar.append(upProg.el, deblurWrap, deblurGoBtn, upMethodSel, upModelWrap, rtxWrap, upGoBtn);
+  upBar.append(upProg.el, deblurWrap, deblurGoBtn, upMethodSel, upModelWrap, rtxWrap, fvsrWrap, upGoBtn);
 
   // ── Interpolate ─────────────────────────────────────────────────────────────────
   // RIFEInterpolation takes a source/target fps pair, not a multiplier, so the options
@@ -586,11 +639,16 @@ export function createGalleryOverlay(state, ctx) {
   // Chunking is decided by the source's DURATION, per method (the user's rule):
   //   RTX VSR / RTX-based Deblur : < 15s whole file, else 15s chunks
   //   Upscale model              : < 10s whole file, else  5s chunks
+  //   FlashVSR                   : never chunked — its own tile size/overlap already
+  //     bounds VRAM per tile, and it force-offloads/reloads its weights per queue
+  //     submission, so splitting a clip into time-chunks would just pay that reload cost
+  //     (minutes) over and over for no VRAM benefit.
   //   Deblur + model together    : the model rule (stricter) wins
   //   Interpolate                : no rule — falls through to the byte budget below
   // `chunkPlan(durationSec)` returns the chunk length in seconds, or 0 for whole-file.
-  const RTX_PLAN   = (d) => (d < 15 ? 0 : 15);
-  const MODEL_PLAN = (d) => (d < 10 ? 0 : 5);
+  const RTX_PLAN     = (d) => (d < 15 ? 0 : 15);
+  const MODEL_PLAN   = (d) => (d < 10 ? 0 : 5);
+  const FLASHVSR_PLAN = () => 0;
 
   /**
    * Shared run wrapper: copy the source into input/, queue the graph (chunked if the
@@ -618,7 +676,8 @@ export function createGalleryOverlay(state, ctx) {
   function postLabel(fallback, info = {}) {
     const parts = [];
     if (info.deblur && info.deblur !== "none") parts.push("deblur");
-    if (info.upscale) parts.push(info.upscale.method === "rtx" ? "rtx upscale" : "upscale");
+    if (info.upscale) parts.push(info.upscale.method === "rtx" ? "rtx upscale"
+      : info.upscale.method === "flashvsr" ? "flashvsr upscale" : "upscale");
     if (info.interpolate) parts.push("interpolation");
     return parts.length ? parts.join(" + ") : String(fallback).toLowerCase();
   }
@@ -651,6 +710,63 @@ export function createGalleryOverlay(state, ctx) {
     await saveMeta(outFile.filename, outFile.subfolder || "", patched).catch(() => {});
   }
 
+  // ── post-process progress modal ───────────────────────────────────────────────────
+  // FlashVSR in particular can run 7-18 minutes with no per-tile preview of its own (see
+  // one_node_minimax_h3.js's fvsrBanner) — closing the gallery or this popup must not
+  // read as "did it stop?": the job keeps running regardless, and the main panel's own
+  // status strip picks up the same progress via ctx.reportGalleryJob (below) whether or
+  // not this popup or the gallery itself is left open.
+  const postProgOv = el("div", { style: {
+    display: "none", position: "fixed", inset: "0", zIndex: "99999",
+    background: "rgba(0,0,0,0.55)", alignItems: "center", justifyContent: "center",
+  }});
+  const postProgBox = el("div", { style: {
+    background: C.bg1, border: `1px solid ${C.border}`, borderRadius: "10px",
+    padding: "18px 20px", width: "320px", boxSizing: "border-box",
+    display: "flex", flexDirection: "column", gap: "10px", boxShadow: "0 8px 30px rgba(0,0,0,0.5)",
+  }});
+  const postProgTitle = el("div", { text: "Upscale", style: { color: "#fff", fontSize: "13px", fontWeight: "700" } });
+  const postProgMsg = el("div", { text: "In progress — please wait.", style: { color: C.muted, fontSize: "11.5px", lineHeight: "1.5" } });
+  const postProgBarOuter = el("div", { style: { height: "8px", background: C.bg2, borderRadius: "4px", overflow: "hidden", border: `1px solid ${C.border}` } });
+  const postProgBarInner = el("div", { style: { height: "100%", width: "0%", background: BRAND, transition: "width .15s linear" } });
+  postProgBarOuter.appendChild(postProgBarInner);
+  const postProgPct = el("div", { style: { color: C.muted, fontSize: "10.5px", textAlign: "right" } });
+  const postProgBtnRow = el("div", { style: { display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "4px" } });
+  const postProgHideBtn = el("button", { type: "button", text: "Hide", title: "The job keeps running in the background — the main panel keeps showing its progress.", style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "11.5px", padding: "6px 14px",
+    borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+  }});
+  postProgHideBtn.addEventListener("click", () => { postProgOv.style.display = "none"; });
+  const postProgOkBtn = button("Confirm", () => { postProgOv.style.display = "none"; }, "primary");
+  postProgOkBtn.disabled = true; postProgOkBtn.style.opacity = "0.5";
+  postProgBtnRow.append(postProgHideBtn, postProgOkBtn);
+  postProgBox.append(postProgTitle, postProgMsg, postProgBarOuter, postProgPct, postProgBtnRow);
+  postProgOv.appendChild(postProgBox);
+  document.body.appendChild(postProgOv);
+
+  function openPostModal(label) {
+    postProgTitle.textContent = label;
+    postProgMsg.textContent = "In progress — please wait.";
+    postProgMsg.style.color = C.muted;
+    postProgBarInner.style.width = "0%";
+    postProgPct.textContent = "";
+    postProgOkBtn.disabled = true; postProgOkBtn.style.opacity = "0.5";
+    postProgHideBtn.style.display = "inline-block";
+    postProgOv.style.display = "flex";
+  }
+  function updatePostModal(pct, text) {
+    postProgBarInner.style.width = `${Math.max(0, Math.min(100, pct)).toFixed(1)}%`;
+    postProgPct.textContent = text || "";
+  }
+  function finishPostModal(ok, text) {
+    postProgMsg.textContent = ok ? "Done." : "Failed.";
+    postProgMsg.style.color = ok ? C.muted : C.err;
+    postProgPct.textContent = text || "";
+    if (ok) postProgBarInner.style.width = "100%";
+    postProgOkBtn.disabled = false; postProgOkBtn.style.opacity = "1";
+    postProgHideBtn.style.display = "none";
+  }
+
   // Reattach to a single-shot post-process that was in flight when the tab went away.
   async function resumePostJob() {
     if (postRunning) return;
@@ -661,10 +777,15 @@ export function createGalleryOverlay(state, ctx) {
     if (!entry) { clearPostJob(); return; }          // ComfyUI has no record — nothing to resume
     postRunning = true; refreshPostBars();
     upProg.busy(`Reattaching to ${job.label}…`);
+    ctx.reportGalleryJob?.(job.label, 0, "reattaching…");
     try {
       const res = entry.status?.completed
         ? { byNode: entry.outputs || {} }
-        : await waitForHistory(job.promptId, { onProgress: (v, m) => upProg.chunkStep(0, 1, v, m) });
+        : await waitForHistory(job.promptId, { onProgress: (v, m) => {
+            upProg.chunkStep(0, 1, v, m);
+            const pct = m ? (v / m) * 100 : 0;
+            ctx.reportGalleryJob?.(job.label, pct, `${Math.round(pct)}% · ${v}/${m}`);
+          } });
       const o = res.byNode?.[job.saveNode]?.images?.[0] || res.byNode?.[job.saveNode]?.gifs?.[0];
       if (o) {
         await writePostMeta({ filename: o.filename, subfolder: o.subfolder || job.outFolder }, job.srcMeta, job.src, job.label, job.postInfo || {});
@@ -678,6 +799,7 @@ export function createGalleryOverlay(state, ctx) {
     } finally {
       await discardInputCopy(job.copied).catch(() => {});
       clearPostJob();
+      ctx.clearGalleryJob?.();
       postRunning = false;
       refreshPostBars();
       await refresh();
@@ -695,6 +817,8 @@ export function createGalleryOverlay(state, ctx) {
     refreshPostBars();
     clearPostJob();
     prog.busy(`Preparing ${v.filename}… — keep this tab open`);
+    openPostModal(label);
+    ctx.reportGalleryJob?.(label, 0, "preparing…");
     let copied = null;
     const chunkFiles = [];   // { filename, subfolder } written to the temp chunk folder
     try {
@@ -727,12 +851,25 @@ export function createGalleryOverlay(state, ctx) {
       const chunkCount = (totalFrames > 0 && chunkFrames > 0 && totalFrames > chunkFrames)
         ? Math.ceil(totalFrames / chunkFrames) : 1;
 
+      // Mirrors one progress tick onto both the standalone popup and the main panel's
+      // own status strip — the popup can be hidden or the whole gallery closed without
+      // losing sight of a job that can run for minutes (FlashVSR especially).
+      const mirrorProgress = (idx, count, val, max) => {
+        const within = max ? val / max : 0;
+        const pct = Math.max(0, Math.min(100, ((idx + within) / count) * 100));
+        const text = count > 1
+          ? `chunk ${idx + 1}/${count} · ${Math.round(within * 100)}% (${Math.round(pct)}% overall)`
+          : `${Math.round(pct)}% · ${val}/${max}`;
+        updatePostModal(pct, text);
+        ctx.reportGalleryJob?.(label, pct, text);
+      };
+
       let outFile = null;   // what the job actually wrote, so its metadata can follow
       if (chunkCount === 1) {
         const { graph, saveNode } = buildFn(inputFile, stem, {});
         prog.busy(`${label}… — keep this tab open (this takes minutes)`);
         const res = await queuePrompt(graph, {
-          onProgress: (val, max) => prog.chunkStep(0, 1, val, max),
+          onProgress: (val, max) => { prog.chunkStep(0, 1, val, max); mirrorProgress(0, 1, val, max); },
           onQueued: (pid) => stashPostJob({
             promptId: pid, saveNode, label, postInfo,
             src: v.filename, srcMeta: v.meta, copied: inputFile, outFolder,
@@ -754,7 +891,7 @@ export function createGalleryOverlay(state, ctx) {
           });
           prog.busy(`${label} — preparing chunk ${i + 1}/${chunkCount}…`);
           const res = await queuePrompt(graph, {
-            onProgress: (val, max) => prog.chunkStep(i, chunkCount, val, max),
+            onProgress: (val, max) => { prog.chunkStep(i, chunkCount, val, max); mirrorProgress(i, chunkCount, val, max); },
           });
           const out = res.byNode[saveNode]?.images?.[0] || res.byNode[saveNode]?.gifs?.[0];
           if (!out) throw new Error(`chunk ${i + 1}/${chunkCount} produced no output`);
@@ -772,12 +909,16 @@ export function createGalleryOverlay(state, ctx) {
       await writePostMeta(outFile, v.meta, v.filename, label, postInfo);
 
       prog.idle(`✓ ${label} done.`);
+      finishPostModal(true, "Done — the new file is at the top of the gallery.");
+      ctx.clearGalleryJob?.();
       ctx.showPopup?.(`${label} finished — the new file is at the top of the gallery.`, false);
       postPick = null;
       await refresh();
     } catch (e) {
       const msg = e?.message || String(e);
       prog.idle(`✕ ${msg}`);
+      finishPostModal(false, msg);
+      ctx.clearGalleryJob?.();
       ctx.showPopup?.(`${label} failed: ${msg}`, true);
     } finally {
       // Clean up in both the success and failure paths: whatever chunks did get written,
@@ -792,8 +933,19 @@ export function createGalleryOverlay(state, ctx) {
 
   function runUpscale() {
     const rtxScale = Math.max(1, Math.min(4, parseFloat(rtxScaleIn.value) || 2));
+    const flashvsr = upMethod === "flashvsr" ? {
+      model: fvsrModelSel.value || "FlashVSR-v1.1",
+      mode: fvsrModeSel.value || "tiny",
+      // FlashVSRNodeAdv's own ranges: scale 2-4 (int), tile 32-1024, overlap 8-512.
+      scale: Math.min(4, Math.max(2, Math.round(parseFloat(fvsrScaleIn.value) || 2))),
+      colorFix: fvsrColorFixCb.checked,
+      tileSize: Math.min(1024, Math.max(32, parseInt(fvsrTileIn.value, 10) || 384)),
+      tileOverlap: Math.min(512, Math.max(8, parseInt(fvsrOverlapIn.value, 10) || 32)),
+      seed: parseInt(fvsrSeedIn.value, 10) || 42,
+    } : null;
     const upscale = upMethod === "none" ? null
       : upMethod === "rtx" ? { method: "rtx", scale: rtxScale, quality: rtxQualSel.value }
+      : upMethod === "flashvsr" ? flashvsrUsed(flashvsr)
       : { method: "model", model: upModelSel.value };
     return runPost(upProg, "Upscale", (inputFile, stem, chunkOpts) => buildUpscaleGraph({
       inputFile, stem,
@@ -802,13 +954,14 @@ export function createGalleryOverlay(state, ctx) {
       modelName: upModelSel.value,
       rtxScale,
       rtxQuality: rtxQualSel.value,
+      flashvsr,
       deblur: deblurSel.value,
       skipFirstFrames: chunkOpts.skipFirstFrames,
       frameLoadCap: chunkOpts.frameLoadCap,
       saveSuffix: upMethod === "none" && chunkOpts.saveSuffix === "_upscaled"
         ? "_deblur" : chunkOpts.saveSuffix,
     }, ctx.availability || {}), upMethod === "none" ? "_deblur" : "_upscaled",
-      upMethod === "model" ? MODEL_PLAN : RTX_PLAN,
+      upMethod === "model" ? MODEL_PLAN : upMethod === "flashvsr" ? FLASHVSR_PLAN : RTX_PLAN,
       { deblur: deblurSel.value, upscale });
   }
 
@@ -1206,9 +1359,12 @@ export function createGalleryOverlay(state, ctx) {
         const marks = [];
         if (m.mode === "ltxupscale") marks.push(["Ⓛ", `LTX 2.5 Upscale${m.segments > 1 ? ` — ${m.segments} segments stitched` : ""}`]);
         if (m.mode === "facerefine") marks.push(["Ⓕ", `H3 Face Refine${(m.faceRefine?.chainPicks?.length > 1) ? ` — ${m.faceRefine.chainPicks.length}-person chain` : ""}`]);
-        if (m.upscale) marks.push(["⇪", m.upscale.method === "rtx"
-          ? `Upscaled — RTX VSR ×${m.upscale.scale} (${m.upscale.quality})`
-          : `Upscaled — ${String(m.upscale.model || "model").split(/[\\/]/).pop()}`]);
+        if (m.upscale) marks.push(m.upscale.method === "flashvsr"
+          ? ["◮", `Upscaled — FlashVSR VSR ×${m.upscale.scale} (${m.upscale.tileSize}px tiles`
+              + `${m.upscale.mode ? `, ${m.upscale.mode}` : ""})`]
+          : m.upscale.method === "rtx"
+          ? ["⇪", `Upscaled — RTX VSR ×${m.upscale.scale} (${m.upscale.quality})`]
+          : ["⇪", `Upscaled — ${String(m.upscale.model || "model").split(/[\\/]/).pop()}`]);
         if (m.deblur && m.deblur !== "none") marks.push(["✧", `Deblurred — strength ${m.deblur}`]);
         if (m.interpolate) marks.push(["⇄", `Interpolated${m.interpolate.targetFps ? ` — ${Math.round(m.interpolate.targetFps)}fps` : ""}`]);
         if (marks.length) {

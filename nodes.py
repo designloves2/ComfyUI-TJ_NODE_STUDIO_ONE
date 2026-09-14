@@ -2554,6 +2554,9 @@ MMH3_OPTIONAL_NODES = [
     "RTXVideoSuperResolution",
     # ships with TJ_NODE — NVIDIA VFX deblur, same-resolution sharpening
     "TJ_RTXDeblur",
+    # FlashVSR VSR (lihaoyun6/ComfyUI-FlashVSR-Ultra-Fast, GPL-3.0) — tiled diffusion
+    # video super-resolution, offered as a 4th Upscale option alongside RTX VSR
+    "FlashVSRInitPipe", "FlashVSRNodeAdv",
     # LTX 2.5 Upscale mode — GGUF text-encoder loader (ships with TJ_NODE); the LTXV*
     # nodes and LatentUpscaleModelLoader are ComfyUI core.
     "TJ_LTX25ClipLoaderGGUF",

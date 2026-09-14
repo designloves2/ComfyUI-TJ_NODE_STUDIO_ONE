@@ -153,8 +153,14 @@ rem MusicMaker ONE STUDIO (music). Ace-Step 1.5 + MiniMax Music 3 encode/sampler
 rem ship with ComfyUI core; JK-AceStep-Nodes adds the JKASS quality sampler that the
 rem Ace-Step engine's KSamplerSelect defaults to (sampler_name "jkass_quality").
 set REPOS[23]=https://github.com/jeankassio/JK-AceStep-Nodes
+rem FlashVSR VSR - MiniMax H3's 4th Upscale option (FlashVSRInitPipe/FlashVSRNodeAdv),
+rem tiled diffusion video super-resolution. Model weights are NOT installed by this
+rem script - download the whole "FlashVSR" folder from
+rem https://huggingface.co/JunhaoZhuang/FlashVSR into ComfyUI/models/ (the node's own
+rem description names this path).
+set REPOS[24]=https://github.com/lihaoyun6/ComfyUI-FlashVSR_Ultra_Fast
 
-set COUNT=24
+set COUNT=25
 set /a LAST=COUNT-1
 
 :: ComfyUI Manager names a folder after the pack's pyproject "name", not the repo name.

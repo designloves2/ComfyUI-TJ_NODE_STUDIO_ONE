@@ -2,6 +2,47 @@
 
 ---
 
+## v1.28.0 (2026-09-15)
+
+### FlashVSR VSR — 4th Upscale option
+
+- Added FlashVSR VSR (`FlashVSRInitPipe`/`FlashVSRNodeAdv`, lihaoyun6/
+  ComfyUI-FlashVSR_Ultra_Fast) alongside Upscale Model and RTX VSR — not a separate
+  generation mode, just another `Upscale` choice in both the MiniMax H3 left panel's
+  Upscale accordion and the gallery's own Upscale bar. 8 fields are exposed in both
+  places: model, mode, scale, color fix, tile size, tile overlap, seed, and seed
+  control; everything else FlashVSRInitPipe/FlashVSRNodeAdv takes is fixed at the
+  shipped API workflow's own values (`[TJ]FlashVSR-Upscale.json`) and not surfaced.
+  Defaults match that workflow: a 16GB card at 2x with 384px tiles (measured ~7m30s
+  per clip); dropping the tile to 256px enables 3x (measured ~18min per clip) — both
+  numbers, and the "no live preview for this pass" note, sit next to Tile size as a
+  hover tooltip.
+- No live sampling preview exists for a tiled post-process pass, so the preview box
+  shows a waiting banner (◮ FlashVSR upscaling… please wait) and the status bar tracks
+  tile-by-tile progress instead of going silent — the same problem Face Refine's own
+  detection stretch already solved, reused here. Progress for a node running after the
+  sampler in the same graph submission required extending `queuePrompt`/
+  `waitForHistory`'s `samplerNode` option to accept more than one node id, so a second
+  node's ticks aren't dropped by the existing sampler-only filter.
+- The gallery's own Upscale bar (post-processing an already-finished clip) can run for
+  minutes with the tab otherwise idle, so it now opens a small progress popup — a bar,
+  a Hide button (keeps the job running), and a Confirm button that only enables once
+  the job finishes or fails. Whether that popup or the whole gallery is closed, the
+  main panel's own status strip picks up the same progress via a new
+  `ctx.reportGalleryJob`/`clearGalleryJob` hook, so closing either one never reads as
+  "did it stop?"
+- Gallery filter dropdown gained a FlashVSR entry, and a stitched/upscaled clip's own
+  badge glyph is ◮ (distinct from ⇪, the existing Upscale Model / RTX VSR mark) so the
+  method is identifiable from the grid without opening the info popup.
+- `FlashVSRInitPipe`/`FlashVSRNodeAdv` availability registered in both `nodes.py` and
+  `api_minimax.js`'s optional-node lists, and added to `install_requirements.bat`'s
+  auto-installed dependency packs.
+- All of the above was checked against the real, already-installed pack's
+  `/object_info` on this machine (not guessed): `model` is `FlashVSR`/`FlashVSR-v1.1`,
+  `mode` is `tiny`/`tiny-long`/`full`, `scale` is an integer 2-4 only (no 1x, no
+  fractional), `tile_size` 32-1024 (step 32), `tile_overlap` 8-512 (step 8) — the UI's
+  number fields and clamps match those ranges exactly.
+
 ## v1.27.0 (2026-09-14)
 
 ### MiniMax H3 gallery — filters, resolution overlay, Prompt View popup
