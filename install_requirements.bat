@@ -58,7 +58,9 @@ echo.
 ::   <base>\python_embeded\python.exe              - portable build (python_embeded beside ComfyUI)
 :: Only if none of those exist do we touch "where python" (system Python) - and warn.
 set "PYTHON="
+REM Added comfyui-rocm-master path for AMD GPUs -ELS
 for %%P in (
+    "!COMFY_DIR!\python_env\python.exe"
     "!COMFY_DIR!\venv\Scripts\python.exe"
     "!COMFY_DIR!\.venv\Scripts\python.exe"
     "!BASE_DIR!\venv\Scripts\python.exe"
@@ -210,9 +212,10 @@ echo   failed          : !N_FAIL!
 echo.
 
 rem Restore numpy if a pack moved it.
+rem Changed if to  if defined to stop exit error -ELS
 if not "!NUMPY_BEFORE!"=="" if not "%PYTHON%"=="" (
     call :GET_NUMPY_VER
-    if not "!_NPVER!"=="!NUMPY_BEFORE!" (
+    if defined _NPVER if not "!_NPVER!"=="!NUMPY_BEFORE!" (
         echo   [numpy] a dependency changed numpy !NUMPY_BEFORE! -^> !_NPVER! - restoring !NUMPY_BEFORE!
         "%PYTHON%" -m pip install "numpy==!NUMPY_BEFORE!" --quiet || echo   [numpy] could not restore - run: "%PYTHON%" -m pip install numpy==!NUMPY_BEFORE!
     )
