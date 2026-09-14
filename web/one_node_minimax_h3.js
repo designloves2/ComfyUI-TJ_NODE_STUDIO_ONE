@@ -962,7 +962,12 @@ app.registerExtension({
         cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "3px 9px",
         borderRadius: "5px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
       }});
-      promptHdr.append(splitBtn, addBtn);
+      const resetTAHBtn = el("button", { type: "button", text: "↺", title: "Reset the prompt boxes' height back to the default", style: {
+        cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "3px 9px",
+        borderRadius: "5px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+      }});
+      resetTAHBtn.addEventListener("click", () => resetPromptTAHeights());
+      promptHdr.append(splitBtn, addBtn, resetTAHBtn);
 
       const promptList = el("div", { style: { flex: "1", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px" } });
       promptList.className = "mmh3-lp";
@@ -1029,16 +1034,37 @@ app.registerExtension({
       // 기억하기. 그리고 추가된 어떤 클립이든 높이 사이즈를 조절하면 추가되어 있는 클립의
       // 프롬포트 필드 높이도 전부 동기화 시키기.").
       const PROMPT_TA_H_KEY = "mmh3_prompt_ta_h";
-      let promptTaH = Number(localStorage.getItem(PROMPT_TA_H_KEY)) || 120;
+      // 1.5x the original 120px default (user: "지금보다 초기 사이즈를 1.5배 늘려서
+      // 기본값으로 잡아줘"), plus a sane floor/ceiling so a bad reading (see below)
+      // can't runaway in either direction.
+      const PROMPT_TA_DEFAULT_H = 180;
+      const PROMPT_TA_MIN_H = 80;
+      const PROMPT_TA_MAX_H = 600;
+      const clampPromptTAH = (h) => Math.min(PROMPT_TA_MAX_H, Math.max(PROMPT_TA_MIN_H, h));
+      let promptTaH = clampPromptTAH(Number(localStorage.getItem(PROMPT_TA_H_KEY)) || PROMPT_TA_DEFAULT_H);
       let promptTAs = [];          // this render's textareas, for cross-syncing
       let promptTAObservers = [];  // disconnected before every re-render
       let syncingPromptTAHeights = false;
+      // Bug (user: "사용자가 조절하면 기억한다고 했는데... 늘리지도 않았는데 늘어나서
+      // 줄어들지 않아"): the ResizeObserver fired — and was trusted — for ANY size
+      // change, including ones the browser itself causes (a fractional/DPI-rounded
+      // layout pass, a re-render's first paint before fonts/scrollbars settle), not
+      // just an actual drag on the native resize handle. Each stray tick got saved as
+      // the new "user" height and pushed onto every clip's textarea, so it could only
+      // ever ratchet up over a session, never back down. Gated behind an actual
+      // mousedown-drag on one of the watched textareas now, so a layout-driven size
+      // change is measured but ignored instead of adopted.
+      let promptTAResizing = false;
+      document.addEventListener("mousedown", (e) => {
+        if (e.target && promptTAs.includes(e.target)) promptTAResizing = true;
+      }, true);
+      document.addEventListener("mouseup", () => { promptTAResizing = false; }, true);
       function watchPromptTA(ta) {
         promptTAs.push(ta);
         ta.style.height = `${promptTaH}px`;
         const ro = new ResizeObserver(() => {
-          if (syncingPromptTAHeights) return;
-          const h = Math.round(ta.getBoundingClientRect().height);
+          if (syncingPromptTAHeights || !promptTAResizing) return;
+          const h = clampPromptTAH(Math.round(ta.getBoundingClientRect().height));
           if (!h || h === promptTaH) return;
           promptTaH = h;
           localStorage.setItem(PROMPT_TA_H_KEY, String(promptTaH));
@@ -1049,6 +1075,14 @@ app.registerExtension({
         ro.observe(ta);
         promptTAObservers.push(ro);
       }
+      // ↺ Reset — puts every clip's textarea back to the shared default height.
+      function resetPromptTAHeights() {
+        promptTaH = PROMPT_TA_DEFAULT_H;
+        localStorage.setItem(PROMPT_TA_H_KEY, String(promptTaH));
+        syncingPromptTAHeights = true;
+        promptTAs.forEach(ta => { ta.style.height = `${promptTaH}px`; });
+        syncingPromptTAHeights = false;
+      }
       function renderPrompts() {
         promptTAObservers.forEach(ro => ro.disconnect());
         promptTAObservers = []; promptTAs = [];
@@ -1058,9 +1092,10 @@ app.registerExtension({
         // The bottom prompt area is per-mode: the H3 shot list, or (LTX Upscale / Face
         // Refine) one plain prompt box down here — same spot every mode uses, not the
         // left panel. Common / Split / Add are H3-only.
-        commonBtn.style.display = (isLtx || isFaceRefine) ? "none" : "";
-        splitBtn.style.display  = (isLtx || isFaceRefine) ? "none" : "";
-        addBtn.style.display    = (isLtx || isFaceRefine) ? "none" : "";
+        commonBtn.style.display  = (isLtx || isFaceRefine) ? "none" : "";
+        splitBtn.style.display   = (isLtx || isFaceRefine) ? "none" : "";
+        addBtn.style.display     = (isLtx || isFaceRefine) ? "none" : "";
+        resetTAHBtn.style.display = (isLtx || isFaceRefine) ? "none" : "";
         promptTitle.textContent = isLtx ? "UPSCALE PROMPT" : isFaceRefine ? "FACE REFINE PROMPT" : "PROMPTS";
         promptList.style.gap = (isLtx || isFaceRefine) ? "6px" : "4px";
         if (isLtx) { renderLtxPrompt(); return; }
