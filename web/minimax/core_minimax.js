@@ -1148,9 +1148,8 @@ export function defaultState(saved) {
     h3OrModelVision:  saved.h3OrModelVision  || saved.h3OrModel || "",
     // Llama GGUF (local llama.cpp, via TJ_NODE's prompt_enhancer.py/image_to_prompt.py —
     // the same backend the image nodes' shared Enhance/Image→Prompt panel already uses).
-    // Vision picks its own base GGUF model same as Brief does, plus the mmproj projector
-    // that pairs with it to add sight — a vision pass needs both loaded together.
-    h3LlamaVisionModel:  saved.h3LlamaVisionModel  || "",
+    // Vision has no GGUF model of its own — it reuses Brief's (below) and only owns
+    // which mmproj pairs with it to add sight.
     h3LlamaVisionMmproj: saved.h3LlamaVisionMmproj || "none",
     h3LlamaBriefModel:   saved.h3LlamaBriefModel   || "",
     // LTX Upscale has no paired "brief" row — standalone vision role, own model + mmproj.

@@ -359,15 +359,17 @@ export function createSettingsOverlay(state, ctx) {
         // the same way the OpenRouter branch below reads orModelKey — reused here so this
         // stays one function instead of splitting vision/brief into separate ones.
         //
-        // Vision picks its own GGUF base model same as Brief does (not a silent reuse of
-        // Brief's — user: "브리프에서 고른 모델 그대로 사용이 아니고 둘다 모델은 선택을
-        // 하는데 비전에서는 mmproj를 선택해야되잖아"), PLUS the mmproj projector that
-        // pairs with it — a llama.cpp vision pass needs both loaded together.
+        // H3 Vision has NO GGUF model picker of its own — a llama.cpp vision pass is one
+        // base model plus a matching mmproj projector, not two independently-chosen
+        // models, so H3 Vision reuses Brief's own GGUF model (state.h3LlamaBriefModel)
+        // and only picks which mmproj pairs with it (user: "비전 모델 선택이니까 mmproj만
+        // 보여야 되는게 맞는거라고"). LTX Upscale has no paired "brief" row to borrow a
+        // base model from, so it's the one exception that needs its own GGUF picker too
+        // (user: "브리프에서 고른 모델 그대로 사용이 아니고 둘다 모델은 선택을 하는데").
         const isVisionRole = clipKey === "nativeVisionClip";
         const isLtxRole = clipKey === "ltxVisionClip";
-        const modelKey = isLtxRole ? "ltxLlamaModel" : isVisionRole ? "h3LlamaVisionModel" : "h3LlamaBriefModel";
+        const modelKey = isLtxRole ? "ltxLlamaModel" : "h3LlamaBriefModel";
         const mmprojKey = isLtxRole ? "ltxLlamaMmproj" : "h3LlamaVisionMmproj";
-        const needsMmproj = isVisionRole || isLtxRole;
         const holder = el("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } });
         holder.appendChild(el("div", { text: "loading gguf models…", style: { fontSize: "11px", color: C.muted } }));
         llamaModels().then(d => {
@@ -381,19 +383,27 @@ export function createSettingsOverlay(state, ctx) {
           // Explicit client-side split rather than trusting the server's own gguf/mmproj
           // arrays not to overlap.
           const isMmprojName = (n) => /mmproj/i.test(String(n || ""));
-          const ggufList = (d.gguf || []).filter(n => !isMmprojName(n));
-          if (!ggufList.length) ggufList.push("(none found)");
-          if (!state[modelKey] && ggufList[0] && ggufList[0] !== "(none found)") { state[modelKey] = ggufList[0]; ctx.persist(); }
-          const ggufPick = searchableSelect(ggufList, state[modelKey] || ggufList[0],
-            v => { state[modelKey] = v; ctx.persist(); });
-          holder.appendChild(col([label("GGUF model"), ggufPick.el]));
-
-          if (needsMmproj) {
+          if (isVisionRole) {
             const mmList = ["none", ...(d.mmproj || []).filter(n => n !== "none" && isMmprojName(n))];
             if (!state[mmprojKey]) { state[mmprojKey] = "none"; ctx.persist(); }
             const mmPick = searchableSelect(mmList, state[mmprojKey] || "none",
               v => { state[mmprojKey] = v; ctx.persist(); });
-            holder.appendChild(col([label("mmproj (vision projector — pairs with the GGUF model above to add sight)"), mmPick.el]));
+            holder.appendChild(col([label("mmproj (vision projector — pairs with the Brief GGUF model above to add sight)"), mmPick.el]));
+          } else {
+            const ggufList = (d.gguf || []).filter(n => !isMmprojName(n));
+            if (!ggufList.length) ggufList.push("(none found)");
+            if (!state[modelKey] && ggufList[0] && ggufList[0] !== "(none found)") { state[modelKey] = ggufList[0]; ctx.persist(); }
+            const ggufPick = searchableSelect(ggufList, state[modelKey] || ggufList[0],
+              v => { state[modelKey] = v; ctx.persist(); });
+            holder.appendChild(col([label("GGUF model"), ggufPick.el]));
+
+            if (isLtxRole) {
+              const mmList = ["none", ...(d.mmproj || []).filter(n => n !== "none" && isMmprojName(n))];
+              if (!state[mmprojKey]) { state[mmprojKey] = "none"; ctx.persist(); }
+              const mmPick = searchableSelect(mmList, state[mmprojKey] || "none",
+                v => { state[mmprojKey] = v; ctx.persist(); });
+              holder.appendChild(col([label("mmproj (vision projector — pairs with the GGUF model above to add sight)"), mmPick.el]));
+            }
           }
           // Shared by both roles — one context window size for whichever GGUF loads.
           // Defaults to 8192, not llama.cpp's own 4096: H3's system prompt (guide + few-
@@ -751,7 +761,6 @@ export function createSettingsOverlay(state, ctx) {
       h3_vision_backend:     state.h3VisionBackend   || state.h3LlmBackend || "native",
       h3_or_model_brief:     state.h3OrModelBrief    || state.h3OrModel || "",
       h3_or_model_vision:    state.h3OrModelVision   || state.h3OrModel || "",
-      h3_llama_vision_model:  state.h3LlamaVisionModel  || "",
       h3_llama_vision_mmproj: state.h3LlamaVisionMmproj || "",
       h3_llama_brief_model:   state.h3LlamaBriefModel   || "",
       h3_llama_n_ctx:         state.h3LlamaNCtx         ?? 16384,
@@ -882,7 +891,6 @@ export function createSettingsOverlay(state, ctx) {
     if (cfg.h3_vision_backend)        state.h3VisionBackend  = cfg.h3_vision_backend;
     if (cfg.h3_or_model_brief)        state.h3OrModelBrief   = cfg.h3_or_model_brief;
     if (cfg.h3_or_model_vision)       state.h3OrModelVision  = cfg.h3_or_model_vision;
-    if (cfg.h3_llama_vision_model)    state.h3LlamaVisionModel  = cfg.h3_llama_vision_model;
     if (cfg.h3_llama_vision_mmproj)   state.h3LlamaVisionMmproj = cfg.h3_llama_vision_mmproj;
     if (cfg.h3_llama_brief_model)     state.h3LlamaBriefModel   = cfg.h3_llama_brief_model;
     if (cfg.h3_llama_n_ctx != null)   state.h3LlamaNCtx         = cfg.h3_llama_n_ctx;
