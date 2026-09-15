@@ -1263,6 +1263,7 @@ export function createGalleryOverlay(state, ctx) {
     const v = list[playIndex];
     curSensKey = mediaKey(v.filename, v.subfolder || "");
     pTitle.textContent = v.filename;
+    pTitle.title = v.filename;
     pPos.textContent = `${playIndex + 1} / ${list.length}`;
     player.style.display = "flex";
     loadPlayerVideo(v);
@@ -1389,7 +1390,11 @@ export function createGalleryOverlay(state, ctx) {
         infoPopup = el("div", { style: {
           position: "fixed", zIndex: "10001", background: "rgba(10,10,10,0.97)",
           border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px 8px",
-          fontSize: "10px", color: C.text, lineHeight: "1.6", whiteSpace: "pre",
+          fontSize: "10px", color: C.text, lineHeight: "1.6",
+          // "pre" never wraps, so a long line (a LoRA's full filename, especially) ran
+          // straight past the box's own maxWidth instead of staying inside it — pre-wrap
+          // keeps the newlines between lines but still wraps within each one.
+          whiteSpace: "pre-wrap", wordBreak: "break-all",
           pointerEvents: "none", maxWidth: "220px", boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
         }});
         infoPopup.textContent = lines.length ? lines.join("\n") : "No settings saved for this clip.";
@@ -1500,7 +1505,7 @@ export function createGalleryOverlay(state, ctx) {
         }));
       }
       meta.append(
-        el("div", { text: v.filename, style: {
+        el("div", { text: v.filename, title: v.filename, style: {
           fontSize: "10px", color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }),
         el("div", { text: `${durationText}${fmtSize(v.size)} · ${fmtWhen(v.mtime)}`, style: { fontSize: "9px", color: C.muted } }),
       );
@@ -1600,7 +1605,7 @@ export function createGalleryOverlay(state, ctx) {
     videoWrap.append(shade, eye);
 
     const infoBox = el("div", { style: {
-      fontSize: "10px", color: C.text, lineHeight: "1.6", whiteSpace: "pre-wrap",
+      fontSize: "10px", color: C.text, lineHeight: "1.6", whiteSpace: "pre-wrap", wordBreak: "break-all",
       background: C.bg2, border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px 8px",
     }});
     const lines = buildInfoLines(v);
