@@ -1066,15 +1066,29 @@ ${name}`, style: {
   // it's just another paragraph of context by the time the brief model sees it.
   function buildUserPrompt(baseText, imageSummary) {
     const t = targetPlan();
+    // Labeled key:value header block, same shape as ComfyUI-MiniMaxH3-Prompt-Writer's
+    // assemble_request() user_content ("Mode: ...\nDuration: ...\nAspect ratio: ...\n\n
+    // Reference manifest...\n\nCreative brief:\n...") — the label wording is copied
+    // closely; what differs is only our own output shape (shot-separated brief text,
+    // not their 6-section MiniMax H3 schema — our own system prompt already governs
+    // that, this is just the same technique for framing the request).
+    const modeLabel = state.generationMode === "reference" ? "Reference"
+      : state.briefImageMode === "fl" ? "First/Last frame" : "Text/Image → Brief";
     const lines = [
+      `Mode: ${modeLabel}`,
       `Target duration: ${t.seconds.toFixed(2)} seconds total, split into ${t.shots} shot(s) of ~${t.clipSec.toFixed(2)}s each.`,
     ];
     if (t.shots > 1) {
       lines.push(`Write exactly ${t.shots} shots, separated by a line containing only ---, one shot per clip.`);
     }
-    if (state.generationMode === "reference" && (state.refImages || []).length) {
-      lines.push(`${state.refImages.length} reference image(s) are supplied; refer to them as <Picture 1>…<Picture ${state.refImages.length}>.`);
-    }
+    const refCount = state.generationMode === "reference" ? (state.refImages || []).length : 0;
+    lines.push(
+      "",
+      "Reference manifest:",
+      refCount
+        ? `${refCount} reference image(s) supplied; refer to them as <Picture 1>…<Picture ${refCount}>.`
+        : "None",
+    );
     if (imageSummary) {
       if (state.briefImageMode === "fl") {
         lines.push("", "The following images were analyzed in order: image 1 is the STARTING frame, "
@@ -1085,47 +1099,61 @@ ${name}`, style: {
           + `<Picture ${imageSummary.split("\n").length}> references for this brief.`, "", imageSummary);
       }
     }
-    lines.push("", "USER REQUEST:", baseText || "(no text supplied — base the brief on the image analysis above)");
+    lines.push("", "Creative brief:", baseText || "(no text supplied — base the brief on the image analysis above)");
     // A last, plain restatement of the rules a long system prompt's earlier instructions
     // are most likely to drift away from, placed as the very last thing the model reads
     // before writing — the same "final contract" technique ComfyUI-MiniMaxH3-Prompt-Writer
-    // uses (its assembly.py appends a mode-specific grounding check to the end of the USER
-    // message, not the system prompt, specifically for this recency effect). The
+    // uses (its assembly.py's _final_contract() appends a mode-specific grounding check
+    // to the end of the USER message, not the system prompt, specifically for this
+    // recency effect; wording below is adapted from that same closing paragraph). The
     // frame-anchored scenario's own instruction to invent a bridging action between two
     // frames is a documented exception, which is why this says "only the minimum needed"
     // rather than banning invention outright.
     lines.push(
       "",
-      "Final check before you write: stay grounded in what the request and any images/video/audio "
+      "Final grounding check: stay grounded in what the request and any images/video/audio "
       + "actually show — invent only the minimum needed to connect frames or fulfill the request, "
       + "never unrelated actions, props, on-screen text, dialogue, or locations. An explicit user "
-      + "instruction always outranks a default assumption. If a reference was given one specific role "
-      + "(voice, motion, style, etc.), use only that role's content — do not also pull in its other "
-      + "visible traits. Do not invent music or ambient sound beyond what the request asks for or "
-      + "clearly implies. Output only the brief text, nothing else.",
+      + "instruction always outranks a default assumption. Treat every explicitly assigned reference "
+      + "role (voice, motion, style, etc.) as exclusive — use only that role's content, do not also "
+      + "pull in its other visible traits. Do not invent music or ambient sound beyond what the "
+      + "request asks for or clearly implies. Never pad solely to reach a length — use only what the "
+      + "target duration above actually needs. Return only the complete brief text, no commentary "
+      + "outside it.",
     );
     return lines.join("\n");
   }
 
-  // Refine: revise an already-written prompt from a typed instruction. Text-only (no
-  // images re-attached), same "final check" reinforcement appended last for recency —
-  // mirrors ComfyUI-MiniMaxH3-Prompt-Writer's assemble_refinement().
+  // Refine: revise an already-written prompt from a typed instruction. Structure and
+  // wording closely follow ComfyUI-MiniMaxH3-Prompt-Writer's assemble_refinement():
+  // the opening "rewrite / return only / do not discuss" instruction, current-prompt +
+  // revision-instruction block, a reference-preservation rule (their version is scoped
+  // to <Audio N> tags because that node's Reference mode uses audio/video assets we
+  // don't; ours is <Picture N>, the only reference tag our own brief format uses), and
+  // a final grounding check appended last for the same recency effect — text-only, no
+  // images re-attached, exactly like their version ("media is intentionally not
+  // attached"). The OUTPUT stays our own shot-separated brief format throughout; only
+  // the prompt-construction technique is borrowed.
   function buildRefineUserPrompt(currentPrompt, instruction) {
     const lines = [
-      "Rewrite the current brief according to the revision instruction below.",
-      "Return only the complete revised brief. Do not discuss the changes, do not add commentary.",
+      "Rewrite the current H3 brief according to the revision instruction. "
+      + "Return only the complete revised brief. Do not discuss the changes.",
       "",
-      "Current brief:",
+      "Current prompt:",
       currentPrompt || "(empty)",
       "",
       "Revision instruction:",
       instruction,
       "",
-      "Final check before you write: keep everything from the current brief that the instruction "
+      "Reference revision rule: preserve each existing <Picture N> tag that the revision "
+      + "instruction does not ask to change. Only add, remove, or renumber a <Picture N> tag "
+      + "when the instruction's meaning actually calls for it.",
+      "",
+      "Final grounding check: keep everything from the current prompt that the instruction "
       + "doesn't ask you to change. Apply only what the instruction actually asks for — do not "
       + "invent unrelated actions, props, on-screen text, dialogue, locations, music or ambient "
-      + "sound beyond what it asks for or clearly implies. Output only the revised brief text, "
-      + "nothing else.",
+      + "sound beyond what it asks for or clearly implies. Return only the complete revised "
+      + "prompt, no commentary outside it.",
     ];
     return lines.join("\n");
   }
