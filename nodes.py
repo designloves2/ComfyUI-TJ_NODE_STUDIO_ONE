@@ -1650,7 +1650,14 @@ async def studio_llm_enhance(request):
             )
             return result
         out = await loop.run_in_executor(None, _run)
-        return web.json_response({"ok": True, "result": out[0] if isinstance(out, (list, tuple)) else str(out)})
+        resp = {"ok": True, "result": out[0] if isinstance(out, (list, tuple)) else str(out)}
+        # TJ_PromptEnhancer's own out[1] ("thought") already carries a "=== Raw Output ==="
+        # section with the pre-cleanup completion — surfaced here as a temporary debug aid
+        # (this session has no access to the ComfyUI console the backend logs to). Remove
+        # once the H3-brief pipeline is confirmed stable.
+        if isinstance(out, (list, tuple)) and len(out) > 1:
+            resp["debug_thought"] = out[1]
+        return web.json_response(resp)
     except Exception as e:
         return web.json_response({"ok": False, "error": str(e)})
 
