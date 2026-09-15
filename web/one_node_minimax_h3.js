@@ -3997,8 +3997,12 @@ app.registerExtension({
           pddNfe: st.pddNfe,
           pddFile: st.pddFile,
           pddFileReference: st.pddFileReference,
-          turboLora: st.turboLora,
-          turboLoraReference: st.turboLoraReference,
+          // Only recorded when Turbo is actually set to the larryvrh LoRA mode - these two
+          // fields stay populated in state even with Turbo off or set to pdd/lightx2v, so
+          // writing them unconditionally made a clip's sidecar (and Reuse) claim the 4-step
+          // LoRA ran on every clip regardless of what actually rendered it.
+          turboLora: st.turboMode === "larryvrh" ? st.turboLora : null,
+          turboLoraReference: st.turboMode === "larryvrh" ? st.turboLoraReference : null,
           // The pipeline is one field per patch layer now. `accel` stays only so a clip
           // written today still says something to a reader that predates the split.
           accel: st.attnBackend,
@@ -4741,7 +4745,9 @@ app.registerExtension({
                 // Memory extremes over this clip. vramFreeMinMiB near zero is the
                 // signature of a spill: the step times balloon and nothing errors.
                 ...(memPeak || {}),
-                turboLora: rs.turboLora || "", turboLoraReference: rs.turboLoraReference || "",
+                // turboLora/turboLoraReference are gated inside metaForVideo() itself now
+                // (only recorded when turboMode === "larryvrh"); strength/lowVram are just
+                // config for that mode, harmless to keep even when unused.
                 turboLoraStrength: rs.turboLoraStrength ?? 1.0, turboLoraLowVram: !!rs.turboLoraLowVram,
                 loras: (rs.loras || []).map(l => ({
                   name: l.name || "none", strength: l.strength ?? 1.0,
