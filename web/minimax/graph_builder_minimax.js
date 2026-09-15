@@ -79,6 +79,28 @@ export const TAIL_CANDIDATES = 8;
 
 const has = (avail, name) => !!(avail && avail[name]);
 
+// Writes the final video-save step: VHS_VideoCombine's nvenc_h264-mp4 format (real
+// NVIDIA GPU/NVENC hardware encoding) when the pack is installed, falling back to
+// ComfyUI core's CreateVideo -> SaveVideo pair (CPU software encoding via PyAV/libx264)
+// otherwise — same "missing pack disables the feature, not the whole prompt" policy as
+// every other optional node here. VHS reports its saved file under a `gifs` key; both
+// ui_gallery_minimax.js and one_node_minimax_h3.js already read `.images || .gifs` for
+// every save node, so nothing downstream needs to change either way.
+function saveVideoNode(g, ids, images, audio, fps, filenamePrefix, avail) {
+  if (has(avail, "VHS_VideoCombine")) {
+    g[ids.save] = { class_type: "VHS_VideoCombine", inputs: {
+      images, audio, frame_rate: fps, loop_count: 0,
+      filename_prefix: filenamePrefix, format: "video/nvenc_h264-mp4",
+      pingpong: false, save_output: true,
+    }};
+  } else {
+    g[ids.video] = { class_type: "CreateVideo", inputs: { images, fps, audio } };
+    g[ids.save] = { class_type: "SaveVideo", inputs: {
+      video: [ids.video, 0], filename_prefix: filenamePrefix, format: "auto", codec: "auto",
+    }};
+  }
+}
+
 // FlashVSR VSR (lihaoyun6/ComfyUI-FlashVSR-Ultra-Fast) — shared by the inline per-clip
 // upscale (buildClipGraph) and the gallery's standalone post-process (buildUpscaleGraph).
 // Only 8 fields are exposed in the UI (model/mode/scale/color fix/tile size/tile
@@ -798,20 +820,15 @@ export function buildClipGraph(state, avail, opts = {}) {
   // The lock's own audio output passes the source through untouched. Decoding it back
   // out of the latent instead would cost a neural-codec round trip, which is audible
   // even though the lock held — so that path is only for when the lock is off.
-  g[N.video] = { class_type: "CreateVideo", inputs: {
-    images, fps: FPS, audio: lockAudio ? [N.audioLock, 1] : [N.decodeA, 0],
-  }};
   // When the pipeline happens to be exactly one of the named combinations, put its number
   // in the filename. The metadata sidecar already records it, but a benchmark produces
   // dozens of clips that differ only in settings, and reading them back one sidecar at a
   // time to find out which is which is the slow way. A run that matches nothing is left
   // untagged rather than labelled something misleading.
   const presetTag = (matchPreset(state) || {}).id;
-  g[N.save] = { class_type: "SaveVideo", inputs: {
-    video: [N.video, 0],
-    filename_prefix: `${folder}/${stem}_clip${clipTag}${presetTag ? `_preset${presetTag}` : ""}`,
-    format: "auto", codec: "auto",
-  }};
+  saveVideoNode(g, { video: N.video, save: N.save }, images,
+    lockAudio ? [N.audioLock, 1] : [N.decodeA, 0], FPS,
+    `${folder}/${stem}_clip${clipTag}${presetTag ? `_preset${presetTag}` : ""}`, avail);
 
   // "Save the un-processed clip too" — a second file straight off the decode, before
   // deblur/upscale touched it. Only worth writing when something actually ran; the run
@@ -819,14 +836,9 @@ export function buildClipGraph(state, avail, opts = {}) {
   // or the last-frame chain — the processed clip stays the real one.
   const saveRawToo = !!state.saveUnprocessed && !!(deblurUsed || upscaleUsed);
   if (saveRawToo) {
-    g[N.videoRaw] = { class_type: "CreateVideo", inputs: {
-      images: preProcImages, fps: FPS, audio: lockAudio ? [N.audioLock, 1] : [N.decodeA, 0],
-    }};
-    g[N.saveRaw] = { class_type: "SaveVideo", inputs: {
-      video: [N.videoRaw, 0],
-      filename_prefix: `${folder}/${stem}_clip${clipTag}${presetTag ? `_preset${presetTag}` : ""}_raw`,
-      format: "auto", codec: "auto",
-    }};
+    saveVideoNode(g, { video: N.videoRaw, save: N.saveRaw }, preProcImages,
+      lockAudio ? [N.audioLock, 1] : [N.decodeA, 0], FPS,
+      `${folder}/${stem}_clip${clipTag}${presetTag ? `_preset${presetTag}` : ""}_raw`, avail);
   }
 
   // Final frame is saved as a PNG so the next clip can continue from it (and so the node
@@ -1064,10 +1076,8 @@ export function buildLtxUpscaleGraph(state, avail, opts = {}) {
   }
 
   // ── output ─────────────────────────────────────────────────────────────────
-  g[L.video] = { class_type: "CreateVideo", inputs: { images, fps, audio: [L.decA, 0] } };
-  g[L.save] = { class_type: "SaveVideo", inputs: {
-    video: [L.video, 0], filename_prefix: `${folder}/${stem}_LTXUP${saveSuffix}`, format: "auto", codec: "auto",
-  }};
+  saveVideoNode(g, { video: L.video, save: L.save }, images, [L.decA, 0], fps,
+    `${folder}/${stem}_LTXUP${saveSuffix}`, avail);
 
   const usedLoras = (state.ltxLoras || []).filter(l => l?.name && l.name !== "none" && l.enabled !== false)
     .map(l => ({ name: l.name, strength: l.strength ?? 1.0 }));
@@ -1302,12 +1312,8 @@ export function buildFaceRefineGraph(state, avail, opts = {}) {
     undetected_frames: state.frUndetected || "fade_out",
   }};
 
-  g[FR.video] = { class_type: "CreateVideo", inputs: {
-    images: [FR.stitch, 0], fps: FPS, audio: [N.audioLock, 1],
-  }};
-  g[FR.save] = { class_type: "SaveVideo", inputs: {
-    video: [FR.video, 0], filename_prefix: `${folder}/${stem}_FACEREFINE`, format: "auto", codec: "auto",
-  }};
+  saveVideoNode(g, { video: FR.video, save: FR.save }, [FR.stitch, 0], [N.audioLock, 1], FPS,
+    `${folder}/${stem}_FACEREFINE`, avail);
 
   const usedLoras = (state.frLoras || []).filter(l => l?.name && l.name !== "none" && l.enabled !== false)
     .map(l => ({ name: l.name, strength: l.strength ?? 1.0 }));
@@ -1415,14 +1421,8 @@ export function buildUpscaleGraph(opts, avail) {
     images = [P.apply, 0];
   }
 
-  g[P.video] = { class_type: "CreateVideo", inputs: {
-    images, fps: FPS, audio: [P.load, 2],
-  }};
-  g[P.save] = { class_type: "SaveVideo", inputs: {
-    video: [P.video, 0],
-    filename_prefix: `${folder}/${stem}${saveSuffix}`,
-    format: "auto", codec: "auto",
-  }};
+  saveVideoNode(g, { video: P.video, save: P.save }, images, [P.load, 2], FPS,
+    `${folder}/${stem}${saveSuffix}`, avail);
   return { graph: g, saveNode: P.save };
 }
 
@@ -1470,14 +1470,8 @@ export function buildInterpolateGraph(opts, avail) {
     use_fp16: useFp16 !== false,
   }};
 
-  g[P.video] = { class_type: "CreateVideo", inputs: {
-    images: [P.rife, 0], fps: dstFps, audio: [P.load, 2],
-  }};
-  g[P.save] = { class_type: "SaveVideo", inputs: {
-    video: [P.video, 0],
-    filename_prefix: `${folder}/${stem}${saveSuffix ?? `_${Math.round(dstFps)}fps`}`,
-    format: "auto", codec: "auto",
-  }};
+  saveVideoNode(g, { video: P.video, save: P.save }, [P.rife, 0], [P.load, 2], dstFps,
+    `${folder}/${stem}${saveSuffix ?? `_${Math.round(dstFps)}fps`}`, avail);
   return { graph: g, saveNode: P.save };
 }
 
