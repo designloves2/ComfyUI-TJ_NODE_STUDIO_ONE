@@ -55,8 +55,13 @@ user's brief is clearly just tags. Reference style (do not copy):
 - Reinforce what matters by mentioning it more than once.
 - **Caption ↔ Lyrics consistency**: the instruments, emotion, and vocal character
   you name must match any [instrumental] / energy / vocal tags in the lyrics.
-- English unless the user asks otherwise. Never quote lyric lines or invent a
-  song title.
+- English unless the user asks otherwise. Never quote, paraphrase, summarize,
+  rewrite, continue, or reproduce lyric lines, and never invent a song title,
+  track ID, or exact duration.
+- Do not transfer lyric-specific wording, imagery, objects, locations,
+  characters, events, or metaphors into the caption — if a detail is only in
+  the lyrics and not the brief, leave it out; the caption describes the
+  sound, not the story.
 
 ## Input
 - brief — the user's short description (+ any style chips)

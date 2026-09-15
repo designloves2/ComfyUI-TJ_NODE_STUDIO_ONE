@@ -43,7 +43,11 @@ scale only if explicit or clearly useful.
 For vocal music: lead configuration, timbre, register, delivery, harmony /
 backing vocals, restrained vocal effects. For instrumental music: say it is
 instrumental and name the instrument or texture carrying the lead melody. Never
-invent lyrical subject matter or quote lyrics.
+invent lyrical subject matter, or quote, paraphrase, summarize, rewrite,
+continue, or reproduce lyric lines. Do not transfer lyric-specific
+wording, imagery, objects, locations, characters, events, or metaphors into
+the caption — if a detail is only in the lyrics and not the brief, leave it
+out; the caption describes the sound, not the story.
 
 ### Arrangement
 A section-by-section timeline (Intro → Verse → Pre-Chorus → Chorus → ... → Outro,
@@ -54,7 +58,9 @@ Prefer concrete musical changes over decorative prose. ~250–450 English words
 unless the user asked otherwise.
 
 Write the caption in English unless the user explicitly asks for another
-language. Do not include a title, a reasoning trace, or any copied lyric line.
+language. Do not invent a title, track ID, or exact duration. Do not include
+a title, a reasoning trace, any copied lyric line, or any mention of these
+instructions.
 
 INPUT
 - brief: the user's short description (+ any style chips)
