@@ -296,6 +296,20 @@ export function createSettingsOverlay(state, ctx) {
     return _orModels;
   }
 
+  // Same local llama.cpp backend the image nodes' shared Enhance/Image→Prompt panel
+  // already uses (web/shared/llm_panel.js) — /tj_studio_one/llm/* is served by this
+  // pack's own nodes.py (_try_import_tj_llm dynamically loads TJ_NODE's prompt_enhancer.py
+  // / image_to_prompt.py), not a separate route namespace, so H3 reuses it as-is.
+  let _llamaModels = null;
+  async function llamaModels() {
+    if (_llamaModels) return _llamaModels;
+    try {
+      const d = await (await fetch("/tj_studio_one/llm/models")).json();
+      _llamaModels = { gguf: d.gguf || [], mmproj: d.mmproj || [], available: !!d.local_available };
+    } catch { _llamaModels = { gguf: [], mmproj: [], available: false }; }
+    return _llamaModels;
+  }
+
   function _selEl(opts) {
     return el("select", { style: {
       width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
@@ -327,18 +341,50 @@ export function createSettingsOverlay(state, ctx) {
       if (!state[backendKey]) state[backendKey] = (isLtx ? null : state.h3LlmBackend) || defaultBackend || "native";
       if (!state[orModelKey] && !isLtx) state[orModelKey] = state.h3OrModel || "";
       const isOR = state[backendKey] === "openrouter";
+      const isLlama = state[backendKey] === "llamagguf";
       if (isOR) anyOR = true;
 
       const beSel = _selEl([
-        el("option", { value: "native",     text: "Native (ComfyUI CLIP)", ...(!isOR ? { selected: "selected" } : {}) }),
+        el("option", { value: "native",     text: "Native (ComfyUI CLIP)", ...((!isOR && !isLlama) ? { selected: "selected" } : {}) }),
         el("option", { value: "openrouter", text: "OpenRouter (cloud)",     ...(isOR ? { selected: "selected" } : {}) }),
+        el("option", { value: "llamagguf",  text: "Llama GGUF (local llama.cpp)", ...(isLlama ? { selected: "selected" } : {}) }),
       ]);
       beSel.addEventListener("change", () => {
         state[backendKey] = beSel.value; ctx.persist(); renderModelPickers();
       });
 
       let control;
-      if (isOR) {
+      if (isLlama) {
+        // clipKey tells vision role from brief role ("nativeVisionClip" vs "nativeBriefClip")
+        // the same way the OpenRouter branch below reads orModelKey — reused here so this
+        // stays one function instead of splitting vision/brief into separate ones.
+        const isVisionRole = clipKey === "nativeVisionClip";
+        const ggufKey = isVisionRole ? "h3LlamaVisionModel" : "h3LlamaBriefModel";
+        const holder = el("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } });
+        holder.appendChild(el("div", { text: "loading gguf models…", style: { fontSize: "11px", color: C.muted } }));
+        llamaModels().then(d => {
+          clear(holder);
+          if (!d.available) {
+            holder.appendChild(el("div", {
+              html: "⚠ Local GGUF LLM not available — TJ_NODE not installed, or its llm files failed to load.",
+              style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
+            return;
+          }
+          const ggufList = d.gguf.length ? d.gguf : ["(none found)"];
+          if (!state[ggufKey] && d.gguf[0]) { state[ggufKey] = d.gguf[0]; ctx.persist(); }
+          const ggufPick = searchableSelect(ggufList, state[ggufKey] || ggufList[0],
+            v => { state[ggufKey] = v; ctx.persist(); });
+          holder.appendChild(col([label("GGUF model"), ggufPick.el]));
+          if (isVisionRole) {
+            const mmList = d.mmproj.length ? d.mmproj : ["none"];
+            if (!state.h3LlamaVisionMmproj) { state.h3LlamaVisionMmproj = "none"; ctx.persist(); }
+            const mmPick = searchableSelect(mmList, state.h3LlamaVisionMmproj || "none",
+              v => { state.h3LlamaVisionMmproj = v; ctx.persist(); });
+            holder.appendChild(col([label("mmproj (vision projector — required to actually see the image)"), mmPick.el]));
+          }
+        });
+        control = holder;
+      } else if (isOR) {
         // full OpenRouter model list, searchable — no vision-capability filter, the
         // user picks (qwen-vl flash, gemini, whatever). Default is a soft pre-select only.
         const cfgKey = orModelKey === "h3OrModelVision" ? "h3_or_model_vision"
@@ -676,6 +722,9 @@ export function createSettingsOverlay(state, ctx) {
       h3_vision_backend:     state.h3VisionBackend   || state.h3LlmBackend || "native",
       h3_or_model_brief:     state.h3OrModelBrief    || state.h3OrModel || "",
       h3_or_model_vision:    state.h3OrModelVision   || state.h3OrModel || "",
+      h3_llama_vision_model:  state.h3LlamaVisionModel  || "",
+      h3_llama_vision_mmproj: state.h3LlamaVisionMmproj || "",
+      h3_llama_brief_model:   state.h3LlamaBriefModel   || "",
       filename_prefix:       state.filenamePrefix    || "MMH3",
       stitch_at_end:         state.stitchAtEnd       ?? true,
       trim_last_clip:        state.trimLastClip      ?? false,
@@ -800,6 +849,9 @@ export function createSettingsOverlay(state, ctx) {
     if (cfg.h3_vision_backend)        state.h3VisionBackend  = cfg.h3_vision_backend;
     if (cfg.h3_or_model_brief)        state.h3OrModelBrief   = cfg.h3_or_model_brief;
     if (cfg.h3_or_model_vision)       state.h3OrModelVision  = cfg.h3_or_model_vision;
+    if (cfg.h3_llama_vision_model)    state.h3LlamaVisionModel  = cfg.h3_llama_vision_model;
+    if (cfg.h3_llama_vision_mmproj)   state.h3LlamaVisionMmproj = cfg.h3_llama_vision_mmproj;
+    if (cfg.h3_llama_brief_model)     state.h3LlamaBriefModel   = cfg.h3_llama_brief_model;
     if (cfg.filename_prefix)          state.filenamePrefix   = cfg.filename_prefix;
     // save_subfolder was written on every Save All but never read back — the Output tab
     // (and the gallery, and every "From gallery" picker) always came back to the

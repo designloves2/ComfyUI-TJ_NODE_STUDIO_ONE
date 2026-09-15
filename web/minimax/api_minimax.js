@@ -659,6 +659,49 @@ export async function writeBriefOpenRouter(systemPrompt, userPrompt, orModel) {
 }
 
 /**
+ * Local Llama.cpp GGUF vision — describes ONE image. This is the same
+ * /tj_studio_one/llm/image_to_prompt route the image nodes' shared Enhance/Image→Prompt
+ * panel already uses (web/shared/llm_panel.js), served by this pack's own nodes.py
+ * (_try_import_tj_llm loads TJ_NODE's image_to_prompt.py). Unlike the native
+ * TextGenerate path, it takes one image per call — no true multi-image batching — so
+ * the caller (ui_prompt_edit_minimax.js) loops this once per reference image.
+ */
+export async function analyzeImageLlama(imageB64, ggufModel, mmprojFile, customInstruction) {
+  const r = await api.fetchApi("/tj_studio_one/llm/image_to_prompt", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      image_b64: imageB64, backend: "local",
+      gguf_model: ggufModel || "", mmproj_file: mmprojFile || "none",
+      vision_task: "Caption (plain description)",
+      custom_instruction: customInstruction || "",
+    }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "Llama GGUF vision failed");
+  return d.result;
+}
+
+/** Local Llama.cpp GGUF brief writing — /tj_studio_one/llm/enhance with
+ *  model_format "Minimax H3 (Video)", the same instruction TJ_NODE's model_formats.json
+ *  entry supplies to the native/OpenRouter paths (see system_prompt below is unused here
+ *  since this route builds its own system prompt server-side from model_format). */
+export async function writeBriefLlama(userPrompt, ggufModel) {
+  const r = await api.fetchApi("/tj_studio_one/llm/enhance", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt: userPrompt, backend: "local",
+      gguf_model: ggufModel || "",
+      model_format: "Minimax H3 (Video)",
+      purpose: "Video",
+      max_tokens: 2000,
+    }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "Llama GGUF brief failed");
+  return d.result;
+}
+
+/**
  * Which of these input-folder filenames are gone.
  *
  * Asked as one request rather than a HEAD per file: a prompt set can reference a dozen

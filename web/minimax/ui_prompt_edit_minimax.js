@@ -13,7 +13,7 @@ import { openVideoGalleryPicker } from "./ui_video_picker_minimax.js";
 import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
 import { openAudioGalleryPicker } from "../shared/ui_audio_gallery_picker.js";
 import { ask } from "../shared/ui_ask.js";
-import { getMediaFiles, getSystemPrompt, uploadImage, uploadMedia, analyzeImagesNative, writeBriefNative, analyzeImagesOpenRouter, writeBriefOpenRouter, listPromptSets, getPromptSet, savePromptSet, deletePromptSet, missingInputFiles } from "./api_minimax.js";
+import { getMediaFiles, getSystemPrompt, uploadImage, uploadMedia, analyzeImagesNative, writeBriefNative, analyzeImagesOpenRouter, writeBriefOpenRouter, analyzeImageLlama, writeBriefLlama, listPromptSets, getPromptSet, savePromptSet, deletePromptSet, missingInputFiles } from "./api_minimax.js";
 
 // A prompt entry may still arrive as a plain string (mid-migration data); normalize once.
 function normPrompt(p) {
@@ -1129,11 +1129,16 @@ ${name}`, style: {
     const images = enhMode === "image"
       ? a.refImages.slice(0, imageBriefMax(state.briefImageMode))
       : [];
-    // Brief and Vision each choose their own backend (native CLIP vs OpenRouter).
+    // Brief and Vision each choose their own backend (native CLIP vs OpenRouter vs the
+    // local Llama GGUF backend the image nodes' shared Enhance panel already has).
     const briefOR  = (state.h3BriefBackend  || state.h3LlmBackend) === "openrouter";
     const visionOR = (state.h3VisionBackend || state.h3LlmBackend) === "openrouter";
-    if (!briefOR && !state.nativeBriefClip) { ctx.showPopup?.("No brief CLIP set - pick one in Settings, or switch the Brief backend to OpenRouter.", true); return; }
-    if (images.length && !visionOR && !state.nativeVisionClip) { ctx.showPopup?.("No vision CLIP set - pick one in Settings, or switch the Vision backend to OpenRouter.", true); return; }
+    const briefLlama  = (state.h3BriefBackend  || state.h3LlmBackend) === "llamagguf";
+    const visionLlama = (state.h3VisionBackend || state.h3LlmBackend) === "llamagguf";
+    if (!briefOR && !briefLlama && !state.nativeBriefClip) { ctx.showPopup?.("No brief CLIP set - pick one in Settings, or switch the Brief backend to OpenRouter/Llama GGUF.", true); return; }
+    if (images.length && !visionOR && !visionLlama && !state.nativeVisionClip) { ctx.showPopup?.("No vision CLIP set - pick one in Settings, or switch the Vision backend to OpenRouter/Llama GGUF.", true); return; }
+    if (briefLlama && !state.h3LlamaBriefModel) { ctx.showPopup?.("No Llama GGUF brief model set - pick one in Settings.", true); return; }
+    if (images.length && visionLlama && !state.h3LlamaVisionModel) { ctx.showPopup?.("No Llama GGUF vision model set - pick one in Settings.", true); return; }
 
     const target = targetSel.value;
     const base = (editor.value || "").trim();
@@ -1146,15 +1151,29 @@ ${name}`, style: {
     try {
       let imageSummary = "";
       if (images.length) {
-        // One call, whole batch - this path attends to every image at once (verified:
-        // SPEC_MINIMAX_H3_NEXT_ROUND.md C5). The instruction asks for them to stay
-        // separated in the answer since nothing downstream re-splits them.
         progressStage(`Analyzing ${images.length} image${images.length > 1 ? "s" : ""}...`);
-        const prompt = `${VISION_SYSTEM_PROMPT} There are ${images.length} images, in order. `
-          + `Describe each one separately, each on its own line starting with "Image N: ".`;
-        imageSummary = (visionOR
-          ? await analyzeImagesOpenRouter(images, prompt, state.h3OrModelVision || state.h3OrModel)
-          : await analyzeImagesNative(state.nativeVisionClip, images, prompt)).trim();
+        if (visionLlama) {
+          // The shared /tj_studio_one/llm/image_to_prompt route (same one the image
+          // nodes' Enhance panel uses) takes one image per call - no true multi-image
+          // batching like the native TextGenerate path has - so loop client-side.
+          const lines = [];
+          for (let i = 0; i < images.length; i++) {
+            progressStage(`Analyzing image ${i + 1}/${images.length}...`);
+            const b64 = await imageToB64(images[i]);
+            const desc = await analyzeImageLlama(b64, state.h3LlamaVisionModel, state.h3LlamaVisionMmproj, VISION_SYSTEM_PROMPT);
+            lines.push(String(desc || "").trim());
+          }
+          imageSummary = lines.join("\n");
+        } else {
+          // One call, whole batch - this path attends to every image at once (verified:
+          // SPEC_MINIMAX_H3_NEXT_ROUND.md C5). The instruction asks for them to stay
+          // separated in the answer since nothing downstream re-splits them.
+          const prompt = `${VISION_SYSTEM_PROMPT} There are ${images.length} images, in order. `
+            + `Describe each one separately, each on its own line starting with "Image N: ".`;
+          imageSummary = (visionOR
+            ? await analyzeImagesOpenRouter(images, prompt, state.h3OrModelVision || state.h3OrModel)
+            : await analyzeImagesNative(state.nativeVisionClip, images, prompt)).trim();
+        }
         // The vision model is only asked to number its own lines "Image N: ..." — it does
         // not reliably count correctly (reported: 4 images came back labelled Image
         // 1/4/5/6). buildUserPrompt() below tells the brief model these lines are
@@ -1170,7 +1189,9 @@ ${name}`, style: {
       }
 
       progressStage("Writing brief...");
-      const text = (briefOR
+      const text = (briefLlama
+        ? await writeBriefLlama(buildUserPrompt(base, imageSummary), state.h3LlamaBriefModel)
+        : briefOR
         ? await writeBriefOpenRouter(systemPrompt, buildUserPrompt(base, imageSummary), state.h3OrModelBrief || state.h3OrModel)
         : await writeBriefNative(state.nativeBriefClip, systemPrompt, buildUserPrompt(base, imageSummary))).trim();
       if (!text) throw new Error("empty response");

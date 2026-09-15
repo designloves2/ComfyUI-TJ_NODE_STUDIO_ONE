@@ -1142,10 +1142,15 @@ export function defaultState(saved) {
     h3LlmBackend:     saved.h3LlmBackend     || "native",   // legacy single (migrates to the pair below)
     h3OrModel:        saved.h3OrModel        || "",
     // Brief (writes the prompt) and Vision (reads images) pick their backend + model independently
-    h3BriefBackend:   saved.h3BriefBackend   || saved.h3LlmBackend || "native",   // "native" | "openrouter"
+    h3BriefBackend:   saved.h3BriefBackend   || saved.h3LlmBackend || "native",   // "native" | "openrouter" | "llamagguf"
     h3VisionBackend:  saved.h3VisionBackend  || saved.h3LlmBackend || "native",
     h3OrModelBrief:   saved.h3OrModelBrief   || saved.h3OrModel || "",
     h3OrModelVision:  saved.h3OrModelVision  || saved.h3OrModel || "",
+    // Llama GGUF (local llama.cpp, via TJ_NODE's prompt_enhancer.py/image_to_prompt.py —
+    // the same backend the image nodes' shared Enhance/Image→Prompt panel already uses).
+    h3LlamaVisionModel:  saved.h3LlamaVisionModel  || "",
+    h3LlamaVisionMmproj: saved.h3LlamaVisionMmproj || "none",
+    h3LlamaBriefModel:   saved.h3LlamaBriefModel   || "",
 
     // output
     saveSubfolder: saved.saveSubfolder || "",
