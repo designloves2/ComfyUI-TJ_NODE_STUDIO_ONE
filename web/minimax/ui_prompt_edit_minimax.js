@@ -667,8 +667,24 @@ This cannot be undone.`,
   const enhSpin = el("span", { text: "⟳", style: {
     display: "none", animation: "mmh3-spin 0.8s linear infinite", fontSize: "13px",
   }});
-  const enhBtnLabel = el("span", { text: "✨ Enhance" });
+  const enhBtnLabel = el("span", { text: "✨ Prompt Write" });
   enhBtn.append(enhSpin, enhBtnLabel);
+
+  // Refine — revises an ALREADY-WRITTEN prompt from a typed instruction, instead of
+  // writing a fresh one from scratch. Modeled on ComfyUI-MiniMaxH3-Prompt-Writer's
+  // assemble_refinement(): text-only (no re-attached images), current prompt + the
+  // instruction go to the same brief model, and the result goes through the exact same
+  // review overlay as Prompt Write (one / split / manual / apply / discard / again).
+  const refineBtn = el("button", { type: "button", style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "12px", padding: "7px 16px",
+    borderRadius: "6px", background: C.bg2, color: "#fff", border: `1px solid ${BRAND}`, fontWeight: "700",
+    display: "inline-flex", alignItems: "center", gap: "6px",
+  }});
+  const refineSpin = el("span", { text: "⟳", style: {
+    display: "none", animation: "mmh3-spin 0.8s linear infinite", fontSize: "13px",
+  }});
+  const refineBtnLabel = el("span", { text: "🔧 Prompt Refine" });
+  refineBtn.append(refineSpin, refineBtnLabel);
 
   // How long the finished piece should be. Only the LLM briefing uses it: it decides how
   // many shots to ask for. The run's real length still comes from the prompts that come
@@ -951,7 +967,7 @@ ${name}`, style: {
   enhBtn.style.flexShrink = "0";
   enhBottom.append(targetSel,
     el("div", { text: "Length", style: { fontSize: "11px", color: C.muted, flexShrink: "0" } }),
-    lenIn, lenTag, enhBtn);
+    lenIn, lenTag, enhBtn, refineBtn);
   enhWrap.append(enhTop, imgRow, enhBottom);
 
   // ── collapse ───────────────────────────────────────────────────────────────
@@ -1091,6 +1107,29 @@ ${name}`, style: {
     return lines.join("\n");
   }
 
+  // Refine: revise an already-written prompt from a typed instruction. Text-only (no
+  // images re-attached), same "final check" reinforcement appended last for recency —
+  // mirrors ComfyUI-MiniMaxH3-Prompt-Writer's assemble_refinement().
+  function buildRefineUserPrompt(currentPrompt, instruction) {
+    const lines = [
+      "Rewrite the current brief according to the revision instruction below.",
+      "Return only the complete revised brief. Do not discuss the changes, do not add commentary.",
+      "",
+      "Current brief:",
+      currentPrompt || "(empty)",
+      "",
+      "Revision instruction:",
+      instruction,
+      "",
+      "Final check before you write: keep everything from the current brief that the instruction "
+      + "doesn't ask you to change. Apply only what the instruction actually asks for — do not "
+      + "invent unrelated actions, props, on-screen text, dialogue, locations, music or ambient "
+      + "sound beyond what it asks for or clearly implies. Output only the revised brief text, "
+      + "nothing else.",
+    ];
+    return lines.join("\n");
+  }
+
   // Vision calls stay factual and format-free on purpose — Shot structure, <Picture N>
   // tags and duration all belong to the brief model, which never has to fight a vision
   // model's idea of "brief" formatting.
@@ -1226,9 +1265,55 @@ ${name}`, style: {
       ctx.showPopup?.(`Enhance failed: ${e.message}`, true);
     } finally {
       progressStop();
-      busy = false; enhBtn.disabled = false; enhSpin.style.display = "none"; enhBtnLabel.textContent = "✨ Enhance";
+      busy = false; enhBtn.disabled = false; enhSpin.style.display = "none"; enhBtnLabel.textContent = "✨ Prompt Write";
     }
   });
+
+  let lastRefineInstruction = "";
+  async function doRefine() {
+    if (busy) return;
+    const briefOR    = (state.h3BriefBackend || state.h3LlmBackend) === "openrouter";
+    const briefLlama = (state.h3BriefBackend || state.h3LlmBackend) === "llamagguf";
+    if (!briefOR && !briefLlama && !state.nativeBriefClip) { ctx.showPopup?.("No brief CLIP set - pick one in Settings, or switch the Brief backend to OpenRouter/Llama GGUF.", true); return; }
+    if (briefLlama && !state.h3LlamaBriefModel) { ctx.showPopup?.("No Llama GGUF brief model set - pick one in Settings.", true); return; }
+
+    const current = (editor.value || "").trim();
+    if (!current) { ctx.showPopup?.("Nothing to refine yet — write a prompt first.", true); return; }
+
+    const instruction = await ask(ov, {
+      title: "Refine prompt",
+      message: "What should change in the current prompt?",
+      initial: lastRefineInstruction,
+      kind: "text",
+      okLabel: "Refine",
+    });
+    if (!instruction || !instruction.trim()) return;
+    lastRefineInstruction = instruction.trim();
+
+    busy = true;
+    refineBtn.disabled = true;
+    refineSpin.style.display = "inline-block"; refineBtnLabel.textContent = "Refining...";
+    statusTag.textContent = "refining..."; statusTag.style.color = BRAND;
+    try {
+      const userPrompt = buildRefineUserPrompt(current, lastRefineInstruction);
+      const text = (briefLlama
+        ? await writeBriefLlama(userPrompt, state.h3LlamaBriefModel, state.h3LlamaNCtx, state.h3LlamaMaxTokens)
+        : briefOR
+        ? await writeBriefOpenRouter(systemPrompt, userPrompt, state.h3OrModelBrief || state.h3OrModel)
+        : await writeBriefNative(state.nativeBriefClip, systemPrompt, userPrompt)).trim();
+      if (!text) throw new Error("empty response");
+      openReview(text, "one", "refine");
+      statusTag.textContent = "review the result";
+      statusTag.style.color = C.ok;
+    } catch (e) {
+      statusTag.textContent = `⚠ ${String(e.message).slice(0, 90)}`;
+      statusTag.style.color = C.err;
+      ctx.showPopup?.(`Refine failed: ${e.message}`, true);
+    } finally {
+      busy = false; refineBtn.disabled = false; refineSpin.style.display = "none"; refineBtnLabel.textContent = "🔧 Prompt Refine";
+    }
+  }
+  refineBtn.addEventListener("click", doRefine);
 
   // ── LLM result review ──────────────────────────────────────────────────────
   // The model's answer lands here first. It's shown already separated into the common
@@ -1239,7 +1324,11 @@ ${name}`, style: {
     background: "rgba(11,11,11,0.985)", borderRadius: "inherit",
     flexDirection: "column", padding: "12px", gap: "8px", boxSizing: "border-box",
   }});
-  let reviewText = "", reviewTarget = "one";
+  let reviewText = "", reviewTarget = "one", reviewKind = "write";
+  // Set by openRefine() when the main-screen Refine button opened `ov` purely to host
+  // the review overlay (see openRefine's comment) — once the user is done, close `ov`
+  // back up too instead of leaving the full Prompt Edit popup sitting open behind it.
+  let refineOnlyMode = false;
   // How the result gets applied — chosen AFTER the model answers, on this screen:
   //   "one"    the whole brief as one paragraph into the current clip's shot field only
   //   "split"  parsed into common header / shots / sound-music tail (the old behaviour)
@@ -1249,7 +1338,8 @@ ${name}`, style: {
   let reviewParsed = { header: "", shots: [], footer: "" };
 
   const rvHdr = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" } });
-  rvHdr.appendChild(el("div", { text: "✨ Enhance result", style: { color: "#fff", fontSize: "13px", fontWeight: "700" } }));
+  const rvHdrTitle = el("div", { text: "✨ Prompt Write result", style: { color: "#fff", fontSize: "13px", fontWeight: "700" } });
+  rvHdr.appendChild(rvHdrTitle);
   const rvInfo = el("div", { style: { fontSize: "10.5px", color: C.muted, flex: "1" } });
   rvHdr.appendChild(rvInfo);
 
@@ -1283,7 +1373,7 @@ ${name}`, style: {
     cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "6px 12px",
     borderRadius: "6px", background: C.bg2, color: C.muted, border: `1px solid ${C.border}`,
   }});
-  const rvAgain = el("button", { type: "button", text: "↻ Enhance again", style: {
+  const rvAgain = el("button", { type: "button", text: "↻ Write again", style: {
     cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "6px 12px",
     borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
   }});
@@ -1363,10 +1453,12 @@ ${name}`, style: {
     :                           `Replaces clip ${selected + 1}${p.header || p.footer ? " and the common parts" : ""}.`;
   }
 
-  function openReview(text, target) {
-    reviewText = text; reviewTarget = target;
+  function openReview(text, target, kind) {
+    reviewText = text; reviewTarget = target; reviewKind = kind || "write";
+    rvHdrTitle.textContent = reviewKind === "refine" ? "🔧 Prompt Refine result" : "✨ Prompt Write result";
+    rvAgain.textContent = reviewKind === "refine" ? "↻ Refine again" : "↻ Write again";
     reviewParsed = parseBrief(text);
-    reviewMode = "split";
+    reviewMode = reviewKind === "refine" ? "one" : "split";
     reviewSel.clear();
     // Manual mode starts with everything ticked, so "select" == "auto split" until the
     // user removes a card, rather than starting from an empty apply.
@@ -1415,6 +1507,7 @@ ${name}`, style: {
     }
     ctx.persist();
     reviewOv.style.display = "none";
+    if (refineOnlyMode) { ov.style.display = "none"; refineOnlyMode = false; }
     renderAll(); onApply?.();
     statusTag.textContent = "applied";
     statusTag.style.color = C.ok;
@@ -1422,10 +1515,14 @@ ${name}`, style: {
 
   rvCancel.addEventListener("click", () => {
     reviewOv.style.display = "none";
+    if (refineOnlyMode) { ov.style.display = "none"; refineOnlyMode = false; }
     statusTag.textContent = "discarded";
     statusTag.style.color = C.muted;
   });
-  rvAgain.addEventListener("click", () => { reviewOv.style.display = "none"; enhBtn.click(); });
+  rvAgain.addEventListener("click", () => {
+    reviewOv.style.display = "none";
+    if (reviewKind === "refine") doRefine(); else enhBtn.click();
+  });
 
   // ── split dialog ───────────────────────────────────────────────────────────
   // 8s holds one to three shots, so "one shot per clip" is usually wrong. The parsed
@@ -1626,6 +1723,24 @@ ${name}`, style: {
     /** Pull header/footer back in after the Common Prompt popup edited them. */
     syncCommon() {
       refreshFraming();
+    },
+    /** Run Refine for one clip without navigating into the full Prompt Edit popup —
+     * used by the main screen's own Refine button next to Common. `reviewOv` is an
+     * absolute-inset child of `ov` and only paints while `ov` is displayed, so this
+     * still shows `ov` underneath, but the review card (or the instruction dialog
+     * that precedes it) fully covers it — the user never sees the tabs/editor. */
+    openRefine(idx) {
+      const wasOpen = ov.style.display !== "none";
+      refineOnlyMode = !wasOpen;
+      ov.style.display = "flex";
+      if (!state.prompts || !state.prompts.length) state.prompts = [{ text: "", firstFrame: "", enabled: true }];
+      if (idx != null) selected = idx;
+      if (selected >= state.prompts.length) selected = 0;
+      if (!systemPrompt) loadSystemPrompt();
+      loadSelected();
+      doRefine().finally(() => {
+        if (refineOnlyMode && reviewOv.style.display === "none") ov.style.display = "none";
+      });
     },
   };
 }
