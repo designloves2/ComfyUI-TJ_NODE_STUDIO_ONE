@@ -81,11 +81,21 @@ const RECIPE_KEYS = [
   "steps", "sampler", "scheduler", "denoise", "shiftVideo", "shiftAudio",
   "turboSteps", "slaTurboSteps",
   "turboLora", "turboLoraReference", "pddFile", "pddFileReference", "slaTurboLora",
+  // The general LoRA panel (up to 4, character/style) — a saved user preset is meant to
+  // be a whole recipe, and this is part of it (user: "로라도 저장하게 해줘"). Cloned on
+  // both the save and apply side (see cloneVal below) so a preset's own array is never
+  // the SAME array as the live panel's — editing one must not silently edit the other.
+  "loras",
 ];
+
+// Shallow-clones an array of plain objects (loras); anything else passes through as-is.
+// Good enough here since every RECIPE_KEYS value is either a primitive or a flat array
+// of flat objects — nothing nested deeper than that shows up in this list.
+const cloneVal = (v) => Array.isArray(v) ? v.map(x => (x && typeof x === "object") ? { ...x } : x) : v;
 
 function recipeOf(state) {
   const out = {};
-  for (const k of RECIPE_KEYS) if (state[k] !== undefined) out[k] = state[k];
+  for (const k of RECIPE_KEYS) if (state[k] !== undefined) out[k] = cloneVal(state[k]);
   return out;
 }
 
@@ -101,7 +111,15 @@ export function captureAxes(state) {
  * "preset 18" in the report, and the id ends up in clip filenames and metadata.
  */
 export function allPresets(userPresets) {
+  // `...p` first so every RECIPE_KEYS field a saved preset carries (steps, sampler,
+  // turboLora/pddFile/slaTurboLora, and now loras) rides along on the object that
+  // actually reaches applyPreset() — without it, this function silently stripped every
+  // saved user preset down to just its pipeline axes, so a preset's own recipe fields
+  // were captured on Save but never actually restored on Apply. The explicit fields
+  // after normalize the ones this dropdown itself reads (booleans coerced, id/label/
+  // phase/note replaced for display).
   const mine = (userPresets || []).map(p => ({
+    ...p,
     id: `u:${p.name}`, user: true, phase: "My preset", label: p.name, note: "",
     turbo: p.turbo, backend: p.backend, forward: p.forward, cache: p.cache,
     spectrum: !!p.spectrum, torch: p.torch !== false, fused: !!p.fused,
@@ -160,5 +178,7 @@ export function applyPreset(state, preset) {
   // lands on the same configuration the preset described.
   state.fp16Accum = true;
   // Restore the user-recipe fields when the preset carries them (built-ins do not).
-  for (const k of RECIPE_KEYS) if (preset[k] !== undefined) state[k] = preset[k];
+  // A preset applying overwrites outright (state.loras = ...), same as Reuse Setting's
+  // own loras restore — it replaces the panel's current LoRA list, not merges into it.
+  for (const k of RECIPE_KEYS) if (preset[k] !== undefined) state[k] = cloneVal(preset[k]);
 }

@@ -5004,6 +5004,7 @@ app.registerExtension({
           renderLeft();
         },
         captureAxes: () => captureAxes(state),
+        showPopup,
       });
 
       galleryOv = createGalleryOverlay(state, ctx);

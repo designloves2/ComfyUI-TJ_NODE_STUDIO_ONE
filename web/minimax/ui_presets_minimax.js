@@ -93,6 +93,8 @@ function ask(parent, { title, message, initial = "", kind = "text", okLabel = "O
  * @param ctx.getUserPresets  () => array of saved presets
  * @param ctx.setUserPresets  (arr) => persist and re-render
  * @param ctx.captureAxes     () => the axes object to store for a new preset
+ * @param ctx.showPopup       (msg, isError) => the node's own bottom-of-panel toast,
+ *                            used to report an export/import result
  */
 export function createPresetDialogs(rootEl, ctx) {
   // ── save ────────────────────────────────────────────────────────────────────
@@ -196,9 +198,60 @@ This cannot be undone.`,
     });
   }
 
+  // ── export / import — a saved preset lives only in this browser's own userPresets
+  // (localStorage) plus the server-side config mirror; there was no way to carry one to
+  // another machine/browser or hand it to someone else short of retyping every field.
+  const fileIn = el("input", { type: "file", accept: "application/json,.json", style: { display: "none" } });
+  function doExport() {
+    const list = ctx.getUserPresets();
+    if (!list.length) { ctx.showPopup?.("No saved presets to export.", true); return; }
+    const blob = new Blob([JSON.stringify(list, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "mmh3_presets.json";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  fileIn.addEventListener("change", async () => {
+    const f = fileIn.files?.[0];
+    fileIn.value = "";
+    if (!f) return;
+    try {
+      const data = JSON.parse(await f.text());
+      // Accept either a plain export (an array) or a wrapped one ({ presets: [...] }),
+      // so a hand-edited or re-wrapped file still imports.
+      const incoming = Array.isArray(data) ? data : (Array.isArray(data?.presets) ? data.presets : null);
+      if (!incoming) throw new Error("not a preset export file");
+      const clean = incoming.filter(p => p && typeof p.name === "string" && p.name.trim());
+      if (!clean.length) throw new Error("no valid presets in file");
+      // Same rule Save uses for a name collision: the imported copy overwrites the
+      // existing one outright rather than silently making a second entry with the same
+      // name (which would be indistinguishable in the dropdown).
+      const list = ctx.getUserPresets();
+      let added = 0, overwritten = 0;
+      for (const p of clean) {
+        const i = list.findIndex(q => q.name.toLowerCase() === p.name.toLowerCase());
+        if (i >= 0) { list[i] = { ...p }; overwritten++; } else { list.push({ ...p }); added++; }
+      }
+      ctx.setUserPresets(list);
+      renderList();
+      ctx.showPopup?.(`Imported ${clean.length} preset${clean.length > 1 ? "s" : ""} `
+        + `(${added} new, ${overwritten} overwritten).`, false);
+    } catch (e) {
+      ctx.showPopup?.(`Import failed: ${e?.message || e}`, true);
+    }
+  });
+  const ioRow = el("div", { style: { display: "flex", gap: "8px" } });
+  ioRow.append(
+    button("⬇ Export", doExport),
+    button("⬆ Import", () => fileIn.click()),
+    fileIn,
+  );
+
   mgDlg.body.append(
     el("div", { text: "Drag to reorder. The built-in presets below your own cannot be changed.",
       style: { fontSize: "11px", color: C.muted, lineHeight: "1.5" } }),
+    ioRow,
     listEl,
   );
 
