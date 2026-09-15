@@ -481,7 +481,14 @@ export function queuePrompt(promptGraph, { onProgress, onNode, onQueued, sampler
       const resp = await api.fetchApi("/prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: promptGraph, client_id: api.clientId }),
+        // VHS_VideoCombine reads these two flags from extra_pnginfo.workflow.extra (its
+        // own node inputs have no such widgets) — without them it leaves a video-only
+        // intermediate AND a first-frame PNG sitting next to the real "-audio" output,
+        // both of which the gallery then lists as their own separate cards.
+        body: JSON.stringify({ prompt: promptGraph, client_id: api.clientId,
+          extra_data: { extra_pnginfo: { workflow: { extra: {
+            VHS_KeepIntermediate: false, VHS_MetadataImage: false,
+          } } } } }),
       });
       const data = await resp.json();
       if (data.error) {
