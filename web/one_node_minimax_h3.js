@@ -2269,13 +2269,68 @@ app.registerExtension({
             ? `${ltxL.filter(l => l?.name && l.name !== "none" && l.enabled !== false).length} on` : "OFF",
           () => [ltxLoraWrap]));
 
+        // RTX VSR's own node takes either a scale multiplier or an exact width/height
+        // (see computeRtxTarget in core_minimax.js). Short/Long are a convenience on top
+        // of that exact-size mode: type one side, the other is computed from the source's
+        // own aspect ratio, so the result is never distorted. W×H is the node's raw
+        // exact-size mode, always paired with a forced crop here so a mismatched aspect
+        // never stretches either — same 4 modes wherever RTX VSR appears (here, the main
+        // Upscale panel, and the gallery's own upscale bar).
+        function rtxSizeControls(rtxOn) {
+          const MODES = [["scale", "Scale (×)"], ["short", "Short"], ["long", "Long"], ["wh", "W×H"]];
+          const modeNow = state.rtxSizeMode || "scale";
+          const modeRow = el("div", { style: { display: "flex", gap: "4px" } },
+            MODES.map(([k, lbl]) => {
+              const active = k === modeNow;
+              const b = el("button", { type: "button", text: lbl, style: {
+                cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "4px 9px",
+                borderRadius: "5px", fontWeight: active ? "700" : "400",
+                background: active ? BRAND : C.bg2, color: "#fff",
+                border: `1px solid ${active ? BRAND : C.border}`,
+              }});
+              b.disabled = !rtxOn;
+              if (!rtxOn) b.style.opacity = "0.4";
+              b.addEventListener("click", () => { state.rtxSizeMode = k; persist(); renderLeft(); });
+              return b;
+            }));
+          const disabledField = (f) => { if (!rtxOn) { f.disabled = true; f.style.opacity = "0.4"; } return f; };
+          const rows = [col([label("Size"), modeRow])];
+          if (modeNow === "scale") {
+            rows.push(col([label("Scale (×)"), disabledField(
+              numberField(state.rtxScale ?? 2, v => { state.rtxScale = Math.max(1, v); persist(); }, 0.5))]));
+          } else if (modeNow === "short" || modeNow === "long") {
+            const key = modeNow === "short" ? "rtxShort" : "rtxLong";
+            rows.push(col([label(`${modeNow === "short" ? "Short" : "Long"} side (px)`), disabledField(
+              numberField(state[key] ?? (modeNow === "short" ? 1080 : 1920),
+                v => { state[key] = Math.max(8, Math.round(v)); persist(); }, 8))]));
+          } else {
+            rows.push(row([
+              col([label("Width"), disabledField(numberField(state.rtxW ?? 1920,
+                v => { state.rtxW = Math.max(8, Math.round(v)); persist(); }, 8))]),
+              col([label("Height"), disabledField(numberField(state.rtxH ?? 1080,
+                v => { state.rtxH = Math.max(8, Math.round(v)); persist(); }, 8))]),
+            ]));
+            rows.push(col([label("Crop anchor"), disabledField(select(
+              ["center", "left", "right", "top", "bottom"].map(a => ({ value: a, label: a[0].toUpperCase() + a.slice(1) })),
+              state.rtxCropAnchor || "center", v => { state.rtxCropAnchor = v; persist(); }))]));
+          }
+          return rows;
+        }
+
         // ── post finish — Deblur + RTX VSR, both as a quality dropdown (none = off) ──
         const QUAL = ["none", "LOW", "MEDIUM", "HIGH", "ULTRA"].map(v => ({ value: v, label: v === "none" ? "None" : v }));
         const deblurNow = state.deblurStrength || "none";
         const rtxQualNow = state.upscaleMode === "rtx" ? (state.rtxQuality || "ULTRA") : "none";
         const rtxOn = rtxQualNow !== "none";
+        const rtxSizeTag = () => {
+          const m = state.rtxSizeMode || "scale";
+          return m === "scale" ? `${state.rtxScale ?? 2}×`
+            : m === "short" ? `short ${state.rtxShort ?? 1080}px`
+            : m === "long"  ? `long ${state.rtxLong ?? 1920}px`
+            : `${state.rtxW ?? 1920}×${state.rtxH ?? 1080}`;
+        };
         leftPanel.appendChild(accordion("upscale", "Post finish",
-          [deblurNow !== "none" && `Deblur ${deblurNow}`, rtxOn && `RTX VSR ${state.rtxScale ?? 2}×`].filter(Boolean).join(" → ") || "OFF",
+          [deblurNow !== "none" && `Deblur ${deblurNow}`, rtxOn && `RTX VSR ${rtxSizeTag()}`].filter(Boolean).join(" → ") || "OFF",
           () => [
             col([label("Deblur"), select(QUAL, deblurNow,
               v => { state.deblurStrength = v; persist(); renderLeft(); })]),
@@ -2284,15 +2339,11 @@ app.registerExtension({
               else { state.upscaleMode = "rtx"; state.rtxQuality = v; if (!(state.rtxScale > 0)) state.rtxScale = 2; }
               persist(); renderLeft();
             })]),
-            col([label("Scale (×)"), (() => {
-              const f = numberField(state.rtxScale ?? 2, v => { state.rtxScale = Math.max(1, v); persist(); }, 0.5);
-              if (!rtxOn) { f.disabled = true; f.style.opacity = "0.4"; }
-              return f;
-            })()]),
+            ...rtxSizeControls(rtxOn),
             !ctx.availability?.RTXVideoSuperResolution ? el("div", {
               html: "⚠ <code>RTXVideoSuperResolution</code> not installed — RTX VSR is skipped.",
               style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }) : null,
-            el("div", { text: "Runs on the LTX-upscaled frames after decode. Deblur sharpens at the same size; RTX VSR scales it further (e.g. 2× → 4K).",
+            el("div", { text: "A standalone pass over this clip's own frames (not chained through LTX's own scale). Deblur sharpens at the same size; RTX VSR scales it further.",
               style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
           ]));
 
@@ -3368,10 +3419,48 @@ app.registerExtension({
               : null,
             col([label("Upscale"), select(UPSCALE_MODES.map(m => ({ value: m.key, label: m.label })),
               state.upscaleMode, v => { state.upscaleMode = v; persist(); renderLeft(); })]),
-            state.upscaleMode === "rtx" ? row([
-              col([label("RTX scale"), numberField(state.rtxScale ?? 2, v => { state.rtxScale = v; persist(); }, 0.5)]),
+            state.upscaleMode === "rtx" ? col([
               col([label("Quality"), select(["LOW","MEDIUM","HIGH","ULTRA"].map(q => ({ value: q, label: q })),
                 state.rtxQuality || "ULTRA", v => { state.rtxQuality = v; persist(); })]),
+              ...(() => {
+                // Same 4 size-input modes as LTX Upscale's own RTX VSR panel — see
+                // computeRtxTarget in core_minimax.js for what each one does.
+                const MODES = [["scale", "Scale (×)"], ["short", "Short"], ["long", "Long"], ["wh", "W×H"]];
+                const modeNow = state.rtxSizeMode || "scale";
+                const modeRow = el("div", { style: { display: "flex", gap: "4px" } },
+                  MODES.map(([k, lbl]) => {
+                    const active = k === modeNow;
+                    const b = el("button", { type: "button", text: lbl, style: {
+                      cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "4px 9px",
+                      borderRadius: "5px", fontWeight: active ? "700" : "400",
+                      background: active ? BRAND : C.bg2, color: "#fff",
+                      border: `1px solid ${active ? BRAND : C.border}`,
+                    }});
+                    b.addEventListener("click", () => { state.rtxSizeMode = k; persist(); renderLeft(); });
+                    return b;
+                  }));
+                const out = [col([label("Size"), modeRow])];
+                if (modeNow === "scale") {
+                  out.push(col([label("Scale (×)"), numberField(state.rtxScale ?? 2,
+                    v => { state.rtxScale = Math.max(1, v); persist(); }, 0.5)]));
+                } else if (modeNow === "short" || modeNow === "long") {
+                  const key = modeNow === "short" ? "rtxShort" : "rtxLong";
+                  out.push(col([label(`${modeNow === "short" ? "Short" : "Long"} side (px)`),
+                    numberField(state[key] ?? (modeNow === "short" ? 1080 : 1920),
+                      v => { state[key] = Math.max(8, Math.round(v)); persist(); }, 8)]));
+                } else {
+                  out.push(row([
+                    col([label("Width"), numberField(state.rtxW ?? 1920,
+                      v => { state.rtxW = Math.max(8, Math.round(v)); persist(); }, 8)]),
+                    col([label("Height"), numberField(state.rtxH ?? 1080,
+                      v => { state.rtxH = Math.max(8, Math.round(v)); persist(); }, 8)]),
+                  ]));
+                  out.push(col([label("Crop anchor"), select(
+                    ["center", "left", "right", "top", "bottom"].map(a => ({ value: a, label: a[0].toUpperCase() + a.slice(1) })),
+                    state.rtxCropAnchor || "center", v => { state.rtxCropAnchor = v; persist(); })]));
+                }
+                return out;
+              })(),
             ]) : null,
             // FlashVSR (lihaoyun6/ComfyUI-FlashVSR-Ultra-Fast) — only 8 fields are exposed;
             // the rest of FlashVSRInitPipe/FlashVSRNodeAdv is fixed at the shipped API

@@ -4,7 +4,7 @@
 // mp4s written into the output subfolder and plays them full screen with the keyboard
 // shortcuts you'd expect from a review pass.
 import { composeStitchedPrompt, C, BRAND, el, clear, SUBFOLDER, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES,
-         UPSCALE_MODES, FLASHVSR_MODELS, FLASHVSR_MODES, FPS } from "./core_minimax.js";
+         UPSCALE_MODES, FLASHVSR_MODELS, FLASHVSR_MODES, FPS, computeRtxTarget } from "./core_minimax.js";
 import { button, select, numberField } from "../klein/ui_common.js";
 import { listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage, getMediaFiles,
          copyOutputToInput, discardInputCopy, getVideoInfo, queuePrompt, waitForHistory, historyEntry,
@@ -444,18 +444,62 @@ export function createGalleryOverlay(state, ctx) {
   const upModelWrap = el("label", { style: { display: "flex", alignItems: "center", gap: "4px", fontSize: "10.5px", color: C.text } });
   upModelWrap.append(el("span", { text: "model" }), upModelSel);
 
+  // Same 4 size-input modes as the main panel's RTX VSR (see computeRtxTarget in
+  // core_minimax.js): Scale/Short/Long/W×H. A batch upscale can select several files at
+  // once with different source resolutions, so Short/Long/W×H are each computed against
+  // that FILE's own probed size when the job actually runs, not a single shared value.
+  const rtxSizeModeSel = el("select", { style: smallSelect("70px") },
+    [["scale", "Scale"], ["short", "Short"], ["long", "Long"], ["wh", "W×H"]]
+      .map(([v, t]) => el("option", { value: v, text: t })));
+  rtxSizeModeSel.value = state.rtxSizeMode || "scale";
   const rtxScaleIn = el("input", { type: "number", min: "1", max: "4", step: "0.25", style: smallInput("52px") });
   rtxScaleIn.value = String(state.rtxScale ?? 2.0);
+  const rtxShortIn = el("input", { type: "number", min: "8", step: "8", style: smallInput("60px") });
+  rtxShortIn.value = String(state.rtxShort ?? 1080);
+  const rtxLongIn = el("input", { type: "number", min: "8", step: "8", style: smallInput("60px") });
+  rtxLongIn.value = String(state.rtxLong ?? 1920);
+  const rtxWIn = el("input", { type: "number", min: "8", step: "8", style: smallInput("54px") });
+  rtxWIn.value = String(state.rtxW ?? 1920);
+  const rtxHIn = el("input", { type: "number", min: "8", step: "8", style: smallInput("54px") });
+  rtxHIn.value = String(state.rtxH ?? 1080);
+  const rtxAnchorSel = el("select", { style: smallSelect("64px") },
+    ["center", "left", "right", "top", "bottom"].map(a => el("option", { value: a, text: a })));
+  rtxAnchorSel.value = state.rtxCropAnchor || "center";
+  const rtxScaleWrap = el("label", { style: { display: "flex", alignItems: "center", gap: "4px", fontSize: "10.5px", color: C.text } },
+    [el("span", { text: "scale" }), rtxScaleIn, el("span", { text: "x", style: { color: C.muted } })]);
+  const rtxShortWrap = el("label", { style: { display: "flex", alignItems: "center", gap: "4px", fontSize: "10.5px", color: C.text } },
+    [el("span", { text: "short px" }), rtxShortIn]);
+  const rtxLongWrap = el("label", { style: { display: "flex", alignItems: "center", gap: "4px", fontSize: "10.5px", color: C.text } },
+    [el("span", { text: "long px" }), rtxLongIn]);
+  const rtxWhWrap = el("div", { style: { display: "flex", alignItems: "center", gap: "4px" } }, [
+    el("label", { style: { display: "flex", alignItems: "center", gap: "4px", fontSize: "10.5px", color: C.text } },
+      [rtxWIn, el("span", { text: "×" }), rtxHIn]),
+    el("label", { style: { display: "flex", alignItems: "center", gap: "4px", fontSize: "10.5px", color: C.text } },
+      [el("span", { text: "anchor" }), rtxAnchorSel]),
+  ]);
   const rtxQualSel = el("select", { style: smallSelect("88px") },
     ["LOW", "MEDIUM", "HIGH", "ULTRA"].map(q => el("option", { value: q, text: q })));
   rtxQualSel.value = state.rtxQuality || "ULTRA";
   const rtxWrap = el("div", { style: { display: "none", alignItems: "center", gap: "8px" } });
-  rtxWrap.append(
-    el("label", { style: { display: "flex", alignItems: "center", gap: "4px", fontSize: "10.5px", color: C.text } },
-      [el("span", { text: "scale" }), rtxScaleIn, el("span", { text: "x", style: { color: C.muted } })]),
+  rtxWrap.append(rtxSizeModeSel, rtxScaleWrap, rtxShortWrap, rtxLongWrap, rtxWhWrap,
     el("label", { style: { display: "flex", alignItems: "center", gap: "4px", fontSize: "10.5px", color: C.text } },
       [el("span", { text: "quality" }), rtxQualSel]),
   );
+  function refreshRtxSizeUI() {
+    const m = rtxSizeModeSel.value;
+    rtxScaleWrap.style.display = m === "scale" ? "flex" : "none";
+    rtxShortWrap.style.display = m === "short" ? "flex" : "none";
+    rtxLongWrap.style.display  = m === "long"  ? "flex" : "none";
+    rtxWhWrap.style.display    = m === "wh"    ? "flex" : "none";
+  }
+  refreshRtxSizeUI();
+  rtxSizeModeSel.addEventListener("change", () => { state.rtxSizeMode = rtxSizeModeSel.value; ctx.persist?.(); refreshRtxSizeUI(); });
+  rtxScaleIn.addEventListener("input", () => { state.rtxScale = Math.max(1, parseFloat(rtxScaleIn.value) || 2); ctx.persist?.(); });
+  rtxShortIn.addEventListener("input", () => { state.rtxShort = Math.max(8, parseInt(rtxShortIn.value) || 1080); ctx.persist?.(); });
+  rtxLongIn.addEventListener("input", () => { state.rtxLong = Math.max(8, parseInt(rtxLongIn.value) || 1920); ctx.persist?.(); });
+  rtxWIn.addEventListener("input", () => { state.rtxW = Math.max(8, parseInt(rtxWIn.value) || 1920); ctx.persist?.(); });
+  rtxHIn.addEventListener("input", () => { state.rtxH = Math.max(8, parseInt(rtxHIn.value) || 1080); ctx.persist?.(); });
+  rtxAnchorSel.addEventListener("change", () => { state.rtxCropAnchor = rtxAnchorSel.value; ctx.persist?.(); });
 
   // FlashVSR VSR — same 8 fields as the left panel's own Upscale accordion (model/mode/
   // scale/color fix/tile size/tile overlap/seed/seed control), defaulting to whatever
@@ -943,8 +987,18 @@ export function createGalleryOverlay(state, ctx) {
       tileOverlap: Math.min(512, Math.max(8, parseInt(fvsrOverlapIn.value, 10) || 32)),
       seed: parseInt(fvsrSeedIn.value, 10) || 42,
     } : null;
+    const rtxSizeMode = rtxSizeModeSel.value;
+    // This file's own probed resolution — Short/Long/W×H each compute against it, not a
+    // single shared value, since a different pick can be a different size next run.
+    const srcMeta = pickedVideo() || {};
+    const rtxTarget = upMethod === "rtx"
+      ? computeRtxTarget({ rtxSizeMode, rtxScale, rtxShort: state.rtxShort, rtxLong: state.rtxLong,
+          rtxW: state.rtxW, rtxH: state.rtxH, rtxCropAnchor: state.rtxCropAnchor }, srcMeta.w || 1280, srcMeta.h || 720)
+      : null;
     const upscale = upMethod === "none" ? null
-      : upMethod === "rtx" ? { method: "rtx", scale: rtxScale, quality: rtxQualSel.value }
+      : upMethod === "rtx" ? { method: "rtx", quality: rtxQualSel.value,
+          ...(rtxTarget.resizeType === "scale by multiplier"
+            ? { scale: rtxTarget.scale } : { width: rtxTarget.width, height: rtxTarget.height }) }
       : upMethod === "flashvsr" ? flashvsrUsed(flashvsr)
       : { method: "model", model: upModelSel.value };
     return runPost(upProg, "Upscale", (inputFile, stem, chunkOpts) => buildUpscaleGraph({
@@ -954,6 +1008,9 @@ export function createGalleryOverlay(state, ctx) {
       modelName: upModelSel.value,
       rtxScale,
       rtxQuality: rtxQualSel.value,
+      rtxSizeMode, rtxShort: state.rtxShort, rtxLong: state.rtxLong,
+      rtxW: state.rtxW, rtxH: state.rtxH, rtxCropAnchor: state.rtxCropAnchor,
+      srcW: srcMeta.w, srcH: srcMeta.h,
       flashvsr,
       deblur: deblurSel.value,
       skipFirstFrames: chunkOpts.skipFirstFrames,
@@ -1363,7 +1420,7 @@ export function createGalleryOverlay(state, ctx) {
           ? ["◮", `Upscaled — FlashVSR VSR ×${m.upscale.scale} (${m.upscale.tileSize}px tiles`
               + `${m.upscale.mode ? `, ${m.upscale.mode}` : ""})`]
           : m.upscale.method === "rtx"
-          ? ["⇪", `Upscaled — RTX VSR ×${m.upscale.scale} (${m.upscale.quality})`]
+          ? ["⇪", `Upscaled — RTX VSR ${m.upscale.width ? `${m.upscale.width}×${m.upscale.height}` : `×${m.upscale.scale}`} (${m.upscale.quality})`]
           : ["⇪", `Upscaled — ${String(m.upscale.model || "model").split(/[\\/]/).pop()}`]);
         if (m.deblur && m.deblur !== "none") marks.push(["✧", `Deblurred — strength ${m.deblur}`]);
         if (m.interpolate) marks.push(["⇄", `Interpolated${m.interpolate.targetFps ? ` — ${Math.round(m.interpolate.targetFps)}fps` : ""}`]);

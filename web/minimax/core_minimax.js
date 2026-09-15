@@ -248,6 +248,52 @@ export const ASPECTS = [
 
 // Mirrors the ResolutionSelector node the source workflow used: pick the WxH that hits
 // `megapixels` at the chosen aspect, each axis rounded to a multiple of 32.
+/**
+ * RTX Video Super Resolution's own node has two native input shapes: a scale
+ * multiplier, or an exact target width/height (which it resizes to directly — no crop,
+ * so a mismatched aspect ratio stretches). This adds two more convenience input modes
+ * on top of those two: "short"/"long" take one side's target pixel count and compute
+ * the other from the source's own aspect ratio (so the result is always an exact
+ * width/height pair with no distortion, no crop needed), while "wh" is the node's own
+ * exact-size mode with a forced center/edge crop added first so an aspect mismatch
+ * there never stretches either.
+ *
+ * `srcW`/`srcH` is whatever this RTX pass will actually receive - the H3 render's own
+ * target resolution for the main pipeline, the original source clip for LTX Upscale
+ * (treated as a standalone step, not chained through LTX's own scale), or a gallery
+ * file's own probed size.
+ */
+export function computeRtxTarget(state, srcW, srcH) {
+  const mode = state.rtxSizeMode || "scale";
+  const round8 = v => Math.max(8, Math.round(v / 8) * 8);
+  if (mode === "short" || mode === "long") {
+    const short = Math.min(srcW, srcH), long = Math.max(srcW, srcH);
+    const target = Math.max(8, Math.round(mode === "short" ? (state.rtxShort ?? 1080) : (state.rtxLong ?? 1920)));
+    const otherTarget = mode === "short" ? target * (long / short) : target * (short / long);
+    const isWSide = srcW <= srcH;   // portrait: W is the short side; landscape: W is the long side
+    const width  = mode === "short" ? (isWSide ? target : round8(otherTarget)) : (isWSide ? round8(otherTarget) : target);
+    const height = mode === "short" ? (isWSide ? round8(otherTarget) : target) : (isWSide ? target : round8(otherTarget));
+    return { resizeType: "target dimensions", width: round8(width), height: round8(height), crop: null };
+  }
+  if (mode === "wh") {
+    const width = round8(Math.max(8, Math.round(state.rtxW ?? 1920)));
+    const height = round8(Math.max(8, Math.round(state.rtxH ?? 1080)));
+    // Crop the source down to the target's aspect ratio first — center by default, or
+    // pinned to one edge — so the node's own exact-size resize never has to stretch.
+    const targetAspect = width / height, srcAspect = srcW / srcH;
+    let cropW = srcW, cropH = srcH;
+    if (srcAspect > targetAspect) cropW = Math.round(srcH * targetAspect);
+    else if (srcAspect < targetAspect) cropH = Math.round(srcW / targetAspect);
+    const anchor = state.rtxCropAnchor || "center";
+    const x = anchor === "left" ? 0 : anchor === "right" ? srcW - cropW : Math.round((srcW - cropW) / 2);
+    const y = anchor === "top" ? 0 : anchor === "bottom" ? srcH - cropH : Math.round((srcH - cropH) / 2);
+    const crop = (cropW < srcW || cropH < srcH) ? { x, y, width: cropW, height: cropH } : null;
+    return { resizeType: "target dimensions", width, height, crop };
+  }
+  // "scale" — the node's own multiplier mode, unchanged from before this feature.
+  return { resizeType: "scale by multiplier", scale: state.rtxScale ?? 2.0, crop: null };
+}
+
 export function resolveResolution(aspectLabel, megapixels) {
   const a = ASPECTS.find(x => x.label === aspectLabel) || ASPECTS[0];
   const mp = Math.max(0.1, megapixels || 1.0);
@@ -1102,6 +1148,13 @@ export function defaultState(saved) {
     // upscale params
     rtxScale:   saved.rtxScale   ?? 2.0,
     rtxQuality: saved.rtxQuality || "ULTRA",
+    // RTX VSR size input mode — "scale" | "short" | "long" | "wh" (see computeRtxTarget)
+    rtxSizeMode:   saved.rtxSizeMode   || "scale",
+    rtxShort:      saved.rtxShort      ?? 1080,
+    rtxLong:       saved.rtxLong       ?? 1920,
+    rtxW:          saved.rtxW          ?? 1920,
+    rtxH:          saved.rtxH          ?? 1080,
+    rtxCropAnchor: saved.rtxCropAnchor || "center",
     // FlashVSR VSR — defaults match the shipped API workflow (16GB, 2x, 384 tile). The
     // rest of FlashVSRInitPipe/FlashVSRNodeAdv (alt_vae, force_offload, precision,
     // device, attention_mode, tiled_vae/tiled_dit, unload_dit, sparse_ratio, kv_ratio,

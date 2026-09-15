@@ -7,7 +7,32 @@
 //
 // Optional third-party nodes are gated on `avail` (from /minimax_h3_one/node_availability):
 // a missing pack disables that one feature rather than failing the whole prompt.
-import { SUBFOLDER, FPS, resolveResolution, effectiveTurbo, effectiveSteps, turboLoraForMode, pddFileForMode, blockCacheBlockedReason, h3OptimizerBlockedReason, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES } from "./core_minimax.js";
+import { SUBFOLDER, FPS, resolveResolution, computeRtxTarget, effectiveTurbo, effectiveSteps, turboLoraForMode, pddFileForMode, blockCacheBlockedReason, h3OptimizerBlockedReason, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES } from "./core_minimax.js";
+
+// Builds the RTXVideoSuperResolution node (+ an optional ImageCrop node ahead of it for
+// the "wh" size mode's forced crop, per computeRtxTarget) and returns the final image
+// link plus the {method, ...} descriptor buildPreset()/gallery cards already display.
+function buildRtxNode(g, ids, images, state, srcW, srcH) {
+  const t = computeRtxTarget(state, srcW, srcH);
+  if (t.crop) {
+    g[ids.crop] = { class_type: "ImageCrop", inputs: {
+      image: images, width: t.crop.width, height: t.crop.height, x: t.crop.x, y: t.crop.y,
+    }};
+    images = [ids.crop, 0];
+  }
+  g[ids.rtx] = t.resizeType === "scale by multiplier"
+    ? { class_type: "RTXVideoSuperResolution", inputs: {
+        images, resize_type: "scale by multiplier", "resize_type.scale": t.scale, quality: state.rtxQuality || "ULTRA",
+      }}
+    : { class_type: "RTXVideoSuperResolution", inputs: {
+        images, resize_type: "target dimensions",
+        "resize_type.width": t.width, "resize_type.height": t.height, quality: state.rtxQuality || "ULTRA",
+      }};
+  const upscaleUsed = t.resizeType === "scale by multiplier"
+    ? { method: "rtx", scale: t.scale, quality: state.rtxQuality || "ULTRA" }
+    : { method: "rtx", width: t.width, height: t.height, quality: state.rtxQuality || "ULTRA" };
+  return { images: [ids.rtx, 0], upscaleUsed };
+}
 import { matchPreset, allPresets, applyPreset } from "./presets_minimax.js";
 
 const N = {
@@ -45,6 +70,7 @@ const N = {
   upModel:"MM:upscale_model",
   upApply:"MM:upscale",
   rtx:    "MM:rtx",
+  rtxCrop:"MM:rtx_crop",
   fvsrPipe: "MM:flashvsr_pipe",
   fvsr:     "MM:flashvsr",
   deblurR:"MM:deblur",
@@ -799,15 +825,8 @@ export function buildClipGraph(state, avail, opts = {}) {
     images = [N.upApply, 0];
     upscaleUsed = { method: "model", model: state.upscaleModel };
   } else if (up === "rtx" && has(avail, "RTXVideoSuperResolution")) {
-    g[N.rtx] = { class_type: "RTXVideoSuperResolution", inputs: {
-      images,
-      // dynamic combo: the selected key plus its sub-input, dot-addressed
-      resize_type: "scale by multiplier",
-      "resize_type.scale": state.rtxScale ?? 2.0,
-      quality: state.rtxQuality || "ULTRA",
-    }};
-    images = [N.rtx, 0];
-    upscaleUsed = { method: "rtx", scale: state.rtxScale ?? 2.0, quality: state.rtxQuality || "ULTRA" };
+    const r = buildRtxNode(g, { crop: N.rtxCrop, rtx: N.rtx }, images, state, width, height);
+    images = r.images; upscaleUsed = r.upscaleUsed;
   } else if (up === "flashvsr" && has(avail, "FlashVSRNodeAdv")) {
     const fvsrParams = flashvsrParamsFromState(state);
     buildFlashVSR(g, N.fvsrPipe, N.fvsr, fvsrParams, images);
@@ -904,7 +923,8 @@ const L = {
   firstF: "LX:first_frame", i2v: "LX:i2v_inplace", audEnc: "LX:aud_encode", concat: "LX:concat",
   noise: "LX:noise", sampSel: "LX:sampler_sel", sched: "LX:scheduler", sampler: "LX:sampler",
   sep: "LX:separate", decV: "LX:decode_v", decA: "LX:decode_a", deblur: "LX:deblur",
-  upApply: "LX:up_apply", upLoad: "LX:up_load", rtx: "LX:rtx", video: "LX:video", save: "LX:save",
+  upApply: "LX:up_apply", upLoad: "LX:up_load", rtx: "LX:rtx", rtxCrop: "LX:rtx_crop",
+  video: "LX:video", save: "LX:save",
 };
 
 /**
@@ -1068,11 +1088,11 @@ export function buildLtxUpscaleGraph(state, avail, opts = {}) {
     g[L.upApply] = { class_type: "ImageUpscaleWithModel", inputs: { upscale_model: [L.upLoad, 0], image: images } };
     images = [L.upApply, 0]; upscaleUsed = { method: "model", model: state.upscaleModel };
   } else if (up === "rtx" && has(avail, "RTXVideoSuperResolution")) {
-    g[L.rtx] = { class_type: "RTXVideoSuperResolution", inputs: {
-      images, resize_type: "scale by multiplier",
-      "resize_type.scale": state.rtxScale ?? 2.0, quality: state.rtxQuality || "ULTRA",
-    }};
-    images = [L.rtx, 0]; upscaleUsed = { method: "rtx", scale: state.rtxScale ?? 2.0, quality: state.rtxQuality || "ULTRA" };
+    // Standalone RTX pass, not chained through LTX's own scale — sized off the original
+    // source clip's own resolution (state.ltxSourceMeta), same as everywhere else RTX runs.
+    const sm = state.ltxSourceMeta || {};
+    const r = buildRtxNode(g, { crop: L.rtxCrop, rtx: L.rtx }, images, state, sm.w || 1280, sm.h || 720);
+    images = r.images; upscaleUsed = r.upscaleUsed;
   }
 
   // ── output ─────────────────────────────────────────────────────────────────
@@ -1338,6 +1358,7 @@ const P = {
   model: "PP:upscale_model",
   apply: "PP:upscale",
   rtx:   "PP:rtx",
+  rtxCrop: "PP:rtx_crop",
   fvsrPipe: "PP:flashvsr_pipe",
   fvsr:     "PP:flashvsr",
   rife:  "PP:rife",
@@ -1360,7 +1381,11 @@ const P = {
  */
 export function buildUpscaleGraph(opts, avail) {
   const {
-    inputFile, method, modelName, rtxScale, rtxQuality, flashvsr, folder, stem,
+    inputFile, method, modelName, rtxScale, rtxQuality,
+    // Same size-mode fields as the main/LTX Upscale RTX panels (see computeRtxTarget) —
+    // srcW/srcH is this file's own probed resolution, from the gallery's metadata.
+    rtxSizeMode, rtxShort, rtxLong, rtxW, rtxH, rtxCropAnchor, srcW, srcH,
+    flashvsr, folder, stem,
     // Chunking: VHS_LoadVideo materializes every requested frame as a float32 array up
     // front, so a full stitched video (thousands of frames) loaded whole can exceed
     // available RAM. skipFirstFrames/frameLoadCap let the caller ask for one bounded
@@ -1398,14 +1423,9 @@ export function buildUpscaleGraph(opts, avail) {
   } else if (method === "rtx") {
     if (!has(avail, "RTXVideoSuperResolution"))
       throw new Error("RTXVideoSuperResolution is not installed.");
-    g[P.rtx] = { class_type: "RTXVideoSuperResolution", inputs: {
-      images,
-      // dynamic combo: the selected key plus its sub-input, dot-addressed
-      resize_type: "scale by multiplier",
-      "resize_type.scale": rtxScale ?? 2.0,
-      quality: rtxQuality || "ULTRA",
-    }};
-    images = [P.rtx, 0];
+    const pseudoState = { rtxScale, rtxQuality, rtxSizeMode, rtxShort, rtxLong, rtxW, rtxH, rtxCropAnchor };
+    const r = buildRtxNode(g, { crop: P.rtxCrop, rtx: P.rtx }, images, pseudoState, srcW || 1280, srcH || 720);
+    images = r.images;
   } else if (method === "flashvsr") {
     if (!has(avail, "FlashVSRNodeAdv"))
       throw new Error("FlashVSRInitPipe/FlashVSRNodeAdv is not installed.");
