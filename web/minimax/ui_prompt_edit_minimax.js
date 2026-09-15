@@ -981,15 +981,24 @@ ${name}`, style: {
   function renderModelSel() {
     clear(modelSelWrap);
     const needImage = enhMode === "image";
-    const bOR = (state.h3BriefBackend  || state.h3LlmBackend) === "openrouter";
-    const vOR = (state.h3VisionBackend || state.h3LlmBackend) === "openrouter";
-    const shortName = (m) => String(m || "").split("/").pop() || m;
-    const brief  = bOR ? `OR:${shortName(state.h3OrModelBrief || state.h3OrModel) || "default"}` : (state.nativeBriefClip ? shortName(state.nativeBriefClip) : null);
-    const vision = vOR ? `OR:${shortName(state.h3OrModelVision || state.h3OrModel) || "default"}` : (state.nativeVisionClip ? shortName(state.nativeVisionClip) : null);
+    const bBackend = state.h3BriefBackend  || state.h3LlmBackend;
+    const vBackend = state.h3VisionBackend || state.h3LlmBackend;
+    const bOR = bBackend === "openrouter", vOR = vBackend === "openrouter";
+    const bLlama = bBackend === "llamagguf", vLlama = vBackend === "llamagguf";
+    const shortName = (m) => String(m || "").split("/").pop().split("\\").pop() || m;
+    // This used to only ever check OpenRouter-vs-native, so picking Llama GGUF in Settings
+    // silently kept showing whatever native CLIP was set before (reported: saved Llama GGUF,
+    // panel still showed the old "LTX\gemma4_e4b_it_fp8_scaled.safetensors" native model).
+    const brief  = bLlama ? (state.h3LlamaBriefModel ? `Llama:${shortName(state.h3LlamaBriefModel)}` : null)
+      : bOR ? `OR:${shortName(state.h3OrModelBrief || state.h3OrModel) || "default"}`
+      : (state.nativeBriefClip ? shortName(state.nativeBriefClip) : null);
+    const vision = vLlama ? (state.h3LlamaVisionModel ? `Llama:${shortName(state.h3LlamaVisionModel)}` : null)
+      : vOR ? `OR:${shortName(state.h3OrModelVision || state.h3OrModel) || "default"}`
+      : (state.nativeVisionClip ? shortName(state.nativeVisionClip) : null);
     if (!brief || (needImage && !vision)) {
       modelSelWrap.appendChild(el("div", {
-        text: !brief ? "Brief: not set — pick a CLIP or switch to OpenRouter in Settings → LLM."
-                     : "Vision: not set — pick a CLIP or switch to OpenRouter in Settings → LLM.",
+        text: !brief ? "Brief: not set — pick a CLIP/GGUF model, or switch backend, in Settings → LLM."
+                     : "Vision: not set — pick a CLIP/GGUF model, or switch backend, in Settings → LLM.",
         style: { fontSize: "10.5px", color: C.warn },
       }));
       return;
@@ -1001,11 +1010,22 @@ ${name}`, style: {
     }));
   }
 
-  // One backend now: the external Ollama server was removed on 2026-08-31, so there is no
-  // source to choose between and nothing to connect to before the bar can be drawn.
+  // The header used to hardcode "(native CLIP)" from back when Native was the only
+  // backend — stale ever since OpenRouter/Llama GGUF were added as alternatives, so it
+  // kept saying "native CLIP" even while actually running on OpenRouter or Llama GGUF.
   function refreshSourceUI() {
-    enhTitle.textContent = "LOCAL ENHANCE (native CLIP)";
-    statusTag.textContent = "runs through ComfyUI's own model loading - no external server";
+    const label = (backend) => backend === "openrouter" ? "OpenRouter"
+      : backend === "llamagguf" ? "Llama GGUF" : "native CLIP";
+    const bBackend = state.h3BriefBackend  || state.h3LlmBackend;
+    const vBackend = state.h3VisionBackend || state.h3LlmBackend;
+    enhTitle.textContent = bBackend === vBackend
+      ? `LOCAL ENHANCE (${label(bBackend)})`
+      : `LOCAL ENHANCE (Brief: ${label(bBackend)} · Vision: ${label(vBackend)})`;
+    statusTag.textContent = (bBackend === "openrouter" || vBackend === "openrouter")
+      ? "OpenRouter calls out to the cloud — everything else stays local"
+      : (bBackend === "llamagguf" || vBackend === "llamagguf")
+      ? "runs through TJ_NODE's local llama.cpp — no cloud call"
+      : "runs through ComfyUI's own model loading - no external server";
     statusTag.style.color = C.muted;
     renderModelSel();
   }
