@@ -454,7 +454,7 @@ This cannot be undone.`,
     border: `1px solid ${C.border}`, display: "none", cursor: "pointer",
   }});
   const fiLabel = el("div", { text: "▶ Continue generating the clip.", style: {
-    fontSize: "10.5px", color: C.muted, flex: "1",
+    fontSize: "10.5px", color: C.muted, whiteSpace: "nowrap",
   }});
   const fiGalleryBtn = el("button", { type: "button", text: "Select from the gallery", style: {
     cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "4px 9px",
@@ -502,7 +502,9 @@ This cannot be undone.`,
     ta.setSelectionRange(s + token.length, s + token.length);
     ta.dispatchEvent(new Event("input", { bubbles: true }));
   }
-  const tagBtnRow = el("div", { style: { display: "flex", gap: "5px", flexShrink: "0" } },
+  // Centered between "Select from the gallery" (left) and the Continue label (right) —
+  // wrapped in a flex:1 div so justifyContent:center actually centers it in the row.
+  const tagBtnRow = el("div", { style: { flex: "1", display: "flex", justifyContent: "center", gap: "5px" } },
     ["Picture", "Subject", "Shot"].map(tag => {
       const b = el("button", { type: "button", text: tag, title: `Insert <${tag} N> at the cursor`, style: {
         cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "4px 8px",
@@ -514,7 +516,7 @@ This cannot be undone.`,
       b.addEventListener("click", () => insertTagAtCursor(editor, tag));
       return b;
     }));
-  fiRow.append(fiThumb, fiLabel, tagBtnRow, fiGalleryBtn, fiRemoveBtn);
+  fiRow.append(fiThumb, fiGalleryBtn, tagBtnRow, fiLabel, fiRemoveBtn);
   const fiHint = el("div", {
     text: "Resuming a multi-clip run: pick the last finished clip, then write the prompts "
         + "for the clips that still need rendering. This clip starts from that clip's final "
