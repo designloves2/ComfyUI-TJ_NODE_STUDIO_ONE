@@ -2571,6 +2571,9 @@ MMH3_OPTIONAL_NODES = [
     "UpscaleModelLoader",
     "ImageUpscaleWithModel",
     "RIFEInterpolation",
+    # video/audio save via VHS's nvenc_h264-mp4 format (real GPU encoding) — falls back
+    # to core CreateVideo/SaveVideo (CPU) when not installed
+    "VHS_VideoCombine",
     # reference video / audio inputs
     "VHS_LoadVideo",
     "LoadAudio",
