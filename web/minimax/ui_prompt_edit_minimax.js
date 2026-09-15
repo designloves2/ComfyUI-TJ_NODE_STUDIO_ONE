@@ -1155,6 +1155,18 @@ ${name}`, style: {
         imageSummary = (visionOR
           ? await analyzeImagesOpenRouter(images, prompt, state.h3OrModelVision || state.h3OrModel)
           : await analyzeImagesNative(state.nativeVisionClip, images, prompt)).trim();
+        // The vision model is only asked to number its own lines "Image N: ..." — it does
+        // not reliably count correctly (reported: 4 images came back labelled Image
+        // 1/4/5/6). buildUserPrompt() below tells the brief model these lines are
+        // <Picture 1>...<Picture N> strictly BY POSITION, but if the text still carries
+        // the vision model's own wrong numbers right there in the line, the brief model
+        // has seen the wrong one attach to the wrong picture in the observed cases. Force
+        // every line's label to match its actual position instead of trusting whatever
+        // number the vision model wrote.
+        imageSummary = imageSummary.split("\n")
+          .filter(line => line.trim())
+          .map((line, i) => line.replace(/^\s*(?:Image|Picture)\s*\d+\s*:/i, `Image ${i + 1}:`))
+          .join("\n");
       }
 
       progressStage("Writing brief...");
