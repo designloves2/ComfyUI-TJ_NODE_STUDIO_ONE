@@ -382,6 +382,16 @@ export function createSettingsOverlay(state, ctx) {
               v => { state.h3LlamaVisionMmproj = v; ctx.persist(); });
             holder.appendChild(col([label("mmproj (vision projector — required to actually see the image)"), mmPick.el]));
           }
+          // Shared by both roles — one context window size for whichever GGUF loads.
+          // Defaults to 8192, not llama.cpp's own 4096: H3's system prompt (guide + few-
+          // shot examples) plus a real request measured 5436 tokens on its own in testing,
+          // already over 4096 before generation even starts (silent empty result, no
+          // error — the request simply had no room left to answer in).
+          {
+            const nCtxField = numberField(state.h3LlamaNCtx ?? 8192,
+              v => { state.h3LlamaNCtx = Math.max(512, Math.round(v)); ctx.persist(); }, 512);
+            holder.appendChild(col([label("Context length (n_ctx)"), nCtxField]));
+          }
         });
         control = holder;
       } else if (isOR) {
@@ -725,6 +735,7 @@ export function createSettingsOverlay(state, ctx) {
       h3_llama_vision_model:  state.h3LlamaVisionModel  || "",
       h3_llama_vision_mmproj: state.h3LlamaVisionMmproj || "",
       h3_llama_brief_model:   state.h3LlamaBriefModel   || "",
+      h3_llama_n_ctx:         state.h3LlamaNCtx         ?? 8192,
       filename_prefix:       state.filenamePrefix    || "MMH3",
       stitch_at_end:         state.stitchAtEnd       ?? true,
       trim_last_clip:        state.trimLastClip      ?? false,
@@ -852,6 +863,7 @@ export function createSettingsOverlay(state, ctx) {
     if (cfg.h3_llama_vision_model)    state.h3LlamaVisionModel  = cfg.h3_llama_vision_model;
     if (cfg.h3_llama_vision_mmproj)   state.h3LlamaVisionMmproj = cfg.h3_llama_vision_mmproj;
     if (cfg.h3_llama_brief_model)     state.h3LlamaBriefModel   = cfg.h3_llama_brief_model;
+    if (cfg.h3_llama_n_ctx != null)   state.h3LlamaNCtx         = cfg.h3_llama_n_ctx;
     if (cfg.filename_prefix)          state.filenamePrefix   = cfg.filename_prefix;
     // save_subfolder was written on every Save All but never read back — the Output tab
     // (and the gallery, and every "From gallery" picker) always came back to the

@@ -1151,6 +1151,11 @@ export function defaultState(saved) {
     h3LlamaVisionModel:  saved.h3LlamaVisionModel  || "",
     h3LlamaVisionMmproj: saved.h3LlamaVisionMmproj || "none",
     h3LlamaBriefModel:   saved.h3LlamaBriefModel   || "",
+    // 8192, not llama.cpp's/the route's own 4096 default — H3's system prompt (guide +
+    // few-shot examples) plus a real request measured 5436 tokens on its own in testing,
+    // already over 4096 before generation even starts (observed failure: a silent empty
+    // result, no error).
+    h3LlamaNCtx:         saved.h3LlamaNCtx         ?? 8192,
 
     // output
     saveSubfolder: saved.saveSubfolder || "",

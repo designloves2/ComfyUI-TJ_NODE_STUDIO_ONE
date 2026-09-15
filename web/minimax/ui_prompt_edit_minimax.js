@@ -1180,7 +1180,7 @@ ${name}`, style: {
           for (let i = 0; i < images.length; i++) {
             progressStage(`Analyzing image ${i + 1}/${images.length}...`);
             const b64 = await imageToB64(images[i]);
-            const desc = await analyzeImageLlama(b64, state.h3LlamaVisionModel, state.h3LlamaVisionMmproj, VISION_SYSTEM_PROMPT);
+            const desc = await analyzeImageLlama(b64, state.h3LlamaVisionModel, state.h3LlamaVisionMmproj, VISION_SYSTEM_PROMPT, state.h3LlamaNCtx);
             lines.push(String(desc || "").trim());
           }
           imageSummary = lines.join("\n");
@@ -1210,7 +1210,7 @@ ${name}`, style: {
 
       progressStage("Writing brief...");
       const text = (briefLlama
-        ? await writeBriefLlama(buildUserPrompt(base, imageSummary), state.h3LlamaBriefModel)
+        ? await writeBriefLlama(buildUserPrompt(base, imageSummary), state.h3LlamaBriefModel, state.h3LlamaNCtx)
         : briefOR
         ? await writeBriefOpenRouter(systemPrompt, buildUserPrompt(base, imageSummary), state.h3OrModelBrief || state.h3OrModel)
         : await writeBriefNative(state.nativeBriefClip, systemPrompt, buildUserPrompt(base, imageSummary))).trim();
