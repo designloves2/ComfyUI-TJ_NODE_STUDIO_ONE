@@ -178,7 +178,7 @@ export function parseTargetSeconds(text) {
 export const IMAGE_BRIEF_MODES = [
   { key: "fl",  label: "First/Last (max 2)", max: 2,
     hint: "image 1 = the starting frame, image 2 = the ending frame — write the brief as a first/last-frame shot" },
-  { key: "ref", label: "Reference (max 8)",  max: 8,
+  { key: "ref", label: "Reference (max 9)",  max: 9,
     hint: "each image is a <Picture N> reference, in upload order" },
 ];
 export function imageBriefMax(mode) {

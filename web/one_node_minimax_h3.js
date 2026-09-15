@@ -992,8 +992,23 @@ app.registerExtension({
         padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text,
         border: `1px solid ${BRAND}`, fontWeight: "600",
       }});
-      refineBtn.addEventListener("click", () => promptEditOv?.openRefine?.());
+      // Whichever clip's textarea was last focused, so Refine/Prompt Write from the main
+      // screen act on the clip the user was actually just looking at — same tracking the
+      // tag-insert buttons above use.
+      const lastFocusedClipIndex = () => {
+        const idx = Number(lastFocusedPromptTA?.dataset.clipIndex);
+        return Number.isFinite(idx) ? idx : null;
+      };
+      refineBtn.addEventListener("click", () => promptEditOv?.openRefine?.(lastFocusedClipIndex()));
       promptHdr.appendChild(refineBtn);
+
+      const writeBtn = el("button", { type: "button", text: "✨ Prompt Write", title: "Write a fresh prompt for the current clip — same result review as inside Prompt Edit", style: {
+        cursor: "pointer", fontFamily: "inherit", fontSize: "10px",
+        padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text,
+        border: `1px solid ${BRAND}`, fontWeight: "600",
+      }});
+      writeBtn.addEventListener("click", () => promptEditOv?.openWrite?.(lastFocusedClipIndex()));
+      promptHdr.appendChild(writeBtn);
 
       const editBtn = el("button", { type: "button", text: "📝 Prompt Edit", title: "Open the full prompt editor (with local enhance)", style: {
         cursor: "pointer", fontFamily: "inherit", fontSize: "10px",
@@ -1198,6 +1213,7 @@ app.registerExtension({
             state.prompts[i].text = ta.value;
             persist();
           });
+          ta.dataset.clipIndex = String(i);
           ta.addEventListener("focus", () => { ta.style.borderColor = BRAND; lastFocusedPromptTA = ta; });
           ta.addEventListener("blur",  () => ta.style.borderColor = C.border);
 

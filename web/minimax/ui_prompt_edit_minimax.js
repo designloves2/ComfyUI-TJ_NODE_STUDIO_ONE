@@ -6,7 +6,7 @@
 //
 // The brief-writing instruction is the same "Minimax H3 (Video)" system prompt TJ_NODE
 // ships, fetched from the backend (with a built-in fallback when TJ_NODE isn't present).
-import { C, BRAND, el, clear, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt, IMAGE_BRIEF_MODES, imageBriefMax, promptText, promptFirstFrame, promptEnabled, clipAssets, clipFraming, promptOverrides } from "./core_minimax.js";
+import { C, BRAND, el, clear, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt, imageBriefMax, promptText, promptFirstFrame, promptEnabled, clipAssets, clipFraming, promptOverrides } from "./core_minimax.js";
 import { panel, label, button, select, row, col } from "../klein/ui_common.js";
 import { buildClipMediaSlots } from "./ui_clip_media_slots.js";
 import { openVideoGalleryPicker } from "./ui_video_picker_minimax.js";
@@ -19,11 +19,6 @@ import { getMediaFiles, getSystemPrompt, uploadImage, uploadMedia, analyzeImages
 function normPrompt(p) {
   return typeof p === "string" ? { text: p, firstFrame: "", enabled: true } : p;
 }
-
-const MODES = [
-  { key: "text",  label: "✨ Text → Brief",  hint: "rewrite the prompt into a shot-by-shot brief" },
-  { key: "image", label: "🖼 Image → Brief", hint: "describe an image, then write the brief from it" },
-];
 
 export function createPromptEditOverlay(state, ctx, onApply) {
   const ov = el("div", { style: {
@@ -76,8 +71,15 @@ export function createPromptEditOverlay(state, ctx, onApply) {
   }
 
   // ── header ─────────────────────────────────────────────────────────────────
-  const hdr = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" } });
+  const hdr = el("div", { style: { position: "relative", display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" } });
   hdr.appendChild(el("div", { text: "📝 Prompt Edit", style: { color: "#fff", fontSize: "14px", fontWeight: "700" } }));
+  // True center of the whole header, independent of how wide the title/buttons on
+  // either side are — so it reads as one glance: what mode is this popup working with.
+  const hdrModeTag = el("div", { style: {
+    position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)",
+    fontSize: "11px", fontWeight: "700", color: BRAND, whiteSpace: "nowrap", pointerEvents: "none",
+  }});
+  hdr.appendChild(hdrModeTag);
   const srcTag = el("div", { style: { fontSize: "10px", color: C.muted, flex: "1" } });
   hdr.appendChild(srcTag);
   undoBtn = el("button", { type: "button", text: "↶ Undo", style: {
@@ -231,9 +233,16 @@ export function createPromptEditOverlay(state, ctx, onApply) {
       if (typeof s.firstFrameImage === "string") state.firstFrameImage = s.firstFrameImage;
       if (typeof s.lastFrameImage === "string")  state.lastFrameImage  = s.lastFrameImage;
       if (s.refTypes && typeof s.refTypes === "object") state.refTypes = { ...s.refTypes };
+      // A saved set carries the generation mode it was written for — restoring it here
+      // switches the main screen (and this popup's own Text/Image → Brief derivation)
+      // to match, instead of leaving the set's Reference images sitting under whatever
+      // mode happened to be active before the load.
+      if (s.generationMode) state.generationMode = s.generationMode;
       selected = 0;
       ctx.persist();
+      deriveModes();
       renderAll();
+      ctx.refreshModes?.();
       const framesNote = (s.clipFrames && s.clipFrames !== state.clipFrames)
         ? ` — saved at a different clip length (${s.clipFrames} frames vs current ${state.clipFrames})` : "";
       ctx.showPopup?.(`Loaded "${name}"${framesNote}`, false);
@@ -658,23 +667,28 @@ This cannot be undone.`,
   const statusTag = el("div", { text: "", style: { fontSize: "10px", color: C.muted, flex: "1" } });
   enhTop.appendChild(statusTag);
 
+  // The source mode used to be two rows of manual toggle buttons (Text/Image, then
+  // First-Last/Reference) — confusing, since the main screen's own generation mode
+  // already says which images exist and what they mean. Both are now derived from
+  // state.generationMode instead: t2v has no images to show, firstlast means the
+  // brief writer sees the main screen's start/end frame, reference means it sees the
+  // main screen's reference set. Recomputed at the start of every write/refine run so
+  // it can never go stale if the main mode changed while this popup was open.
   let enhMode = "text";
-  const modeWrap = el("div", { style: { display: "flex", gap: "4px" } });
-  function renderModes() {
-    clear(modeWrap);
-    MODES.forEach(m => {
-      const active = m.key === enhMode;
-      const b = el("button", { type: "button", text: m.label, title: m.hint, style: {
-        cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "4px 10px",
-        borderRadius: "5px", fontWeight: active ? "700" : "400",
-        background: active ? BRAND : C.bg2, color: "#fff",
-        border: `1px solid ${active ? BRAND : C.border}`,
-      }});
-      b.addEventListener("click", () => { enhMode = m.key; renderModes(); renderImageRow(); renderModelSel(); });
-      modeWrap.appendChild(b);
-    });
+  const modeTag = el("div", { style: { fontSize: "10px", color: C.muted, fontWeight: "700" } });
+  function deriveModes() {
+    const gm = state.generationMode || "t2v";
+    enhMode = gm === "t2v" ? "text" : "image";
+    state.briefImageMode = gm === "firstlast" ? "fl" : "ref";
+    modeTag.textContent = gm === "t2v" ? "✨ Text → Brief"
+      : gm === "firstlast" ? "🖼 Image → Brief (First/Last, from the main screen)"
+      : "🖼 Image → Brief (Reference, from the main screen)";
+    hdrModeTag.textContent = gm === "t2v" ? "Text To Video"
+      : gm === "firstlast" ? "Image to Video (F/L)"
+      : gm === "reference" ? "Reference to Video"
+      : gm;
   }
-  enhTop.appendChild(modeWrap);
+  enhTop.appendChild(modeTag);
 
   const modelSelWrap = el("div", { style: { minWidth: "220px" } });
   const targetSel = select(
@@ -749,6 +763,33 @@ This cannot be undone.`,
     imgRow.style.display = state.enhCollapsed ? "none" : imgRow._flow;
     if (enhMode !== "image") return;
 
+    // First/Last mode has nothing to attach here — the two frames are the main screen's
+    // own start/end images (or this clip's "Continue generating the clip" override,
+    // above), so this is a read-only preview of what Prompt Write/Refine will actually
+    // send, not a second place to edit them.
+    if (state.briefImageMode === "fl") {
+      const a = clipAssets(state, selected);
+      const thumb = (src, tag) => {
+        const box = el("div", { style: {
+          width: "72px", height: "72px", borderRadius: "6px", border: `1px solid ${C.border}`,
+          background: "#000", display: "flex", alignItems: "center", justifyContent: "center",
+          overflow: "hidden", flexShrink: "0",
+        }});
+        if (src) box.appendChild(el("img", { src: `/view?filename=${encodeURIComponent(src)}&type=input&t=${Date.now()}`,
+          style: { width: "100%", height: "100%", objectFit: "cover" } }));
+        else box.appendChild(el("div", { text: "none", style: { color: C.muted, fontSize: "10px" } }));
+        return el("div", { style: { display: "flex", flexDirection: "column", gap: "4px", alignItems: "center" } },
+          [box, el("div", { text: tag, style: { fontSize: "9.5px", color: C.muted } })]);
+      };
+      imgRow.append(
+        el("div", { text: "First/Last frame — set on the main screen, or via \"Continue generating the clip\" above.",
+          style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+        el("div", { style: { display: "flex", gap: "12px" } }, [thumb(a.firstFrame, "Start"), thumb(a.lastFrame, "End")]),
+        modelSelWrap,
+      );
+      return;
+    }
+
     // One attach area, two possible owners. Unticked it edits the panel's common
     // references - the set every other clip also renders with - and ticked it edits this
     // clip's own. The heading says which, because an attach area that silently belongs to
@@ -789,19 +830,6 @@ This cannot be undone.`,
       el("label", { style: { display: "flex", alignItems: "center", gap: "5px", fontSize: "10.5px",
         color: C.text, cursor: "pointer" } }, [chk, el("span", { text: "override for this clip" })]),
     );
-
-    const modeRow = el("div", { style: { display: "flex", gap: "4px" } });
-    IMAGE_BRIEF_MODES.forEach(m => {
-      const active = state.briefImageMode === m.key;
-      const b = el("button", { type: "button", text: m.label, title: m.hint, style: {
-        cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "3px 8px",
-        borderRadius: "5px", fontWeight: active ? "700" : "400",
-        background: active ? BRAND : C.bg2, color: "#fff",
-        border: `1px solid ${active ? BRAND : C.border}`,
-      }});
-      b.addEventListener("click", () => { state.briefImageMode = m.key; ctx.persist(); renderImageRow(); });
-      modeRow.appendChild(b);
-    });
 
     // One row, nine slots — wrapping put the tail of the set on a second line and pushed
     // the media columns beside it down with it.
@@ -972,14 +1000,12 @@ ${name}`, style: {
     const imgCol = el("div", { style: {
       display: "flex", flexDirection: "column", gap: "5px",
       width: "534px", flex: "0 0 534px" } });
-    modeRow.style.height = HEAD_H;
-    modeRow.style.alignItems = "center";
     // marginTop:auto pushes the model line to the foot of the column, so its baseline
     // matches the "has audio" line at the foot of the media columns. Left in its own row
     // underneath, it added height the panel did not have and clipped the buttons below.
     modelSelWrap.style.marginTop = "auto";
     modelSelWrap.style.paddingTop = "4px";
-    imgCol.append(modeRow, grid, note, modelSelWrap);
+    imgCol.append(grid, note, modelSelWrap);
     assetBand.append(imgCol);
     if (own) assetBand.append(mediaRow);
     imgRow.append(head, assetBand);
@@ -1234,14 +1260,16 @@ ${name}`, style: {
     return dataUrl.split(",")[1] || "";
   }
 
-  enhBtn.addEventListener("click", async () => {
+  async function doWrite() {
     if (busy) return;
-    // Same resolver the render loop uses, so Enhance always looks at the pictures this
-    // clip will actually be made from — the override set when it has one.
+    deriveModes(); renderImageRow(); renderModelSel();
+    // Same resolver the render loop uses, so Prompt Write always looks at the pictures
+    // this clip will actually be made from — the override set when it has one, or the
+    // main screen's own first/last frame pair in First/Last mode.
     const a = clipAssets(state, selected);
-    const images = enhMode === "image"
-      ? a.refImages.slice(0, imageBriefMax(state.briefImageMode))
-      : [];
+    const images = enhMode !== "image" ? []
+      : state.briefImageMode === "fl" ? [a.firstFrame, a.lastFrame].filter(Boolean)
+      : a.refImages.slice(0, imageBriefMax(state.briefImageMode));
     // Brief and Vision each choose their own backend (native CLIP vs OpenRouter vs the
     // local Llama GGUF backend the image nodes' shared Enhance panel already has).
     const briefOR  = (state.h3BriefBackend  || state.h3LlmBackend) === "openrouter";
@@ -1315,16 +1343,18 @@ ${name}`, style: {
     } catch (e) {
       statusTag.textContent = `⚠ ${String(e.message).slice(0, 90)}`;
       statusTag.style.color = C.err;
-      ctx.showPopup?.(`Enhance failed: ${e.message}`, true);
+      ctx.showPopup?.(`Prompt Write failed: ${e.message}`, true);
     } finally {
       progressStop();
       busy = false; enhBtn.disabled = false; enhSpin.style.display = "none"; enhBtnLabel.textContent = "✨ Prompt Write";
     }
-  });
+  }
+  enhBtn.addEventListener("click", doWrite);
 
   let lastRefineInstruction = "";
   async function doRefine() {
     if (busy) return;
+    deriveModes();
     const briefOR    = (state.h3BriefBackend || state.h3LlmBackend) === "openrouter";
     const briefLlama = (state.h3BriefBackend || state.h3LlmBackend) === "llamagguf";
     if (!briefOR && !briefLlama && !state.nativeBriefClip) { ctx.showPopup?.("No brief CLIP set - pick one in Settings, or switch the Brief backend to OpenRouter/Llama GGUF.", true); return; }
@@ -1379,10 +1409,29 @@ ${name}`, style: {
     flexDirection: "column", padding: "12px", gap: "8px", boxSizing: "border-box",
   }});
   let reviewText = "", reviewTarget = "one", reviewKind = "write";
-  // Set by openRefine() when the main-screen Refine button opened `ov` purely to host
-  // the review overlay (see openRefine's comment) — once the user is done, close `ov`
-  // back up too instead of leaving the full Prompt Edit popup sitting open behind it.
-  let refineOnlyMode = false;
+  // Set by openTransient() when a main-screen button (Refine or Prompt Write) opened
+  // `ov` purely to host the review overlay (see openTransient's comment) — once the
+  // user is done, close `ov` back up too instead of leaving the full Prompt Edit popup
+  // sitting open behind it.
+  let transientMode = false;
+  /** Run `action` (doRefine or doWrite) for one clip without navigating into the full
+   * Prompt Edit popup. `reviewOv` is an absolute-inset child of `ov` and only paints
+   * while `ov` is displayed, so this still shows `ov` underneath, but the review card
+   * (or the instruction dialog that precedes it, for Refine) fully covers it — the
+   * user never sees the tabs/editor. */
+  function openTransient(idx, action) {
+    const wasOpen = ov.style.display !== "none";
+    transientMode = !wasOpen;
+    ov.style.display = "flex";
+    if (!state.prompts || !state.prompts.length) state.prompts = [{ text: "", firstFrame: "", enabled: true }];
+    if (idx != null) selected = idx;
+    if (selected >= state.prompts.length) selected = 0;
+    if (!systemPrompt) loadSystemPrompt();
+    loadSelected();
+    action().finally(() => {
+      if (transientMode && reviewOv.style.display === "none") ov.style.display = "none";
+    });
+  }
   // How the result gets applied — chosen AFTER the model answers, on this screen:
   //   "one"    the whole brief as one paragraph into the current clip's shot field only
   //   "split"  parsed into common header / shots / sound-music tail (the old behaviour)
@@ -1561,7 +1610,7 @@ ${name}`, style: {
     }
     ctx.persist();
     reviewOv.style.display = "none";
-    if (refineOnlyMode) { ov.style.display = "none"; refineOnlyMode = false; }
+    if (transientMode) { ov.style.display = "none"; transientMode = false; }
     renderAll(); onApply?.();
     statusTag.textContent = "applied";
     statusTag.style.color = C.ok;
@@ -1569,7 +1618,7 @@ ${name}`, style: {
 
   rvCancel.addEventListener("click", () => {
     reviewOv.style.display = "none";
-    if (refineOnlyMode) { ov.style.display = "none"; refineOnlyMode = false; }
+    if (transientMode) { ov.style.display = "none"; transientMode = false; }
     statusTag.textContent = "discarded";
     statusTag.style.color = C.muted;
   });
@@ -1759,12 +1808,7 @@ ${name}`, style: {
       ov.style.display = "flex";
       if (!state.prompts || !state.prompts.length) state.prompts = [{ text: "", firstFrame: "", enabled: true }];
       if (selected >= state.prompts.length) selected = 0;
-      // Open on the enhance mode the node is actually set up for. In Reference or
-      // First/Last Frame the clip already has images attached, so landing on Text -> Brief
-      // hid the whole attach area (and the override checkbox with it) behind an extra
-      // click. Text only has no images to show, so it stays on Text -> Brief.
-      enhMode = (state.generationMode === "t2v") ? "text" : "image";
-      renderModes(); renderImageRow(); renderAll(); refreshFraming(); applyEnhCollapsed();
+      deriveModes(); renderImageRow(); renderAll(); refreshFraming(); applyEnhCollapsed();
       if (!mediaFiles.videos.length && !mediaFiles.audios.length)
         getMediaFiles().then(d => { mediaFiles = d; renderImageRow(); }).catch(() => {});
       if (!systemPrompt) loadSystemPrompt();
@@ -1784,17 +1828,12 @@ ${name}`, style: {
      * still shows `ov` underneath, but the review card (or the instruction dialog
      * that precedes it) fully covers it — the user never sees the tabs/editor. */
     openRefine(idx) {
-      const wasOpen = ov.style.display !== "none";
-      refineOnlyMode = !wasOpen;
-      ov.style.display = "flex";
-      if (!state.prompts || !state.prompts.length) state.prompts = [{ text: "", firstFrame: "", enabled: true }];
-      if (idx != null) selected = idx;
-      if (selected >= state.prompts.length) selected = 0;
-      if (!systemPrompt) loadSystemPrompt();
-      loadSelected();
-      doRefine().finally(() => {
-        if (refineOnlyMode && reviewOv.style.display === "none") ov.style.display = "none";
-      });
+      openTransient(idx, doRefine);
+    },
+    /** Same idea as openRefine(), but runs Prompt Write instead — used by the main
+     * screen's own Prompt Write button. */
+    openWrite(idx) {
+      openTransient(idx, doWrite);
     },
   };
 }
