@@ -508,6 +508,9 @@ This cannot be undone.`,
         cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "4px 8px",
         borderRadius: "5px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
       }});
+      // mousedown steals focus from the editor before click fires, collapsing its
+      // selection to the end — preventDefault keeps the editor focused throughout.
+      b.addEventListener("mousedown", (e) => e.preventDefault());
       b.addEventListener("click", () => insertTagAtCursor(editor, tag));
       return b;
     }));

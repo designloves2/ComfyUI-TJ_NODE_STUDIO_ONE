@@ -36,6 +36,10 @@ export function ask(parent, { title, message, initial = "", kind = "text", okLab
           cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "3px 9px",
           borderRadius: "5px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
         }});
+        // mousedown on a button steals focus from the textarea before click fires,
+        // which collapses its selection to the end — preventDefault here keeps the
+        // textarea focused throughout so selectionStart/End still point at the cursor.
+        b.addEventListener("mousedown", (e) => e.preventDefault());
         b.addEventListener("click", () => {
           const s = input.selectionStart ?? input.value.length;
           const e = input.selectionEnd ?? input.value.length;
