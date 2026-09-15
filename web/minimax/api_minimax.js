@@ -666,7 +666,7 @@ export async function writeBriefOpenRouter(systemPrompt, userPrompt, orModel) {
  * TextGenerate path, it takes one image per call — no true multi-image batching — so
  * the caller (ui_prompt_edit_minimax.js) loops this once per reference image.
  */
-export async function analyzeImageLlama(imageB64, ggufModel, mmprojFile, customInstruction, nCtx) {
+export async function analyzeImageLlama(imageB64, ggufModel, mmprojFile, customInstruction, nCtx, maxTokens) {
   const r = await api.fetchApi("/tj_studio_one/llm/image_to_prompt", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -674,7 +674,8 @@ export async function analyzeImageLlama(imageB64, ggufModel, mmprojFile, customI
       gguf_model: ggufModel || "", mmproj_file: mmprojFile || "none",
       vision_task: "Caption (plain description)",
       custom_instruction: customInstruction || "",
-      n_ctx: nCtx || 8192,
+      n_ctx: nCtx || 16384,
+      max_tokens: maxTokens || 1200,
     }),
   });
   const d = await r.json();
@@ -686,20 +687,24 @@ export async function analyzeImageLlama(imageB64, ggufModel, mmprojFile, customI
  *  model_format "Minimax H3 (Video)", the same instruction TJ_NODE's model_formats.json
  *  entry supplies to the native/OpenRouter paths (see system_prompt below is unused here
  *  since this route builds its own system prompt server-side from model_format).
- *  n_ctx defaults to 8192, not the route's own 4096 default — the H3 instruction
+ *  n_ctx defaults to 16384, not the route's own 4096 default — the H3 instruction
  *  (guide text + few-shot examples) plus a real user request measured 5436 tokens on its
  *  own in testing, already over 4096 before generation even starts (observed failure:
- *  a silent empty result, no error — the request just had no room left to answer in). */
-export async function writeBriefLlama(userPrompt, ggufModel, nCtx) {
+ *  a silent empty result, no error — the request just had no room left to answer in).
+ *  max_tokens defaults to 4096: a real full brief (opening style + multiple [Shot N] +
+ *  Ambient sound + Music) got cut off mid-sentence at 2000 in testing — a truncated
+ *  brief is exactly as unusable as an empty one, so this needs real headroom, not just
+ *  enough to avoid an error. */
+export async function writeBriefLlama(userPrompt, ggufModel, nCtx, maxTokens) {
   const r = await api.fetchApi("/tj_studio_one/llm/enhance", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       prompt: userPrompt, backend: "local",
       gguf_model: ggufModel || "",
-      n_ctx: nCtx || 8192,
+      n_ctx: nCtx || 16384,
       model_format: "Minimax H3 (Video)",
       purpose: "Video",
-      max_tokens: 2000,
+      max_tokens: maxTokens || 4096,
     }),
   });
   const d = await r.json();

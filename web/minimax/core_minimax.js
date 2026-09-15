@@ -1151,11 +1151,15 @@ export function defaultState(saved) {
     h3LlamaVisionModel:  saved.h3LlamaVisionModel  || "",
     h3LlamaVisionMmproj: saved.h3LlamaVisionMmproj || "none",
     h3LlamaBriefModel:   saved.h3LlamaBriefModel   || "",
-    // 8192, not llama.cpp's/the route's own 4096 default — H3's system prompt (guide +
+    // 16384, not llama.cpp's/the route's own 4096 default — H3's system prompt (guide +
     // few-shot examples) plus a real request measured 5436 tokens on its own in testing,
     // already over 4096 before generation even starts (observed failure: a silent empty
     // result, no error).
-    h3LlamaNCtx:         saved.h3LlamaNCtx         ?? 8192,
+    h3LlamaNCtx:         saved.h3LlamaNCtx         ?? 16384,
+    // 4096 — a real full brief (opening style + multiple [Shot N] + Ambient sound +
+    // Music) got cut off mid-sentence at 2000 in testing; a truncated brief is exactly
+    // as unusable as an empty one.
+    h3LlamaMaxTokens:    saved.h3LlamaMaxTokens    ?? 4096,
 
     // output
     saveSubfolder: saved.saveSubfolder || "",

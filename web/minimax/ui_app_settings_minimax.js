@@ -388,9 +388,15 @@ export function createSettingsOverlay(state, ctx) {
           // already over 4096 before generation even starts (silent empty result, no
           // error — the request simply had no room left to answer in).
           {
-            const nCtxField = numberField(state.h3LlamaNCtx ?? 8192,
+            const nCtxField = numberField(state.h3LlamaNCtx ?? 16384,
               v => { state.h3LlamaNCtx = Math.max(512, Math.round(v)); ctx.persist(); }, 512);
             holder.appendChild(col([label("Context length (n_ctx)"), nCtxField]));
+            // A truncated brief is exactly as unusable as an empty one — this needs real
+            // headroom (a full multi-shot brief measured well over 2000 tokens), not just
+            // enough to dodge an error.
+            const maxTokField = numberField(state.h3LlamaMaxTokens ?? 4096,
+              v => { state.h3LlamaMaxTokens = Math.max(256, Math.round(v)); ctx.persist(); }, 256);
+            holder.appendChild(col([label("Max output tokens"), maxTokField]));
           }
         });
         control = holder;
@@ -735,7 +741,8 @@ export function createSettingsOverlay(state, ctx) {
       h3_llama_vision_model:  state.h3LlamaVisionModel  || "",
       h3_llama_vision_mmproj: state.h3LlamaVisionMmproj || "",
       h3_llama_brief_model:   state.h3LlamaBriefModel   || "",
-      h3_llama_n_ctx:         state.h3LlamaNCtx         ?? 8192,
+      h3_llama_n_ctx:         state.h3LlamaNCtx         ?? 16384,
+      h3_llama_max_tokens:    state.h3LlamaMaxTokens    ?? 4096,
       filename_prefix:       state.filenamePrefix    || "MMH3",
       stitch_at_end:         state.stitchAtEnd       ?? true,
       trim_last_clip:        state.trimLastClip      ?? false,
@@ -864,6 +871,7 @@ export function createSettingsOverlay(state, ctx) {
     if (cfg.h3_llama_vision_mmproj)   state.h3LlamaVisionMmproj = cfg.h3_llama_vision_mmproj;
     if (cfg.h3_llama_brief_model)     state.h3LlamaBriefModel   = cfg.h3_llama_brief_model;
     if (cfg.h3_llama_n_ctx != null)   state.h3LlamaNCtx         = cfg.h3_llama_n_ctx;
+    if (cfg.h3_llama_max_tokens != null) state.h3LlamaMaxTokens = cfg.h3_llama_max_tokens;
     if (cfg.filename_prefix)          state.filenamePrefix   = cfg.filename_prefix;
     // save_subfolder was written on every Save All but never read back — the Output tab
     // (and the gallery, and every "From gallery" picker) always came back to the
