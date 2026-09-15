@@ -992,7 +992,7 @@ ${name}`, style: {
     const brief  = bLlama ? (state.h3LlamaBriefModel ? `Llama:${shortName(state.h3LlamaBriefModel)}` : null)
       : bOR ? `OR:${shortName(state.h3OrModelBrief || state.h3OrModel) || "default"}`
       : (state.nativeBriefClip ? shortName(state.nativeBriefClip) : null);
-    const vision = vLlama ? (state.h3LlamaVisionModel ? `Llama:${shortName(state.h3LlamaVisionModel)}` : null)
+    const vision = vLlama ? (state.h3LlamaVisionModel ? `Llama:${shortName(state.h3LlamaVisionModel)}+${shortName(state.h3LlamaVisionMmproj || "none")}` : null)
       : vOR ? `OR:${shortName(state.h3OrModelVision || state.h3OrModel) || "default"}`
       : (state.nativeVisionClip ? shortName(state.nativeVisionClip) : null);
     if (!brief || (needImage && !vision)) {

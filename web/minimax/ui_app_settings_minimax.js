@@ -358,8 +358,16 @@ export function createSettingsOverlay(state, ctx) {
         // clipKey tells vision role from brief role ("nativeVisionClip" vs "nativeBriefClip")
         // the same way the OpenRouter branch below reads orModelKey — reused here so this
         // stays one function instead of splitting vision/brief into separate ones.
+        //
+        // Vision picks its own GGUF base model same as Brief does (not a silent reuse of
+        // Brief's — user: "브리프에서 고른 모델 그대로 사용이 아니고 둘다 모델은 선택을
+        // 하는데 비전에서는 mmproj를 선택해야되잖아"), PLUS the mmproj projector that
+        // pairs with it — a llama.cpp vision pass needs both loaded together.
         const isVisionRole = clipKey === "nativeVisionClip";
-        const ggufKey = isVisionRole ? "h3LlamaVisionModel" : "h3LlamaBriefModel";
+        const isLtxRole = clipKey === "ltxVisionClip";
+        const modelKey = isLtxRole ? "ltxLlamaModel" : isVisionRole ? "h3LlamaVisionModel" : "h3LlamaBriefModel";
+        const mmprojKey = isLtxRole ? "ltxLlamaMmproj" : "h3LlamaVisionMmproj";
+        const needsMmproj = isVisionRole || isLtxRole;
         const holder = el("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } });
         holder.appendChild(el("div", { text: "loading gguf models…", style: { fontSize: "11px", color: C.muted } }));
         llamaModels().then(d => {
@@ -370,17 +378,22 @@ export function createSettingsOverlay(state, ctx) {
               style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
             return;
           }
-          const ggufList = d.gguf.length ? d.gguf : ["(none found)"];
-          if (!state[ggufKey] && d.gguf[0]) { state[ggufKey] = d.gguf[0]; ctx.persist(); }
-          const ggufPick = searchableSelect(ggufList, state[ggufKey] || ggufList[0],
-            v => { state[ggufKey] = v; ctx.persist(); });
+          // Explicit client-side split rather than trusting the server's own gguf/mmproj
+          // arrays not to overlap.
+          const isMmprojName = (n) => /mmproj/i.test(String(n || ""));
+          const ggufList = (d.gguf || []).filter(n => !isMmprojName(n));
+          if (!ggufList.length) ggufList.push("(none found)");
+          if (!state[modelKey] && ggufList[0] && ggufList[0] !== "(none found)") { state[modelKey] = ggufList[0]; ctx.persist(); }
+          const ggufPick = searchableSelect(ggufList, state[modelKey] || ggufList[0],
+            v => { state[modelKey] = v; ctx.persist(); });
           holder.appendChild(col([label("GGUF model"), ggufPick.el]));
-          if (isVisionRole) {
-            const mmList = d.mmproj.length ? d.mmproj : ["none"];
-            if (!state.h3LlamaVisionMmproj) { state.h3LlamaVisionMmproj = "none"; ctx.persist(); }
-            const mmPick = searchableSelect(mmList, state.h3LlamaVisionMmproj || "none",
-              v => { state.h3LlamaVisionMmproj = v; ctx.persist(); });
-            holder.appendChild(col([label("mmproj (vision projector — required to actually see the image)"), mmPick.el]));
+
+          if (needsMmproj) {
+            const mmList = ["none", ...(d.mmproj || []).filter(n => n !== "none" && isMmprojName(n))];
+            if (!state[mmprojKey]) { state[mmprojKey] = "none"; ctx.persist(); }
+            const mmPick = searchableSelect(mmList, state[mmprojKey] || "none",
+              v => { state[mmprojKey] = v; ctx.persist(); });
+            holder.appendChild(col([label("mmproj (vision projector — pairs with the GGUF model above to add sight)"), mmPick.el]));
           }
           // Shared by both roles — one context window size for whichever GGUF loads.
           // Defaults to 8192, not llama.cpp's own 4096: H3's system prompt (guide + few-
@@ -743,6 +756,8 @@ export function createSettingsOverlay(state, ctx) {
       h3_llama_brief_model:   state.h3LlamaBriefModel   || "",
       h3_llama_n_ctx:         state.h3LlamaNCtx         ?? 16384,
       h3_llama_max_tokens:    state.h3LlamaMaxTokens    ?? 4096,
+      ltx_llama_model:        state.ltxLlamaModel       || "",
+      ltx_llama_mmproj:       state.ltxLlamaMmproj      || "",
       filename_prefix:       state.filenamePrefix    || "MMH3",
       stitch_at_end:         state.stitchAtEnd       ?? true,
       trim_last_clip:        state.trimLastClip      ?? false,
@@ -872,6 +887,8 @@ export function createSettingsOverlay(state, ctx) {
     if (cfg.h3_llama_brief_model)     state.h3LlamaBriefModel   = cfg.h3_llama_brief_model;
     if (cfg.h3_llama_n_ctx != null)   state.h3LlamaNCtx         = cfg.h3_llama_n_ctx;
     if (cfg.h3_llama_max_tokens != null) state.h3LlamaMaxTokens = cfg.h3_llama_max_tokens;
+    if (cfg.ltx_llama_model)          state.ltxLlamaModel       = cfg.ltx_llama_model;
+    if (cfg.ltx_llama_mmproj)         state.ltxLlamaMmproj      = cfg.ltx_llama_mmproj;
     if (cfg.filename_prefix)          state.filenamePrefix   = cfg.filename_prefix;
     // save_subfolder was written on every Save All but never read back — the Output tab
     // (and the gallery, and every "From gallery" picker) always came back to the

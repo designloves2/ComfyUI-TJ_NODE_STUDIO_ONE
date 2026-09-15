@@ -1148,9 +1148,14 @@ export function defaultState(saved) {
     h3OrModelVision:  saved.h3OrModelVision  || saved.h3OrModel || "",
     // Llama GGUF (local llama.cpp, via TJ_NODE's prompt_enhancer.py/image_to_prompt.py —
     // the same backend the image nodes' shared Enhance/Image→Prompt panel already uses).
+    // Vision picks its own base GGUF model same as Brief does, plus the mmproj projector
+    // that pairs with it to add sight — a vision pass needs both loaded together.
     h3LlamaVisionModel:  saved.h3LlamaVisionModel  || "",
     h3LlamaVisionMmproj: saved.h3LlamaVisionMmproj || "none",
     h3LlamaBriefModel:   saved.h3LlamaBriefModel   || "",
+    // LTX Upscale has no paired "brief" row — standalone vision role, own model + mmproj.
+    ltxLlamaModel:       saved.ltxLlamaModel       || "",
+    ltxLlamaMmproj:      saved.ltxLlamaMmproj      || "none",
     // 16384, not llama.cpp's/the route's own 4096 default — H3's system prompt (guide +
     // few-shot examples) plus a real request measured 5436 tokens on its own in testing,
     // already over 4096 before generation even starts (observed failure: a silent empty
