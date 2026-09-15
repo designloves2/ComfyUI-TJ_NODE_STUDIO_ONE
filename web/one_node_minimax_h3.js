@@ -37,7 +37,7 @@ import {
   copyOutputToInput, getNodeAvailability, getModels, saveMeta, pickChainFrame, getLoraTriggers, deleteImage,
   getMediaFiles, uploadMedia, getVramStats, listVideos,
   saveConfig, analyzeImagesNative, analyzeImagesOpenRouter, writeBriefNative, writeBriefOpenRouter, getMediaInfo,
-  listPromptSets, getPromptSet, getClipLastFrame,
+  listPromptSets, getPromptSet, getClipLastFrame, analyzeImageLlama, writeBriefLlama,
 } from "./minimax/api_minimax.js";
 import { buildClipGraph, buildLtxUpscaleGraph, buildFaceRefineGraph, NODE_IDS, previewNodeKey } from "./minimax/graph_builder_minimax.js";
 import { PIPELINE_PRESETS, allPresets, captureAxes, matchPreset, applyPreset } from "./minimax/presets_minimax.js";
@@ -1292,9 +1292,27 @@ app.registerExtension({
       }
       // The ✨ vision setup, its own — not shared with H3. Configured in Settings.
       function ltxVisionLabel() {
-        if ((state.ltxVisionBackend || "native") === "openrouter")
+        const backend = state.ltxVisionBackend || "native";
+        if (backend === "openrouter")
           return `OpenRouter · ${(state.ltxVisionOrModel || "(model not set)").split("/").pop()}`;
+        if (backend === "llamagguf")
+          return `Llama GGUF · ${(state.ltxLlamaModel || "(model not set)").split(/[\\/]/).pop()}`;
         return `native CLIP · ${(state.ltxVisionClip || "(clip not set)").split(/[\\/]/).pop()}`;
+      }
+      // Same megapixel cap the Prompt Edit panel's Llama GGUF vision path uses, client-side
+      // since there's no server hop for this call to do it in.
+      async function ltxFilenameToB64(filename) {
+        const resp = await fetch(`/view?filename=${encodeURIComponent(filename)}&type=input`);
+        const blob = await resp.blob();
+        const bitmap = await createImageBitmap(blob);
+        const targetPixels = 1024 * 1024;
+        const scale = Math.min(1, Math.sqrt(targetPixels / (bitmap.width * bitmap.height)));
+        const w = Math.max(1, Math.round(bitmap.width * scale));
+        const h = Math.max(1, Math.round(bitmap.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(bitmap, 0, 0, w, h);
+        return canvas.toDataURL("image/jpeg", 0.92).split(",")[1] || "";
       }
       async function ltxWritePrompt() {
         if (_ltxBusy) return;
@@ -1303,7 +1321,10 @@ app.registerExtension({
         if (backend === "openrouter" && !(state.ltxVisionOrModel || "").trim()) {
           showPopup("Set the OpenRouter vision model in ⚙ Settings → Models → LTX Upscale.", true); return;
         }
-        if (backend !== "openrouter" && !(state.ltxVisionClip || "").trim()) {
+        if (backend === "llamagguf" && !(state.ltxLlamaModel || "").trim()) {
+          showPopup("Set the Llama GGUF model in ⚙ Settings → LLM Setting → LTX Upscale.", true); return;
+        }
+        if (backend === "native" && !(state.ltxVisionClip || "").trim()) {
           showPopup("Set the native vision CLIP in ⚙ Settings → Models → LTX Upscale (or switch that backend to OpenRouter).", true); return;
         }
         _ltxBusy = true; renderPrompts();
@@ -1313,7 +1334,18 @@ app.registerExtension({
             || "Describe this video frame as one text-to-image prompt matching exactly what is shown.";
           let text;
           if (backend === "openrouter") text = await analyzeImagesOpenRouter(frames, instr, state.ltxVisionOrModel);
-          else                          text = await analyzeImagesNative(state.ltxVisionClip, frames, instr, "ltxv");
+          else if (backend === "llamagguf") {
+            // The shared /tj_studio_one/llm/image_to_prompt route takes one image per call —
+            // same loop the Prompt Edit panel's own Llama GGUF vision path uses.
+            const lines = [];
+            for (const f of frames) {
+              const b64 = await ltxFilenameToB64(f);
+              lines.push(String(await analyzeImageLlama(b64, state.ltxLlamaModel, state.ltxLlamaMmproj, instr,
+                state.h3LlamaNCtx, state.h3LlamaMaxTokens) || "").trim());
+            }
+            text = lines.join("\n");
+          }
+          else text = await analyzeImagesNative(state.ltxVisionClip, frames, instr, "ltxv");
           if (text && text.trim()) { state.ltxPrompt = text.trim(); persist(); showPopup(`Prompt written from ${frames.length} frames sampled across the clip.`, false); }
           else showPopup("The vision model returned nothing — try again or write the prompt by hand.", true);
         } catch (e) { showPopup(e.message, true); }
@@ -1330,7 +1362,10 @@ app.registerExtension({
         if (backend === "openrouter" && !(state.ltxVisionOrModel || "").trim()) {
           showPopup("Set the OpenRouter model in ⚙ Settings → LLM Setting → LTX Upscale.", true); return;
         }
-        if (backend !== "openrouter" && !(state.ltxVisionClip || "").trim()) {
+        if (backend === "llamagguf" && !(state.ltxLlamaModel || "").trim()) {
+          showPopup("Set the Llama GGUF model in ⚙ Settings → LLM Setting → LTX Upscale.", true); return;
+        }
+        if (backend === "native" && !(state.ltxVisionClip || "").trim()) {
           showPopup("Set the native LLM CLIP in ⚙ Settings → LLM Setting → LTX Upscale.", true); return;
         }
         _ltxBusy = true; renderPrompts();
@@ -1338,7 +1373,9 @@ app.registerExtension({
           const sys = (state.ltxConvertPrompt || "").trim() || "Rewrite this MiniMax-H3 brief as one LTX-2.5 prompt paragraph.";
           let text;
           if (backend === "openrouter") text = await writeBriefOpenRouter(sys, src, state.ltxVisionOrModel);
-          else                          text = await writeBriefNative(state.ltxVisionClip, sys, src, "ltxv");
+          else if (backend === "llamagguf")
+            text = await writeBriefLlama(`${sys}\n\n${src}`, state.ltxLlamaModel, state.h3LlamaNCtx, state.h3LlamaMaxTokens);
+          else text = await writeBriefNative(state.ltxVisionClip, sys, src, "ltxv");
           if (text && text.trim()) { state.ltxPrompt = text.trim(); persist(); showPopup("Converted the H3 brief to an LTX 2.5 prompt.", false); }
           else showPopup("The model returned nothing — try again.", true);
         } catch (e) { showPopup(e.message, true); }
