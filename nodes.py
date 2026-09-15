@@ -619,6 +619,42 @@ def _make_delete_handler(node_key):
     return handler
 
 
+def _make_rename_handler(node_key):
+    """Rename an output file in place (plus its sidecar json/thumb, if any) - used to
+    strip VHS_VideoCombine's own "-audio" suffix off the final saved file so it matches
+    the plain filename_prefix every other save path already produces."""
+    async def handler(request):
+        try:
+            data = await request.json()
+            filename = data.get("filename", "")
+            subfolder = data.get("subfolder", "")
+            new_filename = data.get("new_filename", "")
+            if not filename or not new_filename:
+                return web.json_response({"ok": False, "error": "filename and new_filename required"}, status=400)
+            output_dir = _get_output_dir()
+            try:
+                old_path = _safe_resolve_output_path(output_dir, subfolder, filename)
+                new_path = _safe_resolve_output_path(output_dir, subfolder, new_filename)
+            except ValueError:
+                return web.json_response({"ok": False, "error": "invalid path"}, status=400)
+            if not os.path.exists(old_path):
+                return web.json_response({"ok": False, "error": "file not found"}, status=404)
+            if os.path.exists(new_path):
+                return web.json_response({"ok": False, "error": "target already exists"}, status=409)
+            os.rename(old_path, new_path)
+            for old_json, new_json in ((_meta_path(old_path), _meta_path(new_path)),
+                                        (_meta_path_legacy(old_path), _meta_path_legacy(new_path))):
+                if os.path.exists(old_json) and not os.path.exists(new_json):
+                    try:
+                        os.rename(old_json, new_json)
+                    except Exception:
+                        pass
+            return web.json_response({"ok": True, "filename": new_filename})
+        except Exception as e:
+            return web.json_response({"ok": False, "error": str(e)})
+    return handler
+
+
 def _make_copy_to_input_handler(prefix):
     async def handler(request):
         import uuid as _uuid
@@ -1739,6 +1775,7 @@ PromptServer.instance.routes.post("/minimax_h3_one/update_meta")(_make_update_me
 PromptServer.instance.routes.get("/minimax_h3_one/meta")(_make_meta_get_handler())
 PromptServer.instance.routes.post("/minimax_h3_one/open_folder")(_make_open_folder_handler())
 PromptServer.instance.routes.post("/minimax_h3_one/delete")(_make_delete_handler("minimax_h3"))
+PromptServer.instance.routes.post("/minimax_h3_one/rename")(_make_rename_handler("minimax_h3"))
 PromptServer.instance.routes.post("/minimax_h3_one/discard_input")(_make_discard_input_handler("mmh3"))
 PromptServer.instance.routes.post("/minimax_h3_one/copy_to_input")(_make_copy_to_input_handler("mmh3"))
 PromptServer.instance.routes.get("/minimax_h3_one/lora_triggers")(_make_lora_triggers_handler())

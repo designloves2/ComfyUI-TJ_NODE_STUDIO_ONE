@@ -224,6 +224,29 @@ export async function deleteImage(filename, subfolder) {
   return r.json();
 }
 
+/**
+ * VHS_VideoCombine's own final output always carries a "-audio" suffix
+ * ("..._00001-audio.mp4") whenever the clip has a soundtrack — every other save path in
+ * this pack produces a plain filename_prefix with no such suffix. Strips it off the
+ * actual file on disk (and its sidecar json) so a VHS-saved clip's name matches what the
+ * rest of the pack expects; returns the possibly-renamed {filename, subfolder} unchanged
+ * on any failure (already-renamed, no "-audio" to strip, or the route itself errors).
+ */
+export async function stripAudioSuffix(filename, subfolder) {
+  const m = /^(.*)-audio(\.[^.]+)$/.exec(filename || "");
+  if (!m) return { filename, subfolder };
+  const newFilename = m[1] + m[2];
+  try {
+    const r = await api.fetchApi(`${API}/rename`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename, subfolder, new_filename: newFilename }),
+    });
+    const d = await r.json();
+    return d.ok ? { filename: newFilename, subfolder } : { filename, subfolder };
+  } catch { return { filename, subfolder }; }
+}
+
 export async function openImageFolder(filename, subfolder) {
   const r = await api.fetchApi(`${API}/open_folder`, {
     method: "POST",
@@ -426,10 +449,29 @@ export function queuePrompt(promptGraph, { onProgress, onNode, onQueued, sampler
         try { onNode?.(d.node, d.output); } catch {}
       }
     };
-    const onSuccess = (ev) => {
+    // Every save path in this pack produces a plain filename_prefix except
+    // VHS_VideoCombine, whose real final file always carries its own "-audio" suffix
+    // when the clip has sound — fixed once here so every caller downstream (metadata,
+    // gallery listing, chunked stitching) sees the same plain-name shape regardless of
+    // which save node actually ran.
+    async function fixAudioSuffixes(byNode) {
+      for (const key in byNode) {
+        const out = byNode[key];
+        for (const arr of [out?.images, out?.gifs]) {
+          if (!Array.isArray(arr)) continue;
+          for (const item of arr) {
+            if (!item?.filename) continue;
+            const r = await stripAudioSuffix(item.filename, item.subfolder || "");
+            item.filename = r.filename;
+          }
+        }
+      }
+      return byNode;
+    }
+    const onSuccess = async (ev) => {
       const d = ev.detail || {};
       if (d.prompt_id && promptId && d.prompt_id !== promptId) return;
-      finish(resolve, { byNode: outputs });
+      finish(resolve, { byNode: await fixAudioSuffixes(outputs) });
     };
     const onExecError = (ev) => {
       const d = ev.detail || {};
@@ -457,7 +499,7 @@ export function queuePrompt(promptGraph, { onProgress, onNode, onQueued, sampler
               .map(m => Array.isArray(m) ? m.join(" ") : String(m)).join("; ");
             finish(reject, new Error(msg || "generation failed"));
           } else if (entry.status.completed) {
-            finish(resolve, { byNode: entry.outputs || outputs });
+            finish(resolve, { byNode: await fixAudioSuffixes(entry.outputs || outputs) });
           }
         } catch { /* keep polling */ }
       }
