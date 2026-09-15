@@ -491,7 +491,27 @@ This cannot be undone.`,
     }
     ctx.persist(); renderFirstFrameRow(); renderList(); renderImageRow();
   });
-  fiRow.append(fiThumb, fiLabel, fiGalleryBtn, fiRemoveBtn);
+  // Insert-at-cursor tags — <Picture N>, <Subject N>, <Shot N> — into the clip editor.
+  // "N" is inserted literally; the user replaces it with the actual number themselves.
+  function insertTagAtCursor(ta, tag) {
+    const s = ta.selectionStart ?? ta.value.length;
+    const e = ta.selectionEnd ?? ta.value.length;
+    const token = `<${tag} N>`;
+    ta.value = ta.value.slice(0, s) + token + ta.value.slice(e);
+    ta.focus();
+    ta.setSelectionRange(s + token.length, s + token.length);
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  const tagBtnRow = el("div", { style: { display: "flex", gap: "5px", flexShrink: "0" } },
+    ["Picture", "Subject", "Shot"].map(tag => {
+      const b = el("button", { type: "button", text: tag, title: `Insert <${tag} N> at the cursor`, style: {
+        cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "4px 8px",
+        borderRadius: "5px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+      }});
+      b.addEventListener("click", () => insertTagAtCursor(editor, tag));
+      return b;
+    }));
+  fiRow.append(fiThumb, fiLabel, tagBtnRow, fiGalleryBtn, fiRemoveBtn);
   const fiHint = el("div", {
     text: "Resuming a multi-clip run: pick the last finished clip, then write the prompts "
         + "for the clips that still need rendering. This clip starts from that clip's final "
@@ -1312,8 +1332,9 @@ ${name}`, style: {
       title: "Refine prompt",
       message: "What should change in the current prompt?",
       initial: lastRefineInstruction,
-      kind: "text",
+      kind: "textarea",
       okLabel: "Refine",
+      tags: ["Picture", "Subject", "Shot"],
     });
     if (!instruction || !instruction.trim()) return;
     lastRefineInstruction = instruction.trim();

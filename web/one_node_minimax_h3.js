@@ -948,8 +948,36 @@ app.registerExtension({
       const promptTitle = el("div", { text: "PROMPTS", style: { color: C.muted, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.04em" } });
       const promptCount = el("span", { style: { color: C.muted, fontSize: "10px" } });
       promptHdr.append(promptTitle, promptCount);
+      // Insert-at-cursor tags — <Picture N>, <Subject N>, <Shot N> — into whichever clip
+      // textarea below was last focused. "N" is inserted literally; the user replaces it
+      // with the actual number themselves.
+      let lastFocusedPromptTA = null;
+      function insertTagAtCursor(ta, tag) {
+        const s = ta.selectionStart ?? ta.value.length;
+        const e = ta.selectionEnd ?? ta.value.length;
+        const token = `<${tag} N>`;
+        ta.value = ta.value.slice(0, s) + token + ta.value.slice(e);
+        ta.focus();
+        ta.setSelectionRange(s + token.length, s + token.length);
+        ta.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      const tagBtnRow = el("div", { style: { display: "flex", gap: "4px", marginLeft: "auto" } },
+        ["Picture", "Subject", "Shot"].map(tag => {
+          const b = el("button", { type: "button", text: tag, title: `Insert <${tag} N> into the last-focused clip prompt`, style: {
+            cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "3px 8px",
+            borderRadius: "5px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+          }});
+          b.addEventListener("click", () => {
+            const ta = lastFocusedPromptTA;
+            if (!ta) { ctx.showPopup?.("Click into a clip's prompt field first.", true); return; }
+            insertTagAtCursor(ta, tag);
+          });
+          return b;
+        }));
+      promptHdr.appendChild(tagBtnRow);
+
       const commonBtn = el("button", { type: "button", text: "🧩 Common", title: "Edit the header / sound-music text shared by every clip", style: {
-        marginLeft: "auto", cursor: "pointer", fontFamily: "inherit", fontSize: "10px",
+        cursor: "pointer", fontFamily: "inherit", fontSize: "10px",
         padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text,
         border: `1px solid ${C.border}`,
       }});
@@ -1167,7 +1195,7 @@ app.registerExtension({
             state.prompts[i].text = ta.value;
             persist();
           });
-          ta.addEventListener("focus", () => ta.style.borderColor = BRAND);
+          ta.addEventListener("focus", () => { ta.style.borderColor = BRAND; lastFocusedPromptTA = ta; });
           ta.addEventListener("blur",  () => ta.style.borderColor = C.border);
 
           const del = el("button", { type: "button", text: "✕", title: "Remove", style: {
