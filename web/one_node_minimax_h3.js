@@ -1039,7 +1039,30 @@ app.registerExtension({
 
       const promptList = el("div", { style: { flex: "1", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px" } });
       promptList.className = "mmh3-lp";
-      promptWrap.append(promptHdr, promptList);
+      // Sibling wrapper, not a child of promptList itself — promptList gets clear()'d and
+      // fully rebuilt by renderPrompts(), which would wipe an overlay appended inside it.
+      const promptListWrap = el("div", { style: { flex: "1", position: "relative", minHeight: "0" } });
+      // Same visual language as the live-preview's own "busy, no per-step feedback"
+      // banners (frDetectBanner/fvsrBanner above) — dim cover + centered glowing text —
+      // so a Refine/Prompt Write run reads as "busy" the same way a render does, instead
+      // of looking like the fields just silently stopped responding to clicks.
+      const promptBusyOv = el("div", { text: "✨ Writing the prompt…", style: {
+        display: "none", position: "absolute", inset: "0", zIndex: "5",
+        alignItems: "center", justifyContent: "center", textAlign: "center",
+        background: "rgba(0,0,0,0.75)", padding: "0 16px", borderRadius: "6px",
+        color: "#b57bff", fontSize: "18px", fontWeight: "700",
+        textShadow: "0 0 12px rgba(181,123,255,0.5)",
+      }});
+      promptListWrap.append(promptList, promptBusyOv);
+      promptWrap.append(promptHdr, promptListWrap);
+      // Shared by the main-screen Refine/Prompt Write buttons AND the Prompt Edit popup —
+      // whichever one is running an LLM call locks every clip's prompt field here too,
+      // since they all edit the same underlying state.prompts.
+      ctx.setPromptBusy = (busy, label) => {
+        promptBusyOv.textContent = label || "✨ Writing the prompt…";
+        promptBusyOv.style.display = busy ? "flex" : "none";
+        promptList.querySelectorAll("textarea").forEach(t => { t.disabled = busy; });
+      };
 
       // ══ PREVIEW RESIZE ══════════════════════════════════════════════════════
       // The current preview height is the max the user can go back up to — dragging the

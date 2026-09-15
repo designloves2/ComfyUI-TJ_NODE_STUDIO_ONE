@@ -548,7 +548,25 @@ This cannot be undone.`,
   }
   editor.addEventListener("focus", () => editor.style.borderColor = BRAND);
   editor.addEventListener("blur",  () => editor.style.borderColor = C.border);
-  editCol.append(editHdr, editor, fiRow, fiHint);
+  // Same "busy, no per-step feedback" banner language as the video preview's own
+  // frDetectBanner/fvsrBanner — dim cover + centered glowing text — over the one field
+  // a Prompt Write/Refine run is actually about to overwrite.
+  const editorWrap = el("div", { style: { flex: "1", display: "flex", position: "relative", minHeight: "0" } });
+  const editorBusyOv = el("div", { text: "✨ Writing the prompt…", style: {
+    display: "none", position: "absolute", inset: "0", zIndex: "5",
+    alignItems: "center", justifyContent: "center", textAlign: "center",
+    background: "rgba(0,0,0,0.75)", padding: "0 16px", borderRadius: "8px",
+    color: "#b57bff", fontSize: "18px", fontWeight: "700",
+    textShadow: "0 0 12px rgba(181,123,255,0.5)",
+  }});
+  editorWrap.append(editor, editorBusyOv);
+  function setEditorBusy(busy, label) {
+    editorBusyOv.textContent = label || "✨ Writing the prompt…";
+    editorBusyOv.style.display = busy ? "flex" : "none";
+    editor.disabled = busy;
+    ctx.setPromptBusy?.(busy, label);
+  }
+  editCol.append(editHdr, editorWrap, fiRow, fiHint);
   body.append(listCol, editCol);
 
   function updateCount() { refreshPreviewTag(); }
@@ -1288,6 +1306,7 @@ ${name}`, style: {
     }
     busy = true;
     enhBtn.disabled = true;
+    setEditorBusy(true, "✨ Writing the prompt…");
     progressStart();
     try {
       let imageSummary = "";
@@ -1347,6 +1366,7 @@ ${name}`, style: {
     } finally {
       progressStop();
       busy = false; enhBtn.disabled = false; enhSpin.style.display = "none"; enhBtnLabel.textContent = "✨ Prompt Write";
+      setEditorBusy(false);
     }
   }
   enhBtn.addEventListener("click", doWrite);
@@ -1377,6 +1397,7 @@ ${name}`, style: {
     busy = true;
     refineBtn.disabled = true;
     refineSpin.style.display = "inline-block"; refineBtnLabel.textContent = "Refining...";
+    setEditorBusy(true, "🔧 Refining the prompt…");
     statusTag.textContent = "refining..."; statusTag.style.color = BRAND;
     try {
       const userPrompt = buildRefineUserPrompt(current, lastRefineInstruction);
@@ -1395,6 +1416,7 @@ ${name}`, style: {
       ctx.showPopup?.(`Refine failed: ${e.message}`, true);
     } finally {
       busy = false; refineBtn.disabled = false; refineSpin.style.display = "none"; refineBtnLabel.textContent = "🔧 Prompt Refine";
+      setEditorBusy(false);
     }
   }
   refineBtn.addEventListener("click", doRefine);
