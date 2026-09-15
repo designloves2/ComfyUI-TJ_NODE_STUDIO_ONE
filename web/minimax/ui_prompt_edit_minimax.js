@@ -1009,7 +1009,7 @@ ${name}`, style: {
       : bOR ? `OR:${shortName(state.h3OrModelBrief || state.h3OrModel) || "default"}`
       : (state.nativeBriefClip ? shortName(state.nativeBriefClip) : null);
     // Vision has no GGUF model of its own — it reuses Brief's, only the mmproj differs.
-    const vision = vLlama ? (state.h3LlamaBriefModel ? `Llama:${shortName(state.h3LlamaBriefModel)}+${shortName(state.h3LlamaVisionMmproj || "none")}` : null)
+    const vision = vLlama ? (state.h3LlamaVisionModel ? `Llama:${shortName(state.h3LlamaVisionModel)}+${shortName(state.h3LlamaVisionMmproj || "none")}` : null)
       : vOR ? `OR:${shortName(state.h3OrModelVision || state.h3OrModel) || "default"}`
       : (state.nativeVisionClip ? shortName(state.nativeVisionClip) : null);
     if (!brief || (needImage && !vision)) {
@@ -1198,7 +1198,7 @@ ${name}`, style: {
     if (!briefOR && !briefLlama && !state.nativeBriefClip) { ctx.showPopup?.("No brief CLIP set - pick one in Settings, or switch the Brief backend to OpenRouter/Llama GGUF.", true); return; }
     if (images.length && !visionOR && !visionLlama && !state.nativeVisionClip) { ctx.showPopup?.("No vision CLIP set - pick one in Settings, or switch the Vision backend to OpenRouter/Llama GGUF.", true); return; }
     if (briefLlama && !state.h3LlamaBriefModel) { ctx.showPopup?.("No Llama GGUF brief model set - pick one in Settings.", true); return; }
-    if (images.length && visionLlama && !state.h3LlamaBriefModel) { ctx.showPopup?.("No Llama GGUF model set - pick one in Settings.", true); return; }
+    if (images.length && visionLlama && !state.h3LlamaVisionModel) { ctx.showPopup?.("No Llama GGUF vision model set - pick one in Settings.", true); return; }
 
     const target = targetSel.value;
     const base = (editor.value || "").trim();
@@ -1220,7 +1220,7 @@ ${name}`, style: {
           for (let i = 0; i < images.length; i++) {
             progressStage(`Analyzing image ${i + 1}/${images.length}...`);
             const b64 = await imageToB64(images[i]);
-            const desc = await analyzeImageLlama(b64, state.h3LlamaBriefModel, state.h3LlamaVisionMmproj, VISION_SYSTEM_PROMPT, state.h3LlamaNCtx, state.h3LlamaMaxTokens);
+            const desc = await analyzeImageLlama(b64, state.h3LlamaVisionModel, state.h3LlamaVisionMmproj, VISION_SYSTEM_PROMPT, state.h3LlamaNCtx, state.h3LlamaMaxTokens);
             lines.push(String(desc || "").trim());
           }
           imageSummary = lines.join("\n");
