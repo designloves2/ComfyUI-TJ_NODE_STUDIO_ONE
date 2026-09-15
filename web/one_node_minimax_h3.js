@@ -339,17 +339,31 @@ app.registerExtension({
       // callback (runFaceRefine's prog()) or a live preview frame (showPreviewFrame()),
       // since a preview frame can arrive over its own websocket message ahead of the first
       // progress callback and previously left the banner showing next to the image.
+      // Both banners below sit on their own full-cover layer over whatever is already in
+      // the preview box (a finished clip's resultVid included) — previewBox is a flex
+      // container, so a plain block/text child of it competes for row space with
+      // whatever ELSE is visible there and gets squeezed to one side the moment a video
+      // becomes visible next to it (reported: text centered while nothing was playing,
+      // then shoved left once the preview video loaded in). `position:absolute; inset:0`
+      // takes them out of that flex flow entirely, and the dim background is what makes
+      // this read as a real "busy" overlay rather than another sibling on the canvas.
       const frDetectBanner = el("div", { text: "⏳ Preparing generation…", style: {
-        display: "none", color: "#b57bff", fontSize: "18px", fontWeight: "700",
-        textAlign: "center", padding: "0 16px", textShadow: "0 0 12px rgba(181,123,255,0.5)",
+        display: "none", position: "absolute", inset: "0", zIndex: "5",
+        alignItems: "center", justifyContent: "center", textAlign: "center",
+        background: "rgba(0,0,0,0.6)", padding: "0 16px",
+        color: "#b57bff", fontSize: "18px", fontWeight: "700",
+        textShadow: "0 0 12px rgba(181,123,255,0.5)",
       }});
       // FlashVSR runs no live sampling preview of its own either — it's a tiled
       // post-process pass over the already-sampled frames, minutes long, with the same
       // "is it doing anything?" problem frDetectBanner solves for Face Refine's
       // detection stretch. Same pattern, own color/text/glyph so the two aren't confused.
       const fvsrBanner = el("div", { text: "◮ FlashVSR upscaling… please wait — no live preview for this pass", style: {
-        display: "none", color: "#e0a530", fontSize: "16px", fontWeight: "700",
-        textAlign: "center", padding: "0 16px", textShadow: "0 0 12px rgba(224,165,48,0.5)",
+        display: "none", position: "absolute", inset: "0", zIndex: "5",
+        alignItems: "center", justifyContent: "center", textAlign: "center",
+        background: "rgba(0,0,0,0.6)", padding: "0 16px",
+        color: "#e0a530", fontSize: "16px", fontWeight: "700",
+        textShadow: "0 0 12px rgba(224,165,48,0.5)",
       }});
       // width/height 100% (not max-*) so a small latent preview is scaled UP to fill the
       // box on its long edge; object-fit keeps the aspect ratio.
@@ -912,7 +926,7 @@ app.registerExtension({
       // fires, so the overall bar just continues past it rather than restarting.
       function setFlashVSRProgress(tile, total) {
         placeholder.style.display = "none";
-        fvsrBanner.style.display = "block";
+        fvsrBanner.style.display = "flex";
         const clipFrac = total ? tile / total : 0;
         const overall = totClip ? ((curClip - 1) + clipFrac) / totClip : clipFrac;
         barInner.style.width = `${Math.max(0, Math.min(100, overall * 100)).toFixed(1)}%`;
@@ -4236,7 +4250,7 @@ app.registerExtension({
               // show the big centered banner for that silent stretch, hide it the moment
               // real sampling progress starts arriving (see prog() below).
               placeholder.style.display = "none";
-              frDetectBanner.style.display = "block";
+              frDetectBanner.style.display = "flex";
               const prog = (v, m) => {
                 frDetectBanner.style.display = "none";
                 setStepProgress(
