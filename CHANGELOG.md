@@ -2,6 +2,72 @@
 
 ---
 
+## v1.29.0 (2026-09-15)
+
+### MiniMax H3 — Llama GGUF (local llama.cpp) backend for Image → Brief
+
+- Brief/Vision each gained a third backend option — Llama GGUF — alongside Native
+  (ComfyUI CLIP) and OpenRouter, reusing the same `/tj_studio_one/llm/*` routes the
+  image nodes' shared Enhance/Image→Prompt panel already has. Settings → LLM Setting
+  gained a GGUF model picker (+ an mmproj picker for Vision), a Context length (n_ctx,
+  default 16384) field and a Max output tokens field (default 4096) — a truncated or
+  empty brief is as unusable as a missing one, so both needed real headroom rather
+  than the route's own 4096/1000 defaults.
+- Found and fixed a chain of real bugs surfaced while wiring this up (all upstream,
+  in the paired ComfyUI-TJ_NODE pack, verified end-to-end against the live server
+  rather than trusted from source alone): a GGUF path-resolution bug that dropped a
+  model's own subfolder before trying to load it; a listing bug where the "text_encoders"
+  folder scan never recognized `.gguf` as a valid extension in the first place, so only
+  one hardcoded fallback model name ever appeared; a `stop=["</think>"]` list that cut
+  generation off the instant a thinking model closed its reasoning block, before the
+  real answer; and a paragraph-extraction step that always kept only the LAST paragraph
+  of any output, silently discarding the H3 brief's required multi-paragraph structure
+  (opening style + `[Shot N]` + Ambient sound + Music) regardless of what the model
+  actually wrote.
+- The Prompt Edit panel's Enhance header and model-name line only ever checked
+  Native-vs-OpenRouter — picking Llama GGUF and saving still displayed the old native
+  CLIP model. Both now branch on the real backend value.
+- Per-image vision analysis (native and Llama GGUF paths) could mislabel which
+  `<Picture N>` a reference actually was — the vision model's own "Image N:" line
+  numbers aren't reliable (observed: 4 images numbered 1/4/5/6), and the brief model
+  trusted them over the caller's own "these are in order" framing. Every line is now
+  renumbered by its actual array position before it ever reaches the brief model.
+- Added a late "final contract" reinforcement to the end of the brief-writing user
+  prompt (the same recency-effect technique a third-party MiniMax H3 prompt tool uses):
+  a plain restatement of the rules a long system prompt is most likely to drift from,
+  placed as the last thing the model reads before writing.
+
+### MiniMax Music3 / Ace-Step captions
+
+- Caption prompts (caption_minimax.md, caption_acestep.md) could leak lyric-specific
+  imagery, locations, or story beats that the Music Brief itself never asked for —
+  added an explicit ban on transferring such detail from lyrics into the caption, and
+  broadened the existing anti-quoting rule to also cover paraphrasing/rewriting/
+  continuing lyric lines.
+
+### User presets
+
+- A saved pipeline preset now also captures/restores the general LoRA panel (up to 4),
+  not just the turbo-specific slots it already saved. Found and fixed a real
+  pre-existing bug in the process: the preset dropdown rebuilt each saved preset's
+  entry without its recipe fields (steps, sampler, turbo/PDD LoRA files, and now the
+  general LoRA list), so those were captured on Save but silently dropped before Apply
+  ever saw them.
+- Preset ⚙ Setting dialog gained Export (downloads the user-preset list as one JSON
+  file) and Import (merges a file back in, name collision = overwrite).
+
+### H3 left panel
+
+- The per-clip prompt textareas' remembered height could only ever grow, never shrink
+  back — a ResizeObserver was trusting any layout-driven size change as a deliberate
+  user resize, not just an actual drag. Gated behind a real mousedown-drag, added a
+  hard 80-600px clamp, and added a ↕ button to reset every clip's box back to the
+  (now 1.5x bigger, 180px) default.
+- The FlashVSR/Face Refine "no live preview" banners were plain flex children of the
+  preview box, so a video becoming visible next to them shoved the banner text to one
+  side instead of the two stacking. Now a real full-cover dim overlay, matching what a
+  "busy" state should look like.
+
 ## v1.28.0 (2026-09-15)
 
 ### FlashVSR VSR — 4th Upscale option
