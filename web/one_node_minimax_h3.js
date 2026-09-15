@@ -959,7 +959,7 @@ app.registerExtension({
       const refineBtn = el("button", { type: "button", text: "🔧 Refine", title: "Revise the current clip's prompt from a typed instruction — same result review as Prompt Write", style: {
         cursor: "pointer", fontFamily: "inherit", fontSize: "10px",
         padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text,
-        border: `1px solid ${C.border}`,
+        border: `1px solid ${BRAND}`, fontWeight: "600",
       }});
       refineBtn.addEventListener("click", () => promptEditOv?.openRefine?.());
       promptHdr.appendChild(refineBtn);
