@@ -962,7 +962,7 @@ app.registerExtension({
         cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "3px 9px",
         borderRadius: "5px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
       }});
-      const resetTAHBtn = el("button", { type: "button", text: "↺", title: "Reset the prompt boxes' height back to the default", style: {
+      const resetTAHBtn = el("button", { type: "button", text: "↕", title: "Reset text field size (not the prompt text itself) back to the default", style: {
         cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "3px 9px",
         borderRadius: "5px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
       }});
