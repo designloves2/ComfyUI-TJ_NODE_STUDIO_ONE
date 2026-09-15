@@ -1049,6 +1049,24 @@ ${name}`, style: {
       }
     }
     lines.push("", "USER REQUEST:", baseText || "(no text supplied — base the brief on the image analysis above)");
+    // A last, plain restatement of the rules a long system prompt's earlier instructions
+    // are most likely to drift away from, placed as the very last thing the model reads
+    // before writing — the same "final contract" technique ComfyUI-MiniMaxH3-Prompt-Writer
+    // uses (its assembly.py appends a mode-specific grounding check to the end of the USER
+    // message, not the system prompt, specifically for this recency effect). The
+    // frame-anchored scenario's own instruction to invent a bridging action between two
+    // frames is a documented exception, which is why this says "only the minimum needed"
+    // rather than banning invention outright.
+    lines.push(
+      "",
+      "Final check before you write: stay grounded in what the request and any images/video/audio "
+      + "actually show — invent only the minimum needed to connect frames or fulfill the request, "
+      + "never unrelated actions, props, on-screen text, dialogue, or locations. An explicit user "
+      + "instruction always outranks a default assumption. If a reference was given one specific role "
+      + "(voice, motion, style, etc.), use only that role's content — do not also pull in its other "
+      + "visible traits. Do not invent music or ambient sound beyond what the request asks for or "
+      + "clearly implies. Output only the brief text, nothing else.",
+    );
     return lines.join("\n");
   }
 
