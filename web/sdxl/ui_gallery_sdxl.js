@@ -21,17 +21,62 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
 
   const topRow = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" } });
   topRow.appendChild(el("div", { text: "🖼 Gallery — SDXL ONE", style: { color: "#ffffff", fontSize: "14px", fontWeight: "700", flex: "1" } }));
-  const refreshBtn = button("↻", () => reset());
-  const closeBtn   = button("✕", () => { ov.style.display = "none"; }, "danger");
-  topRow.appendChild(refreshBtn); topRow.appendChild(closeBtn);
 
-  let favOnly = false;
+  let favOnly = false, offset = 0, total = 0, loading = false, loadedImages = [];
+  const LIMIT = 48;
+
+  // ── Multi-select ─────────────────────────────────────────────────────────
+  let selectMode = false;
+  const selected = new Set();   // keys from mediaKey(filename, subfolder)
+  let cellRefs = [];            // { key, img, del, checkbox }
+
+  const bulkDeleteBtn = button("", async () => {
+    if (!selected.size) return;
+    if (!confirm(`Delete ${selected.size} image(s)? This cannot be undone.`)) return;
+    const toDelete = cellRefs.filter(r => selected.has(r.key)).map(r => r.img);
+    for (const img of toDelete) {
+      await deleteImage(img.filename, img.subfolder || "");
+    }
+    setSelectMode(false);
+    reset();
+  }, "danger");
+  bulkDeleteBtn.style.cssText += "background:#c0392b;color:#fff;border:none;";
+  bulkDeleteBtn.style.display = "none";
+
+  function updateSelectionUI() {
+    selectBtn.textContent = selected.size > 0 ? `${selected.size} Select` : "Select";
+    if (selected.size > 0) {
+      bulkDeleteBtn.textContent = `Delete ${selected.size} Image${selected.size > 1 ? "s" : ""}`;
+      bulkDeleteBtn.style.display = "";
+    } else {
+      bulkDeleteBtn.style.display = "none";
+    }
+  }
+
+  function setSelectMode(on) {
+    selectMode = on;
+    if (!on) selected.clear();
+    cellRefs.forEach(ref => {
+      if (ref.del) ref.del.style.display = selectMode ? "none" : "";
+      ref.checkbox.style.display = selectMode ? "block" : "none";
+      ref.checkbox.checked = selected.has(ref.key);
+    });
+    updateSelectionUI();
+  }
+
+  const selectBtn  = button("Select", () => setSelectMode(!selectMode));
+  const refreshBtn = button("↻ Reload", () => reset());
+  const closeBtn   = button("✕ Close", () => { ov.style.display = "none"; }, "danger");
   const favBtn = button("☆ Favs", () => {
     favOnly = !favOnly;
     favBtn.textContent = favOnly ? "★ Favs (ON)" : "☆ Favs";
     reset();
   });
+  topRow.appendChild(bulkDeleteBtn);
+  topRow.appendChild(selectBtn);
   topRow.appendChild(favBtn);
+  topRow.appendChild(refreshBtn);
+  topRow.appendChild(closeBtn);
   ov.appendChild(topRow);
 
   const grid = el("div", { style: {
@@ -41,9 +86,6 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
   const statusEl = el("div", { style: { color: C.muted, fontSize: "11px", flexShrink: "0" } });
   const moreBtn  = button("Load more", () => loadMore());
   moreBtn.style.display = "none";
-
-  let offset = 0, total = 0, loading = false, loadedImages = [];
-  const LIMIT = 48;
 
   let viewerEl = null, keyHandler = null;
 
@@ -166,7 +208,7 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
   }
 
   async function reset() {
-    offset = 0; total = 0; loadedImages = [];
+    offset = 0; total = 0; loadedImages = []; cellRefs = [];
     clear(grid);
     statusEl.textContent = "Loading…";
     await loadMore();
@@ -189,9 +231,25 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
           const star = el("div", { text: "★", style: { position: "absolute", top: "2px", right: "4px", color: "#ffcc00", fontSize: "12px", textShadow: "0 0 3px #000" } });
           cell.appendChild(star);
         }
-        cell.appendChild(im);
-        attachSensitiveToggle(cell, im, mediaKey(img.filename, img.subfolder || ""));
-        cell.addEventListener("click", () => openViewer(img, idx));
+        const key = mediaKey(img.filename, img.subfolder || "");
+        const checkbox = el("input", { type: "checkbox", style: {
+          position: "absolute", top: "2px", left: "2px", zIndex: "2",
+          width: "18px", height: "18px", margin: "0", cursor: "pointer",
+          display: selectMode ? "block" : "none", accentColor: C.lime || "#7612DA",
+        }});
+        checkbox.checked = selected.has(key);
+        checkbox.addEventListener("click", e => e.stopPropagation());
+        checkbox.addEventListener("change", () => {
+          if (checkbox.checked) selected.add(key); else selected.delete(key);
+          updateSelectionUI();
+        });
+        cell.appendChild(im); cell.appendChild(checkbox);
+        attachSensitiveToggle(cell, im, key);
+        cell.addEventListener("click", () => {
+          if (selectMode) { checkbox.checked = !checkbox.checked; checkbox.dispatchEvent(new Event("change")); return; }
+          openViewer(img, idx);
+        });
+        cellRefs.push({ key, img, del: null, checkbox });
         grid.appendChild(cell);
       });
       offset += imgs.length;
@@ -208,7 +266,7 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
 
   return {
     el: ov,
-    show() { ov.style.display = "flex"; reset(); },
+    show() { ov.style.display = "flex"; setSelectMode(false); reset(); },
     hide() { ov.style.display = "none"; },
   };
 }

@@ -508,14 +508,14 @@ app.registerExtension({
       promptHdr.appendChild(el("div",{text:"PROMPT",style:{color:C.muted,fontSize:"11px",textTransform:"uppercase",letterSpacing:"0.04em"}}));
       promptHdr.appendChild(charCount);
 
-      const expandBtn=button("🔍",null,"default");
+      const expandBtn=button("🔍 Prompt Edit",null,"default");
       expandBtn.title="Expand prompt editor";
       expandBtn.onclick=()=>promptExpandOv?.show();
-      expandBtn.style.cssText+="padding:2px 6px;font-size:11px;margin-left:auto;";
+      expandBtn.style.cssText+=`padding:3px 8px;font-size:11px;margin-left:auto;background:${C.lime};border:none;color:#fff;font-weight:700;`;
 
-      const tplBtn=button("📋",null,"default");
+      const tplBtn=button("📋 Prompt Preset",null,"default");
       tplBtn.title="Load Template"; tplBtn.onclick=()=>templateOv?.show();
-      tplBtn.style.cssText+="padding:2px 6px;font-size:11px;";
+      tplBtn.style.cssText+=`padding:3px 8px;font-size:11px;margin-left:4px;background:${C.lime};border:none;color:#fff;font-weight:700;`;
 
       promptHdr.appendChild(expandBtn); promptHdr.appendChild(tplBtn);
 

@@ -457,15 +457,15 @@ app.registerExtension({
       const promptHdr  = el("div", { style: { display: "flex", alignItems: "center", height: `${PROMPT_LBL}px` } });
       promptHdr.appendChild(el("div", { text: "PROMPT", style: { color: C.muted, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.04em" } }));
       promptHdr.appendChild(charCount);
-      const expandBtn = el("button", { type: "button", text: "🔍", title: "Full-screen edit", style: {
-        cursor: "pointer", background: "transparent", border: "none", fontSize: "12px",
-        color: C.muted, padding: "0 3px", marginLeft: "auto",
+      const expandBtn = el("button", { type: "button", text: "🔍 Prompt Edit", title: "Full-screen edit", style: {
+        cursor: "pointer", background: BRAND, border: "none", borderRadius: "4px", fontSize: "11px",
+        fontWeight: "700", color: "#fff", padding: "3px 8px", marginLeft: "auto",
       }, onclick: () => promptExpandOv.show() });
       promptHdr.appendChild(expandBtn);
 
-      const tplBtn = el("button", { type: "button", text: "📋", title: "Load Template", style: {
-        cursor: "pointer", background: "transparent", border: "none", fontSize: "12px",
-        color: C.muted, padding: "0 3px",
+      const tplBtn = el("button", { type: "button", text: "📋 Prompt Preset", title: "Load Template", style: {
+        cursor: "pointer", background: BRAND, border: "none", borderRadius: "4px", fontSize: "11px",
+        fontWeight: "700", color: "#fff", padding: "3px 8px", marginLeft: "4px",
       }});
       promptHdr.appendChild(tplBtn);
 

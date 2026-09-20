@@ -34,17 +34,59 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
 
   const topRow = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" } });
   topRow.appendChild(el("div", { text: "🖼 Gallery — Qwen2511", style: { color: "#fff", fontSize: "14px", fontWeight: "700", flex: "1" } }));
-  const refreshBtn = btn("↻", () => reset());
-  const closeBtn   = btn("✕", () => { ov.style.display = "none"; }, "danger");
-  topRow.appendChild(refreshBtn); topRow.appendChild(closeBtn);
-  ov.appendChild(topRow);
 
   let favOnly = false, offset = 0, total = 0, loading = false;
   let loadedImages = [];
   const LIMIT = 48;
 
-  const favBtn = btn("☆ Favs", () => { favOnly = !favOnly; favBtn.textContent = favOnly ? "★ Favs (ON)" : "☆ Favs"; reset(); });
+  // ── Multi-select ─────────────────────────────────────────────────────────
+  let selectMode = false;
+  const selected = new Set();   // keys from mediaKey(filename, subfolder)
+  let cellRefs = [];            // { key, img, del, checkbox }
+
+  const bulkDeleteBtn = btn("", async () => {
+    if (!selected.size) return;
+    if (!confirm(`Delete ${selected.size} image(s)? This cannot be undone.`)) return;
+    const toDelete = cellRefs.filter(r => selected.has(r.key)).map(r => r.img);
+    for (const img of toDelete) {
+      await deleteImage(img.filename, img.subfolder || "");
+    }
+    setSelectMode(false);
+    reset();
+  }, "danger");
+  bulkDeleteBtn.style.display = "none";
+
+  function updateSelectionUI() {
+    selectBtn.textContent = selected.size > 0 ? `${selected.size} Select` : "Select";
+    if (selected.size > 0) {
+      bulkDeleteBtn.textContent = `Delete ${selected.size} Image${selected.size > 1 ? "s" : ""}`;
+      bulkDeleteBtn.style.display = "";
+    } else {
+      bulkDeleteBtn.style.display = "none";
+    }
+  }
+
+  function setSelectMode(on) {
+    selectMode = on;
+    if (!on) selected.clear();
+    cellRefs.forEach(ref => {
+      ref.del.style.display = selectMode ? "none" : "";
+      ref.checkbox.style.display = selectMode ? "block" : "none";
+      ref.checkbox.checked = selected.has(ref.key);
+    });
+    updateSelectionUI();
+  }
+
+  const selectBtn  = btn("Select", () => setSelectMode(!selectMode));
+  const favBtn     = btn("☆ Favs", () => { favOnly = !favOnly; favBtn.textContent = favOnly ? "★ Favs (ON)" : "☆ Favs"; reset(); });
+  const refreshBtn = btn("↻ Reload", () => reset());
+  const closeBtn   = btn("✕ Close", () => { ov.style.display = "none"; }, "danger");
+  topRow.appendChild(bulkDeleteBtn);
+  topRow.appendChild(selectBtn);
   topRow.appendChild(favBtn);
+  topRow.appendChild(refreshBtn);
+  topRow.appendChild(closeBtn);
+  ov.appendChild(topRow);
 
   const grid = el("div", { style: {
     display: "grid", gridTemplateColumns: "repeat(8,1fr)",
@@ -177,7 +219,11 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
       border: `1px solid ${C.border}`, background: C.bg2, cursor: "pointer",
     }});
     const im = el("img", { src: url, style: { width: "100%", height: "auto", display: "block" } });
-    im.addEventListener("click", () => openViewer(img, idx));
+    const key = mediaKey(img.filename, img.subfolder || "");
+    im.addEventListener("click", () => {
+      if (selectMode) { checkbox.checked = !checkbox.checked; checkbox.dispatchEvent(new Event("change")); return; }
+      openViewer(img, idx);
+    });
 
     const star = el("button", { text: img.favorite ? "★" : "☆", type: "button", style: {
       position: "absolute", top: "2px", right: "2px",
@@ -203,9 +249,23 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
       if (!confirm("Delete?")) return;
       await deleteImage(img.filename, img.subfolder || ""); reset();
     });
+    del.style.display = selectMode ? "none" : "";
 
-    cell.appendChild(im); cell.appendChild(star); cell.appendChild(del);
-    attachSensitiveToggle(cell, im, mediaKey(img.filename, img.subfolder || ""));
+    const checkbox = el("input", { type: "checkbox", style: {
+      position: "absolute", top: "2px", left: "2px", zIndex: "2",
+      width: "18px", height: "18px", margin: "0", cursor: "pointer",
+      display: selectMode ? "block" : "none", accentColor: BRAND,
+    }});
+    checkbox.checked = selected.has(key);
+    checkbox.addEventListener("click", e => e.stopPropagation());
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) selected.add(key); else selected.delete(key);
+      updateSelectionUI();
+    });
+
+    cell.appendChild(im); cell.appendChild(star); cell.appendChild(del); cell.appendChild(checkbox);
+    attachSensitiveToggle(cell, im, key);
+    cellRefs.push({ key, img, del, checkbox });
     return cell;
   }
 
@@ -225,14 +285,14 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
     finally { loading = false; moreBtn.textContent = "Load more"; }
   }
 
-  function reset() { clear(grid); offset = 0; loadedImages = []; loadMore(); }
+  function reset() { clear(grid); offset = 0; loadedImages = []; cellRefs = []; loadMore(); }
 
   ov.appendChild(grid);
   ov.appendChild(el("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexShrink: "0" } }, [statusEl, moreBtn]));
 
   return {
     el: ov,
-    show() { ov.style.display = "flex"; reset(); },
+    show() { ov.style.display = "flex"; setSelectMode(false); reset(); },
     hide() { ov.style.display = "none"; },
   };
 }

@@ -665,15 +665,15 @@ app.registerExtension({
       promptHdr.appendChild(el("div", { text: "PROMPT", style: { color: C.muted, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.04em" } }));
       promptHdr.appendChild(charCount);
 
-      const expandBtn = el("button", { type: "button", text: "🔍", title: "확장 편집", style: {
-        cursor: "pointer", background: "transparent", border: "none", fontSize: "12px",
-        color: C.muted, padding: "0 3px", marginLeft: "auto",
+      const expandBtn = el("button", { type: "button", text: "🔍 Prompt Edit", title: "확장 편집", style: {
+        cursor: "pointer", background: C.lime, border: "none", borderRadius: "4px", fontSize: "11px",
+        fontWeight: "700", color: "#fff", padding: "3px 8px", marginLeft: "auto",
       }, onclick: () => promptExpandOv.show() });
       promptHdr.appendChild(expandBtn);
 
-      const tplBtn = button("📋", null, "default");
+      const tplBtn = button("📋 Prompt Preset", null, "default");
       tplBtn.title = "Load Template";
-      tplBtn.style.cssText += "padding:2px 6px;font-size:11px;margin-left:4px;";
+      tplBtn.style.cssText += `padding:3px 8px;font-size:11px;margin-left:4px;background:${C.lime};border:none;color:#fff;font-weight:700;`;
       promptHdr.appendChild(tplBtn);
 
       const promptTA = el("textarea", {
