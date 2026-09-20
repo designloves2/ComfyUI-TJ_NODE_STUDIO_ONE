@@ -1608,9 +1608,15 @@ async def studio_llm_models(request):
         "or_model_vision": _or_vision,
     }
     _, _, utils = _try_import_tj_llm()
+    # Native "ComfyUI TextGenerate" backend needs a CLIP-type checkpoint (from
+    # ComfyUI's own text_encoders folder) + a loader type — both work even
+    # without TJ_NODE2 installed, unlike the GGUF path below.
+    text_encoders = _scan("text_encoders", [".safetensors", ".gguf", ".ckpt", ".pt", ".pth"])
+    clip_loader_types = getattr(utils, "CLIP_LOADER_TYPE_OPTIONS", ["Auto"]) if utils else ["Auto"]
     if utils is None:
         return web.json_response({"ok": False, "error": "TJ_NODE2 not installed",
-                                  "gguf": [], "mmproj": [], "local_available": False, **_or})
+                                  "gguf": [], "mmproj": [], "local_available": False,
+                                  "text_encoders": text_encoders, "clip_loader_types": clip_loader_types, **_or})
     try:
         gguf_list = utils._text_encoder_ggufs(exclude_mmproj=True)
         mmproj_list = utils._text_encoder_mmproj_options()
@@ -1625,6 +1631,7 @@ async def studio_llm_models(request):
         return web.json_response({
             "ok": True,
             "gguf": gguf_list, "mmproj": mmproj_list,
+            "text_encoders": text_encoders, "clip_loader_types": clip_loader_types,
             "vision_tasks": vision_task_names,
             "model_formats": model_formats,
             "aesthetics": aesthetics,
@@ -1633,7 +1640,8 @@ async def studio_llm_models(request):
             **_or,
         })
     except Exception as e:
-        return web.json_response({"ok": False, "error": str(e), "gguf": [], "mmproj": [], **_or})
+        return web.json_response({"ok": False, "error": str(e), "gguf": [], "mmproj": [],
+                                  "text_encoders": text_encoders, "clip_loader_types": clip_loader_types, **_or})
 
 
 @PromptServer.instance.routes.post("/tj_studio_one/llm/enhance")
@@ -1658,15 +1666,16 @@ async def studio_llm_enhance(request):
         return web.json_response({"ok": False, "error": "TJ_NODE2 not installed"})
     try:
         loop = asyncio.get_event_loop()
+        model_backend = "ComfyUI TextGenerate" if (data.get("backend") or "").lower() == "comfy" else "GGUF / llama.cpp"
         def _run():
             result = TJ_PromptEnhancer().enhance(
                 get_name="(none)", set_name="studio_one_enhance",
                 raw_prompt=data.get("prompt", ""),
-                model_backend="GGUF / llama.cpp",
+                model_backend=model_backend,
                 gguf_model=data.get("gguf_model", ""),
                 mmproj_file="none",
-                text_encoder_name="",
-                clip_loader_type="Auto",
+                text_encoder_name=data.get("text_encoder_name", ""),
+                clip_loader_type=data.get("clip_loader_type", "Auto"),
                 purpose=data.get("purpose", "Image"),
                 model_format=data.get("model_format", "Universal Natural Language"),
                 aesthetic=data.get("aesthetic", "None (no aesthetic injection)"),
@@ -1737,16 +1746,17 @@ async def studio_llm_image_to_prompt(request):
         image_tensor = torch.from_numpy(arr)[None,]
 
         loop = asyncio.get_event_loop()
+        model_backend = "ComfyUI TextGenerate" if (data.get("backend") or "").lower() == "comfy" else "GGUF / llama.cpp"
         def _run():
             return TJ_ImageToPrompt().describe(
                 get_name="(none)", set_name="studio_one_i2p",
                 image=image_tensor,
-                model_backend="GGUF / llama.cpp",
+                model_backend=model_backend,
                 gguf_model=data.get("gguf_model", ""),
                 mmproj_file=data.get("mmproj_file", "none"),
                 chat_handler=data.get("chat_handler", "Auto-detect"),
-                text_encoder_name="",
-                clip_loader_type="Auto",
+                text_encoder_name=data.get("text_encoder_name", ""),
+                clip_loader_type=data.get("clip_loader_type", "Auto"),
                 vision_task=data.get("vision_task", "Caption (plain description)"),
                 model_format=data.get("model_format", "Universal Natural Language"),
                 aesthetic=data.get("aesthetic", "None (no aesthetic injection)"),

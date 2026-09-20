@@ -171,6 +171,8 @@ export function mountLLMSettingsSection(ov, ctx) {
     or_model_vision:    cfg.or_model_vision     || cfg.or_model || "",
     gguf_model:         cfg.gguf_model          || "",
     mmproj_file:        cfg.mmproj_file         || "none",
+    text_encoder_name:  cfg.text_encoder_name   || "",
+    clip_loader_type:   cfg.clip_loader_type    || "Auto",
     vision_task:        cfg.vision_task         || "Caption (plain description)",
     model_format:       cfg.model_format        || "Universal Natural Language",
     aesthetic:          cfg.aesthetic           || "None (no aesthetic injection)",
@@ -218,9 +220,10 @@ export function mountLLMSettingsSection(ov, ctx) {
     Object.assign(hdr.style, { color: "#ddd", fontSize: "11px", fontWeight: "700" });
     box.appendChild(hdr);
 
-    const beSel = makeSelect(["Local GGUF", "OpenRouter"],
-      llm[bkey] === "openrouter" ? "OpenRouter" : "Local GGUF",
-      (v) => { llm[bkey] = v === "OpenRouter" ? "openrouter" : "local"; saveLLM(); syncBackendBlocks(); });
+    const BACKEND_LABELS = ["Local GGUF", "ComfyUI Native", "OpenRouter"];
+    function backendLabel() { return llm[bkey] === "openrouter" ? "OpenRouter" : llm[bkey] === "comfy" ? "ComfyUI Native" : "Local GGUF"; }
+    const beSel = makeSelect(BACKEND_LABELS, backendLabel(),
+      (v) => { llm[bkey] = v === "OpenRouter" ? "openrouter" : v === "ComfyUI Native" ? "comfy" : "local"; saveLLM(); syncBackendBlocks(); });
     box.appendChild(labelRow("Backend", beSel));
 
     const localGroup = document.createElement("div");
@@ -233,6 +236,16 @@ export function mountLLMSettingsSection(ov, ctx) {
       localGroup.appendChild(labelRow(t("llm_lbl_mmproj"), mmprojSel));
     }
     box.appendChild(localGroup);
+
+    // ComfyUI Native — reuses whatever CLIP-type text-encoder checkpoint is
+    // already installed for image generation; no extra file to download.
+    const comfyGroup = document.createElement("div");
+    Object.assign(comfyGroup.style, { display: "flex", flexDirection: "column", gap: "6px" });
+    const teSel = makeSelect([llm.text_encoder_name || "Loading…"], llm.text_encoder_name, v => { llm.text_encoder_name = v; saveLLM(); });
+    const clipTypeSel = makeSelect([llm.clip_loader_type || "Auto"], llm.clip_loader_type, v => { llm.clip_loader_type = v; saveLLM(); });
+    comfyGroup.appendChild(labelRow("Text Encoder (CLIP)", teSel));
+    comfyGroup.appendChild(labelRow("CLIP Loader Type", clipTypeSel));
+    box.appendChild(comfyGroup);
 
     const orGroup = document.createElement("div");
     Object.assign(orGroup.style, { display: "flex", flexDirection: "column", gap: "6px" });
@@ -269,11 +282,14 @@ export function mountLLMSettingsSection(ov, ctx) {
     box.appendChild(orGroup);
 
     box._syncFromState = () => {
-      beSel.value = llm[bkey] === "openrouter" ? "OpenRouter" : "Local GGUF";
+      beSel.value = backendLabel();
       orSel.value = llm[mkey];
-      const or = llm[bkey] === "openrouter";
-      orGroup.style.display = or ? "flex" : "none";
-      localGroup.style.display = or ? "none" : "flex";
+      teSel.value = llm.text_encoder_name;
+      clipTypeSel.value = llm.clip_loader_type;
+      const b = llm[bkey];
+      orGroup.style.display = b === "openrouter" ? "flex" : "none";
+      localGroup.style.display = b === "comfy" ? "none" : b === "openrouter" ? "none" : "flex";
+      comfyGroup.style.display = b === "comfy" ? "flex" : "none";
     };
     box._fill = (orModels, keyHint) => {
       if (orModels && orModels.length) {
@@ -293,6 +309,8 @@ export function mountLLMSettingsSection(ov, ctx) {
     };
     box._ggufSel = ggufSel;
     box._mmprojSel = mmprojSel;
+    box._teSel = teSel;
+    box._clipTypeSel = clipTypeSel;
     _backendBlocks.push(box);
     return box;
   }
@@ -301,24 +319,6 @@ export function mountLLMSettingsSection(ov, ctx) {
   const i2pBlock = makeBackendBlock("vision", "Image → Prompt Write");
   body.appendChild(enhBlock);
   body.appendChild(i2pBlock);
-
-  const vtSel = makeSelect(["Caption (plain description)"], llm.vision_task, v => { llm.vision_task = v; saveLLM(); });
-  const modelFmtSel = makeSelect(["Universal Natural Language"], llm.model_format, v => { llm.model_format = v; saveLLM(); });
-  const aestheticSel = makeSelect(["None (no aesthetic injection)"], llm.aesthetic, v => { llm.aesthetic = v; saveLLM(); });
-  body.appendChild(labelRow(t("llm_lbl_vision_task"), vtSel));
-  body.appendChild(labelRow(t("llm_lbl_model_format"), modelFmtSel));
-  body.appendChild(labelRow(t("llm_lbl_aesthetic"), aestheticSel));
-
-  const extraInstrTA = document.createElement("textarea");
-  extraInstrTA.value = llm.extra_instructions;
-  extraInstrTA.rows = 2;
-  Object.assign(extraInstrTA.style, {
-    background: "#1a1a1a", color: "#ddd", border: "1px solid #444",
-    borderRadius: "4px", padding: "4px 5px", fontSize: "11px", width: "100%",
-    boxSizing: "border-box", resize: "vertical", fontFamily: "inherit",
-  });
-  extraInstrTA.addEventListener("input", () => { llm.extra_instructions = extraInstrTA.value; saveLLM(); });
-  body.appendChild(labelRow(t("llm_lbl_extra_instructions"), extraInstrTA));
 
   const advRow = document.createElement("div");
   Object.assign(advRow.style, { display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr", gap: "6px" });
@@ -366,31 +366,29 @@ export function mountLLMSettingsSection(ov, ctx) {
         }
       }
     }
-    if (d.vision_tasks?.length) {
-      vtSel.innerHTML = "";
-      for (const v of d.vision_tasks) {
-        const o = document.createElement("option");
-        o.value = v; o.textContent = v;
-        if (v === llm.vision_task) o.selected = true;
-        vtSel.appendChild(o);
+    if (d.text_encoders?.length) {
+      for (const b of _backendBlocks) {
+        const sel = b._teSel;
+        sel.innerHTML = "";
+        for (const m of d.text_encoders) {
+          const o = document.createElement("option");
+          o.value = m; o.textContent = m;
+          if (m === llm.text_encoder_name) o.selected = true;
+          sel.appendChild(o);
+        }
+        if (!llm.text_encoder_name && d.text_encoders[0]) { llm.text_encoder_name = d.text_encoders[0]; saveLLM(); sel.value = llm.text_encoder_name; }
       }
     }
-    if (d.model_formats?.length) {
-      modelFmtSel.innerHTML = "";
-      for (const v of d.model_formats) {
-        const o = document.createElement("option");
-        o.value = v; o.textContent = v;
-        if (v === llm.model_format) o.selected = true;
-        modelFmtSel.appendChild(o);
-      }
-    }
-    if (d.aesthetics?.length) {
-      aestheticSel.innerHTML = "";
-      for (const v of d.aesthetics) {
-        const o = document.createElement("option");
-        o.value = v; o.textContent = v;
-        if (v === llm.aesthetic) o.selected = true;
-        aestheticSel.appendChild(o);
+    if (d.clip_loader_types?.length) {
+      for (const b of _backendBlocks) {
+        const sel = b._clipTypeSel;
+        sel.innerHTML = "";
+        for (const m of d.clip_loader_types) {
+          const o = document.createElement("option");
+          o.value = m; o.textContent = m;
+          if (m === llm.clip_loader_type) o.selected = true;
+          sel.appendChild(o);
+        }
       }
     }
     for (const b of _backendBlocks) { b._fill(orModels, d.openrouter_key_hint); b._syncFromState(); }
@@ -406,6 +404,8 @@ export function getLLMSummary() {
   const llm = loadLLMSettings();
   const line = (backend, orModel) => backend === "openrouter"
     ? `OpenRouter · ${orModel || "(model not set)"}`
+    : backend === "comfy"
+    ? `ComfyUI Native · ${basename(llm.text_encoder_name) || "(model not set)"}`
     : `Local GGUF · ${basename(llm.gguf_model) || "(model not set)"}`;
   return {
     write: line(llm.backend_vision || llm.backend || "local", llm.or_model_vision || llm.or_model),
@@ -424,18 +424,20 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   const contentWrap = document.createElement("div");
   Object.assign(contentWrap.style, { flex: "1", display: "flex", flexDirection: "column", gap: "8px", minHeight: "0" });
 
-  // ── Top row: image drop/URL (left) + backend summary (right) ────────────
+  const PURPLE = "#7612DA";
+
+  // ── Top row: image drop zone (left) + URL/model options (right) ─────────
   const topRow = document.createElement("div");
-  Object.assign(topRow.style, { display: "flex", gap: "10px", flexShrink: "0" });
+  Object.assign(topRow.style, { display: "flex", gap: "12px", flexShrink: "0", alignItems: "stretch" });
 
   const imgCol = document.createElement("div");
-  Object.assign(imgCol.style, { display: "flex", flexDirection: "column", gap: "4px", width: "220px", flexShrink: "0" });
+  Object.assign(imgCol.style, { display: "flex", flexDirection: "column", width: "220px", flexShrink: "0" });
 
   const imgDropZone = document.createElement("div");
   Object.assign(imgDropZone.style, {
-    border: "2px dashed #555", borderRadius: "6px", padding: "6px",
-    textAlign: "center", cursor: "pointer", color: "#777", fontSize: "10px",
-    background: "#0d0d0d", height: "64px", display: "flex",
+    border: "none", borderRadius: "8px", padding: "6px",
+    textAlign: "center", cursor: "pointer", color: "#888", fontSize: "13px",
+    background: "#232323", flex: "1", display: "flex",
     alignItems: "center", justifyContent: "center", flexDirection: "column", position: "relative",
   });
   imgDropZone.textContent = t("llm_img_drop");
@@ -457,17 +459,16 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   imgClearBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     _imageB64 = null; imgPreview.style.display = "none"; imgClearBtn.style.display = "none";
-    imgDropZone.style.border = "2px dashed #555";
     syncButtons();
   });
   imgDropZone.appendChild(fileInput);
   imgDropZone.appendChild(imgPreview);
   imgDropZone.appendChild(imgClearBtn);
   imgDropZone.addEventListener("click", (e) => { if (e.target !== imgClearBtn) fileInput.click(); });
-  imgDropZone.addEventListener("dragover", e => { e.preventDefault(); imgDropZone.style.borderColor = "#7eff7e"; });
-  imgDropZone.addEventListener("dragleave", () => { imgDropZone.style.borderColor = "#555"; });
+  imgDropZone.addEventListener("dragover", e => { e.preventDefault(); imgDropZone.style.outline = `2px dashed ${PURPLE}`; });
+  imgDropZone.addEventListener("dragleave", () => { imgDropZone.style.outline = "none"; });
   imgDropZone.addEventListener("drop", e => {
-    e.preventDefault(); imgDropZone.style.borderColor = "#555";
+    e.preventDefault(); imgDropZone.style.outline = "none";
     const file = e.dataTransfer?.files?.[0];
     if (file) loadImageFile(file);
   });
@@ -488,7 +489,6 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
         _imageB64 = resized;
         imgPreview.src = resized; imgPreview.style.display = "block";
         imgClearBtn.style.display = "block";
-        imgDropZone.style.border = "2px solid #3a7a3a";
         syncButtons();
         resolve(resized);
       };
@@ -501,20 +501,50 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     reader.readAsDataURL(file);
   }
 
+  imgCol.appendChild(imgDropZone);
+
+  // ── Right column: URL/Download, Vision Task + Back Setting, Model Format +
+  //    Aesthetic, Extra Instructions — matches the reference layout. ────────
+  const rightCol = document.createElement("div");
+  Object.assign(rightCol.style, { flex: "1", display: "flex", flexDirection: "column", gap: "8px", minWidth: "0" });
+
+  function selectStyle(sel) {
+    Object.assign(sel.style, { background: "#2a2a2a", color: "#ddd", border: "none",
+      borderRadius: "6px", padding: "8px", fontSize: "13px", width: "100%" });
+    return sel;
+  }
+  function fieldLabel(text) {
+    const l = document.createElement("div");
+    l.textContent = text;
+    Object.assign(l.style, { color: "#aaa", fontSize: "12px", marginBottom: "3px" });
+    return l;
+  }
+  function fieldCol(label, control) {
+    const col = document.createElement("div");
+    Object.assign(col.style, { flex: "1", display: "flex", flexDirection: "column", minWidth: "0" });
+    col.appendChild(fieldLabel(label));
+    col.appendChild(control);
+    return col;
+  }
+  function purpleBtn(text) {
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = text;
+    Object.assign(b.style, {
+      background: PURPLE, color: "#fff", border: "none", borderRadius: "6px",
+      padding: "8px 14px", cursor: "pointer", fontSize: "13px", fontWeight: "700", whiteSpace: "nowrap",
+    });
+    return b;
+  }
+
   const urlRow = document.createElement("div");
-  Object.assign(urlRow.style, { display: "flex", gap: "4px" });
+  Object.assign(urlRow.style, { display: "flex", gap: "8px" });
   const urlInput = document.createElement("input");
   urlInput.type = "text"; urlInput.placeholder = t("llm_url_placeholder");
   Object.assign(urlInput.style, {
-    flex: "1", background: "#1a1a1a", color: "#ddd", border: "1px solid #444",
-    borderRadius: "4px", padding: "3px 6px", fontSize: "10px", minWidth: 0,
+    flex: "1", background: "#2a2a2a", color: "#ddd", border: "none",
+    borderRadius: "6px", padding: "8px 10px", fontSize: "13px", minWidth: 0,
   });
-  const btnDl = document.createElement("button");
-  btnDl.textContent = t("llm_btn_download");
-  Object.assign(btnDl.style, {
-    background: "#1a1e3a", color: "#7e9eff", border: "1px solid #3a4a7a",
-    borderRadius: "4px", padding: "3px 8px", cursor: "pointer", fontSize: "10px", whiteSpace: "nowrap",
-  });
+  const btnDl = purpleBtn(t("llm_btn_download"));
   btnDl.addEventListener("click", async () => {
     const url = urlInput.value.trim();
     if (!url) { alert(t("llm_err_no_url")); return; }
@@ -531,38 +561,76 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   });
   urlRow.appendChild(urlInput); urlRow.appendChild(btnDl);
 
-  imgCol.appendChild(imgDropZone);
-  imgCol.appendChild(urlRow);
-
-  // ── Backend summary + settings shortcut ──────────────────────────────────
-  const summaryCol = document.createElement("div");
-  Object.assign(summaryCol.style, {
-    flex: "1", display: "flex", flexDirection: "column", gap: "4px",
-    border: "1px solid #333", borderRadius: "6px", padding: "8px", background: "#141414",
-  });
-  const sumWrite = document.createElement("div");
-  const sumEnhance = document.createElement("div");
-  for (const el of [sumWrite, sumEnhance]) Object.assign(el.style, { color: "#aaa", fontSize: "11px" });
-  const settingsBtn = document.createElement("button");
-  settingsBtn.type = "button";
-  settingsBtn.textContent = "⚙ " + t("llm_settings_btn");
-  Object.assign(settingsBtn.style, {
-    marginTop: "auto", background: "#333", color: "#ddd", border: "1px solid #555",
-    borderRadius: "5px", padding: "5px 8px", cursor: "pointer", fontSize: "11px", alignSelf: "flex-start",
-  });
-  settingsBtn.addEventListener("click", () => openSettings?.());
-  summaryCol.appendChild(sumWrite);
-  summaryCol.appendChild(sumEnhance);
-  summaryCol.appendChild(settingsBtn);
-
-  function refreshSummary() {
-    const s = getLLMSummary();
-    sumWrite.textContent = "🖼 " + t("llm_tab_i2p") + ": " + s.write;
-    sumEnhance.textContent = "✨ " + t("llm_tab_enhance") + ": " + s.enhance;
+  // ── Per-prompt options: Vision Task / Model Format / Aesthetic + Extra
+  //    Instructions — these describe THIS prompt, not the LLM backend, so
+  //    they live here rather than in ⚙ Settings. ───────────────────────────
+  const llmForOptions = loadLLMSettings();
+  function optSelect(key, current, placeholder) {
+    const sel = selectStyle(makeSelect([current || placeholder], current,
+      v => { const l = loadLLMSettings(); l[key] = v; saveLLMSettings(l); }));
+    return sel;
   }
+  const vtSel = optSelect("vision_task", llmForOptions.vision_task, "Caption (plain description)");
+  const modelFmtSel = optSelect("model_format", llmForOptions.model_format, "Universal Natural Language");
+  const aestheticSel = optSelect("aesthetic", llmForOptions.aesthetic, "None (no aesthetic injection)");
+
+  const settingsBtn = purpleBtn(t("llm_settings_btn"));
+  settingsBtn.addEventListener("click", () => openSettings?.());
+
+  const row2 = document.createElement("div");
+  Object.assign(row2.style, { display: "flex", gap: "8px", alignItems: "flex-end" });
+  row2.appendChild(fieldCol(t("llm_lbl_vision_task"), vtSel));
+  row2.appendChild(settingsBtn);
+
+  const row3 = document.createElement("div");
+  Object.assign(row3.style, { display: "flex", gap: "8px" });
+  row3.appendChild(fieldCol(t("llm_lbl_model_format"), modelFmtSel));
+  row3.appendChild(fieldCol(t("llm_lbl_aesthetic"), aestheticSel));
+
+  const extraInstrTA = document.createElement("textarea");
+  extraInstrTA.value = llmForOptions.extra_instructions || "";
+  extraInstrTA.rows = 2;
+  Object.assign(extraInstrTA.style, {
+    background: "#2a2a2a", color: "#ddd", border: "none",
+    borderRadius: "6px", padding: "8px 10px", fontSize: "13px", width: "100%",
+    boxSizing: "border-box", resize: "none", fontFamily: "inherit", flex: "1",
+  });
+  extraInstrTA.addEventListener("input", () => { const l = loadLLMSettings(); l.extra_instructions = extraInstrTA.value; saveLLMSettings(l); });
+  const extraCol = document.createElement("div");
+  Object.assign(extraCol.style, { display: "flex", flexDirection: "column", flex: "1", minHeight: "0" });
+  extraCol.appendChild(fieldLabel(t("llm_lbl_extra_instructions")));
+  extraCol.appendChild(extraInstrTA);
+
+  rightCol.appendChild(urlRow);
+  rightCol.appendChild(row2);
+  rightCol.appendChild(row3);
+  rightCol.appendChild(extraCol);
 
   topRow.appendChild(imgCol);
-  topRow.appendChild(summaryCol);
+  topRow.appendChild(rightCol);
+
+  function refreshSummary() {
+    // Currently applied backend/model is shown in ⚙ Settings — the popup
+    // only carries the "Back Setting" shortcut into it.
+  }
+
+  function fillOptionSelects(d) {
+    const l = loadLLMSettings();
+    const fill = (sel, list, key) => {
+      if (!list?.length) return;
+      sel.innerHTML = "";
+      for (const v of list) {
+        const o = document.createElement("option");
+        o.value = v; o.textContent = v;
+        if (v === l[key]) o.selected = true;
+        sel.appendChild(o);
+      }
+    };
+    fill(vtSel, d.vision_tasks, "vision_task");
+    fill(modelFmtSel, d.model_formats, "model_format");
+    fill(aestheticSel, d.aesthetics, "aesthetic");
+  }
+  fetchModels().then(fillOptionSelects);
 
   // ── Prompt textarea (reused) + busy overlay ──────────────────────────────
   const taWrap = document.createElement("div");
@@ -578,25 +646,18 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     existingTA.disabled = on;
   }
 
-  // ── Action buttons ────────────────────────────────────────────────────────
+  // ── Action buttons — one row: Image Write / Prompt Enhance / APPLY ────────
   const actionRow = document.createElement("div");
-  Object.assign(actionRow.style, { display: "flex", gap: "8px", flexShrink: "0" });
+  Object.assign(actionRow.style, { display: "flex", gap: "10px", flexShrink: "0" });
 
-  const btnWrite = document.createElement("button");
-  btnWrite.type = "button"; btnWrite.textContent = "🖼 " + t("llm_btn_analyze_write");
-  Object.assign(btnWrite.style, {
-    flex: "1", background: "#1a1e4a", color: "#7e9eff", border: "1px solid #3a4a7a",
-    borderRadius: "5px", padding: "8px", cursor: "pointer", fontSize: "12px", fontWeight: "700",
-  });
+  const btnWrite = purpleBtn("🖼 " + t("llm_btn_analyze_write"));
+  btnWrite.style.flex = "1";
+  const btnEnhance = purpleBtn(t("llm_btn_enhance"));
+  btnEnhance.style.flex = "1";
+  const applyBtn = purpleBtn(t("llm_btn_apply"));
+  applyBtn.style.flex = "1";
 
-  const btnEnhance = document.createElement("button");
-  btnEnhance.type = "button"; btnEnhance.textContent = t("llm_btn_enhance");
-  Object.assign(btnEnhance.style, {
-    flex: "1", background: "#1e4a1e", color: "#7eff7e", border: "1px solid #3a7a3a",
-    borderRadius: "5px", padding: "8px", cursor: "pointer", fontSize: "12px", fontWeight: "700",
-  });
-
-  actionRow.appendChild(btnWrite); actionRow.appendChild(btnEnhance);
+  actionRow.appendChild(btnWrite); actionRow.appendChild(btnEnhance); actionRow.appendChild(applyBtn);
 
   function syncButtons() {
     btnWrite.disabled = !_imageB64;
@@ -607,13 +668,8 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   }
   existingTA.addEventListener("input", syncButtons);
 
-  // ── APPLY (applies WITHOUT closing — the popup header's own ✓ applies+closes) ──
-  const applyBtn = document.createElement("button");
-  applyBtn.type = "button"; applyBtn.textContent = t("llm_btn_apply");
-  Object.assign(applyBtn.style, {
-    flexShrink: "0", background: "#2a6", color: "#fff", border: "none",
-    borderRadius: "5px", padding: "9px", cursor: "pointer", fontSize: "13px", fontWeight: "700",
-  });
+  // APPLY pushes text into the main prompt WITHOUT closing — the popup
+  // header's own ✓ (defined by the caller) applies AND closes together.
   function applyNow() {
     const text = existingTA.value;
     setModePrompt(state.mode, text);
@@ -625,9 +681,8 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   applyBtn.addEventListener("click", applyNow);
 
   contentWrap.appendChild(topRow);
-  contentWrap.appendChild(taWrap);
   contentWrap.appendChild(actionRow);
-  contentWrap.appendChild(applyBtn);
+  contentWrap.appendChild(taWrap);
   promptExpandEl.appendChild(contentWrap);
 
   // ── Image → Prompt Write: sends the image + (if any) the text already in
@@ -637,9 +692,10 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     if (!_imageB64) return;
     const llm = loadLLMSettings();
     const existingText = existingTA.value.trim();
-    const contextInstruction = existingText
+    let contextInstruction = existingText
       ? `The user has already written this description — use it as context and produce ONE integrated, polished prompt that incorporates it with what you see in the image. Rewrite it as a single cohesive prompt; do not simply append your description after it.\n\nExisting text:\n${existingText}`
       : "";
+    if (llm.extra_instructions) contextInstruction += (contextInstruction ? "\n\n" : "") + llm.extra_instructions;
     btnWrite.disabled = true; setBusy(true, t("llm_busy_write"));
     try {
       const r = await fetch("/tj_studio_one/llm/image_to_prompt", {
@@ -650,6 +706,8 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
           or_model: llm.or_model_vision || llm.or_model,
           gguf_model: llm.gguf_model,
           mmproj_file: llm.mmproj_file,
+          text_encoder_name: llm.text_encoder_name,
+          clip_loader_type: llm.clip_loader_type,
           vision_task: llm.vision_task,
           model_format: llm.model_format,
           aesthetic: llm.aesthetic,
@@ -684,6 +742,8 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
           backend: llm.backend_text || llm.backend || "local",
           or_model: llm.or_model_text || llm.or_model,
           gguf_model: llm.gguf_model,
+          text_encoder_name: llm.text_encoder_name,
+          clip_loader_type: llm.clip_loader_type,
           n_gpu_layers: llm.n_gpu_layers,
           n_ctx: llm.n_ctx,
           max_tokens: llm.max_tokens,
@@ -708,5 +768,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     existingTA.value = getModePrompt(state.mode);
     refreshSummary();
     syncButtons();
+    const l = loadLLMSettings();
+    extraInstrTA.value = l.extra_instructions || "";
   };
 }
