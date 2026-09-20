@@ -106,7 +106,7 @@ app.registerExtension({
         document.head.appendChild(s);
       }
 
-      const ctx = { persist, appConfig, rootEl: null, showPopup: null, renderToggle: null, _refreshToggle: null };
+      const ctx = { persist, appConfig, availableLoras: [], _rerenderLoras: null, rootEl: null, showPopup: null, renderToggle: null, _refreshToggle: null };
 
       // ── Root ──────────────────────────────────────────────────────────────
       const root = el("div", { style:{

@@ -6,6 +6,19 @@
 // image_anima_lllite_depth_control_to_image.json. See SPEC_ANIMA_ONE_STUDIO.md.
 import { SUBFOLDER, LLLITE_PATCH, BASE_STEPS, BASE_CFG, TURBO_STEPS, TURBO_CFG } from "./core_anima.js";
 
+function withLoraChain(g, prefix, modelLink, loras) {
+  let out = modelLink;
+  (loras || []).forEach((lora, i) => {
+    if (!lora.name || lora.name === "none" || lora.enabled === false) return;
+    const strength = parseFloat(lora.strength ?? 0.8);
+    if (!(strength > 0)) return;
+    const id = `${prefix}${i}`;
+    g[id] = { class_type: "LoraLoaderModelOnly", inputs: { model: out, lora_name: lora.name, strength_model: strength } };
+    out = [id, 0];
+  });
+  return out;
+}
+
 function buildPromptText(state, modeKey) {
   const key = modeKey || state.mode || "t2i";
   return (state.promptsByMode && key in state.promptsByMode)
@@ -50,6 +63,8 @@ function baseGraph(state, promptText, unetName) {
     }};
     modelOut = ["AN:turbo_lora", 0];
   }
+
+  modelOut = withLoraChain(g, "AN:lora", modelOut, state.loras || []);
 
   g["AN:positive"] = { class_type: "CLIPTextEncode", inputs: { clip: ["AN:clip", 0], text: promptText || "" } };
   const negativeText = (state.negativePrompt || "").trim();

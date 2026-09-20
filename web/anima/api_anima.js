@@ -7,6 +7,11 @@ export async function getModels() {
   return r.json();
 }
 
+export async function getLoraTriggers(loraName) {
+  const r = await api.fetchApi(`${API}/lora_triggers?name=${encodeURIComponent(loraName)}`);
+  return r.json();
+}
+
 export async function getConfig() {
   const r = await api.fetchApi(`${API}/config`);
   return r.json();

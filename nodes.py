@@ -3101,6 +3101,7 @@ PromptServer.instance.routes.get("/anima_one/meta")(_make_meta_get_handler())
 PromptServer.instance.routes.post("/anima_one/open_folder")(_make_open_folder_handler())
 PromptServer.instance.routes.post("/anima_one/delete")(_make_delete_handler("anima"))
 PromptServer.instance.routes.post("/anima_one/copy_to_input")(_make_copy_to_input_handler("anima"))
+PromptServer.instance.routes.get("/anima_one/lora_triggers")(_make_lora_triggers_handler())
 
 
 @PromptServer.instance.routes.get("/anima_one/config")

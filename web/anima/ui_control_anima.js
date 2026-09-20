@@ -5,6 +5,7 @@ import { uploadImage } from "./api_anima.js";
 import { createInlineMaskEditor } from "../shared/mask_paint.js";
 import { buildInpaintGraph, buildAnyControlGraph, buildDepthControlGraph } from "./graph_builder_anima.js";
 import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
+import { mountLoraSectionAnima } from "./ui_t2i_anima.js";
 
 const THUMB_BOX = 192; // matches Z-Image's source-image upload thumbnail
 const DISP_W    = LEFT_W - 24; // mask-editor canvas — matches Z-Image's panel-width fit
@@ -158,6 +159,8 @@ export function mountControlLeft(modeKey, leftEl, state, ctx) {
   const sampSel  = select(SAMPLERS.map(s=>({value:s,label:s})),   state.sampler,   v=>{ state.sampler=v;   ctx.persist(); });
   const schedSel = select(SCHEDULERS.map(s=>({value:s,label:s})), state.scheduler, v=>{ state.scheduler=v; ctx.persist(); });
   wrap.appendChild(panel([row([col([label("Sampler"), sampSel]), col([label("Scheduler"), schedSel])])]));
+
+  mountLoraSectionAnima(wrap, state, ctx);
 
   return {
     getSourceURL() {

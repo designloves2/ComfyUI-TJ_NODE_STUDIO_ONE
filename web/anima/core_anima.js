@@ -70,6 +70,12 @@ export function defaultState(saved) {
     width:  saved.width  || 1024,
     height: saved.height || 1024,
 
+    loras: Array.isArray(saved.loras) ? saved.loras.map(l => ({
+      name: l.name || "none",
+      strength: l.strength ?? 0.8,
+      enabled: l.enabled !== false,
+    })) : [],
+
     useBaseVariant: saved.useBaseVariant || "base", // "base" | "preview3" — T2I only
     turboMode:      saved.turboMode ?? false,
     steps:     saved.steps     ?? BASE_STEPS,

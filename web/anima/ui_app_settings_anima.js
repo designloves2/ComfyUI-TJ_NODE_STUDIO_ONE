@@ -59,6 +59,8 @@ export function createSettingsOverlay(state, ctx) {
     if (data.text_encoders?.length    && !te.includes(state.textEncoder))   state.textEncoder = "none";
     if (data.vaes?.length             && !vaes.includes(state.vae))         state.vae         = "none";
     if (data.loras?.length            && !loras.includes(state.turboLora))  state.turboLora   = "none";
+    ctx.availableLoras = data.loras || [];
+    ctx._rerenderLoras?.();
     modelSel   = searchableSelect(diff,  state.model,       v => { state.model       = v; ctx.persist(); });
     previewSel = searchableSelect(diff,  state.previewModel, v => { state.previewModel = v; ctx.persist(); });
     teSel      = searchableSelect(te,    state.textEncoder, v => { state.textEncoder = v; ctx.persist(); });
