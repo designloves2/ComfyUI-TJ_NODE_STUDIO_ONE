@@ -553,6 +553,7 @@ Model Override — ⚙ Settings에서 활성화 시 외부 모델/CLIP/VAE 노�
   llm_btn_apply:           "적용 (APPLY)",
   llm_busy_write:          "이미지를 분석하는 중…",
   llm_busy_enhance:        "프롬프트를 다듬는 중…",
+  llm_lbl_model:           "모델",
 };
 
 const EN = {
@@ -1084,6 +1085,7 @@ Model Override — Enable in ⚙ Settings to connect external model/CLIP/VAE nod
   llm_btn_apply:           "APPLY",
   llm_busy_write:          "Analyzing the image…",
   llm_busy_enhance:        "Enhancing the prompt…",
+  llm_lbl_model:           "model",
 };
 
 const STRINGS = { ko: KO, en: EN };

@@ -609,11 +609,6 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   topRow.appendChild(imgCol);
   topRow.appendChild(rightCol);
 
-  function refreshSummary() {
-    // Currently applied backend/model is shown in ⚙ Settings — the popup
-    // only carries the "Back Setting" shortcut into it.
-  }
-
   function fillOptionSelects(d) {
     const l = loadLLMSettings();
     const fill = (sel, list, key) => {
@@ -680,9 +675,33 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   }
   applyBtn.addEventListener("click", applyNow);
 
+  // ── Footer: currently applied backend + Enhance/Vision model ─────────────
+  const footerBar = document.createElement("div");
+  Object.assign(footerBar.style, {
+    display: "flex", gap: "16px", flexShrink: "0", flexWrap: "wrap",
+    fontSize: "11px", color: "#888", padding: "2px 2px 0",
+  });
+  const footerBackend = document.createElement("span");
+  const footerEnhance = document.createElement("span");
+  const footerVision = document.createElement("span");
+  footerBar.appendChild(footerBackend);
+  footerBar.appendChild(footerEnhance);
+  footerBar.appendChild(footerVision);
+
+  function refreshFooter() {
+    const l = loadLLMSettings();
+    const backendLabel = (b) => b === "openrouter" ? "OpenRouter" : b === "comfy" ? "ComfyUI Native" : "Local GGUF";
+    const s = getLLMSummary();
+    footerBackend.textContent = "적용 방식 — " + t("llm_tab_i2p") + ": " + backendLabel(l.backend_vision || l.backend || "local")
+      + " · " + t("llm_tab_enhance") + ": " + backendLabel(l.backend_text || l.backend || "local");
+    footerEnhance.textContent = t("llm_tab_enhance") + " " + t("llm_lbl_model") + ": " + s.enhance;
+    footerVision.textContent = t("llm_tab_i2p") + " " + t("llm_lbl_model") + ": " + s.write;
+  }
+
   contentWrap.appendChild(topRow);
   contentWrap.appendChild(actionRow);
   contentWrap.appendChild(taWrap);
+  contentWrap.appendChild(footerBar);
   promptExpandEl.appendChild(contentWrap);
 
   // ── Image → Prompt Write: sends the image + (if any) the text already in
@@ -766,9 +785,10 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   // ── Show hook ─────────────────────────────────────────────────────────────
   promptExpandEl._tj_llm_onshow = () => {
     existingTA.value = getModePrompt(state.mode);
-    refreshSummary();
+    refreshFooter();
     syncButtons();
     const l = loadLLMSettings();
     extraInstrTA.value = l.extra_instructions || "";
   };
+  refreshFooter();
 }
