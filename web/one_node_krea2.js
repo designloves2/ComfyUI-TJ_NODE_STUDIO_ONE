@@ -343,10 +343,10 @@ app.registerExtension({
       const promptHdr  = el("div",{style:{display:"flex",alignItems:"center",height:`${PROMPT_LBL}px`}});
       promptHdr.appendChild(el("div",{text:"PROMPT",style:{color:C.muted,fontSize:"11px",textTransform:"uppercase",letterSpacing:"0.04em"}}));
       promptHdr.appendChild(charCount);
-      const expandBtn  = el("button",{type:"button",text:"🔍 Prompt Edit",title:"Expand edit",style:{cursor:"pointer",background:"transparent",border:`1px solid ${C.border}`,borderRadius:"4px",fontSize:"11px",color:C.muted,padding:"3px 8px",marginLeft:"auto"},onclick:()=>promptExpandOv.show()});
+      const expandBtn  = el("button",{type:"button",text:"🔍 Prompt Edit",title:"Expand edit",style:{cursor:"pointer",background:BRAND,border:"none",borderRadius:"4px",fontSize:"11px",fontWeight:"700",color:"#fff",padding:"3px 8px",marginLeft:"auto"},onclick:()=>promptExpandOv.show()});
       promptHdr.appendChild(expandBtn);
       const tplBtn = button("📋 Prompt Preset",null,"default");
-      tplBtn.title="Load Template"; tplBtn.style.cssText+="padding:3px 8px;font-size:11px;margin-left:4px;";
+      tplBtn.title="Load Template"; tplBtn.style.cssText+=`padding:3px 8px;font-size:11px;margin-left:4px;background:${BRAND};border:none;color:#fff;font-weight:700;`;
       promptHdr.appendChild(tplBtn);
 
       const promptTA = el("textarea",{placeholder:"Describe what you want to generate…",style:{flex:"1",width:"100%",boxSizing:"border-box",background:C.bg2,color:C.text,border:`1px solid ${C.border}`,borderRadius:"6px",padding:"7px",fontSize:"13px",fontFamily:"inherit",outline:"none",resize:"none",overflowY:"auto"}});

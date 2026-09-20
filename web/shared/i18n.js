@@ -507,7 +507,7 @@ Model Override — ⚙ Settings에서 활성화 시 외부 모델/CLIP/VAE 노�
 
   // ── LLM Panel (Prompt Studio) ──────────────────────────────────────────────
   llm_tab_edit:            "✏️ 편집",
-  llm_tab_enhance:         "✨ 강화",
+  llm_tab_enhance:         "✨프롬포트 향상",
   llm_tab_i2p:             "🖼 이미지→프롬프트",
   llm_lbl_gguf:            "GGUF 모델",
   llm_lbl_gpu_layers:      "GPU Layers",
@@ -529,7 +529,7 @@ Model Override — ⚙ Settings에서 활성화 시 외부 모델/CLIP/VAE 노�
   llm_err_download:           "다운로드 실패: ",
   llm_img_size_note:          "※ LLM 처리를 위해 1MP 이하로 자동 축소됩니다.",
   llm_analyzing_overlay:      "AI 처리 중…",
-  llm_btn_enhance:            "✨ 강화하기",
+  llm_btn_enhance:            "✨프롬포트 향상",
   llm_btn_enhancing:       "⏳ 실행 중…",
   llm_btn_analyze:         "🖼 분석하기",
   llm_btn_analyzing:       "⏳ 분석 중…",
@@ -554,6 +554,7 @@ Model Override — ⚙ Settings에서 활성화 시 외부 모델/CLIP/VAE 노�
   llm_busy_write:          "이미지를 분석하는 중…",
   llm_busy_enhance:        "프롬프트를 다듬는 중…",
   llm_lbl_model:           "모델",
+  llm_lbl_enhance_backend: "✨ 방식",
   llm_btn_show_log:        "🔍 실제 전송된 내용 보기",
   llm_no_log_yet:          "아직 실행한 적이 없습니다. Write 또는 Enhance를 먼저 실행하세요.",
 };
@@ -1088,6 +1089,7 @@ Model Override — Enable in ⚙ Settings to connect external model/CLIP/VAE nod
   llm_busy_write:          "Analyzing the image…",
   llm_busy_enhance:        "Enhancing the prompt…",
   llm_lbl_model:           "model",
+  llm_lbl_enhance_backend: "✨ Method",
   llm_btn_show_log:        "🔍 Show what was actually sent",
   llm_no_log_yet:          "Nothing run yet — click Write or Enhance first.",
 };

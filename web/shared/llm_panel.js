@@ -711,7 +711,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     const backendLabel = (b) => b === "openrouter" ? "OpenRouter" : b === "comfy" ? "ComfyUI Native" : "Local GGUF";
     const s = getLLMSummary();
     footerBackend.textContent = "적용 방식 — " + t("llm_tab_i2p") + ": " + backendLabel(l.backend_vision || l.backend || "local")
-      + " · " + t("llm_tab_enhance") + ": " + backendLabel(l.backend_text || l.backend || "local");
+      + " · " + t("llm_lbl_enhance_backend") + ": " + backendLabel(l.backend_text || l.backend || "local");
     footerEnhance.textContent = t("llm_tab_enhance") + " " + t("llm_lbl_model") + ": " + s.enhance;
     footerVision.textContent = t("llm_tab_i2p") + " " + t("llm_lbl_model") + ": " + s.write;
   }
