@@ -9,7 +9,7 @@ import { button, select, numberField } from "../klein/ui_common.js";
 import { listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage, getMediaFiles,
          copyOutputToInput, discardInputCopy, getVideoInfo, queuePrompt, waitForHistory, historyEntry,
          getClipLastFrame, getSystemPrompt, analyzeImagesNative, writeBriefNative } from "./api_minimax.js";
-import { buildUpscaleGraph, buildInterpolateGraph, flashvsrUsed } from "./graph_builder_minimax.js";
+import { buildUpscaleGraph, buildInterpolateGraph, buildResizeGraph, flashvsrUsed } from "./graph_builder_minimax.js";
 import { attachSensitiveToggle, makeSensitiveControl, mediaKey, isBlurred, isSensitive, setSensitive } from "../shared/ui_sensitive_media.js";
 
 const STITCH_MAX = 10;
@@ -56,6 +56,7 @@ function buildInfoLines(v) {
     m.upscale ? (m.upscale.method === "rtx" ? "rtx upscale"
       : m.upscale.method === "flashvsr" ? "flashvsr upscale" : "upscale") : null,
     m.interpolate ? "interpolation" : null,
+    m.resize ? "resize" : null,
   ].filter(Boolean).join(" + ");
   if (ppLabel) lines.push(`⚙ ${ppLabel}${m.sourceW ? ` (from ${m.sourceW}×${m.sourceH})` : ""}`);
   if (m.w && m.h) lines.push(`${m.w}×${m.h}`);
@@ -277,6 +278,10 @@ export function createGalleryOverlay(state, ctx) {
     cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "5px 11px",
     borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
   }});
+  const resizeBtn = el("button", { type: "button", text: "↔ Resize", title: "Pick one clip, then resize it (Video Resize (TJ))", style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "5px 11px",
+    borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+  }});
 
   /**
    * Arm one mode and disarm the others; `null` returns the grid to plain browsing.
@@ -287,7 +292,7 @@ export function createGalleryOverlay(state, ctx) {
   function setMode(m, render = true) {
     if (postRunning) return;                     // never swap modes mid-job
     stitchMode = (m === "stitch");
-    postMode   = (m === "upscale" || m === "rife") ? m : null;
+    postMode   = (m === "upscale" || m === "rife" || m === "resize") ? m : null;
     stitchOrder = []; oneTakeUserSet = false; postPick = null;
     const paint = (btn, on, color = BRAND) => {
       btn.style.background  = on ? color : C.bg2;
@@ -297,16 +302,19 @@ export function createGalleryOverlay(state, ctx) {
     paint(stitchBtn, stitchMode, STITCH_COLOR);
     paint(upBtn,   postMode === "upscale");
     paint(rifeBtn, postMode === "rife");
+    paint(resizeBtn, postMode === "resize");
     stitchBar.style.display        = stitchMode ? "flex" : "none";
     audioOverrideBar.style.display = stitchMode ? "flex" : "none";
-    upBar.style.display   = postMode === "upscale" ? "flex" : "none";
-    rifeBar.style.display = postMode === "rife"    ? "flex" : "none";
+    upBar.style.display     = postMode === "upscale" ? "flex" : "none";
+    rifeBar.style.display   = postMode === "rife"    ? "flex" : "none";
+    resizeBar.style.display = postMode === "resize"  ? "flex" : "none";
     if (render) renderGrid();
   }
-  upBtn.addEventListener("click",   () => setMode(postMode === "upscale" ? null : "upscale"));
-  rifeBtn.addEventListener("click", () => setMode(postMode === "rife"    ? null : "rife"));
+  upBtn.addEventListener("click",     () => setMode(postMode === "upscale" ? null : "upscale"));
+  rifeBtn.addEventListener("click",   () => setMode(postMode === "rife"    ? null : "rife"));
+  resizeBtn.addEventListener("click", () => setMode(postMode === "resize"  ? null : "resize"));
 
-  hdr.append(filterSel, stitchBtn, upBtn, rifeBtn, refreshBtn, folderBtn, button("✕ Close", () => hide(), "danger"));
+  hdr.append(filterSel, stitchBtn, upBtn, rifeBtn, resizeBtn, refreshBtn, folderBtn, button("✕ Close", () => hide(), "danger"));
 
   const stitchBar = el("div", { style: {
     display: "none", flexShrink: "0", alignItems: "center", gap: "8px",
@@ -666,9 +674,101 @@ export function createGalleryOverlay(state, ctx) {
     rifeGoBtn,
   );
 
+  // ── Resize ──────────────────────────────────────────────────────────────────────
+  // Node-side "Video Resize (TJ)" (TJ_VideoResize) covers 5 sizing modes the RTX VSR
+  // panel doesn't: Ratio, Mega Pixel, plain Long/Short side, or an exact Width x Height
+  // with crop/stretch — kept as its own bar rather than a 4th Upscale method since it's
+  // a different tool (arbitrary target size, not a quality-driven super-resolution pass).
+  const resizeBar = el("div", { style: Object.assign({}, barStyle) });
+  const resizeProg = makeProgress();
+  const RESIZE_MODES = ["Long side", "Short side", "Ratio", "Mega Pixel", "Width x Height"];
+  const resizeModeSel = el("select", { style: smallSelect("104px") },
+    RESIZE_MODES.map(m => el("option", { value: m, text: m })));
+  resizeModeSel.value = state.resizeMode || "Long side";
+  const resizeMethodSel = el("select", { style: smallSelect("94px") },
+    ["lanczos", "bilinear", "bicubic", "area", "nearest-exact"].map(m => el("option", { value: m, text: m })));
+  resizeMethodSel.value = state.resizeUpscaleMethod || "lanczos";
+  const resizePxIn = el("input", { type: "number", min: "8", step: "8", style: smallInput("60px") });
+  resizePxIn.value = String(state.resizeTargetPx ?? 1920);
+  const resizeRatioWIn = el("input", { type: "number", min: "1", step: "1", style: smallInput("40px") });
+  resizeRatioWIn.value = String(state.resizeRatioW ?? 16);
+  const resizeRatioHIn = el("input", { type: "number", min: "1", step: "1", style: smallInput("40px") });
+  resizeRatioHIn.value = String(state.resizeRatioH ?? 9);
+  const resizeMpIn = el("input", { type: "number", min: "0.01", step: "0.1", style: smallInput("52px") });
+  resizeMpIn.value = String(state.resizeMegapixels ?? 1.0);
+  const resizeWIn = el("input", { type: "number", min: "8", step: "8", style: smallInput("54px") });
+  resizeWIn.value = String(state.resizeTargetWidth ?? 1920);
+  const resizeHIn = el("input", { type: "number", min: "8", step: "8", style: smallInput("54px") });
+  resizeHIn.value = String(state.resizeTargetHeight ?? 1080);
+  const resizeCropSel = el("select", { style: smallSelect("70px") },
+    [["crop", "Crop"], ["stretch", "Stretch"]].map(([v, t]) => el("option", { value: v, text: t })));
+  resizeCropSel.value = state.resizeCropMode || "crop";
+
+  const resizePxWrap = el("label", { style: { display: "flex", alignItems: "center", gap: "4px", fontSize: "10.5px", color: C.text } },
+    [el("span", { text: "px" }), resizePxIn]);
+  const resizeRatioWrap = el("div", { style: { display: "flex", alignItems: "center", gap: "4px" } }, [
+    resizeRatioWIn, el("span", { text: ":", style: { color: C.muted } }), resizeRatioHIn,
+  ]);
+  const resizeMpWrap = el("label", { style: { display: "flex", alignItems: "center", gap: "4px", fontSize: "10.5px", color: C.text } },
+    [el("span", { text: "MP" }), resizeMpIn]);
+  const resizeWhWrap = el("div", { style: { display: "flex", alignItems: "center", gap: "4px" } }, [
+    resizeWIn, el("span", { text: "×" }), resizeHIn, resizeCropSel,
+  ]);
+  function refreshResizeSizeUI() {
+    const m = resizeModeSel.value;
+    resizePxWrap.style.display    = (m === "Long side" || m === "Short side") ? "flex" : "none";
+    resizeRatioWrap.style.display = m === "Ratio" ? "flex" : "none";
+    resizeMpWrap.style.display    = m === "Mega Pixel" ? "flex" : "none";
+    resizeWhWrap.style.display    = m === "Width x Height" ? "flex" : "none";
+  }
+  refreshResizeSizeUI();
+  resizeModeSel.addEventListener("change", () => { state.resizeMode = resizeModeSel.value; ctx.persist?.(); refreshResizeSizeUI(); });
+  resizeMethodSel.addEventListener("change", () => { state.resizeUpscaleMethod = resizeMethodSel.value; ctx.persist?.(); });
+  resizePxIn.addEventListener("input", () => { state.resizeTargetPx = Math.max(8, parseInt(resizePxIn.value, 10) || 1920); ctx.persist?.(); });
+  resizeRatioWIn.addEventListener("input", () => { state.resizeRatioW = Math.max(1, parseInt(resizeRatioWIn.value, 10) || 16); ctx.persist?.(); });
+  resizeRatioHIn.addEventListener("input", () => { state.resizeRatioH = Math.max(1, parseInt(resizeRatioHIn.value, 10) || 9); ctx.persist?.(); });
+  resizeMpIn.addEventListener("input", () => { state.resizeMegapixels = Math.max(0.01, parseFloat(resizeMpIn.value) || 1.0); ctx.persist?.(); });
+  resizeWIn.addEventListener("input", () => { state.resizeTargetWidth = Math.max(8, parseInt(resizeWIn.value, 10) || 1920); ctx.persist?.(); });
+  resizeHIn.addEventListener("input", () => { state.resizeTargetHeight = Math.max(8, parseInt(resizeHIn.value, 10) || 1080); ctx.persist?.(); });
+  resizeCropSel.addEventListener("change", () => { state.resizeCropMode = resizeCropSel.value; ctx.persist?.(); });
+
+  function refreshResizeBar() {
+    const ok = !!ctx.availability?.TJ_VideoResize;
+    const ready = !!postPick && !postRunning && ok;
+    resizeGoBtn.disabled = !ready;
+    resizeGoBtn.style.opacity = ready ? "1" : "0.5";
+    if (postRunning) return;
+    if (!ok) resizeProg.idle("⚠ Video Resize (TJ) is not installed.");
+    else if (!postPick) resizeProg.idle("Pick one clip to resize.");
+    else resizeProg.idle(pickName());
+  }
+
+  const resizeGoBtn = button("↔ Resize", () => runResize(), "primary");
+  resizeBar.append(resizeProg.el, resizeModeSel, resizeMethodSel,
+    resizePxWrap, resizeRatioWrap, resizeMpWrap, resizeWhWrap, resizeGoBtn);
+
   function pickedVideo() { return postPick ? videos.find(v => vKey(v) === postPick) : null; }
   function pickName() { const v = pickedVideo(); return v ? v.filename : ""; }
-  function refreshPostBars() { refreshUpBar(); refreshRifeBar(); }
+  function refreshPostBars() { refreshUpBar(); refreshRifeBar(); refreshResizeBar(); }
+
+  function runResize() {
+    return runPost(resizeProg, "Resize", (inputFile, stem, chunkOpts) => buildResizeGraph({
+      inputFile, stem,
+      folder: chunkOpts.folder || (state.saveSubfolder || SUBFOLDER),
+      mode: resizeModeSel.value,
+      upscaleMethod: resizeMethodSel.value,
+      targetPx: parseInt(resizePxIn.value, 10) || 1920,
+      ratioW: parseInt(resizeRatioWIn.value, 10) || 16,
+      ratioH: parseInt(resizeRatioHIn.value, 10) || 9,
+      megapixels: parseFloat(resizeMpIn.value) || 1.0,
+      targetWidth: parseInt(resizeWIn.value, 10) || 1920,
+      targetHeight: parseInt(resizeHIn.value, 10) || 1080,
+      cropMode: resizeCropSel.value,
+      skipFirstFrames: chunkOpts.skipFirstFrames,
+      frameLoadCap: chunkOpts.frameLoadCap,
+      saveSuffix: chunkOpts.saveSuffix ?? "_resized",
+    }, ctx.availability || {}), "_resized", MODEL_PLAN, { resize: { mode: resizeModeSel.value } });
+  }
 
   // Every requested frame gets materialized as a float32 RGBA array by VHS_LoadVideo
   // before any node touches it, so asking for a whole long/high-res clip in one shot can
@@ -723,6 +823,7 @@ export function createGalleryOverlay(state, ctx) {
     if (info.upscale) parts.push(info.upscale.method === "rtx" ? "rtx upscale"
       : info.upscale.method === "flashvsr" ? "flashvsr upscale" : "upscale");
     if (info.interpolate) parts.push("interpolation");
+    if (info.resize) parts.push("resize");
     return parts.length ? parts.join(" + ") : String(fallback).toLowerCase();
   }
 
@@ -739,6 +840,7 @@ export function createGalleryOverlay(state, ctx) {
     if (postInfo.deblur && postInfo.deblur !== "none") patched.deblur = postInfo.deblur;
     if (postInfo.upscale)     patched.upscale     = postInfo.upscale;
     if (postInfo.interpolate) patched.interpolate = postInfo.interpolate;
+    if (postInfo.resize)      patched.resize      = postInfo.resize;
     try {
       const oi = await getVideoInfo(outFile.filename, outFile.subfolder || "", "output");
       if (oi?.width || oi?.height) {
@@ -1167,7 +1269,7 @@ export function createGalleryOverlay(state, ctx) {
   hint.innerHTML = "double-click a clip to play it full screen · "
     + "<b>space</b> play/pause · <b>← →</b> seek · <b>[ ]</b> previous / next · <b>Esc</b> close";
 
-  ov.append(hdr, stitchBar, audioOverrideBar, upBar, rifeBar, grid, hint);
+  ov.append(hdr, stitchBar, audioOverrideBar, upBar, rifeBar, resizeBar, grid, hint);
 
   // ── fullscreen player ──────────────────────────────────────────────────────
   const player = el("div", { style: {

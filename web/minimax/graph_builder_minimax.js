@@ -1363,6 +1363,7 @@ const P = {
   fvsr:     "PP:flashvsr",
   rife:  "PP:rife",
   deblur:"PP:deblur",
+  resize:"PP:resize",
   video: "PP:video",
   save:  "PP:save",
 };
@@ -1492,6 +1493,56 @@ export function buildInterpolateGraph(opts, avail) {
 
   saveVideoNode(g, { video: P.video, save: P.save }, [P.rife, 0], [P.load, 2], dstFps,
     `${folder}/${stem}${saveSuffix ?? `_${Math.round(dstFps)}fps`}`, avail);
+  return { graph: g, saveNode: P.save };
+}
+
+/**
+ * Resize a finished clip with the node pack's own `TJ_VideoResize` ("Video Resize (TJ)") —
+ * a single node covering all 5 sizing modes the left-panel RTX VSR controls don't (Ratio,
+ * Mega Pixel, plain Long/Short side, or an exact Width x Height with crop/stretch), so this
+ * is deliberately a separate tool from the Upscale bar's RTX/FlashVSR/model methods rather
+ * than a 4th branch in buildUpscaleGraph.
+ *
+ * @param opts.mode "Long side" | "Short side" | "Ratio" | "Mega Pixel" | "Width x Height"
+ * @param opts.upscaleMethod lanczos | bilinear | bicubic | area | nearest-exact
+ * @param opts.targetPx      Long/Short side px, for those two modes
+ * @param opts.ratioW/ratioH integers, for Ratio mode
+ * @param opts.megapixels    float, for Mega Pixel mode
+ * @param opts.targetWidth/targetHeight int, for Width x Height mode
+ * @param opts.cropMode      "crop" | "stretch", for Width x Height mode
+ */
+export function buildResizeGraph(opts, avail) {
+  const {
+    inputFile, mode, upscaleMethod, targetPx, ratioW, ratioH, megapixels,
+    targetWidth, targetHeight, cropMode, folder, stem,
+    // Chunking — see buildUpscaleGraph's note; same bounded-slice mechanism.
+    skipFirstFrames = 0, frameLoadCap = 0,
+    saveSuffix = "_resized",
+  } = opts;
+  if (!has(avail, "TJ_VideoResize")) throw new Error("Video Resize (TJ) is not installed — restart ComfyUI after updating the TJ_NODE pack.");
+  const g = {};
+
+  g[P.load] = { class_type: "VHS_LoadVideo", inputs: {
+    video: inputFile, force_rate: 0,
+    custom_width: 0, custom_height: 0,
+    frame_load_cap: frameLoadCap, skip_first_frames: skipFirstFrames, select_every_nth: 1,
+  }};
+
+  g[P.resize] = { class_type: "TJ_VideoResize", inputs: {
+    images: [P.load, 0],
+    mode: mode || "Long side",
+    upscale_method: upscaleMethod || "lanczos",
+    target_px: Math.max(8, Math.round(targetPx ?? 1920)),
+    ratio_w: Math.max(1, Math.round(ratioW ?? 16)),
+    ratio_h: Math.max(1, Math.round(ratioH ?? 9)),
+    megapixels: Math.max(0.01, megapixels ?? 1.0),
+    target_width: Math.max(8, Math.round(targetWidth ?? 1920)),
+    target_height: Math.max(8, Math.round(targetHeight ?? 1080)),
+    crop_mode: cropMode || "crop",
+  }};
+
+  saveVideoNode(g, { video: P.video, save: P.save }, [P.resize, 0], [P.load, 2], FPS,
+    `${folder}/${stem}${saveSuffix}`, avail);
   return { graph: g, saveNode: P.save };
 }
 

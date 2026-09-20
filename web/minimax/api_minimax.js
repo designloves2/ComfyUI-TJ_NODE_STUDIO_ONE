@@ -55,8 +55,10 @@ export const MMH3_OPTIONAL_NODES = [
   // LTX 2.5 Upscale mode — the LTXV* nodes + LatentUpscaleModelLoader are ComfyUI core;
   // only the GGUF text-encoder loader is ours (needed for the gemma4 LTX clip).
   "TJ_LTX25ClipLoaderGGUF",
-  // gallery post-processing — upscale / frame interpolation on a finished clip
+  // gallery post-processing — upscale / frame interpolation / resize on a finished clip
   "UpscaleModelLoader", "ImageUpscaleWithModel", "RIFEInterpolation",
+  // Video Resize (TJ) — ships with TJ_NODE; node-side port of the gallery's "↔ Resize" tool
+  "TJ_VideoResize",
   // video/audio save via VHS's nvenc_h264-mp4 format (real GPU encoding) — falls back
   // to core CreateVideo/SaveVideo (CPU) when not installed
   "VHS_VideoCombine",
