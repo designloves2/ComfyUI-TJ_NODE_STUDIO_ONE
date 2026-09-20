@@ -49,6 +49,8 @@ export const MMH3_OPTIONAL_NODES = [
   "MiniMaxH3ScheduledSolAttentionPatch", "MiniMaxH3FusedModulation",
   "MiniMaxH3TurboSampler", "MiniMaxH3TurboLoRA", "SolAttnPatch",
   "SpectrumApplyMiniMaxH3", "RTXVideoSuperResolution", "TJ_RTXDeblur",
+  // ships with TJ_NODE (separate pack, different key) — used by Postprocess's Denoise step
+  "TJ_NODE_RTXDenoise",
   // FlashVSR VSR (lihaoyun6/ComfyUI-FlashVSR-Ultra-Fast, GPL-3.0) — tiled diffusion video
   // super-resolution, offered as a 4th Upscale option alongside RTX VSR.
   "FlashVSRInitPipe", "FlashVSRNodeAdv",
@@ -59,6 +61,8 @@ export const MMH3_OPTIONAL_NODES = [
   "UpscaleModelLoader", "ImageUpscaleWithModel", "RIFEInterpolation",
   // Video Resize (TJ) — ships with TJ_NODE; node-side port of the gallery's "↔ Resize" tool
   "TJ_VideoResize",
+  // ComfyUI core — used by Postprocess's Add Grain step
+  "GLSLShader",
   // video/audio save via VHS's nvenc_h264-mp4 format (real GPU encoding) — falls back
   // to core CreateVideo/SaveVideo (CPU) when not installed
   "VHS_VideoCombine",

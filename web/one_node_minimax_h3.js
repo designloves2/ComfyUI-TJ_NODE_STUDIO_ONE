@@ -23,7 +23,7 @@ import {
   h3OptimizerBlockedReason, h3OptimizerOverlapNote,
   effectiveTurbo, effectiveSteps, migrateLegacyAccel,
   continuityModesFor, generationModesFor, configIssues, ltxUpscaleReady, ltxUpscaleMissing,
-  faceRefineReady, faceRefineMissing,
+  faceRefineReady, faceRefineMissing, postprocessReady,
   clipPlan, formatDuration, formatClock, framesToSeconds, alignFrameCount, FPS, ONE_TAKE_OVERLAP_FRAMES, resolveResolution,
   parseBrief, groupShots, composeClipPrompt, composeStitchedPrompt,
   turboLoraForMode, pddFileForMode, clipAssets, explainGenerationError,
@@ -39,7 +39,7 @@ import {
   saveConfig, analyzeImagesNative, analyzeImagesOpenRouter, writeBriefNative, writeBriefOpenRouter, getMediaInfo,
   listPromptSets, getPromptSet, getClipLastFrame, analyzeImageLlama, writeBriefLlama,
 } from "./minimax/api_minimax.js";
-import { buildClipGraph, buildLtxUpscaleGraph, buildFaceRefineGraph, NODE_IDS, previewNodeKey } from "./minimax/graph_builder_minimax.js";
+import { buildClipGraph, buildLtxUpscaleGraph, buildFaceRefineGraph, buildPostprocessGraph, NODE_IDS, previewNodeKey } from "./minimax/graph_builder_minimax.js";
 import { PIPELINE_PRESETS, allPresets, captureAxes, matchPreset, applyPreset } from "./minimax/presets_minimax.js";
 import { createPresetDialogs } from "./minimax/ui_presets_minimax.js";
 import { createSettingsOverlay } from "./minimax/ui_app_settings_minimax.js";
@@ -803,7 +803,8 @@ app.registerExtension({
         // Captured NOW, not read live later at compareBtn's click time — see
         // lastCompareSource's own comment above.
         lastCompareSource = state.generationMode === "facerefine" ? (state.frSource || null)
-                          : state.generationMode === "ltxupscale" ? (state.ltxSource || null) : null;
+                          : state.generationMode === "ltxupscale" ? (state.ltxSource || null)
+                          : state.generationMode === "postprocess" ? (state.ppSource || null) : null;
         const hasOriginal = !!lastCompareSource;
         // The compare viewer already covers fullscreen viewing (its own overlay, zoom/pan)
         // for these two modes, so a separate fullscreen button is redundant there.
@@ -1180,17 +1181,29 @@ app.registerExtension({
         clear(promptList);
         const isLtx = state.generationMode === "ltxupscale";
         const isFaceRefine = state.generationMode === "facerefine";
+        const isPostprocess = state.generationMode === "postprocess";
         // The bottom prompt area is per-mode: the H3 shot list, or (LTX Upscale / Face
         // Refine) one plain prompt box down here — same spot every mode uses, not the
-        // left panel. Common / Split / Add are H3-only.
-        commonBtn.style.display  = (isLtx || isFaceRefine) ? "none" : "";
-        splitBtn.style.display   = (isLtx || isFaceRefine) ? "none" : "";
-        addBtn.style.display     = (isLtx || isFaceRefine) ? "none" : "";
-        resetTAHBtn.style.display = (isLtx || isFaceRefine) ? "none" : "";
-        promptTitle.textContent = isLtx ? "UPSCALE PROMPT" : isFaceRefine ? "FACE REFINE PROMPT" : "PROMPTS";
-        promptList.style.gap = (isLtx || isFaceRefine) ? "6px" : "4px";
+        // left panel. Common / Split / Add are H3-only. Postprocess needs no prompt at
+        // all — every control lives in the left panel's accordion, so this area just
+        // says so instead of showing an empty/irrelevant box.
+        const hideShotControls = isLtx || isFaceRefine || isPostprocess;
+        commonBtn.style.display  = hideShotControls ? "none" : "";
+        splitBtn.style.display   = hideShotControls ? "none" : "";
+        addBtn.style.display     = hideShotControls ? "none" : "";
+        resetTAHBtn.style.display = hideShotControls ? "none" : "";
+        promptTitle.textContent = isLtx ? "UPSCALE PROMPT" : isFaceRefine ? "FACE REFINE PROMPT"
+          : isPostprocess ? "POSTPROCESS" : "PROMPTS";
+        promptList.style.gap = hideShotControls ? "6px" : "4px";
         if (isLtx) { renderLtxPrompt(); return; }
         if (isFaceRefine) { renderFaceRefinePrompt(); return; }
+        if (isPostprocess) {
+          promptList.appendChild(el("div", {
+            text: "No prompt needed — pick a source clip and the effects to chain in the left panel, then hit Preview.",
+            style: { fontSize: "12px", color: C.muted, lineHeight: "1.6", padding: "8px 2px" },
+          }));
+          return;
+        }
         const plan = currentPlan();
         const onCount = state.prompts.filter(p => promptEnabled(p)).length;
         promptCount.textContent = `(${plan.promptCount} prompt${plan.promptCount > 1 ? "s" : ""} · ${onCount} on → ${plan.count} clip${plan.count > 1 ? "s" : ""} · ${plan.actualSeconds.toFixed(2)}s)`;
@@ -2085,6 +2098,34 @@ app.registerExtension({
         persist(); renderLeft(); renderPrompts();
       }
 
+      // Gallery pick / upload for Postprocess — mirrors setLtxSource/setFrSource, but no
+      // prompt to load (Postprocess has none): just the source file + its probed meta.
+      function setPpSource(inputFilename, kind, item) {
+        state.ppSource = inputFilename; state.ppSourceKind = kind;
+        let m = (item && item.meta) || {};
+        if (typeof m === "string") { try { m = JSON.parse(m); } catch { m = {}; } }
+        const durM = m.durationSeconds || m.seconds || (m.frames && m.fps ? m.frames / m.fps : 0) || 0;
+        state.ppSourceMeta = (m.w || m.h || m.fps || m.frames || durM)
+          ? { w: m.w || 0, h: m.h || 0, fps: m.fps || 0, frames: m.frames || 0, duration: durM }
+          : null;
+        // A different source invalidates any preview range picked against the old clip's
+        // length — 0/0 (whole clip) is always safe regardless of the new duration.
+        state.ppPreviewStart = 0; state.ppPreviewEnd = 0;
+        _ppSrcInfo = null;
+        persist(); renderLeft(); renderPrompts();
+        loadPpSrcInfo();
+      }
+      let _ppSrcInfo = null;
+      async function loadPpSrcInfo() {
+        _ppSrcInfo = null;
+        if (!state.ppSource) { renderLeft(); return; }
+        try {
+          const d = await getMediaInfo(state.ppSource);
+          if (d && d.ok) _ppSrcInfo = d;
+        } catch {}
+        renderLeft();
+      }
+
       // Shared source-card sizing for LTX Upscale / Face Refine's left-panel source clip
       // cards. Landscape-through-square clips get a card that shrinks to their own aspect
       // ratio (no letterbox); portrait clips are capped at a 1:1 square (pillarboxed) so a
@@ -2107,7 +2148,7 @@ app.registerExtension({
             el("div", { html: "⚙ <b>LTX 2.5 Upscale</b> needs its models set first.<br>Open <b>⚙ Settings → LTX 2.5 Upscale</b> and pick:", style: { fontSize: "12px", lineHeight: "1.6" } }),
             el("div", { text: "missing: " + ltxUpscaleMissing(state).join(", "), style: { fontSize: "11px", color: C.warn, marginTop: "4px" } }),
           ]));
-          leftOuter.appendChild(seedGenWrap);
+          useBottomWrap(seedGenWrap);
           leftPanel.scrollTop = prevScroll;
           return;
         }
@@ -2388,7 +2429,7 @@ app.registerExtension({
           html: `Models: <code>${(state.ltxUnet || "?").split(/[\\/]/).pop()}</code> · clip <code>${(state.ltxClip || "?").split(/[\\/]/).pop()}</code> — change in ⚙ Settings.`,
           style: { fontSize: "9px", color: C.muted, lineHeight: "1.6", marginTop: "2px", wordBreak: "break-all" } }));
 
-        leftOuter.appendChild(seedGenWrap);   // keep the Generate button below the panel
+        useBottomWrap(seedGenWrap);   // keep the Generate button below the panel
         leftPanel.scrollTop = prevScroll;
       }
 
@@ -2672,7 +2713,7 @@ app.registerExtension({
             el("div", { html: "⚙ <b>H3 Face Refine</b> needs a face detector set first.<br>Open <b>⚙ Settings → Models → H3 Face Refine</b> and pick one.", style: { fontSize: "12px", lineHeight: "1.6" } }),
             el("div", { text: "missing: " + faceRefineMissing(state).join(", "), style: { fontSize: "11px", color: C.warn, marginTop: "4px" } }),
           ]));
-          leftOuter.appendChild(seedGenWrap);
+          useBottomWrap(seedGenWrap);
           leftPanel.scrollTop = prevScroll;
           return;
         }
@@ -2876,8 +2917,299 @@ app.registerExtension({
           ]),
         ]));
 
-        leftOuter.appendChild(seedGenWrap);
+        useBottomWrap(seedGenWrap);
         leftPanel.scrollTop = prevScroll;
+      }
+
+      // ── Postprocess mode left panel ──────────────────────────────────────────
+      // Chains Deblur -> Denoise -> Upscale -> Add Grain -> Interpolate -> Resize on an
+      // existing clip. Fixed order (A-F), each step independently toggled. No prompt, no
+      // Seed/Mode — the fixed bottom row is replaced with a preview-range + Preview button
+      // (see ppPreviewWrap below), and any step needing a seed (FlashVSR) just randomizes.
+      function renderPostprocessLeft() {
+        const prevScroll = leftPanel.scrollTop;
+        clear(leftPanel);
+
+        // ── source clip ──────────────────────────────────────────────────────
+        const srcKids = [label("Source clip")];
+        const hasSrc = !!state.ppSource;
+        const card = el("div", { style: {
+          position: "relative", width: "100%", aspectRatio: "16 / 9", background: "#000",
+          borderRadius: "8px", overflow: "hidden",
+          border: `1px solid ${hasSrc ? BRAND : C.border}`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }});
+        if (hasSrc) {
+          const vid = el("video", { src: `/view?filename=${encodeURIComponent(state.ppSource)}&type=input`,
+            muted: true, loop: true, playsInline: true, preload: "metadata",
+            style: { width: "100%", height: "100%", objectFit: "contain", background: "#000", display: "block", cursor: "pointer" } });
+          vid.addEventListener("click", () => { vid.paused ? vid.play() : vid.pause(); });
+          vid.addEventListener("loadedmetadata", () => applySourceCardAspect(card, vid));
+          card.appendChild(vid);
+          card.appendChild(el("button", { type: "button", text: "✕", title: "Clear source", style: {
+            position: "absolute", top: "6px", right: "6px", zIndex: "3", width: "24px", height: "24px",
+            border: "none", borderRadius: "6px", background: "rgba(0,0,0,0.7)", color: "#fff", cursor: "pointer", fontSize: "12px",
+          }, onclick: () => { state.ppSource = ""; state.ppSourceKind = "gallery"; state.ppSourceMeta = null; _ppSrcInfo = null; persist(); renderLeft(); renderPrompts(); } }));
+          srcKids.push(card);
+          const info = _ppSrcInfo, sm = state.ppSourceMeta || {};
+          const dur = (info && info.duration) || sm.duration || 0;
+          const w = (info && info.width) || sm.w || 0, h = (info && info.height) || sm.h || 0;
+          let fpsV = (info && info.fps) || sm.fps || 0;
+          if (!fpsV && sm.frames && dur) fpsV = sm.frames / dur;
+          const fmtT = (s) => { s = Math.max(0, s || 0); const m = Math.floor(s / 60); const ss = Math.floor(s % 60); return `${m}:${String(ss).padStart(2, "0")}`; };
+          srcKids.push(el("div", { style: {
+            display: "flex", alignItems: "center", gap: "16px", padding: "4px 2px",
+            fontSize: "11px", color: C.text, fontVariantNumeric: "tabular-nums",
+          }}, [
+            el("span", { text: `${fmtT(dur)}` }),
+            el("span", { text: fpsV ? `${Math.round(fpsV)}fps` : "—", style: { color: fpsV ? C.text : C.muted } }),
+            el("span", { text: (w && h) ? `${w}x${h}` : "—", style: { color: (w && h) ? C.text : C.muted } }),
+          ]));
+        } else {
+          card.appendChild(el("div", { text: "no source clip", style: { color: C.muted, fontSize: "12px" } }));
+          srcKids.push(card);
+        }
+        const ppFileInp = el("input", { type: "file", accept: "video/*", style: { display: "none" } });
+        ppFileInp.addEventListener("change", async () => {
+          const f = ppFileInp.files[0]; ppFileInp.value = "";
+          if (!f) return;
+          try { showPopup("Uploading…", false); const name = await uploadMedia(f); setPpSource(name, "upload"); }
+          catch (e) { showPopup(e.message, true); }
+        });
+        const ppGalBtn = button("🖼 From gallery", () => galleryOv?.showPicker((inputFilename, item) =>
+          setPpSource(inputFilename, "gallery", item)));
+        const ppUpBtn = button("⬆ Upload", () => ppFileInp.click(), "default");
+        ppGalBtn.style.flex = "1"; ppUpBtn.style.flex = "1";
+        srcKids.push(el("div", { style: { display: "flex", gap: "8px" } }, [ppGalBtn, ppUpBtn]));
+        srcKids.push(ppFileInp);
+        leftPanel.appendChild(panel(srcKids));
+
+        // ── A. Deblur ────────────────────────────────────────────────────────
+        leftPanel.appendChild(accordion("ppDeblur", "A. Deblur",
+          state.ppDeblurOn ? (state.ppDeblurStrength || "MEDIUM") : "OFF", () => [
+            checkboxRow("Enable Deblur (RTX Deblur)", state.ppDeblurOn, v => { state.ppDeblurOn = v; persist(); renderLeft(); }),
+            state.ppDeblurOn ? row([col([label("Strength"), select(
+              ["LOW", "MEDIUM", "HIGH", "ULTRA"].map(s => ({ value: s, label: s })),
+              state.ppDeblurStrength || "MEDIUM", v => { state.ppDeblurStrength = v; persist(); })])]) : null,
+          ]));
+
+        // ── B. Denoise ───────────────────────────────────────────────────────
+        leftPanel.appendChild(accordion("ppDenoise", "B. Denoise",
+          state.ppDenoiseOn ? (state.ppDenoiseStrength || "MEDIUM") : "OFF", () => [
+            checkboxRow("Enable Denoise (RTX Denoise)", state.ppDenoiseOn, v => { state.ppDenoiseOn = v; persist(); renderLeft(); }),
+            state.ppDenoiseOn ? row([col([label("Strength"), select(
+              ["LOW", "MEDIUM", "HIGH", "ULTRA"].map(s => ({ value: s, label: s })),
+              state.ppDenoiseStrength || "MEDIUM", v => { state.ppDenoiseStrength = v; persist(); })])]) : null,
+          ]));
+
+        // ── C. Upscale ───────────────────────────────────────────────────────
+        // Reuses the same shared rtx*/flashvsr*/upscaleModel state fields the main
+        // Upscale accordion and the gallery's Upscale bar already read/write, per the
+        // established "one RTX VSR / FlashVSR setting, offered everywhere" convention.
+        leftPanel.appendChild(accordion("ppUpscale", "C. Upscale",
+          state.ppUpscaleOn ? (state.upscaleMode && state.upscaleMode !== "none" ? state.upscaleMode : "model") : "OFF", () => {
+            const kids = [checkboxRow("Enable Upscale", state.ppUpscaleOn, v => { state.ppUpscaleOn = v; persist(); renderLeft(); })];
+            if (!state.ppUpscaleOn) return kids;
+            const method = (state.upscaleMode && state.upscaleMode !== "none") ? state.upscaleMode : "model";
+            kids.push(row([col([label("Method"), select(
+              UPSCALE_MODES.filter(m => m.key !== "none").map(m => ({ value: m.key, label: m.label })),
+              method, v => { state.upscaleMode = v; persist(); renderLeft(); })])]));
+            if (method === "rtx") {
+              kids.push(row([
+                col([label("Scale"), numberField(state.rtxScale ?? 2.0, v => { state.rtxScale = Math.max(1, v); persist(); }, 0.25)]),
+                col([label("Quality"), select(["LOW", "MEDIUM", "HIGH", "ULTRA"].map(q => ({ value: q, label: q })),
+                  state.rtxQuality || "ULTRA", v => { state.rtxQuality = v; persist(); })]),
+              ]));
+            } else if (method === "flashvsr") {
+              kids.push(row([
+                col([label("Model"), select(FLASHVSR_MODELS.map(m => ({ value: m, label: m })),
+                  state.flashvsrModel || "FlashVSR-v1.1", v => { state.flashvsrModel = v; persist(); })]),
+                col([label("Mode"), select(FLASHVSR_MODES.map(m => ({ value: m, label: m })),
+                  state.flashvsrMode || "tiny", v => { state.flashvsrMode = v; persist(); })]),
+              ]));
+              kids.push(row([
+                col([label("Scale"), numberField(state.flashvsrScale ?? 2, v => { state.flashvsrScale = Math.min(4, Math.max(2, Math.round(v))); persist(); }, 1)]),
+                col([label("Tile"), numberField(state.flashvsrTileSize ?? 384, v => { state.flashvsrTileSize = Math.max(32, Math.round(v)); persist(); }, 32)]),
+              ]));
+            } else {
+              kids.push(row([col([label("Model"), select(
+                (ctx.availableModels?.upscale_models || ["none"]).map(m => ({ value: m, label: m })),
+                state.upscaleModel || "none", v => { state.upscaleModel = v; persist(); })])]));
+            }
+            return kids;
+          }));
+
+        // ── D. Add Grain ─────────────────────────────────────────────────────
+        leftPanel.appendChild(accordion("ppGrain", "D. Add Grain",
+          state.ppGrainOn ? "on" : "OFF", () => [
+            checkboxRow("Enable Add Grain (GLSL film grain)", state.ppGrainOn, v => { state.ppGrainOn = v; persist(); renderLeft(); }),
+            !state.ppGrainOn ? null : row([
+              col([label("Amount"), numberField(state.ppGrainAmount ?? 0.25, v => { state.ppGrainAmount = Math.max(0, Math.min(1, v)); persist(); }, 0.05)]),
+              col([label("Size"), numberField(state.ppGrainSize ?? 0.1, v => { state.ppGrainSize = Math.max(0.01, v); persist(); }, 0.05)]),
+            ]),
+            !state.ppGrainOn ? null : row([
+              col([label("Color"), numberField(state.ppGrainColor ?? 0, v => { state.ppGrainColor = Math.max(0, Math.min(1, v)); persist(); }, 0.1)]),
+              col([label("Lum bias"), numberField(state.ppGrainLumBias ?? 0, v => { state.ppGrainLumBias = Math.max(0, Math.min(1, v)); persist(); }, 0.1)]),
+            ]),
+            !state.ppGrainOn ? null : row([col([label("Noise"), select(
+              [{ value: "smooth", label: "Smooth" }, { value: "grainy", label: "Grainy" }],
+              state.ppGrainNoiseMode || "smooth", v => { state.ppGrainNoiseMode = v; persist(); })])]),
+          ]));
+
+        // ── E. Interpolate ───────────────────────────────────────────────────
+        leftPanel.appendChild(accordion("ppInterpolate", "E. Interpolate",
+          state.ppInterpolateOn ? `${FPS} → ${state.ppInterpolateTargetFps ?? FPS * 2}fps` : "OFF", () => [
+            checkboxRow("Enable Interpolate (RIFE)", state.ppInterpolateOn, v => { state.ppInterpolateOn = v; persist(); renderLeft(); }),
+            !state.ppInterpolateOn ? null : row([
+              col([label(`${FPS} fps →`), numberField(state.ppInterpolateTargetFps ?? FPS * 2, v => { state.ppInterpolateTargetFps = Math.max(FPS + 1, Math.round(v)); persist(); }, 1)]),
+              col([label("Scale"), select(["0.25", "0.5", "1.0", "2.0", "4.0"].map(v => ({ value: v, label: v })),
+                String(state.ppInterpolateScale ?? 1.0), v => { state.ppInterpolateScale = parseFloat(v); persist(); })]),
+            ]),
+          ]));
+
+        // ── F. Resize ────────────────────────────────────────────────────────
+        // Reuses the same state.resize* fields the gallery's own "↔ Resize" bar uses.
+        leftPanel.appendChild(accordion("ppResize", "F. Resize",
+          state.ppResizeOn ? (state.resizeMode || "Long side") : "OFF", () => {
+            const kids = [checkboxRow("Enable Resize (Video Resize (TJ))", state.ppResizeOn, v => { state.ppResizeOn = v; persist(); renderLeft(); })];
+            if (!state.ppResizeOn) return kids;
+            const RESIZE_MODES = ["Long side", "Short side", "Ratio", "Mega Pixel", "Width x Height"];
+            const mode = state.resizeMode || "Long side";
+            kids.push(row([col([label("Mode"), select(RESIZE_MODES.map(m => ({ value: m, label: m })),
+              mode, v => { state.resizeMode = v; persist(); renderLeft(); })])]));
+            if (mode === "Long side" || mode === "Short side") {
+              kids.push(row([col([label("Target px"), numberField(state.resizeTargetPx ?? 1920, v => { state.resizeTargetPx = Math.max(8, Math.round(v)); persist(); }, 8)])]));
+            } else if (mode === "Ratio") {
+              kids.push(row([
+                col([label("Ratio W"), numberField(state.resizeRatioW ?? 16, v => { state.resizeRatioW = Math.max(1, Math.round(v)); persist(); }, 1)]),
+                col([label("Ratio H"), numberField(state.resizeRatioH ?? 9, v => { state.resizeRatioH = Math.max(1, Math.round(v)); persist(); }, 1)]),
+              ]));
+            } else if (mode === "Mega Pixel") {
+              kids.push(row([col([label("Megapixels"), numberField(state.resizeMegapixels ?? 1.0, v => { state.resizeMegapixels = Math.max(0.01, v); persist(); }, 0.1)])]));
+            } else {
+              kids.push(row([
+                col([label("Width"), numberField(state.resizeTargetWidth ?? 1920, v => { state.resizeTargetWidth = Math.max(8, Math.round(v)); persist(); }, 8)]),
+                col([label("Height"), numberField(state.resizeTargetHeight ?? 1080, v => { state.resizeTargetHeight = Math.max(8, Math.round(v)); persist(); }, 8)]),
+              ]));
+              kids.push(row([col([label("Crop mode"), select(
+                [{ value: "crop", label: "Crop" }, { value: "stretch", label: "Stretch" }],
+                state.resizeCropMode || "crop", v => { state.resizeCropMode = v; persist(); })])]));
+            }
+            kids.push(row([col([label("Upscale method"), select(
+              ["lanczos", "bilinear", "bicubic", "area", "nearest-exact"].map(m => ({ value: m, label: m })),
+              state.resizeUpscaleMethod || "lanczos", v => { state.resizeUpscaleMethod = v; persist(); })])]));
+            return kids;
+          }));
+
+        useBottomWrap(ppPreviewWrap);
+        leftPanel.scrollTop = prevScroll;
+      }
+
+      // Replaces the fixed Seed/Mode/Generate row for Postprocess mode: a preview-range
+      // (start/end seconds; 0/0 = whole clip) plus one Preview button that both runs the
+      // chain and doubles as "commit" — leaving the range at 0/0 runs (and saves) the full
+      // clip, a shorter range is a quick look before spending the full run's time.
+      const ppPreviewStartIn = numberField(0, v => { state.ppPreviewStart = Math.max(0, v); persist(); }, 0.5);
+      const ppPreviewEndIn = numberField(0, v => { state.ppPreviewEnd = Math.max(0, v); persist(); }, 0.5);
+      const ppPreviewBtn = el("button", { type: "button", text: "Preview", style: {
+        cursor: "pointer", width: "100%", padding: "10px", fontSize: "13px", fontWeight: "700",
+        borderRadius: "6px", border: "none", background: "#e4d4fb", color: BRAND,
+      }});
+      ppPreviewBtn.addEventListener("click", () => runPostprocess());
+      const ppPreviewWrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px",
+        paddingTop: "6px", flexShrink: "0", borderTop: `1px solid ${C.border}` } });
+      ppPreviewWrap.appendChild(panel([row([
+        col([label("Start (s)"), ppPreviewStartIn]),
+        col([label("End (s) — 0 = full"), ppPreviewEndIn]),
+      ])]));
+      ppPreviewWrap.appendChild(ppPreviewBtn);
+
+      let ppRunning = false;
+      async function runPostprocess() {
+        if (ppRunning) return;
+        if (!state.ppSource) { showPopup("Pick a source clip first.", true); return; }
+        const steps = ["ppDeblurOn", "ppDenoiseOn", "ppUpscaleOn", "ppGrainOn", "ppInterpolateOn", "ppResizeOn"];
+        if (!steps.some(k => state[k])) { showPopup("Enable at least one effect (A-F) first.", true); return; }
+        ppRunning = true;
+        ppPreviewBtn.disabled = true; ppPreviewBtn.textContent = "⏳ Running…"; ppPreviewBtn.style.opacity = "0.6";
+        setStatus("Postprocess running…");
+        try {
+          if (!ctx.availability || !Object.keys(ctx.availability).length) {
+            const av = await getNodeAvailability();
+            ctx.availability = av.available || {}; ctx.availabilityInfo = av;
+          }
+          const startS = Math.max(0, state.ppPreviewStart || 0);
+          const endS = Math.max(0, state.ppPreviewEnd || 0);
+          const srcMeta = state.ppSourceMeta || (_ppSrcInfo ? { fps: _ppSrcInfo.fps, w: _ppSrcInfo.width, h: _ppSrcInfo.height } : {});
+          const srcFps = srcMeta.fps || FPS;
+          const skipFirstFrames = Math.round(startS * srcFps);
+          const frameLoadCap = endS > startS ? Math.round((endS - startS) * srcFps) : 0;
+
+          const built = buildPostprocessGraph({
+            inputFile: state.ppSource,
+            folder: state.saveSubfolder || SUBFOLDER,
+            stem: state.ppSource.replace(/\.[^.]+$/, ""),
+            skipFirstFrames, frameLoadCap,
+            saveSuffix: frameLoadCap ? "_post_preview" : "_post",
+            deblur: { enabled: state.ppDeblurOn, strength: state.ppDeblurStrength || "MEDIUM" },
+            denoise: { enabled: state.ppDenoiseOn, strength: state.ppDenoiseStrength || "MEDIUM" },
+            upscale: {
+              enabled: state.ppUpscaleOn,
+              method: (state.upscaleMode && state.upscaleMode !== "none") ? state.upscaleMode : "model",
+              modelName: state.upscaleModel,
+              rtxScale: state.rtxScale, rtxQuality: state.rtxQuality, rtxSizeMode: state.rtxSizeMode || "scale",
+              rtxShort: state.rtxShort, rtxLong: state.rtxLong, rtxW: state.rtxW, rtxH: state.rtxH,
+              rtxCropAnchor: state.rtxCropAnchor, srcW: srcMeta.w, srcH: srcMeta.h,
+              flashvsr: {
+                model: state.flashvsrModel, mode: state.flashvsrMode, scale: state.flashvsrScale,
+                colorFix: state.flashvsrColorFix, tileSize: state.flashvsrTileSize,
+                tileOverlap: state.flashvsrTileOverlap, seed: randomSeed(),
+              },
+            },
+            grain: {
+              enabled: state.ppGrainOn, amount: state.ppGrainAmount, size: state.ppGrainSize,
+              color: state.ppGrainColor, lumBias: state.ppGrainLumBias, noiseMode: state.ppGrainNoiseMode,
+            },
+            interpolate: {
+              enabled: state.ppInterpolateOn, targetFps: state.ppInterpolateTargetFps,
+              scale: state.ppInterpolateScale, batchSize: 8, useFp16: true,
+            },
+            resize: {
+              enabled: state.ppResizeOn, mode: state.resizeMode, upscaleMethod: state.resizeUpscaleMethod,
+              targetPx: state.resizeTargetPx, ratioW: state.resizeRatioW, ratioH: state.resizeRatioH,
+              megapixels: state.resizeMegapixels, targetWidth: state.resizeTargetWidth,
+              targetHeight: state.resizeTargetHeight, cropMode: state.resizeCropMode,
+            },
+          }, ctx.availability || {});
+
+          setStatus(`Postprocess: ${built.usedSteps.join(" + ")}…`);
+          const res = await queuePrompt(built.graph, {
+            onProgress: (v, m) => setStatus(`Postprocess: ${built.usedSteps.join(" + ")} — ${Math.round((v / (m || 1)) * 100)}%`),
+          });
+          const o = res.byNode[built.saveNode]?.images?.[0] || res.byNode[built.saveNode]?.gifs?.[0];
+          if (!o) throw new Error("No output produced.");
+          const url = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=output`;
+          showResultVideo(url, { final: true });
+          if (!frameLoadCap) {
+            // A full-range run (not a short preview) writes real metadata, same shape the
+            // gallery's own post-process tools write, so Reuse/the info strip pick it up.
+            try {
+              await saveMeta(o.filename, o.subfolder || (state.saveSubfolder || SUBFOLDER), {
+                created: Date.now(), postProcess: built.usedSteps.join(" + "), postSource: state.ppSource,
+              });
+            } catch {}
+          }
+          setStatus(`✓ Postprocess done (${built.usedSteps.join(" + ")})${frameLoadCap ? " — preview range only, not saved to the gallery as final" : ""}.`);
+          showPopup(frameLoadCap ? "Preview ready — compare it, then clear the range and run again to produce the full clip."
+            : "Postprocess finished — the new file is in the gallery.", false);
+        } catch (e) {
+          setStatus(`Error: ${e?.message || e}`);
+          showPopup(e?.message || String(e), true);
+        } finally {
+          ppRunning = false;
+          ppPreviewBtn.disabled = false; ppPreviewBtn.textContent = "Preview"; ppPreviewBtn.style.opacity = "1";
+          try { await freeMemory(); } catch {}
+        }
       }
 
       function renderLeft() {
@@ -2888,6 +3220,7 @@ app.registerExtension({
         // after the rebuild; the browser clamps for us if the new content is shorter.
         if (state.generationMode === "ltxupscale") { renderLtxUpscaleLeft(); return; }
         if (state.generationMode === "facerefine") { renderFaceRefineLeft(); return; }
+        if (state.generationMode === "postprocess") { renderPostprocessLeft(); return; }
         const prevScroll = leftPanel.scrollTop;
         const contModes = continuityModesFor(state.generationMode, state);
         const lockAvailable = !!ctx.availability?.TJ_H3_AudioLock;
@@ -3691,7 +4024,7 @@ app.registerExtension({
             style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
         ]));
 
-        leftOuter.appendChild(seedGenWrap);
+        useBottomWrap(seedGenWrap);
         leftPanel.scrollTop = prevScroll;
       }
 
@@ -3822,6 +4155,18 @@ app.registerExtension({
         state.seedMode, v => { state.seedMode = v; persist(); });
       const seedGenWrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "4px", paddingTop: "6px", flexShrink: "0", borderTop: `1px solid ${C.border}` } });
       seedGenWrap.appendChild(panel([row([col([label("SEED"), seedInput]), col([label("MODE"), seedModeDD])])]));
+
+      // Every mode shares one fixed bottom slot in leftOuter — normally seedGenWrap
+      // (Seed/Mode + Generate/Stop), but Postprocess swaps in ppPreviewWrap instead (no
+      // seed/mode, a preview-range + Preview button in their place). Whichever wrap isn't
+      // wanted this render has to be explicitly detached first, since appendChild alone
+      // only guarantees the WANTED one ends up attached — the other stays put if it was
+      // never removed, and both would show at once.
+      function useBottomWrap(wrap) {
+        if (seedGenWrap.parentNode && seedGenWrap !== wrap) seedGenWrap.parentNode.removeChild(seedGenWrap);
+        if (ppPreviewWrap.parentNode && ppPreviewWrap !== wrap) ppPreviewWrap.parentNode.removeChild(ppPreviewWrap);
+        leftOuter.appendChild(wrap);
+      }
 
       const genBtn = button("▶ Generate", null, "primary");
       genBtn.style.cssText += "width:100%;padding:11px;font-size:13px;";

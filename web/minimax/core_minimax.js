@@ -322,7 +322,15 @@ export const GENERATION_MODES = [
   // once Face Refine's own UI lands, not a data-model change.
   { key: "facerefine",  label: "Face Refine MMH3",   hint: "re-render a small/distant face per frame (H3)" },
   { key: "ltxupscale",  label: "Upscale by LTX 2.5",   hint: "2x refine an existing clip (LTX 2.5)" },
+  { key: "postprocess", label: "Postprocess",   hint: "chain Deblur/Denoise/Upscale/Grain/Interpolate/Resize on an existing clip" },
 ];
+
+// Postprocess touches none of H3's own generation models (unet/clip/vae) — it only runs
+// the same finished-clip effect nodes the gallery's Upscale/Interpolate/Resize bars
+// already use, chained together. So unlike every other mode it has no model requirement
+// of its own; each individual effect step still checks its own node's availability at
+// build time (buildPostprocessGraph throws a clear error naming the missing node).
+export function postprocessReady() { return true; }
 
 // The ✨ button's default system prompt — a ready-to-use LTX-2.5 prompt author, written
 // to the LTX-2.5 prompt guide (ltx.io/blog/ltx-2-5-prompt-guide): one detailed
@@ -701,6 +709,9 @@ export function generationModesFor(state) {
       const ok = ltxUpscaleReady(state);
       return { ...m, enabled: ok, reason: ok ? "" :
         `Set the LTX 2.5 models in ⚙ Settings (missing: ${ltxUpscaleMissing(state).join(", ")})` };
+    }
+    if (m.key === "postprocess") {
+      return { ...m, enabled: true, reason: "" };
     }
     if (m.key === "facerefine") {
       // Uses MiniMaxH3ReferenceToVideo's conditioning shape either way; the Reference

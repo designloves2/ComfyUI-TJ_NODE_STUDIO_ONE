@@ -2716,6 +2716,9 @@ MMH3_OPTIONAL_NODES = [
     "RTXVideoSuperResolution",
     # ships with TJ_NODE — NVIDIA VFX deblur, same-resolution sharpening
     "TJ_RTXDeblur",
+    # ships with TJ_NODE (separate pack, different key from the deblur one above) — NVIDIA
+    # VFX denoise, same-resolution. Used by the Postprocess mode's Denoise step (item B).
+    "TJ_NODE_RTXDenoise",
     # FlashVSR VSR (lihaoyun6/ComfyUI-FlashVSR-Ultra-Fast, GPL-3.0) — tiled diffusion
     # video super-resolution, offered as a 4th Upscale option alongside RTX VSR
     "FlashVSRInitPipe", "FlashVSRNodeAdv",
@@ -2729,6 +2732,8 @@ MMH3_OPTIONAL_NODES = [
     # Video Resize (TJ) — ships with TJ_NODE; node-side port of the gallery's own
     # "↔ Resize" post-process tool (5 sizing modes: Long/Short side, Ratio, Mega Pixel, W×H)
     "TJ_VideoResize",
+    # ComfyUI core (comfy_extras/nodes_glsl.py) — used by Postprocess's Add Grain step
+    "GLSLShader",
     # video/audio save via VHS's nvenc_h264-mp4 format (real GPU encoding) — falls back
     # to core CreateVideo/SaveVideo (CPU) when not installed
     "VHS_VideoCombine",
