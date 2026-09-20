@@ -3112,17 +3112,27 @@ app.registerExtension({
         leftPanel.scrollTop = prevScroll;
       }
 
-      // Replaces the fixed Seed/Mode/Generate row for Postprocess mode: a preview-range
-      // (start/end seconds; 0/0 = whole clip) plus one Preview button that both runs the
-      // chain and doubles as "commit" — leaving the range at 0/0 runs (and saves) the full
-      // clip, a shorter range is a quick look before spending the full run's time.
+      // Replaces the fixed Seed/Mode row for Postprocess mode: a preview-range (start/end
+      // seconds) with its own light-purple "Preview" button — a quick, NOT-saved look at
+      // a short slice — plus the usual ▶ Generate / ■ Stop pair underneath, which always
+      // runs (and saves) the FULL clip regardless of the range fields. Preview is an
+      // optional check, not a gate: Generate works with nothing previewed at all.
       const ppPreviewStartIn = numberField(0, v => { state.ppPreviewStart = Math.max(0, v); persist(); }, 0.5);
       const ppPreviewEndIn = numberField(0, v => { state.ppPreviewEnd = Math.max(0, v); persist(); }, 0.5);
       const ppPreviewBtn = el("button", { type: "button", text: "Preview", style: {
         cursor: "pointer", width: "100%", padding: "10px", fontSize: "13px", fontWeight: "700",
         borderRadius: "6px", border: "none", background: "#e4d4fb", color: BRAND,
       }});
-      ppPreviewBtn.addEventListener("click", () => runPostprocess());
+      ppPreviewBtn.addEventListener("click", () => runPostprocess({ full: false }));
+      const ppGenBtn = button("▶ Generate", null, "primary");
+      ppGenBtn.style.cssText += "width:100%;padding:11px;font-size:13px;";
+      ppGenBtn.addEventListener("click", () => runPostprocess({ full: true }));
+      const ppStopBtn = button("■ Stop", async () => {
+        ppStopRequested = true;
+        await interrupt();
+        setStatus("Stopping…");
+      });
+      ppStopBtn.style.flexShrink = "0";
       const ppPreviewWrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px",
         paddingTop: "6px", flexShrink: "0", borderTop: `1px solid ${C.border}` } });
       ppPreviewWrap.appendChild(panel([row([
@@ -3130,23 +3140,29 @@ app.registerExtension({
         col([label("End (s) — 0 = full"), ppPreviewEndIn]),
       ])]));
       ppPreviewWrap.appendChild(ppPreviewBtn);
+      ppPreviewWrap.appendChild(row([ppGenBtn, ppStopBtn]));
 
       let ppRunning = false;
-      async function runPostprocess() {
+      let ppStopRequested = false;
+      async function runPostprocess({ full = true } = {}) {
         if (ppRunning) return;
         if (!state.ppSource) { showPopup("Pick a source clip first.", true); return; }
         const steps = ["ppDeblurOn", "ppDenoiseOn", "ppUpscaleOn", "ppGrainOn", "ppInterpolateOn", "ppResizeOn"];
         if (!steps.some(k => state[k])) { showPopup("Enable at least one effect (A-F) first.", true); return; }
-        ppRunning = true;
-        ppPreviewBtn.disabled = true; ppPreviewBtn.textContent = "⏳ Running…"; ppPreviewBtn.style.opacity = "0.6";
+        ppRunning = true; ppStopRequested = false;
+        const busyBtn = full ? ppGenBtn : ppPreviewBtn;
+        ppGenBtn.disabled = true; ppPreviewBtn.disabled = true;
+        busyBtn.textContent = "⏳ Running…"; busyBtn.style.opacity = "0.6";
         setStatus("Postprocess running…");
         try {
           if (!ctx.availability || !Object.keys(ctx.availability).length) {
             const av = await getNodeAvailability();
             ctx.availability = av.available || {}; ctx.availabilityInfo = av;
           }
-          const startS = Math.max(0, state.ppPreviewStart || 0);
-          const endS = Math.max(0, state.ppPreviewEnd || 0);
+          // Generate always runs the whole clip — the range fields only ever apply to
+          // Preview's own short-look run, never to a real/final one.
+          const startS = full ? 0 : Math.max(0, state.ppPreviewStart || 0);
+          const endS = full ? 0 : Math.max(0, state.ppPreviewEnd || 0);
           const srcMeta = state.ppSourceMeta || (_ppSrcInfo ? { fps: _ppSrcInfo.fps, w: _ppSrcInfo.width, h: _ppSrcInfo.height } : {});
           const srcFps = srcMeta.fps || FPS;
           const skipFirstFrames = Math.round(startS * srcFps);
@@ -3213,7 +3229,8 @@ app.registerExtension({
           setStatus(`Error: ${e?.message || e}`);
           showPopup(e?.message || String(e), true);
         } finally {
-          ppRunning = false;
+          ppRunning = false; ppStopRequested = false;
+          ppGenBtn.disabled = false; ppGenBtn.textContent = "▶ Generate"; ppGenBtn.style.opacity = "1";
           ppPreviewBtn.disabled = false; ppPreviewBtn.textContent = "Preview"; ppPreviewBtn.style.opacity = "1";
           try { await freeMemory(); } catch {}
         }
