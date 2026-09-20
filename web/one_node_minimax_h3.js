@@ -2922,10 +2922,11 @@ app.registerExtension({
       }
 
       // ── Postprocess mode left panel ──────────────────────────────────────────
-      // Chains Deblur -> Denoise -> Upscale -> Add Grain -> Interpolate -> Resize on an
-      // existing clip. Fixed order (A-F), each step independently toggled. No prompt, no
-      // Seed/Mode — the fixed bottom row is replaced with a preview-range + Preview button
-      // (see ppPreviewWrap below), and any step needing a seed (FlashVSR) just randomizes.
+      // Chains Deblur -> Denoise -> Upscale -> Skin Retouch -> Add Grain -> Interpolate ->
+      // Resize on an existing clip. Fixed order (A-G), each step independently toggled. No
+      // prompt, no Seed/Mode — the fixed bottom row is replaced with a preview-range +
+      // Preview/Generate/Stop (see ppPreviewWrap below), and any step needing a seed
+      // (FlashVSR) just randomizes.
       function renderPostprocessLeft() {
         const prevScroll = leftPanel.scrollTop;
         clear(leftPanel);
@@ -3046,8 +3047,33 @@ app.registerExtension({
             return kids;
           }));
 
-        // ── D. Add Grain ─────────────────────────────────────────────────────
-        leftPanel.appendChild(accordion("ppGrain", "D. Add Grain",
+        // ── D. Skin Retouch ──────────────────────────────────────────────────
+        // Right after Upscale per the user's explicit call. Pure-PyTorch, non-generative
+        // (YCbCr skin mask, no model file) — TJ_SkinRetouch, ported from VRGDG-SeedVR2-
+        // TensorRT-Studio's apply_skin_finishing()/apply_skin_microtexture().
+        leftPanel.appendChild(accordion("ppSkinRetouch", "D. Skin Retouch",
+          state.ppSkinRetouchOn ? "on" : "OFF", () => [
+            checkboxRow("Enable Skin Retouch (TJ)", state.ppSkinRetouchOn, v => { state.ppSkinRetouchOn = v; persist(); renderLeft(); }),
+            !state.ppSkinRetouchOn ? null : row([
+              col([label("Evenness"), numberField(state.ppSkinEvenness ?? 0, v => { state.ppSkinEvenness = Math.max(0, Math.min(1, v)); persist(); }, 0.1)]),
+              col([label("Smoothing"), numberField(state.ppSkinSmoothing ?? 0, v => { state.ppSkinSmoothing = Math.max(0, Math.min(1, v)); persist(); }, 0.1)]),
+            ]),
+            !state.ppSkinRetouchOn ? null : row([
+              col([label("Redness"), numberField(state.ppSkinRedness ?? 0, v => { state.ppSkinRedness = Math.max(0, Math.min(1, v)); persist(); }, 0.1)]),
+              col([label("Shine"), numberField(state.ppSkinShine ?? 0, v => { state.ppSkinShine = Math.max(0, Math.min(1, v)); persist(); }, 0.1)]),
+            ]),
+            !state.ppSkinRetouchOn ? null : row([
+              col([label("Blemish"), select(
+                [{ value: "off", label: "Off" }, { value: "subtle", label: "Subtle" }, { value: "strong", label: "Strong" }],
+                state.ppSkinBlemishMode || "off", v => { state.ppSkinBlemishMode = v; persist(); })]),
+              col([label("Microtexture"), numberField(state.ppSkinMicrotexture ?? 0, v => { state.ppSkinMicrotexture = Math.max(0, Math.min(3, v)); persist(); }, 0.1)]),
+            ]),
+            !state.ppSkinRetouchOn ? null : checkboxRow("Preserve marks (moles/scars)", state.ppSkinPreserveMarks !== false,
+              v => { state.ppSkinPreserveMarks = v; persist(); }),
+          ]));
+
+        // ── E. Add Grain ─────────────────────────────────────────────────────
+        leftPanel.appendChild(accordion("ppGrain", "E. Add Grain",
           state.ppGrainOn ? "on" : "OFF", () => [
             checkboxRow("Enable Add Grain (GLSL film grain)", state.ppGrainOn, v => { state.ppGrainOn = v; persist(); renderLeft(); }),
             !state.ppGrainOn ? null : row([
@@ -3063,8 +3089,8 @@ app.registerExtension({
               state.ppGrainNoiseMode || "smooth", v => { state.ppGrainNoiseMode = v; persist(); })])]),
           ]));
 
-        // ── E. Interpolate ───────────────────────────────────────────────────
-        leftPanel.appendChild(accordion("ppInterpolate", "E. Interpolate",
+        // ── F. Interpolate ───────────────────────────────────────────────────
+        leftPanel.appendChild(accordion("ppInterpolate", "F. Interpolate",
           state.ppInterpolateOn ? `${FPS} → ${state.ppInterpolateTargetFps ?? FPS * 2}fps` : "OFF", () => [
             checkboxRow("Enable Interpolate (RIFE)", state.ppInterpolateOn, v => { state.ppInterpolateOn = v; persist(); renderLeft(); }),
             !state.ppInterpolateOn ? null : row([
@@ -3074,9 +3100,9 @@ app.registerExtension({
             ]),
           ]));
 
-        // ── F. Resize ────────────────────────────────────────────────────────
+        // ── G. Resize ────────────────────────────────────────────────────────
         // Reuses the same state.resize* fields the gallery's own "↔ Resize" bar uses.
-        leftPanel.appendChild(accordion("ppResize", "F. Resize",
+        leftPanel.appendChild(accordion("ppResize", "G. Resize",
           state.ppResizeOn ? (state.resizeMode || "Long side") : "OFF", () => {
             const kids = [checkboxRow("Enable Resize (Video Resize (TJ))", state.ppResizeOn, v => { state.ppResizeOn = v; persist(); renderLeft(); })];
             if (!state.ppResizeOn) return kids;
@@ -3147,7 +3173,7 @@ app.registerExtension({
       async function runPostprocess({ full = true } = {}) {
         if (ppRunning) return;
         if (!state.ppSource) { showPopup("Pick a source clip first.", true); return; }
-        const steps = ["ppDeblurOn", "ppDenoiseOn", "ppUpscaleOn", "ppGrainOn", "ppInterpolateOn", "ppResizeOn"];
+        const steps = ["ppDeblurOn", "ppDenoiseOn", "ppUpscaleOn", "ppSkinRetouchOn", "ppGrainOn", "ppInterpolateOn", "ppResizeOn"];
         if (!steps.some(k => state[k])) { showPopup("Enable at least one effect (A-F) first.", true); return; }
         ppRunning = true; ppStopRequested = false;
         const busyBtn = full ? ppGenBtn : ppPreviewBtn;
@@ -3188,6 +3214,11 @@ app.registerExtension({
                 colorFix: state.flashvsrColorFix, tileSize: state.flashvsrTileSize,
                 tileOverlap: state.flashvsrTileOverlap, seed: randomSeed(),
               },
+            },
+            skinRetouch: {
+              enabled: state.ppSkinRetouchOn, evenness: state.ppSkinEvenness, smoothing: state.ppSkinSmoothing,
+              redness: state.ppSkinRedness, shine: state.ppSkinShine, blemishMode: state.ppSkinBlemishMode,
+              preserveMarks: state.ppSkinPreserveMarks, microtextureStrength: state.ppSkinMicrotexture,
             },
             grain: {
               enabled: state.ppGrainOn, amount: state.ppGrainAmount, size: state.ppGrainSize,

@@ -2723,6 +2723,10 @@ MMH3_OPTIONAL_NODES = [
     # instead of the third-party RTXVideoSuperResolution the main Upscale accordion/gallery
     # use, so the whole Postprocess chain depends on one pack (TJ_NODE) for all 3 RTX steps.
     "TJ_NODE_RTXVSR",
+    # ships with TJ_NODE — "Skin Retouch (TJ)", Postprocess's item G. Pure-PyTorch,
+    # non-generative (YCbCr skin-likelihood mask, no model/checkpoint) — ported from
+    # VRGDG-SeedVR2-TensorRT-Studio's apply_skin_finishing()/apply_skin_microtexture().
+    "TJ_SkinRetouch",
     # FlashVSR VSR (lihaoyun6/ComfyUI-FlashVSR-Ultra-Fast, GPL-3.0) — tiled diffusion
     # video super-resolution, offered as a 4th Upscale option alongside RTX VSR
     "FlashVSRInitPipe", "FlashVSRNodeAdv",

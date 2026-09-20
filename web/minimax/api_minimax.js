@@ -53,6 +53,8 @@ export const MMH3_OPTIONAL_NODES = [
   "TJ_NODE_RTXDenoise",
   // ships with TJ_NODE — "RTX VSR (TJ)", used by Postprocess's Upscale step
   "TJ_NODE_RTXVSR",
+  // ships with TJ_NODE — "Skin Retouch (TJ)", used by Postprocess's item G
+  "TJ_SkinRetouch",
   // FlashVSR VSR (lihaoyun6/ComfyUI-FlashVSR-Ultra-Fast, GPL-3.0) — tiled diffusion video
   // super-resolution, offered as a 4th Upscale option alongside RTX VSR.
   "FlashVSRInitPipe", "FlashVSRNodeAdv",

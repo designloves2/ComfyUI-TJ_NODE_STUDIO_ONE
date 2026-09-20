@@ -1561,6 +1561,7 @@ const PPX = {
   fvsr:    "PPX:flashvsr",
   upModel:"PPX:upscale_model",
   upApply:"PPX:upscale",
+  skinRetouch: "PPX:skin_retouch",
   grain:  "PPX:grain",
   rife:   "PPX:rife",
   resize: "PPX:resize",
@@ -1670,17 +1671,21 @@ void main() {
 
 /**
  * Postprocess mode's chained pipeline — Deblur -> Denoise -> Upscale(FlashVSR/RTX VSR/
- * model) -> Grain -> Interpolate -> Resize, in that fixed order (per the user's spec:
- * "순서는 A->F로 진행" — the order is not user-configurable, only which steps run).
- * Every step is independently optional (`opts.<step>.enabled`); a disabled step is simply
- * skipped, so any subset can chain. Each step reassigns `images`/`fps` for the next one,
- * mirroring buildUpscaleGraph's single mutable-link pattern.
+ * model) -> Skin Retouch -> Grain -> Interpolate -> Resize, in that fixed order (Skin
+ * Retouch's spot right after Upscale is an explicit user call, not derived from the
+ * original A-F spec). Every step is independently optional (`opts.<step>.enabled`); a
+ * disabled step is simply skipped, so any subset can chain. Each step reassigns
+ * `images`/`fps` for the next one, mirroring buildUpscaleGraph's single mutable-link
+ * pattern.
  *
  * @param opts.deblur     { enabled, strength }
  * @param opts.denoise    { enabled, strength }
  * @param opts.upscale    { enabled, method: "rtx"|"flashvsr"|"model", ...method params,
  *                          srcW, srcH }  — same param shape as buildUpscaleGraph's method
  *                          branches (rtxScale/rtxQuality/rtxSizeMode/.../flashvsr/modelName)
+ * @param opts.skinRetouch{ enabled, evenness, smoothing, redness, shine,
+ *                          blemishMode: "off"|"subtle"|"strong", preserveMarks,
+ *                          microtextureStrength }
  * @param opts.grain      { enabled, amount, size, color, lumBias, noiseMode: "smooth"|"grainy" }
  * @param opts.interpolate{ enabled, targetFps, scale, modelName, batchSize, useFp16 }
  * @param opts.resize     { enabled, mode, upscaleMethod, targetPx, ratioW, ratioH,
@@ -1689,7 +1694,7 @@ void main() {
 export function buildPostprocessGraph(opts, avail) {
   const {
     inputFile, folder, stem,
-    deblur = {}, denoise = {}, upscale = {}, grain = {}, interpolate = {}, resize = {},
+    deblur = {}, denoise = {}, upscale = {}, skinRetouch = {}, grain = {}, interpolate = {}, resize = {},
     skipFirstFrames = 0, frameLoadCap = 0,
     saveSuffix = "_post",
   } = opts;
@@ -1767,7 +1772,27 @@ export function buildPostprocessGraph(opts, avail) {
     usedSteps.push("upscale");
   }
 
-  // D. Add Grain — GLSLShader (ComfyUI core), the fixed grain shader above. `amount`/
+  // D. Skin Retouch — TJ_SkinRetouch (TJ_NODE), placed right after Upscale per the user's
+  // explicit call ("Skin Retouch의 위치는 업스케일 다음에"): pure-PyTorch, non-generative
+  // (YCbCr skin-likelihood mask, no model/checkpoint) — ported from VRGDG-SeedVR2-
+  // TensorRT-Studio's apply_skin_finishing()/apply_skin_microtexture().
+  if (skinRetouch.enabled) {
+    if (!has(avail, "TJ_SkinRetouch")) throw new Error("Skin Retouch (TJ_SkinRetouch) is not installed.");
+    g[PPX.skinRetouch] = { class_type: "TJ_SkinRetouch", inputs: {
+      images,
+      evenness: skinRetouch.evenness ?? 0,
+      smoothing: skinRetouch.smoothing ?? 0,
+      redness: skinRetouch.redness ?? 0,
+      shine: skinRetouch.shine ?? 0,
+      blemish_mode: skinRetouch.blemishMode || "off",
+      preserve_marks: skinRetouch.preserveMarks !== false,
+      microtexture_strength: skinRetouch.microtextureStrength ?? 0,
+    }};
+    images = [PPX.skinRetouch, 0];
+    usedSteps.push("skin retouch");
+  }
+
+  // E. Add Grain — GLSLShader (ComfyUI core), the fixed grain shader above. `amount`/
   // `size`/`color`/`lumBias` map straight to the shader's u_float0-3; `noiseMode` picks
   // u_int0 (0 = smooth/interpolated, 1 = grainy/pure hash noise).
   if (grain.enabled) {
@@ -1788,10 +1813,7 @@ export function buildPostprocessGraph(opts, avail) {
     usedSteps.push("grain");
   }
 
-  // E. Interpolate — RIFEInterpolation, same shape as buildInterpolateGraph. Runs after
-  // Grain (grain is a per-pixel effect, cheaper on the original frame count) and before
-  // Resize (resizing fewer, already-interpolated... actually more frames costs more, but
-  // ordering here follows the user's fixed A->F spec, not a cost optimization).
+  // F. Interpolate — RIFEInterpolation, same shape as buildInterpolateGraph.
   if (interpolate.enabled) {
     if (!has(avail, "RIFEInterpolation")) throw new Error("RIFE Frame Interpolation is not installed.");
     const dstFps = Math.max(fps, Number(interpolate.targetFps) || fps * 2);
@@ -1807,7 +1829,7 @@ export function buildPostprocessGraph(opts, avail) {
     usedSteps.push("interpolate");
   }
 
-  // F. Resize — TJ_VideoResize, same param shape as buildResizeGraph.
+  // G. Resize — TJ_VideoResize, same param shape as buildResizeGraph.
   if (resize.enabled) {
     if (!has(avail, "TJ_VideoResize")) throw new Error("Video Resize (TJ) is not installed.");
     g[PPX.resize] = { class_type: "TJ_VideoResize", inputs: {
