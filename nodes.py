@@ -1597,6 +1597,68 @@ async def studio_llm_download_image(request):
 # .sh (it is REPOS[21]) or from ComfyUI-Manager — the panel now just links there.
 
 
+def _first_good_block(text):
+    """Some local models produce several '***'-separated candidate answers
+    (mirroring an internal scoring-rubric they were told to imagine writing)
+    where later candidates degrade into repetition. Keep the first block
+    that's actually substantial; only that first candidate is reliable.
+    """
+    parts = [p.strip() for p in re.split(r"\n\s*\*\*\*\s*\n", text.strip()) if p.strip()]
+    if len(parts) <= 1:
+        return text
+    for p in parts:
+        if len(p) > 20:
+            return p
+    return parts[0]
+
+
+def _strip_rubric_preamble(text):
+    """Some model_format templates carry an internal weighting rubric (e.g.
+    "1. Faithfulness first: 2.0") meant only to steer the model's own
+    reasoning — a weak model sometimes echoes it back verbatim before the
+    actual answer. Drop a leading run of numbered "N. label: number" lines.
+    """
+    lines = text.split("\n")
+    rubric_re = re.compile(r"^\s*\d+\.\s")
+    i, seen_rubric = 0, False
+    while i < len(lines):
+        line = lines[i].strip()
+        if not line:
+            i += 1
+            continue
+        if rubric_re.match(line):
+            seen_rubric = True
+            i += 1
+            continue
+        break
+    if seen_rubric and i > 0:
+        return "\n".join(lines[i:]).strip()
+    return text
+
+
+def _truncate_runaway_repetition(text, min_len=6, min_repeats=4, min_char_run=16):
+    """Small GGUF models occasionally fail to stop and repeat themselves —
+    either the same multi-character chunk (a token, a number) many times, or
+    (seen live: "0.351627498...000000...1") a single character run far past
+    anything a real answer would contain. Cut the output right before
+    whichever runaway pattern starts first.
+    """
+    candidates = []
+    m1 = re.search(r"(.{%d,}?)(?:\1){%d,}" % (min_len, min_repeats - 1), text)
+    if m1:
+        candidates.append(m1.start())
+    m2 = re.search(r"(.)\1{%d,}" % (min_char_run - 1), text)
+    if m2:
+        candidates.append(m2.start())
+    if not candidates:
+        return text
+    return text[:min(candidates)].rstrip()
+
+
+def _strip_label_prefix(text):
+    return re.sub(r"^\s*(Prompt|Caption|Description|Answer)\s*:\s*", "", text, flags=re.IGNORECASE)
+
+
 def _dedupe_near_repeat(text):
     """Small local GGUF models sometimes don't stop cleanly and re-generate a
     second, near-identical paragraph right after the first (observed on image
@@ -1616,6 +1678,21 @@ def _dedupe_near_repeat(text):
     if ratio < 0.7:
         return text
     return "\n\n".join(blocks[:-2] + [blocks[-1]]) if len(blocks) > 2 else blocks[-1]
+
+
+def _clean_llm_output(text):
+    """Runs every local-model-degeneration cleanup, in the order that matters:
+    pick the first real '***' candidate before anything else (later candidates
+    are the ones that ramble/repeat), strip a leaked scoring-rubric preamble,
+    cut off runaway token repetition, drop a stray "Prompt:"-style label, then
+    collapse a trailing near-duplicate paragraph.
+    """
+    text = _first_good_block(text)
+    text = _strip_rubric_preamble(text)
+    text = _truncate_runaway_repetition(text)
+    text = _strip_label_prefix(text)
+    text = _dedupe_near_repeat(text)
+    return text.strip()
 
 
 @PromptServer.instance.routes.get("/tj_studio_one/llm/models")
@@ -1717,7 +1794,7 @@ async def studio_llm_enhance(request):
             return result
         out = await loop.run_in_executor(None, _run)
         result_text = out[0] if isinstance(out, (list, tuple)) else str(out)
-        resp = {"ok": True, "result": _dedupe_near_repeat(result_text)}
+        resp = {"ok": True, "result": _clean_llm_output(result_text)}
         # TJ_PromptEnhancer's own out[1] ("thought") already carries a "=== Raw Output ==="
         # section with the pre-cleanup completion — surfaced here as a temporary debug aid
         # (this session has no access to the ComfyUI console the backend logs to). Remove
@@ -1798,7 +1875,7 @@ async def studio_llm_image_to_prompt(request):
             )
         out = await loop.run_in_executor(None, _run)
         result_text = out[0] if isinstance(out, (list, tuple)) else str(out)
-        resp = {"ok": True, "result": _dedupe_near_repeat(result_text)}
+        resp = {"ok": True, "result": _clean_llm_output(result_text)}
         if isinstance(out, (list, tuple)) and len(out) > 1:
             resp["debug_thought"] = out[1]
         return web.json_response(resp)
