@@ -619,10 +619,45 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   extraCol.appendChild(fieldLabel(t("llm_lbl_extra_instructions")));
   extraCol.appendChild(extraInstrTA);
 
+  // ── Seed + seed control — per-run, so it lives here (not in ⚙ Settings) ──
+  const seedInput = document.createElement("input");
+  seedInput.type = "number"; seedInput.min = "0"; seedInput.step = "1";
+  seedInput.value = llmForOptions.seed ?? 0;
+  Object.assign(seedInput.style, {
+    background: "#2a2a2a", color: "#ddd", border: "none",
+    borderRadius: "6px", padding: "8px 10px", fontSize: "13px", width: "100%", boxSizing: "border-box",
+  });
+  seedInput.addEventListener("input", () => {
+    const l = loadLLMSettings(); l.seed = parseInt(seedInput.value, 10) || 0; saveLLMSettings(l);
+  });
+  const seedModeSel = selectStyle(makeSelect(
+    ["Random", "Fixed", "+1", "-1"],
+    { randomize: "Random", fixed: "Fixed", increment: "+1", decrement: "-1" }[llmForOptions.seed_mode || "randomize"],
+    (label) => {
+      const mode = { Random: "randomize", Fixed: "fixed", "+1": "increment", "-1": "decrement" }[label];
+      const l = loadLLMSettings(); l.seed_mode = mode; saveLLMSettings(l);
+    }
+  ));
+  function applySeedControl() {
+    const l = loadLLMSettings();
+    const mode = l.seed_mode || "randomize";
+    if (mode === "randomize") l.seed = Math.floor(Math.random() * 1e15);
+    else if (mode === "increment") l.seed = (l.seed || 0) + 1;
+    else if (mode === "decrement") l.seed = Math.max(0, (l.seed || 0) - 1);
+    saveLLMSettings(l);
+    seedInput.value = l.seed;
+    return l.seed;
+  }
+  const seedRow = document.createElement("div");
+  Object.assign(seedRow.style, { display: "flex", gap: "8px", flexShrink: "0" });
+  seedRow.appendChild(fieldCol(t("llm_lbl_seed"), seedInput));
+  seedRow.appendChild(fieldCol(t("llm_lbl_seed_mode"), seedModeSel));
+
   rightCol.appendChild(urlRow);
   rightCol.appendChild(row2);
   rightCol.appendChild(row3);
   rightCol.appendChild(extraCol);
+  rightCol.appendChild(seedRow);
 
   topRow.appendChild(imgCol);
   topRow.appendChild(rightCol);
@@ -755,6 +790,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   //    plain append. ──────────────────────────────────────────────────────
   async function doWrite() {
     if (!_imageB64) return;
+    applySeedControl();
     const llm = loadLLMSettings();
     const existingText = existingTA.value.trim();
     let contextInstruction = existingText
@@ -798,6 +834,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   async function doEnhance() {
     const prompt = existingTA.value.trim();
     if (!prompt) return;
+    applySeedControl();
     const llm = loadLLMSettings();
     btnEnhance.disabled = true; setBusy(true, t("llm_busy_enhance"));
     try {
@@ -837,6 +874,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     syncButtons();
     const l = loadLLMSettings();
     extraInstrTA.value = l.extra_instructions || "";
+    seedInput.value = l.seed ?? 0;
     debugPre.style.display = "none";
     setLastDebug("");
   };

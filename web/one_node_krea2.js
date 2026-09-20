@@ -343,7 +343,21 @@ app.registerExtension({
       const promptHdr  = el("div",{style:{display:"flex",alignItems:"center",height:`${PROMPT_LBL}px`}});
       promptHdr.appendChild(el("div",{text:"PROMPT",style:{color:C.muted,fontSize:"11px",textTransform:"uppercase",letterSpacing:"0.04em"}}));
       promptHdr.appendChild(charCount);
-      const expandBtn  = el("button",{type:"button",text:"🔍 Prompt Edit",title:"Expand edit",style:{cursor:"pointer",background:BRAND,border:"none",borderRadius:"4px",fontSize:"11px",fontWeight:"700",color:"#fff",padding:"3px 8px",marginLeft:"auto"},onclick:()=>promptExpandOv.show()});
+
+      // ── Hermes agent job export — lives next to Prompt Edit/Preset now, not
+      // down by Generate (user: 위치 이동, later mirrored to Z-Image/Klein) ────
+      const agentBtn = button("⬇ job.json Download",()=>{
+        const job = buildAgentJob(state);
+        if(!job){ alert("This mode isn't in the krea2-headless agent's scope (t2i / i2i / identity only)."); return; }
+        const m = state.mode === "identity" ? "id" : state.mode;
+        downloadAgentJob("krea2", job, `Krea2_${m}_${agentStamp()}_${state.seed ?? 0}.json`);
+      });
+      agentBtn.title = "Download the current settings as a job.json for the krea2-headless Hermes agent";
+      agentBtn.style.cssText += `cursor:pointer;background:${BRAND};border:none;border-radius:4px;font-size:11px;font-weight:700;color:#fff;padding:3px 8px;margin-left:auto;`;
+      promptHdr.appendChild(agentBtn);
+      const syncAgentBtn = ()=>{ agentBtn.style.display = ["t2i","i2i","identity"].includes(state.mode) ? "" : "none"; };
+
+      const expandBtn  = el("button",{type:"button",text:"🔍 Prompt Edit",title:"Expand edit",style:{cursor:"pointer",background:BRAND,border:"none",borderRadius:"4px",fontSize:"11px",fontWeight:"700",color:"#fff",padding:"3px 8px",marginLeft:"4px"},onclick:()=>promptExpandOv.show()});
       promptHdr.appendChild(expandBtn);
       const tplBtn = button("📋 Prompt Preset",null,"default");
       tplBtn.title="Load Template"; tplBtn.style.cssText+=`padding:3px 8px;font-size:11px;margin-left:4px;background:${BRAND};border:none;color:#fff;font-weight:700;`;
@@ -379,18 +393,6 @@ app.registerExtension({
       const stopBtn = button("■ Stop",async()=>{ running=false; await interrupt(); genBtn.disabled=false; genBtn.textContent="▶ Generate"; loadingOv.style.display="none"; if(!modeResults[state.mode])resetPreview(); });
       stopBtn.style.flexShrink="0";
       seedGenWrap.appendChild(row([genBtn,stopBtn]));
-
-      // ── Hermes agent job export ────────────────────────────────────────────
-      const agentBtn = button("⬇ job.json",()=>{
-        const job = buildAgentJob(state);
-        if(!job){ alert("This mode isn't in the krea2-headless agent's scope (t2i / i2i / identity only)."); return; }
-        const m = state.mode === "identity" ? "id" : state.mode;
-        downloadAgentJob("krea2", job, `Krea2_${m}_${agentStamp()}_${state.seed ?? 0}.json`);
-      });
-      agentBtn.title = "Download the current settings as a job.json for the krea2-headless Hermes agent";
-      agentBtn.style.cssText += "width:100%;font-size:11px;padding:5px;opacity:0.85;";
-      seedGenWrap.appendChild(agentBtn);
-      const syncAgentBtn = ()=>{ agentBtn.style.display = ["t2i","i2i","identity"].includes(state.mode) ? "" : "none"; };
 
       // ── Mode rendering ─────────────────────────────────────────────────────
       function renderMode(){
