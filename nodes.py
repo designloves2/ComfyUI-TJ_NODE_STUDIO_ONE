@@ -2719,6 +2719,10 @@ MMH3_OPTIONAL_NODES = [
     # ships with TJ_NODE (separate pack, different key from the deblur one above) — NVIDIA
     # VFX denoise, same-resolution. Used by the Postprocess mode's Denoise step (item B).
     "TJ_NODE_RTXDenoise",
+    # ships with TJ_NODE — "RTX VSR (TJ)", used by Postprocess's Upscale step (item C.2)
+    # instead of the third-party RTXVideoSuperResolution the main Upscale accordion/gallery
+    # use, so the whole Postprocess chain depends on one pack (TJ_NODE) for all 3 RTX steps.
+    "TJ_NODE_RTXVSR",
     # FlashVSR VSR (lihaoyun6/ComfyUI-FlashVSR-Ultra-Fast, GPL-3.0) — tiled diffusion
     # video super-resolution, offered as a 4th Upscale option alongside RTX VSR
     "FlashVSRInitPipe", "FlashVSRNodeAdv",

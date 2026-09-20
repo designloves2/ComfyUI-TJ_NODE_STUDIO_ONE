@@ -1723,26 +1723,40 @@ export function buildPostprocessGraph(opts, avail) {
     usedSteps.push("denoise");
   }
 
-  // C. Upscale — same 3 methods as buildUpscaleGraph (rtx / flashvsr / model), reused
-  // verbatim rather than calling that function (it owns its own VHS_LoadVideo + save).
+  // C. Upscale — offered in the user's own numbered order (1. FlashVSR, 2. RTX VSR (TJ),
+  // 3. Model). RTX VSR here is deliberately TJ_NODE's own "RTX VSR (TJ)" (TJ_NODE_RTXVSR),
+  // not the third-party RTXVideoSuperResolution buildUpscaleGraph/buildRtxNode use
+  // elsewhere — Postprocess's Deblur/Denoise already depend on TJ_NODE, so its VSR keeps
+  // the whole chain to one dependency pack instead of also requiring the third-party one.
   let upscaleUsedInfo = null;
   if (upscale.enabled && upscale.method && upscale.method !== "none") {
-    if (upscale.method === "rtx") {
-      if (!has(avail, "RTXVideoSuperResolution")) throw new Error("RTXVideoSuperResolution is not installed.");
-      const pseudoState = {
-        rtxScale: upscale.rtxScale, rtxQuality: upscale.rtxQuality, rtxSizeMode: upscale.rtxSizeMode,
-        rtxShort: upscale.rtxShort, rtxLong: upscale.rtxLong, rtxW: upscale.rtxW, rtxH: upscale.rtxH,
-        rtxCropAnchor: upscale.rtxCropAnchor,
-      };
-      const r = buildRtxNode(g, { crop: PPX.rtxCrop, rtx: PPX.rtx }, images, pseudoState,
-        upscale.srcW || 1280, upscale.srcH || 720);
-      images = r.images;
-      upscaleUsedInfo = r.upscaleUsed;
-    } else if (upscale.method === "flashvsr") {
+    if (upscale.method === "flashvsr") {
       if (!has(avail, "FlashVSRNodeAdv")) throw new Error("FlashVSRInitPipe/FlashVSRNodeAdv is not installed.");
       buildFlashVSR(g, PPX.fvsrPipe, PPX.fvsr, upscale.flashvsr || {}, images);
       images = [PPX.fvsr, 0];
       upscaleUsedInfo = flashvsrUsed(upscale.flashvsr || {});
+    } else if (upscale.method === "rtx") {
+      if (!has(avail, "TJ_NODE_RTXVSR")) throw new Error("RTX VSR (TJ_NODE_RTXVSR) is not installed.");
+      const t = computeRtxTarget({
+        rtxSizeMode: upscale.rtxSizeMode, rtxScale: upscale.rtxScale, rtxShort: upscale.rtxShort,
+        rtxLong: upscale.rtxLong, rtxW: upscale.rtxW, rtxH: upscale.rtxH, rtxCropAnchor: upscale.rtxCropAnchor,
+      }, upscale.srcW || 1280, upscale.srcH || 720);
+      if (t.crop) {
+        g[PPX.rtxCrop] = { class_type: "ImageCrop", inputs: { image: images, ...t.crop } };
+        images = [PPX.rtxCrop, 0];
+      }
+      g[PPX.rtx] = { class_type: "TJ_NODE_RTXVSR", inputs: {
+        images,
+        resize_type: t.resizeType,
+        scale: t.scale ?? 2.0,
+        width: t.width ?? 1920,
+        height: t.height ?? 1080,
+        quality: upscale.rtxQuality || "ULTRA",
+      }};
+      images = [PPX.rtx, 0];
+      upscaleUsedInfo = t.resizeType === "scale by multiplier"
+        ? { method: "rtx", scale: t.scale, quality: upscale.rtxQuality || "ULTRA" }
+        : { method: "rtx", width: t.width, height: t.height, quality: upscale.rtxQuality || "ULTRA" };
     } else {
       if (!upscale.modelName || upscale.modelName === "none") throw new Error("No upscale model selected.");
       g[PPX.upModel] = { class_type: "UpscaleModelLoader", inputs: { model_name: upscale.modelName } };

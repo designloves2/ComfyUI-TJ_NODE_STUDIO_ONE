@@ -51,6 +51,8 @@ export const MMH3_OPTIONAL_NODES = [
   "SpectrumApplyMiniMaxH3", "RTXVideoSuperResolution", "TJ_RTXDeblur",
   // ships with TJ_NODE (separate pack, different key) — used by Postprocess's Denoise step
   "TJ_NODE_RTXDenoise",
+  // ships with TJ_NODE — "RTX VSR (TJ)", used by Postprocess's Upscale step
+  "TJ_NODE_RTXVSR",
   // FlashVSR VSR (lihaoyun6/ComfyUI-FlashVSR-Ultra-Fast, GPL-3.0) — tiled diffusion video
   // super-resolution, offered as a 4th Upscale option alongside RTX VSR.
   "FlashVSRInitPipe", "FlashVSRNodeAdv",

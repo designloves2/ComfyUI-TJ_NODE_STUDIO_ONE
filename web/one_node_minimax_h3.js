@@ -3003,24 +3003,25 @@ app.registerExtension({
           ]));
 
         // ── C. Upscale ───────────────────────────────────────────────────────
-        // Reuses the same shared rtx*/flashvsr*/upscaleModel state fields the main
-        // Upscale accordion and the gallery's Upscale bar already read/write, per the
-        // established "one RTX VSR / FlashVSR setting, offered everywhere" convention.
+        // Order and labels per the user's own numbered spec: 1. FlashVSR, 2. RTX VSR (TJ)
+        // — TJ_NODE's own node, not the third-party RTXVideoSuperResolution the main
+        // Upscale accordion/gallery use, so the chain depends on one pack — 3. Model.
+        // Still reuses the shared rtx*/flashvsr*/upscaleModel state fields those other
+        // accordions read/write, per the established "one setting, offered everywhere"
+        // convention — only the menu's order/labels are Postprocess-specific.
+        const PP_UPSCALE_METHODS = [
+          { value: "flashvsr", label: "FlashVSR" },
+          { value: "rtx",      label: "RTX VSR (TJ)" },
+          { value: "model",    label: "Model" },
+        ];
         leftPanel.appendChild(accordion("ppUpscale", "C. Upscale",
           state.ppUpscaleOn ? (state.upscaleMode && state.upscaleMode !== "none" ? state.upscaleMode : "model") : "OFF", () => {
             const kids = [checkboxRow("Enable Upscale", state.ppUpscaleOn, v => { state.ppUpscaleOn = v; persist(); renderLeft(); })];
             if (!state.ppUpscaleOn) return kids;
-            const method = (state.upscaleMode && state.upscaleMode !== "none") ? state.upscaleMode : "model";
+            const method = (state.upscaleMode && state.upscaleMode !== "none") ? state.upscaleMode : "flashvsr";
             kids.push(row([col([label("Method"), select(
-              UPSCALE_MODES.filter(m => m.key !== "none").map(m => ({ value: m.key, label: m.label })),
-              method, v => { state.upscaleMode = v; persist(); renderLeft(); })])]));
-            if (method === "rtx") {
-              kids.push(row([
-                col([label("Scale"), numberField(state.rtxScale ?? 2.0, v => { state.rtxScale = Math.max(1, v); persist(); }, 0.25)]),
-                col([label("Quality"), select(["LOW", "MEDIUM", "HIGH", "ULTRA"].map(q => ({ value: q, label: q })),
-                  state.rtxQuality || "ULTRA", v => { state.rtxQuality = v; persist(); })]),
-              ]));
-            } else if (method === "flashvsr") {
+              PP_UPSCALE_METHODS, method, v => { state.upscaleMode = v; persist(); renderLeft(); })])]));
+            if (method === "flashvsr") {
               kids.push(row([
                 col([label("Model"), select(FLASHVSR_MODELS.map(m => ({ value: m, label: m })),
                   state.flashvsrModel || "FlashVSR-v1.1", v => { state.flashvsrModel = v; persist(); })]),
@@ -3030,6 +3031,12 @@ app.registerExtension({
               kids.push(row([
                 col([label("Scale"), numberField(state.flashvsrScale ?? 2, v => { state.flashvsrScale = Math.min(4, Math.max(2, Math.round(v))); persist(); }, 1)]),
                 col([label("Tile"), numberField(state.flashvsrTileSize ?? 384, v => { state.flashvsrTileSize = Math.max(32, Math.round(v)); persist(); }, 32)]),
+              ]));
+            } else if (method === "rtx") {
+              kids.push(row([
+                col([label("Scale"), numberField(state.rtxScale ?? 2.0, v => { state.rtxScale = Math.max(1, v); persist(); }, 0.25)]),
+                col([label("Quality"), select(["LOW", "MEDIUM", "HIGH", "ULTRA"].map(q => ({ value: q, label: q })),
+                  state.rtxQuality || "ULTRA", v => { state.rtxQuality = v; persist(); })]),
               ]));
             } else {
               kids.push(row([col([label("Model"), select(
@@ -3155,7 +3162,7 @@ app.registerExtension({
             denoise: { enabled: state.ppDenoiseOn, strength: state.ppDenoiseStrength || "MEDIUM" },
             upscale: {
               enabled: state.ppUpscaleOn,
-              method: (state.upscaleMode && state.upscaleMode !== "none") ? state.upscaleMode : "model",
+              method: (state.upscaleMode && state.upscaleMode !== "none") ? state.upscaleMode : "flashvsr",
               modelName: state.upscaleModel,
               rtxScale: state.rtxScale, rtxQuality: state.rtxQuality, rtxSizeMode: state.rtxSizeMode || "scale",
               rtxShort: state.rtxShort, rtxLong: state.rtxLong, rtxW: state.rtxW, rtxH: state.rtxH,
