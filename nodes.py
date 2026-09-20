@@ -1597,6 +1597,27 @@ async def studio_llm_download_image(request):
 # .sh (it is REPOS[21]) or from ComfyUI-Manager — the panel now just links there.
 
 
+def _dedupe_near_repeat(text):
+    """Small local GGUF models sometimes don't stop cleanly and re-generate a
+    second, near-identical paragraph right after the first (observed on image
+    captioning: the exact same description twice with tiny wording drift).
+    TJ_NODE's own _clean_output only separates "reasoning vs. final answer" —
+    it has no notion of "the model just repeated itself" - and that node lives
+    in a separate repo we don't edit, so the fix lives here instead. Splits on
+    blank lines; if the last two blocks are near-identical, keeps only the
+    last (matches _clean_output's own "last block wins" philosophy).
+    """
+    import difflib
+    blocks = [b.strip() for b in re.split(r"\n\s*\n", text.strip()) if b.strip()]
+    if len(blocks) < 2:
+        return text
+    a, b = blocks[-2], blocks[-1]
+    ratio = difflib.SequenceMatcher(None, a.lower(), b.lower()).ratio()
+    if ratio < 0.7:
+        return text
+    return "\n\n".join(blocks[:-2] + [blocks[-1]]) if len(blocks) > 2 else blocks[-1]
+
+
 @PromptServer.instance.routes.get("/tj_studio_one/llm/models")
 async def studio_llm_models(request):
     _or_text, _or_vision = _studio_or_models()
@@ -1695,7 +1716,8 @@ async def studio_llm_enhance(request):
             )
             return result
         out = await loop.run_in_executor(None, _run)
-        resp = {"ok": True, "result": out[0] if isinstance(out, (list, tuple)) else str(out)}
+        result_text = out[0] if isinstance(out, (list, tuple)) else str(out)
+        resp = {"ok": True, "result": _dedupe_near_repeat(result_text)}
         # TJ_PromptEnhancer's own out[1] ("thought") already carries a "=== Raw Output ==="
         # section with the pre-cleanup completion — surfaced here as a temporary debug aid
         # (this session has no access to the ComfyUI console the backend logs to). Remove
@@ -1775,7 +1797,8 @@ async def studio_llm_image_to_prompt(request):
                 clip=None,
             )
         out = await loop.run_in_executor(None, _run)
-        resp = {"ok": True, "result": out[0] if isinstance(out, (list, tuple)) else str(out)}
+        result_text = out[0] if isinstance(out, (list, tuple)) else str(out)
+        resp = {"ok": True, "result": _dedupe_near_repeat(result_text)}
         if isinstance(out, (list, tuple)) and len(out) > 1:
             resp["debug_thought"] = out[1]
         return web.json_response(resp)
