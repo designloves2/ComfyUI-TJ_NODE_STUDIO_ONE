@@ -548,6 +548,11 @@ Model Override — ⚙ Settings에서 활성화 시 외부 모델/CLIP/VAE 노�
   llm_not_installed_desc:  "LLM / 이미지→브리프 기능은 형제 확장 TJ_NODE에 들어 있습니다.\n이 팩의 install_requirements.bat 한 번이면 스튜디오 원 패밀리에 필요한 의존성·노드가 전부(TJ_NODE 포함) 설치됩니다.",
   llm_install_hint:        "또는 ComfyUI-Manager에서 \"ComfyUI-TJ_NODE\" 검색 후 설치,\n혹은 custom_nodes 폴더에서 아래 명령 실행. 설치 후 ComfyUI 재시작.",
   llm_github_link:         "GitHub: designloves2/ComfyUI-TJ_NODE",
+  llm_settings_btn:        "설정",
+  llm_btn_analyze_write:   "이미지로 프롬프트 쓰기",
+  llm_btn_apply:           "적용 (APPLY)",
+  llm_busy_write:          "이미지를 분석하는 중…",
+  llm_busy_enhance:        "프롬프트를 다듬는 중…",
 };
 
 const EN = {
@@ -1074,6 +1079,11 @@ Model Override — Enable in ⚙ Settings to connect external model/CLIP/VAE nod
   llm_not_installed_desc:  "The LLM / Image-to-Brief features live in the sibling extension TJ_NODE.\nOne run of this pack's install_requirements.bat installs every Studio One family dependency and node, TJ_NODE included.",
   llm_install_hint:        "Or install \"ComfyUI-TJ_NODE\" from ComfyUI-Manager,\nor run the command below in your custom_nodes folder. Restart ComfyUI afterwards.",
   llm_github_link:         "GitHub: designloves2/ComfyUI-TJ_NODE",
+  llm_settings_btn:        "Settings",
+  llm_btn_analyze_write:   "Image to Prompt Write",
+  llm_btn_apply:           "APPLY",
+  llm_busy_write:          "Analyzing the image…",
+  llm_busy_enhance:        "Enhancing the prompt…",
 };
 
 const STRINGS = { ko: KO, en: EN };

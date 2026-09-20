@@ -3,6 +3,7 @@ import { C, el, clear, SUBFOLDER } from "./core_klein.js";
 import { panel, label, button, row, col } from "./ui_common.js";
 import { getModels, getConfig, saveConfig } from "./api_klein.js";
 import { t, getLang, setLang } from "../shared/i18n.js";
+import { mountLLMSettingsSection } from "../shared/llm_panel.js";
 
 function searchableSelect(options, value, onChange) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } });
@@ -161,6 +162,11 @@ export function createSettingsOverlay(state, ctx) {
     ctx._refreshToggle?.(); ctx.renderToggle?.();
   });
   ov.appendChild(panel([label("Save Folder (inside ComfyUI output/)"), pathIn, visLbl]));
+
+  // ── LLM — Prompt Write / Prompt Enhance backend + model config ─────────────
+  const llmPanel = panel([]);
+  ov.appendChild(llmPanel);
+  mountLLMSettingsSection(llmPanel, ctx);
 
   // Model Override 토글
   const ovChk = el("input", { type: "checkbox" });

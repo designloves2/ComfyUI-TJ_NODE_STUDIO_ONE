@@ -3,6 +3,7 @@ import { C, el, SUBFOLDER, DEPTH_CKPTS, safeDepthCkpt } from "./core_krea2.js";
 import { panel, label, button, select, row, col } from "../klein/ui_common.js";
 import { getModels, getConfig, saveConfig } from "./api_krea2.js";
 import { t, getLang, setLang } from "../shared/i18n.js";
+import { mountLLMSettingsSection } from "../shared/llm_panel.js";
 
 function searchableSelect(options, value, onChange) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } });
@@ -238,6 +239,11 @@ export function createSettingsOverlay(state, ctx) {
     saveAllBtn.textContent = "✓ Saved!";
     setTimeout(() => { saveAllBtn.textContent = "💾 Save All"; }, 1500);
   }
+
+  // ── LLM — Prompt Write / Prompt Enhance backend + model config ─────────────
+  const llmPanel = panel([]);
+  ov.appendChild(llmPanel);
+  mountLLMSettingsSection(llmPanel, ctx);
 
   // ── Model Override toggle ─────────────────────────────────────────────────
   const overrideChk = el("input", { type: "checkbox" });

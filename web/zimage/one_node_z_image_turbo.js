@@ -743,7 +743,7 @@ app.registerExtension({
         el:promptExpandEl,
         show(){promptExpandEl._tj_llm_onshow?.();promptExpandEl.style.display="flex";setTimeout(()=>pxTA.focus(),50);}
       };
-      attachLLMPanel({promptExpandEl,pxTA,getModePrompt,setModePrompt,state,persist,updateCount,getPromptTA:()=>promptTA});
+      attachLLMPanel({promptExpandEl,pxTA,getModePrompt,setModePrompt,state,persist,updateCount,getPromptTA:()=>promptTA,openSettings:()=>settingsOv?.show()});
 
       // ── Help overlay ─────────────────────────────────────────────────────
       const HELP_SECTIONS = [

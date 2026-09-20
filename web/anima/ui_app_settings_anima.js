@@ -2,6 +2,7 @@
 import { C, el, SUBFOLDER, MANUAL_TEXT } from "./core_anima.js";
 import { panel, label, button, col } from "../klein/ui_common.js";
 import { getModels, getConfig, saveConfig } from "./api_anima.js";
+import { mountLLMSettingsSection } from "../shared/llm_panel.js";
 
 function searchableSelect(options, value, onChange) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } });
@@ -131,6 +132,11 @@ export function createSettingsOverlay(state, ctx) {
     ctx._refreshToggle?.(); ctx.renderToggle?.();
   });
   ov.appendChild(panel([label("Save Folder (inside ComfyUI output/)"), pathIn, visLbl]));
+
+  // ── LLM — Prompt Write / Prompt Enhance backend + model config ─────────────
+  const llmPanel = panel([]);
+  ov.appendChild(llmPanel);
+  mountLLMSettingsSection(llmPanel, ctx);
 
   // ── Manual / required files ───────────────────────────────────────────────
   const manualBody = el("div", { style: { fontSize: "11px", lineHeight: "1.6", color: C.text, whiteSpace: "pre-wrap" } });

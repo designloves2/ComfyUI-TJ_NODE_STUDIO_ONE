@@ -489,7 +489,7 @@ app.registerExtension({
       promptTA.addEventListener("focus", () => promptTA.style.borderColor = BRAND);
       promptTA.addEventListener("blur",  () => promptTA.style.borderColor = C.border);
       ctx.updatePromptTA = () => { promptTA.value = getModePrompt(state.mode); updateCount(); };
-      attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA: () => promptTA });
+      attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA: () => promptTA, openSettings: () => settingsOv?.show() });
 
       promptWrap.appendChild(promptHdr); promptWrap.appendChild(promptTA);
       rightPanel.appendChild(previewBox); rightPanel.appendChild(sendToWrap); rightPanel.appendChild(promptWrap);

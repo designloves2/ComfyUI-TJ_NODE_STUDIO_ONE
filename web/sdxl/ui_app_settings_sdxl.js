@@ -3,6 +3,7 @@ import { C, el, clear, SUBFOLDER, BRAND } from "./core_sdxl.js";
 import { panel, label, button, row, col } from "../klein/ui_common.js";
 import { getModels, getConfig, saveConfig } from "./api_sdxl.js";
 import { t, getLang, setLang } from "../shared/i18n.js";
+import { mountLLMSettingsSection } from "../shared/llm_panel.js";
 
 function searchableSelect(options, value, onChange) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } });
@@ -274,6 +275,11 @@ export function createSettingsOverlay(state, ctx) {
     ctx.availableLoras = d.loras || [];
     rebuildModelSection();
   }).catch(() => {});
+
+  // ── LLM — Prompt Write / Prompt Enhance backend + model config ─────────────
+  const llmPanel = panel([]);
+  ov.appendChild(llmPanel);
+  mountLLMSettingsSection(llmPanel, ctx);
 
   return {
     el: ov,

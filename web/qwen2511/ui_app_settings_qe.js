@@ -3,6 +3,7 @@ import { C, el, SUBFOLDER, BRAND } from "./core_qwen2511.js";
 import { panel, label, button, row, col } from "./ui_common_qe.js";
 import { getModels, getConfig, saveConfig } from "./api_qwen2511.js";
 import { t, getLang, setLang } from "../shared/i18n.js";
+import { mountLLMSettingsSection } from "../shared/llm_panel.js";
 
 function searchableSelect(options, value, onChange) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } });
@@ -239,6 +240,11 @@ export function createSettingsOverlay(state, ctx) {
       applyConfigModels(cfg, d);
     });
   }).catch(() => {});
+
+  // ── LLM — Prompt Write / Prompt Enhance backend + model config ─────────────
+  const llmPanel = panel([]);
+  ov.appendChild(llmPanel);
+  mountLLMSettingsSection(llmPanel, ctx);
 
   // ── Model Override toggle ─────────────────────────────────────────────────
   const overrideChk = el("input", { type: "checkbox" });

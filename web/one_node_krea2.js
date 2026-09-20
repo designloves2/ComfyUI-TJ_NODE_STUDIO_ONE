@@ -335,7 +335,7 @@ app.registerExtension({
         show(){ promptExpandEl._tj_llm_onshow?.(); promptExpandEl.style.display="flex"; setTimeout(()=>pxTA.focus(),50); },
         hide(){ promptExpandEl.style.display="none"; },
       };
-      attachLLMPanel({promptExpandEl,pxTA,getModePrompt,setModePrompt,state,persist,updateCount,getPromptTA:()=>promptTA});
+      attachLLMPanel({promptExpandEl,pxTA,getModePrompt,setModePrompt,state,persist,updateCount,getPromptTA:()=>promptTA,openSettings:()=>settingsOv?.show()});
 
       // ── Prompt area ────────────────────────────────────────────────────────
       const promptWrap = el("div",{style:{height:`${PROMPT_H}px`,flexShrink:"0",display:"flex",flexDirection:"column",gap:"4px"}});

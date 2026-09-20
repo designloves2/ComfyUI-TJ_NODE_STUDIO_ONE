@@ -653,7 +653,7 @@ app.registerExtension({
         },
         hide() { promptExpandEl.style.display = "none"; },
       };
-      attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA: () => promptTA });
+      attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA: () => promptTA, openSettings: () => settingsOv?.show() });
 
       // ── Prompt area ────────────────────────────────────────────────────────
       const promptWrap = el("div", { style: {
