@@ -1757,7 +1757,12 @@ async def studio_llm_image_to_prompt(request):
                 chat_handler=data.get("chat_handler", "Auto-detect"),
                 text_encoder_name=data.get("text_encoder_name", ""),
                 clip_loader_type=data.get("clip_loader_type", "Auto"),
-                vision_task=data.get("vision_task", "Caption (plain description)"),
+                # "Caption + Format" is the ONLY vision_task that actually layers
+                # model_format/aesthetic into the instruction (TJ_ImageToPrompt
+                # ._build_instruction ignores model_format for every other task
+                # type) — default here so the Model Format dropdown in the popup
+                # isn't silently a no-op for whatever the default task is.
+                vision_task=data.get("vision_task") or "Caption + Format (apply model_format below)",
                 model_format=data.get("model_format", "Universal Natural Language"),
                 aesthetic=data.get("aesthetic", "None (no aesthetic injection)"),
                 custom_instruction=data.get("custom_instruction", ""),
@@ -1770,7 +1775,10 @@ async def studio_llm_image_to_prompt(request):
                 clip=None,
             )
         out = await loop.run_in_executor(None, _run)
-        return web.json_response({"ok": True, "result": out[0] if isinstance(out, (list, tuple)) else str(out)})
+        resp = {"ok": True, "result": out[0] if isinstance(out, (list, tuple)) else str(out)}
+        if isinstance(out, (list, tuple)) and len(out) > 1:
+            resp["debug_thought"] = out[1]
+        return web.json_response(resp)
     except Exception as e:
         return web.json_response({"ok": False, "error": str(e)})
 

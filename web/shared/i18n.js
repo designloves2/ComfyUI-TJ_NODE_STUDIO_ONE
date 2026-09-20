@@ -554,6 +554,8 @@ Model Override — ⚙ Settings에서 활성화 시 외부 모델/CLIP/VAE 노�
   llm_busy_write:          "이미지를 분석하는 중…",
   llm_busy_enhance:        "프롬프트를 다듬는 중…",
   llm_lbl_model:           "모델",
+  llm_btn_show_log:        "🔍 실제 전송된 내용 보기",
+  llm_no_log_yet:          "아직 실행한 적이 없습니다. Write 또는 Enhance를 먼저 실행하세요.",
 };
 
 const EN = {
@@ -1086,6 +1088,8 @@ Model Override — Enable in ⚙ Settings to connect external model/CLIP/VAE nod
   llm_busy_write:          "Analyzing the image…",
   llm_busy_enhance:        "Enhancing the prompt…",
   llm_lbl_model:           "model",
+  llm_btn_show_log:        "🔍 Show what was actually sent",
+  llm_no_log_yet:          "Nothing run yet — click Write or Enhance first.",
 };
 
 const STRINGS = { ko: KO, en: EN };

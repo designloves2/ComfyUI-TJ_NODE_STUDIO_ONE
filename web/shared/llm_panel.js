@@ -13,6 +13,7 @@
  * summary of what's currently selected.
  */
 import { t } from "./i18n.js";
+import { openImageGalleryPicker } from "./ui_image_gallery_picker.js";
 
 const LS_KEY = "tj_studio_one_llm_settings";
 
@@ -173,7 +174,10 @@ export function mountLLMSettingsSection(ov, ctx) {
     mmproj_file:        cfg.mmproj_file         || "none",
     text_encoder_name:  cfg.text_encoder_name   || "",
     clip_loader_type:   cfg.clip_loader_type    || "Auto",
-    vision_task:        cfg.vision_task         || "Caption (plain description)",
+    // "Caption + Format" is the only vision task that actually applies
+    // Model Format/Aesthetic (TJ_ImageToPrompt ignores model_format for every
+    // other task type) — default to it so the dropdown isn't a silent no-op.
+    vision_task:        cfg.vision_task         || "Caption + Format (apply model_format below)",
     model_format:       cfg.model_format        || "Universal Natural Language",
     aesthetic:          cfg.aesthetic           || "None (no aesthetic injection)",
     extra_instructions: cfg.extra_instructions  || "",
@@ -461,10 +465,24 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     _imageB64 = null; imgPreview.style.display = "none"; imgClearBtn.style.display = "none";
     syncButtons();
   });
+  const imgGalleryBtn = document.createElement("button");
+  imgGalleryBtn.type = "button"; imgGalleryBtn.textContent = "🖼"; imgGalleryBtn.title = "Load from gallery";
+  Object.assign(imgGalleryBtn.style, {
+    position: "absolute", bottom: "4px", left: "4px", zIndex: "2",
+    background: "rgba(0,0,0,0.65)", color: "#fff", border: "none", borderRadius: "4px",
+    width: "22px", height: "22px", fontSize: "12px", cursor: "pointer", padding: "0",
+  });
+  imgGalleryBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openImageGalleryPicker((filename) => {
+      resizeAndSetImage(`/view?filename=${encodeURIComponent(filename)}&type=input`);
+    });
+  });
   imgDropZone.appendChild(fileInput);
   imgDropZone.appendChild(imgPreview);
   imgDropZone.appendChild(imgClearBtn);
-  imgDropZone.addEventListener("click", (e) => { if (e.target !== imgClearBtn) fileInput.click(); });
+  imgDropZone.appendChild(imgGalleryBtn);
+  imgDropZone.addEventListener("click", (e) => { if (e.target !== imgClearBtn && e.target !== imgGalleryBtn) fileInput.click(); });
   imgDropZone.addEventListener("dragover", e => { e.preventDefault(); imgDropZone.style.outline = `2px dashed ${PURPLE}`; });
   imgDropZone.addEventListener("dragleave", () => { imgDropZone.style.outline = "none"; });
   imgDropZone.addEventListener("drop", e => {
@@ -570,7 +588,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
       v => { const l = loadLLMSettings(); l[key] = v; saveLLMSettings(l); }));
     return sel;
   }
-  const vtSel = optSelect("vision_task", llmForOptions.vision_task, "Caption (plain description)");
+  const vtSel = optSelect("vision_task", llmForOptions.vision_task, "Caption + Format (apply model_format below)");
   const modelFmtSel = optSelect("model_format", llmForOptions.model_format, "Universal Natural Language");
   const aestheticSel = optSelect("aesthetic", llmForOptions.aesthetic, "None (no aesthetic injection)");
 
@@ -698,10 +716,38 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     footerVision.textContent = t("llm_tab_i2p") + " " + t("llm_lbl_model") + ": " + s.write;
   }
 
+  // ── Debug log — shows exactly what was sent to the LLM (system/instruction
+  //    text + raw output) so Model Format/Aesthetic/Vision Task can actually
+  //    be confirmed, not just assumed. ───────────────────────────────────────
+  const debugToggleBtn = document.createElement("button");
+  debugToggleBtn.type = "button"; debugToggleBtn.textContent = t("llm_btn_show_log");
+  Object.assign(debugToggleBtn.style, {
+    alignSelf: "flex-start", background: "transparent", color: "#888", border: "none",
+    fontSize: "11px", cursor: "pointer", textDecoration: "underline", padding: "0", flexShrink: "0",
+  });
+  const debugPre = document.createElement("pre");
+  Object.assign(debugPre.style, {
+    display: "none", background: "#111", color: "#9c9", border: "1px solid #333",
+    borderRadius: "6px", padding: "8px", fontSize: "10px", lineHeight: "1.4",
+    maxHeight: "160px", overflow: "auto", whiteSpace: "pre-wrap", flexShrink: "0", margin: "0",
+  });
+  let _lastDebug = "";
+  debugToggleBtn.addEventListener("click", () => {
+    const show = debugPre.style.display === "none";
+    debugPre.style.display = show ? "block" : "none";
+    debugPre.textContent = _lastDebug || t("llm_no_log_yet");
+  });
+  function setLastDebug(text) {
+    _lastDebug = text || "";
+    if (debugPre.style.display !== "none") debugPre.textContent = _lastDebug || t("llm_no_log_yet");
+  }
+
   contentWrap.appendChild(topRow);
   contentWrap.appendChild(actionRow);
   contentWrap.appendChild(taWrap);
   contentWrap.appendChild(footerBar);
+  contentWrap.appendChild(debugToggleBtn);
+  contentWrap.appendChild(debugPre);
   promptExpandEl.appendChild(contentWrap);
 
   // ── Image → Prompt Write: sends the image + (if any) the text already in
@@ -741,6 +787,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
       const d = await r.json();
       if (!d.ok) throw new Error(d.error || "error");
       existingTA.value = d.result;
+      setLastDebug(d.debug_thought);
       syncButtons();
     } catch (e) { alert(t("llm_err_prefix") + e.message); }
     finally { setBusy(false); syncButtons(); }
@@ -776,6 +823,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
       const d = await r.json();
       if (!d.ok) throw new Error(d.error || "error");
       existingTA.value = d.result;
+      setLastDebug(d.debug_thought);
       syncButtons();
     } catch (e) { alert(t("llm_err_prefix") + e.message); }
     finally { setBusy(false); syncButtons(); }
@@ -789,6 +837,8 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     syncButtons();
     const l = loadLLMSettings();
     extraInstrTA.value = l.extra_instructions || "";
+    debugPre.style.display = "none";
+    setLastDebug("");
   };
   refreshFooter();
 }
