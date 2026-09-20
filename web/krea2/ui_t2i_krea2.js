@@ -1,6 +1,30 @@
 // ui_t2i_krea2.js — T2I left panel for Krea 2 ONE STUDIO (TJ)
 import { C, el, clear, BRAND, RESOLUTIONS, SAMPLERS, SCHEDULERS, LORA_MAX } from "./core_krea2.js";
 import { panel, label, button, select, numberField, row, col, loraSelect } from "../klein/ui_common.js";
+
+// Enhance — Enhanced KSampler (TJ)'s krea2 txtfusion amplification. Shared by
+// T2I and I2I (Identity Edit isn't wired to it yet). Requires TJ_NODE's
+// "Enhanced KSampler (TJ)" node; when the toggle is off the graph builder
+// emits a plain KSampler, so the app works fine without that pack installed.
+export function mountEnhanceSectionKrea2(wrapEl, state, ctx) {
+  const strengthRow = row([col([label("Strength"), numberField(state.enhanceStrength ?? 1.0, v => { state.enhanceStrength = Math.max(0, Math.min(2, v ?? 1)); ctx.persist(); }, 0.05)])]);
+  const textScaleRow = row([col([label("Text scale (adv)"), numberField(state.enhanceTextScale ?? 1.0, v => { state.enhanceTextScale = Math.max(0.25, Math.min(4, v ?? 1)); ctx.persist(); }, 0.05)])]);
+  const optsWrap = el("div", { style: { flexDirection: "column", gap: "6px", display: state.enhanceEnabled ? "flex" : "none" } }, [strengthRow, textScaleRow]);
+
+  const tog = el("button", { type: "button", text: state.enhanceEnabled ? "Enhance ON" : "Enhance OFF", style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 8px",
+    borderRadius: "6px", border: "none", width: "100%",
+    background: state.enhanceEnabled ? BRAND : "#444", color: "#fff", fontWeight: "700",
+  }, onclick: () => {
+    state.enhanceEnabled = !state.enhanceEnabled;
+    ctx.persist();
+    tog.textContent = state.enhanceEnabled ? "Enhance ON" : "Enhance OFF";
+    tog.style.background = state.enhanceEnabled ? BRAND : "#444";
+    optsWrap.style.display = state.enhanceEnabled ? "flex" : "none";
+  }});
+
+  wrapEl.appendChild(panel([label("Enhance (krea2)"), tog, optsWrap]));
+}
 import { buildT2IGraph } from "./graph_builder_krea2.js";
 import { getLoraTriggers } from "./api_krea2.js";
 import { mountControlNetSection } from "./ui_controlnet_krea2.js";
@@ -107,6 +131,7 @@ export function mountT2ILeft(leftEl, state, ctx) {
   ctx._rerenderLoras = rebuildLoras;
   rebuildLoras();
 
+  mountEnhanceSectionKrea2(wrap, state, ctx);
   mountControlNetSection(wrap, state, ctx, "t2i");
 
   return {

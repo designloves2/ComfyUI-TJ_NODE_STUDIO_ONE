@@ -46,6 +46,24 @@ function buildPromptText(state, promptKey) {
   return parts.filter(Boolean).join(", ");
 }
 
+// Standard KSampler inputs, plus optional Enhance (Enhanced KSampler (TJ), krea2
+// txtfusion amplification). Falls back to plain KSampler when Enhance is off so a
+// missing TJ_NODE install only matters to users who actually enable the toggle.
+function samplerNode(inputs, state) {
+  if (!state.enhanceEnabled) return { class_type: "KSampler", inputs };
+  return {
+    class_type: "TJ_EnhancedKSampler",
+    inputs: {
+      ...inputs,
+      enhance_enabled: true,
+      enhance_arch: "krea2",
+      enhance_strength: state.enhanceStrength ?? 1.0,
+      enhance_debug: false,
+      adv_text_scale: state.enhanceTextScale ?? 1.0,
+    },
+  };
+}
+
 function saveNode(link, state) {
   if (state?.outputMode === "preview")
     return { class_type: "PreviewImage", inputs: { images: link } };
@@ -230,7 +248,7 @@ export function buildT2IGraph(state) {
   const cc = applyControlChain(g, state, "t2i", modelOut, ["K2:latent", 0]);
   const t2iLatent = cc.latentOverride || ["K2:latent", 0];
 
-  g["K2:sampler"] = { class_type: "KSampler", inputs: {
+  g["K2:sampler"] = samplerNode({
     model: cc.modelOut,
     positive: ["K2:positive", 0],
     negative: ["K2:negative", 0],
@@ -241,7 +259,7 @@ export function buildT2IGraph(state) {
     sampler_name: state.sampler || "euler",
     scheduler: state.scheduler || "simple",
     denoise: 1,
-  }};
+  }, state);
   g["K2:decode"]  = { class_type: "VAEDecode",  inputs: { samples: ["K2:sampler", 0], vae: ["K2:vae", 0] } };
   g["K2:save"]    = saveNode(["K2:decode", 0], state);
   return g;
@@ -263,7 +281,7 @@ export function buildI2IGraph(state) {
   const cc = applyControlChain(g, state, "i2i", modelOut, ["K2:encode", 0]);
   const i2iLatent = cc.latentOverride || ["K2:encode", 0];
 
-  g["K2:sampler"] = { class_type: "KSampler", inputs: {
+  g["K2:sampler"] = samplerNode({
     model:        cc.modelOut,
     positive:     ["K2:positive", 0],
     negative:     ["K2:negative", 0],
@@ -274,7 +292,7 @@ export function buildI2IGraph(state) {
     sampler_name: state.sampler   || "euler",
     scheduler:    state.scheduler || "simple",
     denoise:      cc.denoiseOverride ?? (state.i2iDenoise ?? 0.75),
-  }};
+  }, state);
   g["K2:decode"] = { class_type: "VAEDecode", inputs: { samples: ["K2:sampler", 0], vae: ["K2:vae", 0] } };
   g["K2:save"]   = saveNode(["K2:decode", 0], state);
   return g;

@@ -20,7 +20,7 @@ function makeSizeFields(state, ctx) {
 }
 import { buildI2IGraph } from "./graph_builder_krea2.js";
 import { uploadImage } from "./api_krea2.js";
-import { mountLoraSectionKrea2 } from "./ui_t2i_krea2.js";
+import { mountLoraSectionKrea2, mountEnhanceSectionKrea2 } from "./ui_t2i_krea2.js";
 import { mountControlNetSection } from "./ui_controlnet_krea2.js";
 import { createImageUpload as createImgUpload } from "./ui_image_upload.js";
 
@@ -57,6 +57,7 @@ export function mountI2ILeft(leftEl, state, ctx) {
   ]));
 
   mountLoraSectionKrea2(wrap, state, ctx);
+  mountEnhanceSectionKrea2(wrap, state, ctx);
   mountControlNetSection(wrap, state, ctx, "i2i");
 
   return {

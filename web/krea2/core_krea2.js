@@ -89,6 +89,12 @@ export function defaultState(saved) {
       enabled: l.enabled !== false,
     })) : [],
 
+    // Enhance — Enhanced KSampler (TJ)'s krea2 txtfusion amplification. Off by
+    // default (it's an opt-in amplifier, not a correctness fix).
+    enhanceEnabled:   saved.enhanceEnabled   ?? false,
+    enhanceStrength:  saved.enhanceStrength  ?? 1.0,
+    enhanceTextScale: saved.enhanceTextScale ?? 1.0,
+
     // I2I
     i2iImage:     saved.i2iImage     || null,
     i2iWidth:     saved.i2iWidth     || null,
