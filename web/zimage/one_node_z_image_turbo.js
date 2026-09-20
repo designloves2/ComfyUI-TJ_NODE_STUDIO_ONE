@@ -508,10 +508,22 @@ app.registerExtension({
       promptHdr.appendChild(el("div",{text:"PROMPT",style:{color:C.muted,fontSize:"11px",textTransform:"uppercase",letterSpacing:"0.04em"}}));
       promptHdr.appendChild(charCount);
 
+      // ── Hermes agent job export — moved next to Prompt Edit/Preset (user:
+      // 위치 이동, mirrored from Krea2) ─────────────────────────────────────
+      const agentBtn=button("⬇ job.json Download",()=>{
+        const job=buildAgentJob(state);
+        if(!job){ alert("This mode isn't in the zimage-headless agent's scope (t2i / i2i only)."); return; }
+        downloadAgentJob("zimage", job, `Zimage_${state.mode}_${agentStamp()}_${state.seed ?? 0}.json`);
+      });
+      agentBtn.title="Download the current settings as a job.json for the zimage-headless Hermes agent";
+      agentBtn.style.cssText+=`cursor:pointer;background:${C.lime};border:none;border-radius:4px;font-size:11px;font-weight:700;color:#fff;padding:3px 8px;margin-left:auto;`;
+      promptHdr.appendChild(agentBtn);
+      const syncAgentBtn=()=>{ agentBtn.style.display=["t2i","i2i"].includes(state.mode)?"":"none"; };
+
       const expandBtn=button("🔍 Prompt Edit",null,"default");
       expandBtn.title="Expand prompt editor";
       expandBtn.onclick=()=>promptExpandOv?.show();
-      expandBtn.style.cssText+=`padding:3px 8px;font-size:11px;margin-left:auto;background:${C.lime};border:none;color:#fff;font-weight:700;`;
+      expandBtn.style.cssText+=`padding:3px 8px;font-size:11px;margin-left:4px;background:${C.lime};border:none;color:#fff;font-weight:700;`;
 
       const tplBtn=button("📋 Prompt Preset",null,"default");
       tplBtn.title="Load Template"; tplBtn.onclick=()=>templateOv?.show();
@@ -576,17 +588,6 @@ app.registerExtension({
       const genRow=el("div",{style:{display:"flex",flexDirection:"column",gap:"4px"}});
       genRow.appendChild(row([genBtn,stopBtn]));
       seedRow.appendChild(genRow);
-
-      // ── Hermes agent job export ──────────────────────────────────────────
-      const agentBtn=button("⬇ job.json",()=>{
-        const job=buildAgentJob(state);
-        if(!job){ alert("This mode isn't in the zimage-headless agent's scope (t2i / i2i only)."); return; }
-        downloadAgentJob("zimage", job, `Zimage_${state.mode}_${agentStamp()}_${state.seed ?? 0}.json`);
-      });
-      agentBtn.title="Download the current settings as a job.json for the zimage-headless Hermes agent";
-      agentBtn.style.cssText+="width:100%;font-size:11px;padding:5px;opacity:0.85;";
-      genRow.appendChild(agentBtn);
-      const syncAgentBtn=()=>{ agentBtn.style.display=["t2i","i2i"].includes(state.mode)?"":"none"; };
 
       let modeHandle=null;
 
