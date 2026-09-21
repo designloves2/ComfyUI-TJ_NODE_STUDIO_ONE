@@ -430,6 +430,13 @@ app.registerExtension({
       // original, wrong comparison. (Found via the web mirror's own audit of this same
       // pattern; confirmed the same bug shape exists here by reading this file directly.)
       let lastCompareSource = null;
+      // Set alongside lastCompareSource when the shown result came from a TRIMMED run
+      // (Postprocess Preview's Start(s)/End(s)) — { start, end } in seconds into the
+      // ORIGINAL clip. Without this the Compare viewer played the full untrimmed original
+      // against a 1-second preview result, drifting apart immediately (reported: "풀영상
+      // 8초면 원본은 8초 / 미리보기는 1초 이러면 안된다고... 원본도 미리보기 시간이랑
+      // 맞춰야되지"). null means "compare the whole original" (a real/final Generate run).
+      let lastCompareRange = null;
       // openFullscreen() (shared/klein/ui_common.js) renders the target inside an <img> —
       // fine for the image tools it was written for, but a no-op here since lastResultURL
       // is a video file: an <img src="*.mp4"> shows nothing. Double-click on resultVid
@@ -440,7 +447,7 @@ app.registerExtension({
       fsBtn.addEventListener("click", () => { if (lastResultURL) openVideoFullscreen(lastResultURL, { startAt: resultVid.currentTime || 0 }); });
       compareBtn.addEventListener("click", () => {
         if (!lastResultURL || !lastCompareSource) return;
-        openCompareViewer(`/view?filename=${encodeURIComponent(lastCompareSource)}&type=input`, lastResultURL);
+        openCompareViewer(`/view?filename=${encodeURIComponent(lastCompareSource)}&type=input`, lastResultURL, lastCompareRange);
       });
 
       // Original / Restored / Compare (wipe) / Side-by-side viewer for a finished
@@ -448,12 +455,19 @@ app.registerExtension({
       // zoom, drag to pan, double-click to reset — same gestures on Original/Restored/Compare;
       // Side-by-side keeps both clips at 1:1 so a direct pixel comparison isn't distorted by
       // an unsynced zoom on only one side.
-      function openCompareViewer(originalUrl, restoredUrl) {
+      function openCompareViewer(originalUrl, restoredUrl, range = null) {
         let mode = "compare";      // original | restored | compare | side
         let wipe = 50;             // percent, compare mode only
         let zoom = 1, panX = 0, panY = 0;
         const FPS = 24;            // this app's clips are constant-framerate 24fps throughout
         let kh = null;
+        // range = { start, end } seconds into originalUrl — set when restoredUrl came from
+        // a TRIMMED run (Postprocess Preview). origVid is clamped/looped to that window
+        // instead of its own full native duration, so it always matches restVid's length
+        // (reported: "풀영상 8초면 원본은 8초 / 미리보기는 1초 이러면 안된다고... 원본도
+        // 미리보기 시간이랑 맞춰야되지"). null means "compare the whole original".
+        const rangeStart = range ? Math.max(0, range.start || 0) : 0;
+        let rangeEnd = range ? Math.max(rangeStart, range.end || 0) : 0;
 
         const ov = el("div", { style: {
           position: "fixed", inset: "0", background: "rgba(10,10,14,0.97)", zIndex: "100060",
@@ -506,13 +520,15 @@ app.registerExtension({
         // noticeably larger/closer subjects than the original side). objectFit:"fill" here
         // is deliberate: it forces restVid's pixels to exactly match origVid's on-screen
         // rectangle rather than trusting the file's own reported aspect ratio.
-        // Only origVid gets `loop` - it is the master clock (see syncTo below). A Postprocess
-        // Preview's restoredUrl is often a TRIMMED clip (Start(s)/End(s) shorter than the
-        // full source), so if restVid/side clips looped on their own native duration they'd
-        // wrap back to 0 well before origVid does and drift out of sync with it (reported:
-        // "왼쪽 오리지널은 전체 시간 플레이, 오른쪽 프리뷰는 프리뷰 타임으로 어긋나 버린다").
-        // Instead they're forced back onto origVid's clock every timeupdate tick.
-        const origVid = el("video", { src: originalUrl, loop: "", muted: "", playsinline: "",
+        // No native `loop` on ANY video here — origVid is the master clock and looping is
+        // handled manually (below) between rangeStart/rangeEnd, so a Postprocess Preview's
+        // TRIMMED restoredUrl (shorter than the full source) compares against only the
+        // matching WINDOW of the original, not its full length (reported: "풀영상 8초면
+        // 원본은 8초 / 미리보기는 1초 이러면 안된다고... 원본도 미리보기 시간이랑
+        // 맞춰야되지"). restVid/side clips are then kept glued to origVid's clock every
+        // timeupdate tick (see syncTo below) rather than looping on their own native
+        // duration, which used to drift them apart mid-playback.
+        const origVid = el("video", { src: originalUrl, muted: "", playsinline: "",
           style: { position: "absolute", objectFit: "fill" } });
         const restVid = el("video", { src: restoredUrl, muted: "", playsinline: "",
           style: { position: "absolute", objectFit: "fill" } });
@@ -633,7 +649,15 @@ app.registerExtension({
         }
         // videoWidth/videoHeight are 0 until metadata loads, and the modal's own size can
         // change (window resize) - recompute the content rect whenever either happens.
-        origVid.addEventListener("loadedmetadata", () => renderStage());
+        let rangeInited = false;
+        origVid.addEventListener("loadedmetadata", () => {
+          if (!rangeInited) {
+            rangeInited = true;
+            if (!rangeEnd) rangeEnd = origVid.duration || 0;
+            try { origVid.currentTime = rangeStart; } catch {}
+          }
+          renderStage();
+        });
         const onWinResize = () => renderStage();
         window.addEventListener("resize", onWinResize);
 
@@ -741,16 +765,20 @@ app.registerExtension({
           return `${String(m).padStart(2, "0")}:${sec.toFixed(3).padStart(6, "0")}`;
         }
         // The "master" clock is always origVid — restVid (and the two side clips) are kept
-        // in lock-step with it, since a Face Refine output has the same frame count/fps as
-        // the clip it started from.
+        // in lock-step with it. origVid's own clock runs in ABSOLUTE source-clip time
+        // (rangeStart..rangeEnd); restVid/side clips run in RELATIVE time from their own
+        // start (0..rangeEnd-rangeStart), since a trimmed Postprocess Preview result's file
+        // only ever contains that window, not the full original.
         function allVids() { return [origVid, restVid, sideOrig, sideRest]; }
-        function syncTo(t) {
+        function syncTo(origT) {
+          const relT = Math.max(0, origT - rangeStart);
           for (const v of allVids()) {
-            if (Math.abs(v.currentTime - t) > 0.03) { try { v.currentTime = t; } catch {} }
-            // A shorter (trimmed) clip pauses itself on `ended` since it has no `loop` of its
-            // own (only origVid does) - once origVid's clock carries on past that point and
-            // wraps this one back into range, it needs an explicit play() to resume, or it
-            // just sits on its last frame forever while origVid keeps going.
+            const target = v === origVid ? origT : relT;
+            if (Math.abs(v.currentTime - target) > 0.03) { try { v.currentTime = target; } catch {} }
+            // A clip can pause itself on `ended` (e.g. restVid reaching ITS OWN short end
+            // while origVid still has more of its window left) - once the loop below wraps
+            // everything back to rangeStart it needs an explicit play() to resume, or it
+            // just sits on its last frame forever.
             if (playing && v.paused) { try { v.play().catch(() => {}); } catch {} }
           }
         }
@@ -761,19 +789,25 @@ app.registerExtension({
           for (const v of allVids()) { try { playing ? v.play().catch(() => {}) : v.pause(); } catch {} }
         }
         playBtn.addEventListener("click", () => setPlaying(!playing));
-        prevBtn.addEventListener("click", () => { setPlaying(false); syncTo(Math.max(0, origVid.currentTime - 1 / FPS)); });
-        nextBtn.addEventListener("click", () => { setPlaying(false); syncTo(Math.min(origVid.duration || 0, origVid.currentTime + 1 / FPS)); });
+        prevBtn.addEventListener("click", () => { setPlaying(false); syncTo(Math.max(rangeStart, origVid.currentTime - 1 / FPS)); });
+        nextBtn.addEventListener("click", () => { setPlaying(false); syncTo(Math.min(rangeEnd || origVid.duration || 0, origVid.currentTime + 1 / FPS)); });
         scrub.addEventListener("input", () => {
           setPlaying(false);
-          const dur = origVid.duration || 0;
-          syncTo((parseFloat(scrub.value) / 1000) * dur);
+          const dur = (rangeEnd || origVid.duration || 0) - rangeStart;
+          syncTo(rangeStart + (parseFloat(scrub.value) / 1000) * dur);
         });
         origVid.addEventListener("timeupdate", () => {
-          const dur = origVid.duration || 0;
-          if (dur > 0) scrub.value = String(Math.round((origVid.currentTime / dur) * 1000));
-          timeText.textContent = `${fmtT(origVid.currentTime)} / ${fmtT(dur)}`;
-          frameText.textContent = `Frame ${Math.round(origVid.currentTime * FPS)} / ${Math.round(dur * FPS)}`;
-          if (playing) syncTo(origVid.currentTime);
+          const dur = (rangeEnd || origVid.duration || 0) - rangeStart;
+          const t = Math.max(0, origVid.currentTime - rangeStart);
+          if (dur > 0) scrub.value = String(Math.round((t / dur) * 1000));
+          timeText.textContent = `${fmtT(t)} / ${fmtT(dur)}`;
+          frameText.textContent = `Frame ${Math.round(t * FPS)} / ${Math.round(dur * FPS)}`;
+          if (playing) {
+            // No native `loop` on origVid any more (see its own comment above) - once its
+            // clock reaches rangeEnd, wrap everything back to rangeStart by hand instead.
+            if (rangeEnd && origVid.currentTime >= rangeEnd - 0.02) syncTo(rangeStart);
+            else syncTo(origVid.currentTime);
+          }
         });
 
         function close() {
@@ -844,7 +878,7 @@ app.registerExtension({
         const cached = modeResultCache[resultModeKey()];
         if (!cached) { resetPreview(); return; }
         if (cached.kind === "image") showResultImage(cached.url, { final: cached.final });
-        else showResultVideo(cached.url, { final: cached.final });
+        else showResultVideo(cached.url, { final: cached.final, compareRange: cached.compareRange });
       }
       function showResultImage(url, { final = false } = {}) {
         lastResultURL = url;
@@ -859,9 +893,9 @@ app.registerExtension({
         previewImg.src = url; previewImg.style.display = "block";
         badge.style.display = "block"; fsBtn.style.display = "none"; compareBtn.style.display = "none";
       }
-      function showResultVideo(url, { final = false } = {}) {
+      function showResultVideo(url, { final = false, compareRange = null } = {}) {
         lastResultURL = url;
-        modeResultCache[resultModeKey()] = { kind: "video", url, final };
+        modeResultCache[resultModeKey()] = { kind: "video", url, final, compareRange };
         if (final) previewLocked = true;
         placeholder.style.display = "none";
         frDetectBanner.style.display = "none";
@@ -881,6 +915,7 @@ app.registerExtension({
         lastCompareSource = state.generationMode === "facerefine" ? (state.frSource || null)
                           : state.generationMode === "ltxupscale" ? (state.ltxSource || null)
                           : state.generationMode === "postprocess" ? (state.ppSource || null) : null;
+        lastCompareRange = compareRange;
         const hasOriginal = !!lastCompareSource;
         // The compare viewer already covers fullscreen viewing (its own overlay, zoom/pan)
         // for these two modes, so a separate fullscreen button is redundant there.
@@ -890,6 +925,7 @@ app.registerExtension({
       function resetPreview() {
         previewLocked = false;
         lastCompareSource = null;
+        lastCompareRange = null;
         placeholder.style.display = "block";
         frDetectBanner.style.display = "none";
         hideBusyBanner();
@@ -3442,7 +3478,12 @@ app.registerExtension({
           // the SECOND (and every later) preview click just re-shows the FIRST run's
           // cached response, no matter what Start/End/effects actually changed.
           const url = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=${encodeURIComponent(o.type || "output")}&t=${Date.now()}`;
-          showResultVideo(url, { final: true });
+          // A Preview run's result file only covers [startS, endS) of the source clip — the
+          // Compare viewer needs that same window on the ORIGINAL side too, or it plays the
+          // whole untrimmed source against a few trimmed seconds (see openCompareViewer's
+          // own range comment). A real/final Generate run covers the whole clip, same as
+          // the original, so no range restriction there.
+          showResultVideo(url, { final: true, compareRange: (!full && endS > startS) ? { start: startS, end: endS } : null });
           if (full) {
             // A full-range run (not a short preview) writes real metadata — spreads the
             // SOURCE clip's own full meta (prompt, seed, loras, everything) forward first,
