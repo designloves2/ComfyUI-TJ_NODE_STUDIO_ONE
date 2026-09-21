@@ -2032,6 +2032,48 @@ async def mmh3_list_images(request):
     return web.json_response({"images": images, "total": len(found), "offset": offset, "limit": limit})
 
 
+MMH3_TEMP_PREVIEW_SUBFOLDER = "one_minimax_h3_preview"
+
+
+def _mmh3_temp_preview_dir():
+    return os.path.join(folder_paths.get_temp_directory(), MMH3_TEMP_PREVIEW_SUBFOLDER)
+
+
+@PromptServer.instance.routes.get("/minimax_h3_one/temp_size")
+async def mmh3_temp_size(request):
+    """Total size of this tool's own preview-run scratch folder under ComfyUI's temp/ —
+    every Postprocess (and later, any other mode's) preview that opts out of the real
+    output/ gallery lands here, so Settings can show how much it's grown and offer to
+    clear it without touching anything in the real gallery."""
+    d = _mmh3_temp_preview_dir()
+    total = 0
+    count = 0
+    if os.path.isdir(d):
+        for root, _, files in os.walk(d):
+            for fn in files:
+                try:
+                    total += os.path.getsize(os.path.join(root, fn))
+                    count += 1
+                except OSError:
+                    pass
+    return web.json_response({"size_bytes": total, "count": count})
+
+
+@PromptServer.instance.routes.post("/minimax_h3_one/temp_clear")
+async def mmh3_temp_clear(request):
+    d = _mmh3_temp_preview_dir()
+    removed = 0
+    if os.path.isdir(d):
+        for root, _, files in os.walk(d):
+            for fn in files:
+                try:
+                    os.remove(os.path.join(root, fn))
+                    removed += 1
+                except OSError:
+                    pass
+    return web.json_response({"ok": True, "removed": removed})
+
+
 MMH3_THUMB_DIR_NAME = "_thumbs"
 
 

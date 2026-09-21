@@ -181,6 +181,18 @@ export async function getNodeAvailability() {
   };
 }
 
+// Every preview run (Postprocess's, and any later mode's) that opts out of the real
+// output/ gallery lands in one shared scratch folder under ComfyUI's own temp/ —
+// Settings → Output reports its size here and can clear it with clearTempFiles().
+export async function getTempSize() {
+  const r = await api.fetchApi(`${API}/temp_size`);
+  return r.json();
+}
+export async function clearTempFiles() {
+  const r = await api.fetchApi(`${API}/temp_clear`, { method: "POST" });
+  return r.json();
+}
+
 export async function getConfig() {
   const r = await api.fetchApi(`${API}/config`);
   return r.json();

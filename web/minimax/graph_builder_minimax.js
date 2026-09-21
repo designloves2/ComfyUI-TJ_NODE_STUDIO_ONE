@@ -112,12 +112,12 @@ const has = (avail, name) => !!(avail && avail[name]);
 // every other optional node here. VHS reports its saved file under a `gifs` key; both
 // ui_gallery_minimax.js and one_node_minimax_h3.js already read `.images || .gifs` for
 // every save node, so nothing downstream needs to change either way.
-function saveVideoNode(g, ids, images, audio, fps, filenamePrefix, avail) {
+function saveVideoNode(g, ids, images, audio, fps, filenamePrefix, avail, preview = false) {
   if (has(avail, "VHS_VideoCombine")) {
     g[ids.save] = { class_type: "VHS_VideoCombine", inputs: {
       images, audio, frame_rate: fps, loop_count: 0,
       filename_prefix: filenamePrefix, format: "video/nvenc_h264-mp4",
-      pingpong: false, save_output: true,
+      pingpong: false, save_output: !preview,
     }};
   } else {
     g[ids.video] = { class_type: "CreateVideo", inputs: { images, fps, audio } };
@@ -1696,7 +1696,7 @@ export function buildPostprocessGraph(opts, avail) {
     inputFile, folder, stem,
     deblur = {}, denoise = {}, upscale = {}, skinRetouch = {}, grain = {}, interpolate = {}, resize = {},
     skipFirstFrames = 0, frameLoadCap = 0,
-    saveSuffix = "_post",
+    saveSuffix = "_post", preview = false,
   } = opts;
   const g = {};
   const usedSteps = [];
@@ -1855,7 +1855,7 @@ export function buildPostprocessGraph(opts, avail) {
   if (!usedSteps.length) throw new Error("Nothing to do — enable at least one Postprocess effect.");
 
   saveVideoNode(g, { video: PPX.video, save: PPX.save }, images, [PPX.load, 2], fps,
-    `${folder}/${stem}${saveSuffix}`, avail);
+    `${folder}/${stem}${saveSuffix}`, avail, preview);
   return { graph: g, saveNode: PPX.save, usedSteps, upscaleUsedInfo };
 }
 

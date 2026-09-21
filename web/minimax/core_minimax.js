@@ -14,6 +14,10 @@ export const PREVIEW_SIZE = 620;
 export const LEFT_W       = 340;
 export const PAD          = 12;
 export const SUBFOLDER    = "one_minimax_h3";
+// Every preview run (Postprocess's, and any other mode's later) that opts out of the
+// real output/ gallery writes here instead, under ComfyUI's own temp/ dir — one fixed
+// folder so Settings → Output can report its total size and clear it in one shot.
+export const TEMP_PREVIEW_SUBFOLDER = "one_minimax_h3_preview";
 export const API          = "/minimax_h3_one";
 export const LS_KEY       = "minimax_h3_one_state_v1";
 // Bump to re-run migrateLegacyAccel once on the next load, when a past revision of it

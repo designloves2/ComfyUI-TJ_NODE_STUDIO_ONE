@@ -3,7 +3,7 @@
 // by every clip; per-run choices live in the node's left panel instead.
 import { C, BRAND, el, clear, SUBFOLDER } from "./core_minimax.js";
 import { panel, label, button, select, numberField, row, col } from "../klein/ui_common.js";
-import { getModels, getConfig, saveConfig, getNodeAvailability, listVideos } from "./api_minimax.js";
+import { getModels, getConfig, saveConfig, getNodeAvailability, listVideos, getTempSize, clearTempFiles } from "./api_minimax.js";
 import { mountLLMSettingsSection } from "../shared/llm_panel.js";
 
 function searchableSelect(options, value, onChange) {
@@ -611,6 +611,33 @@ export function createSettingsOverlay(state, ctx) {
       el("div", { text: "Character Sheet saves the raw 8-shot render here (as a video) alongside the assembled sheet image, so any frame can be re-extracted later. Empty = same as the Image Generator folder above.",
         style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
     ]));
+
+    // Preview runs (Postprocess's, and any later mode's) never touch the real gallery —
+    // they land in one shared scratch folder under ComfyUI's own temp/ dir instead, so
+    // this is the one place to see how much they've grown and clear them out.
+    const tempSizeEl = el("div", { text: "Checking temp preview usage…", style: { fontSize: "11px", color: C.muted } });
+    const tempClearBtn = button("🗑 Clear Temp Preview Files", async () => {
+      tempClearBtn.disabled = true; tempClearBtn.textContent = "Clearing…";
+      try {
+        const d = await clearTempFiles();
+        tempSizeEl.textContent = `Cleared ${d.removed ?? 0} file(s).`;
+      } catch (e) {
+        tempSizeEl.textContent = "Clear failed — " + (e?.message || e);
+      }
+      tempClearBtn.disabled = false; tempClearBtn.textContent = "🗑 Clear Temp Preview Files";
+    });
+    tempClearBtn.style.width = "100%";
+    wrap.appendChild(panel([
+      label("Temp Preview Files"), tempSizeEl, tempClearBtn,
+      el("div", { text: "Postprocess's 👁 Preview (and any other mode's future preview) never saves to the real gallery — it writes a short throwaway clip here instead. This never clears itself; check back and clear it occasionally.",
+        style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+    ]));
+    getTempSize().then(d => {
+      const mb = (d.size_bytes || 0) / (1024 * 1024);
+      tempSizeEl.textContent = d.count
+        ? `${mb.toFixed(1)} MB across ${d.count} file(s)`
+        : "Empty — nothing to clear.";
+    }).catch(() => { tempSizeEl.textContent = "Could not check temp preview usage."; });
 
     const avgIn = numField(state.avgMinutesPerClip ?? 13, v => { state.avgMinutesPerClip = v; ctx.persist(); ctx.refreshPlan?.(); }, { step: "0.5" });
     const avgNote = el("div", { text: "Checking Gallery for past clips at the current settings…",

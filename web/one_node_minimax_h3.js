@@ -15,7 +15,7 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import {
-  C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, SUBFOLDER,
+  C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, SUBFOLDER, TEMP_PREVIEW_SUBFOLDER,
   el, clear, loadState, saveState, lastUsedAt, defaultState, randomSeed,
   CLIP_LENGTHS, ASPECTS, UPSCALE_MODES, FLASHVSR_MODELS, FLASHVSR_MODES, SAMPLERS, SCHEDULERS,
   TURBO_MODES, ATTN_BACKENDS, ATTN_FORWARDS, BLOCK_CACHES, H3_OPTIMIZERS, FBC_MODES, PDD_NFE_CHOICES,
@@ -3259,8 +3259,12 @@ app.registerExtension({
       // a short slice — plus the usual ▶ Generate / ■ Stop pair underneath, which always
       // runs (and saves) the FULL clip regardless of the range fields. Preview is an
       // optional check, not a gate: Generate works with nothing previewed at all.
-      const ppPreviewStartIn = numberField(0, v => { state.ppPreviewStart = Math.max(0, v); persist(); }, 0.1);
-      const ppPreviewEndIn = numberField(0, v => { state.ppPreviewEnd = Math.max(0, v); persist(); }, 0.1);
+      // Built once at node mount (not per-render, unlike most fields here), so its
+      // initial value must be read from state directly — a literal 0 here would show
+      // 0:00 forever regardless of what was actually restored/typed, even right after
+      // defaultState() correctly restored ppPreviewStart/End from a saved session.
+      const ppPreviewStartIn = numberField(state.ppPreviewStart ?? 0, v => { state.ppPreviewStart = Math.max(0, v); persist(); }, 0.1);
+      const ppPreviewEndIn = numberField(state.ppPreviewEnd ?? 0, v => { state.ppPreviewEnd = Math.max(0, v); persist(); }, 0.1);
       const ppPreviewBtn = el("button", { type: "button", text: "Preview", style: {
         cursor: "pointer", width: "100%", padding: "10px", fontSize: "13px", fontWeight: "700",
         borderRadius: "6px", border: "none", background: "#e4d4fb", color: BRAND,
@@ -3310,12 +3314,17 @@ app.registerExtension({
           const skipFirstFrames = Math.round(startS * srcFps);
           const frameLoadCap = endS > startS ? Math.round((endS - startS) * srcFps) : 0;
 
+          // A preview writes into ComfyUI's own temp/ dir (save_output:false below), under
+          // one fixed subfolder shared by every tool's preview runs — so Settings → Output
+          // can report its total size and clear it in one shot without touching anything
+          // in the real output/ gallery.
           const built = buildPostprocessGraph({
             inputFile: state.ppSource,
-            folder: state.saveSubfolder || SUBFOLDER,
+            folder: full ? (state.saveSubfolder || SUBFOLDER) : TEMP_PREVIEW_SUBFOLDER,
             stem: state.ppSource.replace(/\.[^.]+$/, ""),
             skipFirstFrames, frameLoadCap,
             saveSuffix: frameLoadCap ? "_post_preview" : "_post",
+            preview: !full,
             deblur: { enabled: state.ppDeblurOn, strength: state.ppDeblurStrength || "MEDIUM" },
             denoise: { enabled: state.ppDenoiseOn, strength: state.ppDenoiseStrength || "MEDIUM" },
             upscale: {
@@ -3358,9 +3367,11 @@ app.registerExtension({
           });
           const o = res.byNode[built.saveNode]?.images?.[0] || res.byNode[built.saveNode]?.gifs?.[0];
           if (!o) throw new Error("No output produced.");
-          const url = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=output`;
+          // A Preview run's VHS_VideoCombine has save_output:false, so ComfyUI reports it
+          // back with type "temp", not "output" — a hardcoded type=output 404s for it.
+          const url = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=${encodeURIComponent(o.type || "output")}`;
           showResultVideo(url, { final: true });
-          if (!frameLoadCap) {
+          if (full) {
             // A full-range run (not a short preview) writes real metadata — spreads the
             // SOURCE clip's own full meta (prompt, seed, loras, everything) forward first,
             // same shape the gallery's own post-process tools use (writePostMeta in
@@ -3390,9 +3401,9 @@ app.registerExtension({
               await saveMeta(o.filename, o.subfolder || (state.saveSubfolder || SUBFOLDER), patched);
             } catch {}
           }
-          setStatus(`✓ Postprocess done (${built.usedSteps.join(" + ")})${frameLoadCap ? " — preview range only, not saved to the gallery as final" : ""}.`);
-          showPopup(frameLoadCap ? "Preview ready — compare it, then clear the range and run again to produce the full clip."
-            : "Postprocess finished — the new file is in the gallery.", false);
+          setStatus(`✓ Postprocess done (${built.usedSteps.join(" + ")})${full ? "" : " — preview only, not saved to the gallery"}.`);
+          showPopup(full ? "Postprocess finished — the new file is in the gallery."
+            : "Preview ready — compare it, then hit ▶ Generate to produce and save the full clip.", false);
         } catch (e) {
           setStatus(`Error: ${e?.message || e}`);
           showPopup(e?.message || String(e), true);
