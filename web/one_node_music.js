@@ -544,7 +544,7 @@ app.registerExtension({
       }
 
       function coverURL(fn) { return `url("/view?filename=${encodeURIComponent(fn)}&subfolder=${encodeURIComponent(SUB() + "/covers")}&type=output")`; }
-      const engLabel = (x) => (x && x.engine === "acestep") ? "ACE" : "MM";
+      const engLabel = (x) => (x && x.engine === "acestep") ? "ACE" : (x && x.engine === "yue2") ? "Y2" : "MM";
       function coverPlaceholder(x, fontSize) {
         return el("span", { className: "mmm-engtxt", text: engLabel(x), style: fontSize ? { fontSize } : {} });
       }
@@ -556,7 +556,7 @@ app.registerExtension({
         audioEl.src = playableAudioUrl(t);
         audioEl.play().catch(() => {});
         nowTitle.textContent = t.title || t.filename;
-        nowSub.textContent = settingsBadge(t) || (t.engine === "acestep" ? "Ace-Step 1.5" : "MiniMax Music 3");
+        nowSub.textContent = settingsBadge(t) || (t.engine === "acestep" ? "Ace-Step 1.5" : t.engine === "yue2" ? "YuE2" : "MiniMax Music 3");
         if (t.cover) { miniCover.style.backgroundImage = coverURL(t.cover); miniCover.textContent = ""; }
         else { miniCover.style.backgroundImage = "none"; miniCover.textContent = engLabel(t); }
         renderPlaylist();
@@ -616,7 +616,7 @@ app.registerExtension({
         }}));
         acts.appendChild(el("button", { className: "mmm-ib", title: "More", text: "⋯", onclick: (e) => { e.stopPropagation(); moreMenu(t, e); }}));
 
-        trow.append(title, el("span", { className: "mmm-eng", text: t.engine === "acestep" ? "Ace-Step" : "MiniMax" }), el("div", { style: { flex: "1" }}), acts);
+        trow.append(title, el("span", { className: "mmm-eng", text: t.engine === "acestep" ? "Ace-Step" : t.engine === "yue2" ? "YuE2" : "MiniMax" }), el("div", { style: { flex: "1" }}), acts);
         mid.appendChild(trow);
         const subText = (t.caption || "").replace(/\s*\n\s*/g, " ").trim() || (t.instrumental ? "instrumental" : settingsBadge(t));
         mid.appendChild(el("div", { className: "mmm-sub", text: subText }));
@@ -635,7 +635,7 @@ app.registerExtension({
         const mid = el("div", { style: { flex: "1", minWidth: 0 }});
         const trow = el("div", { className: "mmm-trow" });
         trow.append(el("div", { className: "mmm-tt", text: p.title || "New track", style: { cursor: "default" }}),
-                    el("span", { className: "mmm-eng", text: p.engine === "acestep" ? "Ace-Step" : "MiniMax" }));
+                    el("span", { className: "mmm-eng", text: p.engine === "acestep" ? "Ace-Step" : p.engine === "yue2" ? "YuE2" : "MiniMax" }));
         mid.appendChild(trow);
         const stage = el("div", { className: "mmm-stage" });
         stage.append(el("span", { text: p.stage || "Queued…" }), el("span", { className: "p", text: p.pct ? p.pct + "%" : "" }));
@@ -711,7 +711,7 @@ app.registerExtension({
         else big.appendChild(coverPlaceholder(t, "44px"));
         const metaCol = el("div", { style: { display: "flex", flexDirection: "column", gap: "5px", minWidth: 0, alignSelf: "center" }});
         const line = (k, v) => metaCol.append(el("div", { style: { fontSize: "11px", color: C.muted }, text: k }), el("div", { style: { fontSize: "12.5px", color: C.text, marginBottom: "3px" }, text: v }));
-        line("Engine", (meta || t).engine === "acestep" ? "Ace-Step 1.5" : "MiniMax Music 3");
+        line("Engine", (meta || t).engine === "acestep" ? "Ace-Step 1.5" : (meta || t).engine === "yue2" ? "YuE2" : "MiniMax Music 3");
         if (meta?.seconds) line("Length", fmtDur(meta.seconds));
         if (meta?.seed != null) line("Seed", String(meta.seed));
         if (meta?.llmBackend) {
@@ -728,6 +728,8 @@ app.registerExtension({
           blk("Lyrics", meta.lyrics || "(instrumental)");
           blk("Parameters", meta.engine === "acestep"
             ? { bpm: meta.bpm, key: meta.keyscale, timesig: meta.timesignature, language: meta.language, cfg_scale: meta.cfgScaleAce, stages: meta.aceStages }
+            : meta.engine === "yue2"
+            ? { mode: meta.yue2Mode, auto_abc: meta.yue2AutoAbc, repetition_penalty: meta.yue2RepetitionPenalty, top_k: meta.topK, top_p: meta.topP, temperature: meta.temperature }
             : { steps: meta.steps, cfg: meta.cfg, cfg_scale: meta.cfgScale, top_k: meta.topK, sampler: meta.sampler });
         }
         ov.appendChild(body);
@@ -738,7 +740,7 @@ app.registerExtension({
         jget(`/meta?filename=${encodeURIComponent(t.filename)}&subfolder=${encodeURIComponent(t.subfolder || SUB())}`).then(d => {
           if (!d.ok || !d.meta) return;
           const m = d.meta;
-          const eng = m.engine === "acestep" ? "acestep" : "minimax";
+          const eng = m.engine === "acestep" ? "acestep" : m.engine === "yue2" ? "yue2" : "minimax";
           if (eng !== state.engine) switchEngine(eng);   // jump to the track's engine first
           ENGINE_FIELDS.forEach(k => { if (m[k] !== undefined) state[k] = m[k]; });
           state.lyricsInput = m.lyricsInput ?? m.lyrics ?? "";
@@ -752,7 +754,7 @@ app.registerExtension({
           state.seedMode = "fixed";
           if (m.seed != null) state.seed = m.seed;
           persist(); renderCompose(); loadPlaylist();
-          statusEl.textContent = `Reused — ${m.engine === "acestep" ? "Ace-Step" : "MiniMax"}`;
+          statusEl.textContent = `Reused — ${m.engine === "acestep" ? "Ace-Step" : m.engine === "yue2" ? "YuE2" : "MiniMax"}`;
         });
       }
 

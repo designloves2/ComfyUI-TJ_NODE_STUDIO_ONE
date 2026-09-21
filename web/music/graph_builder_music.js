@@ -277,7 +277,7 @@ function buildYue2Graph(state, opts) {
     yueMode = "melody";
   } else if (state.yue2AutoAbc !== false) {
     g[`${P}:abc`] = { class_type: "YuE2GenerateABC", inputs: {
-      style: r.caption, lyrics: r.lyrics, seed: r.seed, clip,
+      style: r.caption, lyrics: r.lyrics, seed: r.seed, clip, mode: "full",
       max_abc_tokens: 8192, temperature: 0.7, top_p: 0.9, top_k: 30,
       repetition_penalty: 1.005, penalty_window: 100,
     }};

@@ -93,13 +93,13 @@ export function openAudioGalleryPicker(onPick, copyApi = "/minimax_h3_one") {
       alignItems: "center", justifyContent: "center", fontSize: "10px", fontWeight: "700", color: C.muted,
     }});
     if (track.cover) cov.style.backgroundImage = `url("${coverUrl(track)}")`;
-    else cov.textContent = track.engine === "acestep" ? "ACE" : "MM";
+    else cov.textContent = track.engine === "acestep" ? "ACE" : track.engine === "yue2" ? "Y2" : "MM";
 
     const mid = el("div", { style: { flex: "1", minWidth: "0" }});
     mid.appendChild(el("div", { text: track.title || track.filename, style: {
       fontSize: "12px", color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
     }}));
-    const sub = [track.engine === "acestep" ? "Ace-Step" : track.engine === "minimax" ? "MiniMax" : "",
+    const sub = [track.engine === "acestep" ? "Ace-Step" : track.engine === "yue2" ? "YuE2" : track.engine === "minimax" ? "MiniMax" : "",
                  track.seconds ? clock(track.seconds) : "",
                  track.instrumental ? "instrumental" : ""].filter(Boolean).join("  ·  ");
     mid.appendChild(el("div", { text: sub, style: { fontSize: "10px", color: C.muted, marginTop: "2px" }}));
