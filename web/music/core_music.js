@@ -23,6 +23,14 @@ export const LS_KEY    = "music_one_state_v1";
 export const ENGINES = [
   { key: "acestep", label: "Ace-Step 1.5" },
   { key: "minimax", label: "MiniMax Music 3" },
+  { key: "yue2",    label: "YuE2" },
+];
+// YuE2's own left-menu sub-modes (B-1) — Text to Music writes a song from style+lyrics
+// (optionally auto-sketching a melody plan first); Cover Music transcribes an uploaded
+// recording's melody (SheetSage2) and renders a new song that follows it.
+export const YUE2_MODES = [
+  { key: "text2music", label: "Text to Music" },
+  { key: "cover",       label: "Cover Music" },
 ];
 export const ACE_LANGUAGES = ["en", "ko", "ja", "zh", "es", "fr", "de", "auto"];
 export const ACE_KEYSCALES = [
@@ -55,6 +63,27 @@ export const LLM_ROLES = [
   "lyrics_from_theme", "lyrics_from_title", "lyrics_enhance",
   "caption_rewrite", "title", "cover_prompt",
 ];
+
+// Condensed from the official YuE2 skill's own prompt guidance
+// (github.com/multimodal-art-projection/YuE/tree/main/skills/yue2-music, SKILL.md +
+// assets/prompt.json) — style is a comma-separated descriptor line (language, genre,
+// vocal character, instrumentation, melody character, phrasing, tempo), lyrics use
+// [Section] tags. Used as the system prompt when the LLM writes YuE2's style/lyrics.
+export const YUE2_PROMPT_SKILL = [
+  "You write style and lyrics prompts for the YuE2 music model.",
+  "",
+  "STYLE — one comma-separated descriptor line, not a paragraph: language, genre/subgenre, ",
+  "vocal character (gender, timbre, delivery), lead instruments, rhythm section, melody ",
+  "character (e.g. \"lyrical memorable melody\", \"unhurried phrasing\"), tempo in BPM. ",
+  "Example: \"English, warm piano pop, expressive female voice, acoustic piano, rounded ",
+  "bass and light drums, lyrical memorable melody, unhurried phrasing, 88 BPM\".",
+  "",
+  "LYRICS — section-tagged, singable, no implementation notes: [Verse], [Pre-Chorus], ",
+  "[Chorus], [Bridge], [Outro], etc. Keep lines short enough to sing at the stated tempo.",
+  "",
+  "Never put genre/instrument/production notes inside the lyrics block, and never put ",
+  "actual sung words inside the style line.",
+].join("\n");
 // State fields that belong to ONE engine — swapped when the engine switches so
 // MiniMax and Ace-Step never share a field (their prompt formats differ).
 export const ENGINE_FIELDS = [
@@ -145,6 +174,14 @@ export function defaultState(saved) {
     minP:         saved.minP         ?? 0,
     topKAce:      saved.topKAce      ?? 0,
     genAudioCodes: saved.genAudioCodes ?? true,
+
+    // YuE2 — checkpoint set once in Settings; the rest is per-run. Not in ENGINE_FIELDS
+    // (only meaningful for this engine, so no need to stash/swap it).
+    yue2Ckpt:      saved.yue2Ckpt      || "",
+    yue2Mode:      saved.yue2Mode      || "text2music",   // "text2music" | "cover" (B-1's two left-menu modes)
+    yue2AutoAbc:   saved.yue2AutoAbc   ?? true,            // text2music: let YuE2GenerateABC sketch a melody plan first
+    yue2CoverAudio: saved.yue2CoverAudio || "",            // cover: the uploaded source recording's filename
+    yue2RepetitionPenalty: saved.yue2RepetitionPenalty ?? 1.2,
 
     // compose
     lyricsInput:  saved.lyricsInput  || "",   // free text the user typed (brief / hook / full)

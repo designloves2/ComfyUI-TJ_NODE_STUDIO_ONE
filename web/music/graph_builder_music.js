@@ -110,7 +110,8 @@ function resolveCommon(state, opts) {
              : Number.isFinite(state.seed) ? Math.floor(state.seed)
              : Math.floor(Math.random() * 2 ** 48);
   const folder = (String(state.saveSubfolder || "").trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "") || SUBFOLDER);
-  const stem   = state.filenamePrefix || (state.engine === "acestep" ? "ACE" : "MMM");
+  const stem   = state.filenamePrefix
+    || (state.engine === "acestep" ? "ACE" : state.engine === "yue2" ? "YUE2" : "MMM");
   return { caption, lyrics, seconds, seed, folder, stem };
 }
 
@@ -239,7 +240,78 @@ function buildAceStepGraph(state, opts) {
   return { graph: g, meta, saveNode: `${P}:save`, seedUsed: r.seed };
 }
 
+// ── engine: YuE2 (B-1) ───────────────────────────────────────────────────────
+// Two modes, one checkpoint (`yue2_3b_int8_convrot.safetensors`-style file, set in
+// Settings). Mirrors the user's own reference workflow ("[TJ] yue2_music.json"):
+//   text2music — style+lyrics -> [optional YuE2GenerateABC melody sketch] ->
+//     YuE2GenerateMusic(mode="full") -> KSampler(steps 32, cfg 1, dpm_2, sgm_uniform)
+//     -> VAEDecodeAudio -> SaveAudioAdvanced
+//   cover — an uploaded recording -> SheetSage2AudioToABC (mode="melody", needs its
+//     own AudioEncoderLoader) -> that ABC feeds YuE2GenerateMusic(mode="melody") ->
+//     same KSampler/decode/save chain
+// Both share CheckpointLoaderSimple (outputs: 0 MODEL, 1 CLIP, 2 VAE) and
+// ConditioningZeroOut for the negative side — YuE2 has no separate negative prompt.
+function buildYue2Graph(state, opts) {
+  const ckpt = state.yue2Ckpt || "";
+  if (!ckpt) throw new Error("Pick the YuE2 checkpoint in Settings.");
+  const mode = state.yue2Mode === "cover" ? "cover" : "text2music";
+  if (mode === "cover" && !state.yue2CoverAudio)
+    throw new Error("Cover Music needs a source recording — upload one first.");
+  const r = resolveCommon(state, opts);
+  const P = "YUE2";
+  const steps = 32; // YuE2's own fixed sampler shape — not a user-facing axis (see reference workflow)
+  const g = {};
+  g[`${P}:ckpt`] = { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: ckpt } };
+  const model = [`${P}:ckpt`, 0], clip = [`${P}:ckpt`, 1], vae = [`${P}:ckpt`, 2];
+
+  // ── the ABC melody-plan input: auto-sketched, transcribed from a cover source, or none
+  let abcLink;
+  let yueMode = "full";
+  if (mode === "cover") {
+    g[`${P}:load_audio`] = { class_type: "LoadAudio", inputs: { audio: state.yue2CoverAudio } };
+    g[`${P}:audio_enc`] = { class_type: "AudioEncoderLoader", inputs: { audio_encoder_name: "sheetsage2_bf16.safetensors" } };
+    g[`${P}:sheetsage`] = { class_type: "SheetSage2AudioToABC", inputs: {
+      mode: "melody", audio_encoder: [`${P}:audio_enc`, 0], audio: [`${P}:load_audio`, 0],
+    }};
+    abcLink = [`${P}:sheetsage`, 0];
+    yueMode = "melody";
+  } else if (state.yue2AutoAbc !== false) {
+    g[`${P}:abc`] = { class_type: "YuE2GenerateABC", inputs: {
+      style: r.caption, lyrics: r.lyrics, seed: r.seed, clip,
+      max_abc_tokens: 8192, temperature: 0.7, top_p: 0.9, top_k: 30,
+      repetition_penalty: 1.005, penalty_window: 100,
+    }};
+    abcLink = [`${P}:abc`, 0];
+  }
+
+  const genInputs = {
+    style: r.caption, lyrics: r.lyrics, seed: r.seed, clip,
+    mode: yueMode, max_duration: r.seconds,
+    temperature: state.temperature ?? 1.0, top_p: state.topP ?? 0.95,
+    top_k: Math.max(1, Math.round(state.topK ?? 100)),
+    repetition_penalty: state.yue2RepetitionPenalty ?? 1.2,
+  };
+  if (abcLink) genInputs.abc = abcLink;
+  g[`${P}:gen`] = { class_type: "YuE2GenerateMusic", inputs: genInputs };
+
+  g[`${P}:zero`] = { class_type: "ConditioningZeroOut", inputs: { conditioning: [`${P}:gen`, 0] } };
+  g[`${P}:lat`]  = { class_type: "EmptyYuE2LatentAudio", inputs: { seconds: [`${P}:gen`, 1], batch_size: 1 } };
+  g[`${P}:samp`] = { class_type: "KSampler", inputs: {
+    model, positive: [`${P}:gen`, 0], negative: [`${P}:zero`, 0], latent_image: [`${P}:lat`, 0],
+    seed: r.seed, steps, cfg: 1, sampler_name: "dpm_2", scheduler: "sgm_uniform", denoise: 1,
+  }};
+  g[`${P}:dec`]  = { class_type: "VAEDecodeAudio", inputs: { samples: [`${P}:samp`, 0], vae } };
+  g[`${P}:save`] = saveAudioNode([`${P}:dec`, 0], `${r.folder}/${r.stem}`, state);
+
+  const meta = { ...commonMeta(state, r), yue2Ckpt: ckpt, yue2Mode: mode,
+    yue2AutoAbc: state.yue2AutoAbc !== false, yue2CoverAudio: mode === "cover" ? state.yue2CoverAudio : "",
+    yue2RepetitionPenalty: state.yue2RepetitionPenalty ?? 1.2, topK: Math.round(state.topK ?? 100),
+    temperature: state.temperature ?? 1.0, topP: state.topP ?? 0.95 };
+  return { graph: g, meta, saveNode: `${P}:save`, seedUsed: r.seed };
+}
+
 // ── dispatcher ──────────────────────────────────────────────────────────────
 export function buildMusicGraph(state, opts = {}) {
+  if (state.engine === "yue2") return buildYue2Graph(state, opts);
   return (state.engine === "acestep") ? buildAceStepGraph(state, opts) : buildMiniMaxGraph(state, opts);
 }

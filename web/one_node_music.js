@@ -8,7 +8,7 @@ import {
   el, clear, loadState, saveState, defaultState, randomSeed,
   SAMPLERS, SCHEDULERS, LORA_MAX, AUDIO_FORMATS, STYLE_CHIPS, LYRIC_TAGS,
   DURATION_MIN, DURATION_MAX, LLM_BACKENDS, LLM_CLIP_TYPES, lyricsIntent, fmtDur, settingsBadge,
-  ENGINES, ENGINE_FIELDS, ACE_LANGUAGES, ACE_KEYSCALES, ACE_TIMESIGS,
+  ENGINES, ENGINE_FIELDS, YUE2_MODES, ACE_LANGUAGES, ACE_KEYSCALES, ACE_TIMESIGS,
   VOCAL_GENDER, VOCAL_STYLE, VOICE_TONE, buildAgentJob,
 } from "./music/core_music.js";
 import { downloadAgentJob } from "./shared/agent_job.js";
@@ -22,6 +22,20 @@ const NODE_MH = 994;
 const jget  = (p)    => api.fetchApi(API + p).then(r => r.json());
 const jpost = (p, b) => api.fetchApi(API + p, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }).then(r => r.json());
 const viewURL = (t)  => `/view?filename=${encodeURIComponent(t.filename)}&subfolder=${encodeURIComponent(t.subfolder || "")}&type=output&t=${t.mtime || Date.now()}`;
+
+// YuE2 Cover Music's source recording — same ComfyUI upload endpoint every other tool's
+// image/video/audio upload goes through (the "image" field name is just what the
+// endpoint expects; it accepts any file type).
+async function uploadCoverAudio(file) {
+  const fd = new FormData();
+  fd.append("image", file);
+  fd.append("subfolder", "");
+  fd.append("type", "input");
+  const r = await api.fetchApi("/upload/image", { method: "POST", body: fd });
+  if (!r.ok) throw new Error(`upload failed (${r.status})`);
+  const d = await r.json();
+  return d.name;
+}
 
 // iOS Safari can't decode FLAC in <audio> (canPlayType('audio/flac') === ""). When the
 // browser can't play the raw file, fall back to /music_one/download — the same ffmpeg
@@ -1008,6 +1022,42 @@ app.registerExtension({
 
         compose.appendChild(seg([["Simple", false], ["Advanced", true]], state.advanced, (v) => { state.advanced = v; persist(); renderCompose(); }));
 
+        // ── YuE2's own left-menu modes (B-1) — Text to Music / Cover Music ──
+        if (state.engine === "yue2") {
+          const modeRow = el("div", { style: { display: "flex", gap: "4px", marginTop: "6px" }});
+          YUE2_MODES.forEach(m => {
+            const active = state.yue2Mode === m.key;
+            modeRow.appendChild(el("button", { text: m.label, className: "mmm-chip", style: {
+              flex: "1", fontSize: "11px", padding: "6px 8px", fontWeight: active ? "700" : "400",
+              background: active ? BRAND : undefined, color: active ? "#fff" : undefined,
+              borderColor: active ? BRAND : undefined,
+            }, onclick: () => { state.yue2Mode = m.key; persist(); renderCompose(); }}));
+          });
+          compose.appendChild(modeRow);
+
+          if (state.yue2Mode === "cover") {
+            compose.appendChild(sectionHead("Source Recording"));
+            const coverBox = el("div", { style: {
+              display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px",
+              background: C.bg1, border: `1px solid ${C.border}`, borderRadius: "8px",
+            }});
+            const coverLabel = el("div", { style: { flex: "1", fontSize: "11px", color: state.yue2CoverAudio ? C.text : C.muted },
+              text: state.yue2CoverAudio || "No file picked — YuE2 transcribes its melody (SheetSage2) and follows it." });
+            const coverInput = el("input", { type: "file", accept: "audio/*", style: { display: "none" } });
+            coverInput.addEventListener("change", async () => {
+              const f = coverInput.files?.[0]; if (!f) return;
+              coverLabel.textContent = "Uploading…";
+              try {
+                state.yue2CoverAudio = await uploadCoverAudio(f);
+                persist(); renderCompose();
+              } catch (e) { coverLabel.textContent = "Upload failed — " + (e?.message || e); }
+            });
+            const pickBtn = el("button", { className: "mmm-chip", text: state.yue2CoverAudio ? "Change…" : "Pick file…", onclick: () => coverInput.click() });
+            coverBox.append(coverLabel, pickBtn, coverInput);
+            compose.appendChild(coverBox);
+          }
+        }
+
         // ── Title + Cover Info ──
         const titleIn = fld(state.title || "", (v) => { state.title = v; state.titleTouched = !!v.trim(); persist(); }, { ph: "Song title (optional — ✨ can turn it into lyrics)" });
         const tRow = el("div", { style: { display: "flex", gap: "6px", alignItems: "flex-end" }});
@@ -1051,12 +1101,14 @@ app.registerExtension({
         const stLbl = state.engine === "acestep" ? "Style tags" : "Style";
         compose.appendChild(sectionHead(stLbl, ...headBtns("style")));
         const sb = resizableBox(() => state.caption || state.captionBrief, (v) => {
-          if (state.engine === "acestep") { state.caption = v; state.captionBrief = v; }
+          if (state.engine === "acestep" || state.engine === "yue2") { state.caption = v; state.captionBrief = v; }
           else if (/###\s/.test(v)) state.caption = v; else state.captionBrief = v;
         }, "styleH");
         styleTA = sb.ta; styleWrap = sb.wrap;
         styleTA.placeholder = state.engine === "acestep"
           ? "cinematic melodic house, Alan Walker vibe, plucky synth, airy pads, breathy vocals …\n✨ turns it into finished tags"
+          : state.engine === "yue2"
+          ? "English, warm piano pop, expressive female voice, acoustic piano, rounded bass and light drums, lyrical memorable melody, unhurried phrasing, 88 BPM …\n✨ turns it into a YuE2-style descriptor line"
           : "warm acoustic pop, female vocal, fingerpicked guitar …\n✨ turns it into a structured caption";
         compose.appendChild(sb.wrap);
         const chipRow = el("div", { style: { display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "5px" }});
@@ -1098,14 +1150,36 @@ app.registerExtension({
         // ── advanced ──
         if (state.advanced) {
           const acc = el("div", { className: "mmm-acc" });
-          acc.appendChild(el("div", { className: "hd", text: state.engine === "acestep" ? "Ace-Step 1.5" : "MiniMax Music 3" }));
+          acc.appendChild(el("div", { className: "hd",
+            text: state.engine === "acestep" ? "Ace-Step 1.5" : state.engine === "yue2" ? "YuE2" : "MiniMax Music 3" }));
 
           const fmtSel = fieldCol("format", sel(AUDIO_FORMATS, state.format || "flac", (v) => { state.format = v; persist(); renderCompose(); }));
           const qualSel = (state.format === "mp3" || state.format === "opus")
             ? fieldCol("quality", sel(state.format === "opus" ? ["64k", "96k", "128k", "192k", "320k"] : ["V0", "128k", "320k"], state.audioQuality || (state.format === "opus" ? "128k" : "V0"), (v) => { state.audioQuality = v; persist(); }))
             : null;
 
-          if (state.engine === "acestep") {
+          if (state.engine === "yue2") {
+            if (state.yue2Mode === "text2music") {
+              acc.appendChild(checkRow("Auto-sketch a melody plan first (YuE2GenerateABC)", state.yue2AutoAbc !== false,
+                (v) => { state.yue2AutoAbc = v; persist(); }));
+            }
+            const g2 = el("div", { className: "mmm-grid2" });
+            g2.append(
+              fieldCol("temperature", fld(state.temperature ?? 1.0, (v) => { state.temperature = v; persist(); }, { num: true })),
+              fieldCol("top_p", fld(state.topP ?? 0.95, (v) => { state.topP = v; persist(); }, { num: true })),
+            );
+            acc.appendChild(g2);
+            const g3 = el("div", { className: "mmm-grid3" });
+            g3.append(
+              fieldCol("top_k", fld(state.topK ?? 100, (v) => { state.topK = Math.round(v); persist(); }, { num: true })),
+              fieldCol("repetition penalty", fld(state.yue2RepetitionPenalty ?? 1.2, (v) => { state.yue2RepetitionPenalty = v; persist(); }, { num: true })),
+              el("div"),
+            );
+            acc.appendChild(g3);
+            const af = el("div", { className: "mmm-grid2" });
+            af.append(fmtSel, qualSel || el("div"));
+            acc.appendChild(af);
+          } else if (state.engine === "acestep") {
             const g2 = el("div", { className: "mmm-grid2" });
             g2.append(
               fieldCol("language", sel(ACE_LANGUAGES, state.language || "en", (v) => { state.language = v; persist(); })),
@@ -1178,7 +1252,10 @@ app.registerExtension({
           }
           compose.appendChild(acc);
 
-          // LoRA — add / remove list (searchable, matches the image nodes)
+          // LoRA — add / remove list (searchable, matches the image nodes). Not wired for
+          // YuE2 (its own reference workflow has no LoRA slot) — hidden rather than shown
+          // and silently ignored.
+          if (state.engine !== "yue2") {
           const lr = el("div", { className: "mmm-acc" });
           const lrHd = el("div", { style: { display: "flex", alignItems: "center" }});
           lrHd.append(el("div", { className: "hd", text: `LoRA${state.loras.length ? ` (${state.loras.length})` : ""}`, style: { flex: "1" }}));
@@ -1208,6 +1285,7 @@ app.registerExtension({
               return `LLM · ${label}${mdl ? " · " + String(mdl).split(/[\\/]/).pop() : ""} — change in Settings`;
             })(),
           }));
+          }
         }
 
         renderFixed();
@@ -1573,7 +1651,7 @@ app.registerExtension({
         if (!pending || !Object.keys(pending).length) return true;
         try {
           await jpost("/config", pending);
-          const map = { dit: "dit", clip: "clip", dav: "dav", ace_unet: "aceUnet", ace_clip1: "aceClip1", ace_clip2: "aceClip2", ace_vae: "aceVae", ace_sampler_name: "aceSamplerName", ace_scheduler: "aceScheduler", ace_shift: "aceShift", llm_backend: "llmBackend", llm_model: "llmModel", llm_or_model: "llmOrModel", llm_clip: "llmClip", llm_clip_type: "llmClipType", save_subfolder: "saveSubfolder" };
+          const map = { dit: "dit", clip: "clip", dav: "dav", ace_unet: "aceUnet", ace_clip1: "aceClip1", ace_clip2: "aceClip2", ace_vae: "aceVae", ace_sampler_name: "aceSamplerName", ace_scheduler: "aceScheduler", ace_shift: "aceShift", yue2_ckpt: "yue2Ckpt", llm_backend: "llmBackend", llm_model: "llmModel", llm_or_model: "llmOrModel", llm_clip: "llmClip", llm_clip_type: "llmClipType", save_subfolder: "saveSubfolder" };
           const folderChanged = ("save_subfolder" in pending) && (pending.save_subfolder || "") !== (state.saveSubfolder || "");
           for (const k in pending) if (map[k]) state[map[k]] = pending[k];
           persist(); pending = {}; renderCompose();
@@ -1604,8 +1682,8 @@ app.registerExtension({
         settingsEl.appendChild(hd);
 
         const tabs = el("div", { className: "mmm-tabs" });
-        [["minimax", "MiniMax Music 3"], ["acestep", "Ace-Step 1.5"], ["llm", "LLM"]].forEach(([k, lbl]) => {
-          tabs.appendChild(el("button", { text: lbl, className: setTab === k ? "on" : "", onclick: () => { setTab = k; renderTab(cfg, m); [...tabs.children].forEach((c, i) => c.classList.toggle("on", ["minimax", "acestep", "llm"][i] === k)); }}));
+        [["minimax", "MiniMax Music 3"], ["acestep", "Ace-Step 1.5"], ["yue2", "YuE2"], ["llm", "LLM"]].forEach(([k, lbl]) => {
+          tabs.appendChild(el("button", { text: lbl, className: setTab === k ? "on" : "", onclick: () => { setTab = k; renderTab(cfg, m); [...tabs.children].forEach((c, i) => c.classList.toggle("on", ["minimax", "acestep", "yue2", "llm"][i] === k)); }}));
         });
         settingsEl.appendChild(tabs);
 
@@ -1656,6 +1734,9 @@ app.registerExtension({
             fieldCol("shift (AuraFlow)", fld(pending.ace_shift ?? cfg.ace_shift ?? 3, (v) => { pending.ace_shift = v; }, { num: true })),
           );
           b.appendChild(g);
+        } else if (setTab === "yue2") {
+          b.appendChild(setNote("YuE2 (B-1) — one checkpoint carries model/CLIP/VAE together. Text to Music and Cover Music (SheetSage2 melody transcription) both use it."));
+          b.appendChild(setSelectRow("Checkpoint", "yue2_ckpt", m.checkpoints, cfg.yue2_ckpt));
         } else {
           b.appendChild(setNote("LLM — writes the lyrics, style caption and cover-art prompts. Captions need strong instruction-following, so OpenRouter is recommended."));
           b.appendChild(fieldCol("Backend", sel(LLM_BACKENDS.map(x => ({ value: x.key, label: x.label })), pending.llm_backend ?? cfg.llm_backend, (v) => { pending.llm_backend = v; renderTab(cfg, m); })));
@@ -1702,6 +1783,7 @@ app.registerExtension({
         state.aceUnet = state.aceUnet || d.ace_unet; state.aceClip1 = state.aceClip1 || d.ace_clip1;
         state.aceClip2 = state.aceClip2 || d.ace_clip2; state.aceVae = state.aceVae || d.ace_vae;
         state.aceSamplerName = state.aceSamplerName || d.ace_sampler_name;
+        state.yue2Ckpt = state.yue2Ckpt || d.yue2_ckpt;
         if (!state.saveSubfolder && d.save_subfolder && d.save_subfolder !== SUBFOLDER) state.saveSubfolder = d.save_subfolder;
         // server config is the source of truth for the LLM setup
         if (d.llm_backend)    state.llmBackend  = d.llm_backend;

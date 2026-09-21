@@ -3877,6 +3877,10 @@ MUSIC_OPTIONAL_NODES = [
     "VAEDecodeAudioTiled",         # low-VRAM tiled decode (minimax)
     "LoraLoaderModelOnly",         # LoRA slots (both engines)
     "TJ_MultiImageLoader", "TextGenerate",   # LLM (ComfyUI-TJ_NODE)
+    # engine: yue2 (B-1) — CheckpointLoaderSimple/LoadAudio/ConditioningZeroOut/KSampler
+    # are already core ComfyUI nodes covered by other tools' requirements
+    "YuE2GenerateMusic", "YuE2GenerateABC", "EmptyYuE2LatentAudio",
+    "SheetSage2AudioToABC", "AudioEncoderLoader",
 ]
 
 
@@ -4103,6 +4107,7 @@ async def music_get_config(request):
         "ace_sampler_name": cfg.get("ace_sampler_name", "jkass_quality"),
         "ace_scheduler":    cfg.get("ace_scheduler", "sgm_uniform"),
         "ace_shift":        cfg.get("ace_shift", 3),
+        "yue2_ckpt": cfg.get("yue2_ckpt", ""),
         "save_subfolder": cfg.get("save_subfolder") or MUSIC_SUBFOLDER,
         "steps":     cfg.get("steps", 30),
         "cfg":       cfg.get("cfg", 1.7),
@@ -4164,6 +4169,7 @@ async def music_get_models(request):
         "text_encoders":    _s("text_encoders"),
         "vaes":             _s("vae"),
         "loras":            _s("loras"),
+        "checkpoints":      _s("checkpoints"),
     })
 
 
