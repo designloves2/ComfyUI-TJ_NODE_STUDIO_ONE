@@ -504,33 +504,44 @@ export function createImageGalleryOverlay(state, ctx) {
       .catch(() => ctx.showPopup?.("Copy failed.", true));
   }
 
-  // ── Prompt View — image + info left, full prompt right, Reuse/Copy footer, same shape
-  // as the video gallery's own popup — plus ←/→ to step through the current filtered
-  // list without closing, and the same blur/reveal toggle the thumbnail itself has.
+  // ── Prompt View — full-viewport (position:fixed inset:0), same weight as the video
+  // gallery's own fullscreen player, not a small centered box: a large image area, then
+  // prev/next + the pan/zoom/fit shortcut hint, then the prompt, then Reuse/Copy — the
+  // user's own requested stacking. ←/→ still step through the current filtered list,
+  // Esc still closes, and the blur/reveal toggle still re-applies on every navigation.
   function openPromptViewPopup(idx) {
     let i = idx;
-    const box = el("div", { style: {
-      position: "relative", background: "#141414", border: `1px solid ${C.border}`, borderRadius: "10px",
-      width: "760px", maxWidth: "94%", padding: "16px", display: "flex", flexDirection: "column",
-      gap: "12px", boxShadow: "0 16px 50px rgba(0,0,0,0.65)",
+    const pop = el("div", { style: {
+      display: "flex", position: "fixed", inset: "0", zIndex: "100060",
+      background: "rgba(0,0,0,0.97)", flexDirection: "column",
     }});
-    const titleEl = el("div", { text: "Prompt", style: { color: "#fff", fontSize: "13px", fontWeight: "700" } });
+    const topBar = el("div", { style: {
+      flexShrink: "0", display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", color: "#fff",
+    }});
+    const titleEl = el("div", { style: { fontSize: "13px", fontWeight: "600", flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } });
+    const posEl = el("div", { style: { fontSize: "11px", color: "#9a9a9a" } });
+    const closeBtn = el("button", { type: "button", text: "✕", title: "Close (Esc)", style: {
+      cursor: "pointer", background: "rgba(255,255,255,0.1)", color: "#fff", border: "none",
+      borderRadius: "6px", width: "30px", height: "30px", fontSize: "14px",
+    }});
+    topBar.append(titleEl, posEl, closeBtn);
+
+    // ── image area — fills most of the screen ──────────────────────────────────────
     const imgWrap = el("div", { style: {
-      position: "relative", width: "100%", aspectRatio: "1 / 1", background: "#000",
-      borderRadius: "6px", overflow: "hidden", border: `1px solid ${C.border}`, flexShrink: "0",
+      position: "relative", flex: "1", minHeight: "0", overflow: "hidden",
+      display: "flex", alignItems: "center", justifyContent: "center", background: "#000",
     }});
     const im = el("img", { style: {
-      width: "100%", height: "100%", objectFit: "contain", background: "#000", display: "block",
-      transformOrigin: "center center", cursor: "default",
+      maxWidth: "100%", maxHeight: "100%", objectFit: "contain", display: "block",
+      transformOrigin: "center center", cursor: "default", userSelect: "none",
     }});
     imgWrap.appendChild(im);
 
-    // Pan (drag) / zoom (wheel, cursor-anchored) / fit (double-click reset) — same gesture
-    // set the main node's own compare viewer uses, applied to this single image.
+    // Pan (drag) / zoom (wheel, cursor-anchored) / fit (double-click reset) — same
+    // gesture set the main node's own compare viewer uses, applied to this single image.
     let zoom = 1, panX = 0, panY = 0;
     const applyTransform = () => { im.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`; };
     const resetTransform = () => { zoom = 1; panX = 0; panY = 0; applyTransform(); im.style.cursor = "default"; };
-    imgWrap.style.overflow = "hidden";
     imgWrap.addEventListener("wheel", (e) => {
       e.preventDefault();
       const rect = imgWrap.getBoundingClientRect();
@@ -558,59 +569,59 @@ export function createImageGalleryOverlay(state, ctx) {
     });
     imgWrap.addEventListener("pointerup", () => { dragging = false; if (zoom > 1) im.style.cursor = "grab"; });
     imgWrap.addEventListener("dblclick", resetTransform);
-    const infoBox = el("div", { style: {
-      fontSize: "10px", color: C.text, lineHeight: "1.6", whiteSpace: "pre-wrap", wordBreak: "break-all",
-      background: C.bg2, border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px 8px",
-    }});
-    const leftCol = el("div", { style: { display: "flex", flexDirection: "column", gap: "8px", flex: "1", minWidth: "0" } }, [imgWrap, infoBox]);
-    const promptBox = el("div", { style: {
-      flex: "1", minWidth: "0", background: C.bg2, border: `1px solid ${C.border}`, borderRadius: "6px",
-      padding: "10px", fontSize: "12px", color: C.text, lineHeight: "1.5", whiteSpace: "pre-wrap",
-      overflowY: "auto", maxHeight: "360px",
-    }});
-    const topRow = el("div", { style: { display: "flex", gap: "10px" } }, [leftCol, promptBox]);
 
+    // ── nav row — "‹ Previous  Next ›" centered, shortcut hint underneath ───────────
+    const prevBtn = el("button", { type: "button", text: "‹ Previous Image", title: "Previous image (←)", style: {
+      cursor: "pointer", fontFamily: "inherit", fontSize: "12px", padding: "6px 14px",
+      borderRadius: "6px", background: "rgba(255,255,255,0.08)", color: "#fff", border: "none",
+    }});
+    const nextBtn = el("button", { type: "button", text: "Next Image ›", title: "Next image (→)", style: {
+      cursor: "pointer", fontFamily: "inherit", fontSize: "12px", padding: "6px 14px",
+      borderRadius: "6px", background: "rgba(255,255,255,0.08)", color: "#fff", border: "none",
+    }});
+    prevBtn.addEventListener("click", () => step(-1));
+    nextBtn.addEventListener("click", () => step(1));
+    const navRow = el("div", { style: { flexShrink: "0", display: "flex", justifyContent: "center", gap: "20px", padding: "10px 14px 4px" } },
+      [prevBtn, nextBtn]);
+    const hintRow = el("div", { style: { flexShrink: "0", textAlign: "center", padding: "0 14px 10px", color: "#7a7a7a", fontSize: "11px" } });
+    hintRow.innerHTML = "<b>Pan</b>: click drag &nbsp;/&nbsp; <b>Zoom</b>: Mouse wheel &nbsp;/&nbsp; <b>Fit-screen</b>: Double Click";
+
+    // ── prompt ───────────────────────────────────────────────────────────────────
+    const infoBox = el("div", { style: {
+      flexShrink: "0", fontSize: "10px", color: C.text, lineHeight: "1.6", whiteSpace: "pre-wrap", wordBreak: "break-all",
+      background: C.bg2, border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px 8px", margin: "0 14px",
+    }});
+    const promptBox = el("div", { style: {
+      flexShrink: "0", background: C.bg2, border: `1px solid ${C.border}`, borderRadius: "6px",
+      padding: "10px", fontSize: "12px", color: C.text, lineHeight: "1.5", whiteSpace: "pre-wrap",
+      overflowY: "auto", maxHeight: "18vh", margin: "8px 14px 0",
+    }});
+
+    // ── footer — Reuse Setting / Prompt Copy ──────────────────────────────────────
     const footBtn = (txt, tip, fn, primary) => {
       const b = el("button", { type: "button", text: txt, style: {
-        flex: "1", cursor: "pointer", fontFamily: "inherit", fontSize: "12px", fontWeight: primary ? "700" : "400",
-        padding: "8px 0", borderRadius: "6px", border: `1px solid ${primary ? "transparent" : C.border}`,
+        flex: "1", cursor: "pointer", fontFamily: "inherit", fontSize: "13px", fontWeight: primary ? "700" : "400",
+        padding: "10px 0", borderRadius: "6px", border: `1px solid ${primary ? "transparent" : C.border}`,
         background: primary ? BRAND : C.bg2, color: primary ? "#fff" : C.text,
       }});
       b.title = tip; b.addEventListener("click", fn);
       return b;
     };
     const currentPromptText = () => String(filtered[i]?.prompt || filtered[i]?.meta?.prompt || "").trim();
-    const footRow = el("div", { style: { display: "flex", gap: "8px" } }, [
+    const footRow = el("div", { style: { flexShrink: "0", display: "flex", gap: "8px", padding: "10px 14px 14px" } }, [
       footBtn("↩ Reuse Setting", "Restore this image's prompt and settings into the panel",
         () => { closePop(); doReuse(filtered[i]); }, true),
       footBtn("⧉ Prompt Copy", "Copy the prompt to the clipboard", () => doCopyPrompt(currentPromptText())),
     ]);
 
-    const navBtn = (txt, tip, fn) => el("button", { type: "button", text: txt, title: tip, style: {
-      position: "absolute", top: "50%", transform: "translateY(-50%)", zIndex: "3",
-      width: "30px", height: "30px", borderRadius: "50%", border: "none",
-      background: "rgba(0,0,0,0.6)", color: "#fff", cursor: "pointer", fontSize: "14px",
-    }, onclick: fn });
-    const prevBtn = navBtn("‹", "Previous image (←)", () => step(-1));
-    prevBtn.style.left = "-15px";
-    const nextBtn = navBtn("›", "Next image (→)", () => step(1));
-    nextBtn.style.right = "-15px";
-
-    const closeBtn = el("button", { type: "button", text: "✕", style: {
-      position: "absolute", top: "8px", right: "8px", width: "26px", height: "26px",
-      border: "none", borderRadius: "6px", background: "rgba(255,255,255,0.08)", color: C.text,
-      cursor: "pointer", fontSize: "13px",
-    }});
-    box.append(titleEl, topRow, footRow, closeBtn, prevBtn, nextBtn);
-    const pop = el("div", { style: {
-      position: "fixed", inset: "0", zIndex: "100060", display: "flex",
-      alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.72)",
-    }}, [box]);
+    pop.append(topBar, imgWrap, navRow, hintRow, infoBox, promptBox, footRow);
 
     function render() {
       const v = filtered[i];
       if (!v) return;
       const key = mediaKey(v.filename, v.subfolder || "");
+      titleEl.textContent = v.filename; titleEl.title = v.filename;
+      posEl.textContent = `${i + 1} / ${filtered.length}`;
       const lines = buildInfoLines(v);
       infoBox.textContent = lines.length ? lines.join("\n") : "No settings saved for this image.";
       promptBox.textContent = currentPromptText() || "(no prompt saved)";
@@ -626,8 +637,8 @@ export function createImageGalleryOverlay(state, ctx) {
       eye.style.cssText += ";position:absolute;bottom:6px;right:6px;z-index:3;"
         + "width:26px;height:26px;font-size:14px;background:rgba(0,0,0,0.7);border-radius:6px;";
       imgWrap.append(shade, eye);
-      prevBtn.style.display = i > 0 ? "" : "none";
-      nextBtn.style.display = i < filtered.length - 1 ? "" : "none";
+      prevBtn.style.visibility = i > 0 ? "visible" : "hidden";
+      nextBtn.style.visibility = i < filtered.length - 1 ? "visible" : "hidden";
     }
     function step(d) {
       const n = i + d;
@@ -640,12 +651,11 @@ export function createImageGalleryOverlay(state, ctx) {
       else if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
     };
     function closePop() {
-      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("keydown", onKey, true);
       pop.remove();
     }
     closeBtn.addEventListener("click", closePop);
-    pop.addEventListener("mousedown", e => { if (e.target === pop) closePop(); });
-    document.addEventListener("keydown", onKey);
+    document.addEventListener("keydown", onKey, true);
     render();
     document.body.appendChild(pop);
   }
