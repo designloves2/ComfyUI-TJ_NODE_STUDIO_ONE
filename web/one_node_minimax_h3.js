@@ -43,10 +43,11 @@ import { buildClipGraph, buildLtxUpscaleGraph, buildFaceRefineGraph, buildPostpr
 import { PIPELINE_PRESETS, allPresets, captureAxes, matchPreset, applyPreset } from "./minimax/presets_minimax.js";
 import { createPresetDialogs } from "./minimax/ui_presets_minimax.js";
 import { createSettingsOverlay } from "./minimax/ui_app_settings_minimax.js";
-import { mountImagePanel } from "./minimax/ui_images_minimax.js";
+import { mountImagePanel, imageSlot } from "./minimax/ui_images_minimax.js";
 import { createPromptEditOverlay } from "./minimax/ui_prompt_edit_minimax.js";
 import { createCommonPromptOverlay } from "./minimax/ui_common_prompt_minimax.js";
 import { createGalleryOverlay } from "./minimax/ui_gallery_minimax.js";
+import { createImageGalleryOverlay } from "./minimax/ui_gallery_minimax_images.js";
 import { resolvePipeOverrides, applyOverridesTemp } from "./shared/promptdb_pipe.js";
 import { attachNodeState, restoreNodeState } from "./shared/node_state.js";
 import { createNodeFullscreen } from "./shared/node_fullscreen.js";
@@ -203,7 +204,7 @@ app.registerExtension({
           warnTag.style.display = "none";
         }
       }
-      let settingsOv, helpOv, promptEditOv, galleryOv, commonOv, presetDlgs;
+      let settingsOv, helpOv, promptEditOv, galleryOv, imageGalleryOv, commonOv, presetDlgs;
       topBar.appendChild(pillsWrap);
       topBar.appendChild(warnTag);
       topBar.appendChild(iconBtn("🗑", "Unload models / free VRAM", async () => {
@@ -211,6 +212,7 @@ app.registerExtension({
       }));
       topBar.appendChild(iconBtn("⚙", "Settings", () => settingsOv?.show()));
       topBar.appendChild(iconBtn("🖼", "Gallery — clips and stitched videos", () => galleryOv?.show()));
+      topBar.appendChild(iconBtn("🎨", "Image Gallery — Image Generator's own outputs", () => imageGalleryOv?.show()));
       // Fills the monitor with this node alone, scaled but proportional. The button is the
       // only way back out, and it inverts to white-on-black while the view is open so the
       // mode is obvious at a glance.
@@ -3293,10 +3295,6 @@ app.registerExtension({
       // still (see buildImageGenGraph's own comment). Keeps Seed/Mode + Generate/Stop
       // (unlike Postprocess) and adds a "👁 Preview" button next to Generate for a cheap
       // look at the preview resolution before spending the final-resolution run.
-      function setImgRefSource(inputFilename) {
-        state.imgRefImage = inputFilename;
-        persist(); renderLeft();
-      }
       function renderImageGenLeft() {
         const prevScroll = leftPanel.scrollTop;
         clear(leftPanel);
@@ -3326,37 +3324,83 @@ app.registerExtension({
             style: { fontSize: "12px", lineHeight: "1.6" } })]));
         }
 
-        // ── reference image (ref2i / charsheet only) ────────────────────────
+        // ── reference images (ref2i / charsheet only) — same multi-slot grid as the
+        // video Reference to Video mode's own "Images (N/9)" (mountImagePanel in
+        // ui_images_minimax.js), images only (no ref videos/audios for a still) ──────
         if (subMode === "ref2i" || subMode === "charsheet") {
-          const hasRef = !!state.imgRefImage;
-          const card = el("div", { style: {
-            position: "relative", width: "100%", aspectRatio: "1 / 1", background: "#000",
-            borderRadius: "8px", overflow: "hidden", border: `1px solid ${hasRef ? BRAND : C.border}`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }});
-          if (hasRef) {
-            const img = el("img", { src: `/view?filename=${encodeURIComponent(state.imgRefImage)}&type=input`,
-              style: { width: "100%", height: "100%", objectFit: "contain", display: "block" } });
-            card.appendChild(img);
-            card.appendChild(el("button", { type: "button", text: "✕", title: "Clear reference image", style: {
-              position: "absolute", top: "6px", right: "6px", zIndex: "3", width: "24px", height: "24px",
-              border: "none", borderRadius: "6px", background: "rgba(0,0,0,0.7)", color: "#fff", cursor: "pointer", fontSize: "12px",
-            }, onclick: () => { state.imgRefImage = ""; persist(); renderLeft(); } }));
-          } else {
-            card.appendChild(el("div", { text: "no reference image", style: { color: C.muted, fontSize: "12px" } }));
+          const refs = (state.imgRefImages || []).slice(0, 9);
+          const grid = el("div", { style: { display: "flex", flexWrap: "wrap", gap: "5px", justifyContent: "center" } });
+          for (let i = 0; i < Math.min(9, refs.length + 1); i++) {
+            const slot = imageSlot(refs[i] ? `<Picture ${i + 1}>` : "+ add\nreference", refs[i] || null,
+              name => {
+                const list = (state.imgRefImages || []).slice();
+                const mpList = (state.imgRefImagesMp || []).slice();
+                if (name) { list[i] = name; } else { list.splice(i, 1); mpList.splice(i, 1); }
+                state.imgRefImages = list.filter(Boolean).slice(0, 9);
+                state.imgRefImagesMp = mpList.slice(0, 9);
+                persist(); renderLeft();
+              }, { box: 92 });
+            const cell = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px", alignItems: "center" } }, [slot.el]);
+            if (refs[i]) {
+              const mpIn = numberField(state.imgRefImagesMp?.[i] ?? 1.0, v => {
+                const mpList = (state.imgRefImagesMp || []).slice();
+                mpList[i] = Math.max(0, v);
+                state.imgRefImagesMp = mpList;
+                persist();
+              }, 0.1);
+              mpIn.style.width = "60px"; mpIn.title = "Megapixels sent to the model (0 = send as uploaded)";
+              cell.appendChild(mpIn);
+              cell.draggable = true;
+              cell.addEventListener("dragstart", (e) => {
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", String(i));
+                cell.style.opacity = "0.4";
+              });
+              cell.addEventListener("dragend", () => { cell.style.opacity = "1"; });
+              cell.addEventListener("dragover", (e) => {
+                e.preventDefault(); e.dataTransfer.dropEffect = "move";
+                slot.el.style.outline = `2px solid ${BRAND}`;
+              });
+              cell.addEventListener("dragleave", () => { slot.el.style.outline = "none"; });
+              cell.addEventListener("drop", (e) => {
+                e.preventDefault();
+                slot.el.style.outline = "none";
+                const from = Number(e.dataTransfer.getData("text/plain"));
+                if (Number.isNaN(from) || from === i) return;
+                const list = (state.imgRefImages || []).slice();
+                const mpList = (state.imgRefImagesMp || []).slice();
+                const [movedImg] = list.splice(from, 1);
+                list.splice(i, 0, movedImg);
+                const [movedMp] = mpList.splice(from, 1);
+                mpList.splice(i, 0, movedMp);
+                state.imgRefImages = list.slice(0, 9);
+                state.imgRefImagesMp = mpList.slice(0, 9);
+                persist(); renderLeft();
+              });
+            }
+            grid.appendChild(cell);
           }
-          const imgFileInp = el("input", { type: "file", accept: "image/*", style: { display: "none" } });
-          imgFileInp.addEventListener("change", async () => {
-            const f = imgFileInp.files[0]; imgFileInp.value = "";
-            if (!f) return;
-            try { showPopup("Uploading…", false); const name = await uploadMedia(f); setImgRefSource(name); }
-            catch (e) { showPopup(e.message, true); }
-          });
-          const galBtn = button("🖼 From gallery", () => galleryOv?.showPicker((inputFilename) => setImgRefSource(inputFilename)));
-          const upBtn = button("⬆ Upload", () => imgFileInp.click(), "default");
-          galBtn.style.flex = "1"; upBtn.style.flex = "1";
-          leftPanel.appendChild(panel([label("Reference image"), card,
-            el("div", { style: { display: "flex", gap: "8px" } }, [galBtn, upBtn]), imgFileInp]));
+          leftPanel.appendChild(panel([label(`Reference Images (${refs.length}/9)`), grid,
+            el("div", { text: "MP = megapixels sent to the model for that image (0 = send as uploaded, no resize). Drag to reorder — the number is the <Picture N> token position.",
+              style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+            row([col([label("Reference size"), select(
+              [{ value: "match", label: "match — scale to output area (faster)" },
+               { value: "max",   label: "max — 2048px short edge (best identity, slower)" }],
+              state.imgRefImageSize || "max", v => { state.imgRefImageSize = v; persist(); })])]),
+          ]));
+          // Also: pull a previously-generated H3 image straight in as a new reference —
+          // opens the dedicated image gallery's own picker (a second entry point beside
+          // each slot's own generic gallery/upload buttons, which already cover the
+          // rest of the app's galleries).
+          const imgGalBtn = button("🎨 Add from H3 Images", () => imageGalleryOv?.showPicker((inputFilename) => {
+            const list = (state.imgRefImages || []).slice();
+            if (list.length >= 9) { showPopup("9 reference images max.", true); return; }
+            list.push(inputFilename);
+            state.imgRefImages = list;
+            persist(); renderLeft();
+          }));
+          imgGalBtn.style.width = "100%";
+          leftPanel.appendChild(panel([imgGalBtn]));
         }
 
         // ── resolution — one aspect ratio, separate preview/final megapixels ─
@@ -3372,25 +3416,10 @@ app.registerExtension({
           ]),
         ]));
 
-        // ── 3 fixed LoRA slots ────────────────────────────────────────────────
-        const loraOpts = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
-        if (!Array.isArray(state.imgLoras) || state.imgLoras.length !== 3) {
-          state.imgLoras = [0, 1, 2].map(i => (state.imgLoras && state.imgLoras[i]) || { name: "none", strength: 1.0, enabled: true });
-          persist();
-        }
-        const loraKids = [label("LoRA (3 slots)")];
-        state.imgLoras.forEach((l, i) => {
-          const off = l.enabled === false;
-          const tog = el("input", { type: "checkbox" }); tog.checked = !off; tog.style.cursor = "pointer";
-          tog.addEventListener("change", () => { l.enabled = tog.checked; persist(); });
-          const strIn = numberField(l.strength ?? 1.0, v => { l.strength = v; persist(); }, 0.05);
-          const sel = loraSelect(loraOpts, l.name || "none", v => { l.name = v; persist(); });
-          loraKids.push(row([
-            col([el("div", { style: { display: "flex", alignItems: "center", gap: "5px" } }, [tog, sel.el])]),
-            col([label(`slot ${i + 1} strength`), strIn]),
-          ]));
-        });
-        leftPanel.appendChild(panel(loraKids));
+        // ── LoRA — same dynamic Add-LoRA accordion as the video modes ───────────
+        const imgLoraOn = (state.imgLoras || []).filter(l => l && l.enabled !== false && l.name && l.name !== "none").length;
+        leftPanel.appendChild(accordion("imgLora", "LoRA", imgLoraOn ? `${imgLoraOn} active` : "None",
+          () => [mountImgLoraPanel()]));
 
         if (subMode === "charsheet") {
           leftPanel.appendChild(panel([el("div", {
@@ -3406,7 +3435,7 @@ app.registerExtension({
       async function runImageGen({ final = true } = {}) {
         if (running) return;
         const subMode = state.imageGenMode === "ref2i" ? "ref2i" : "t2i";
-        if (subMode === "ref2i" && !state.imgRefImage) { showPopup("Pick a reference image first.", true); return; }
+        if (subMode === "ref2i" && !(state.imgRefImages || []).filter(Boolean).length) { showPopup("Pick at least one reference image first.", true); return; }
         running = true;
         const busyBtn = final ? genBtn : imgPreviewBtn;
         genBtn.disabled = true; imgPreviewBtn.disabled = true;
@@ -3423,9 +3452,11 @@ app.registerExtension({
           const seed = state.seedMode === "fixed" ? (state.seed ?? 0) : randomSeed();
           if (state.seedMode !== "fixed") { state.seed = seed; persist(); seedInput.value = String(seed); }
           const built = buildImageGenGraph(state, ctx.availability || {}, {
-            subMode, final, refImage: subMode === "ref2i" ? state.imgRefImage : null,
+            subMode, final,
+            refImages: subMode === "ref2i" ? state.imgRefImages : null,
+            refImageSize: state.imgRefImageSize || "max",
             prompt: state.imgPrompt || "", seed, previewRes, finalRes,
-            filenamePrefix: `${state.saveSubfolder || SUBFOLDER}/${subMode}_${final ? "final" : "preview"}`,
+            filenamePrefix: `${state.imgSaveSubfolder || state.saveSubfolder || SUBFOLDER}/${subMode}_${final ? "final" : "preview"}`,
           });
           const res = await queuePrompt(built.graph, {
             onProgress: (v, m) => setStatus(`Image Generator — ${Math.round((v / (m || 1)) * 100)}%`),
@@ -4390,6 +4421,114 @@ app.registerExtension({
         return wrap;
       }
 
+      // Image Generator's own LoRA list — same dynamic add/remove/toggle/trigger-word
+      // shape as mountLoraPanel() above, just keyed to state.imgLoras instead of
+      // state.loras so the two modes' LoRA stacks never collide.
+      function mountImgLoraPanel() {
+        const wrap = el("div");
+        function render() {
+          clear(wrap);
+          const loras = state.imgLoras || (state.imgLoras = []);
+          const countEl = label("");
+          const refreshCount = () => {
+            const on = loras.filter(l => l.enabled !== false && l.name && l.name !== "none").length;
+            countEl.textContent = `LoRA (${on}/${loras.length} on)`;
+          };
+          refreshCount();
+
+          const reload = el("button", { type: "button", text: "⟳", title: "Rescan the LoRA folder", style: {
+            flexShrink: "0", cursor: "pointer", fontFamily: "inherit", fontSize: "11px",
+            padding: "1px 7px", borderRadius: "5px",
+            background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+          }});
+          reload.addEventListener("click", async () => {
+            reload.disabled = true; reload.textContent = "…";
+            try {
+              const before = (ctx.availableModels?.loras || []).length;
+              ctx.availableModels = await getModels();
+              const after = (ctx.availableModels?.loras || []).length;
+              showPopup(after === before ? `LoRA list refreshed — ${after} found.`
+                                         : `LoRA list refreshed — ${after} found (${after - before > 0 ? "+" : ""}${after - before}).`, false);
+            } catch { showPopup("Could not refresh the model list.", true); }
+            reload.disabled = false; reload.textContent = "⟳";
+            render();
+          });
+
+          const head0 = el("div", { style: { display: "flex", alignItems: "center", gap: "6px" } });
+          head0.append(countEl, el("div", { style: { flex: "1" } }), reload);
+          const kids = [head0];
+          const all = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
+          loras.forEach((l, i) => {
+            const off = l.enabled === false;
+            const card = el("div", { style: {
+              border: `1px solid ${off ? C.dim : C.border}`, borderRadius: "6px",
+              padding: "6px", display: "flex", flexDirection: "column", gap: "5px",
+              opacity: off ? "0.55" : "1",
+            }});
+            const head = el("div", { style: { display: "flex", alignItems: "center", gap: "5px" } });
+            const tog = el("button", { type: "button", text: off ? "OFF" : "ON", style: {
+              flexShrink: "0", cursor: "pointer", fontFamily: "inherit", fontSize: "10px",
+              padding: "3px 9px", borderRadius: "10px", border: "none", fontWeight: "700",
+              background: off ? "#444" : BRAND, color: "#fff",
+            }});
+            tog.title = off ? "Switched off — neither the weights nor its trigger words are used" : "Switched on";
+            tog.addEventListener("click", () => { l.enabled = off; persist(); render(); });
+
+            const del = el("button", { type: "button", text: "✕", title: "Remove", style: {
+              flexShrink: "0", cursor: "pointer", fontFamily: "inherit", fontSize: "11px",
+              background: "transparent", color: C.err, border: "none", padding: "2px 4px",
+            }});
+            del.addEventListener("click", () => { state.imgLoras.splice(i, 1); persist(); render(); });
+
+            const strWrap = el("div", { style: { flexShrink: "0", width: "62px" } });
+            strWrap.appendChild(numberField(l.strength ?? 1.0, v => { l.strength = v; persist(); }, 0.05));
+            head.append(tog, el("div", { style: { flex: "1" } }), strWrap, del);
+
+            const tw = el("input", { type: "text", placeholder: "Trigger word…", style: {
+              width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+              border: `1px solid ${C.border}`, borderRadius: "4px", padding: "4px 6px",
+              fontSize: "11px", fontFamily: "inherit", outline: "none",
+            }});
+            tw.value = l.triggerWord || "";
+            tw.title = "Added to the image prompt while this LoRA is on";
+            tw.addEventListener("input", () => { l.triggerWord = tw.value; persist(); });
+
+            const sel = loraSelect(all, l.name || "none", async v => {
+              const prev = l.name;
+              l.name = v; persist();
+              if (v && v !== "none") {
+                if (v !== prev) { l.triggerWord = ""; tw.value = ""; }
+                if (!l.triggerWord) {
+                  tw.placeholder = "Loading…";
+                  try {
+                    const d = await getLoraTriggers(v);
+                    if (d.ok && d.triggers?.length) { l.triggerWord = d.triggers.join(", "); tw.value = l.triggerWord; persist(); }
+                  } catch {}
+                  tw.placeholder = "Trigger word…";
+                }
+              } else { l.triggerWord = ""; tw.value = ""; persist(); }
+              refreshCount();
+            });
+
+            card.append(head, sel.el, tw);
+            kids.push(card);
+          });
+          const add = el("button", { type: "button", text: "+ Add LoRA", style: {
+            width: "100%", cursor: "pointer", fontFamily: "inherit", fontSize: "11px",
+            padding: "6px", borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+          }});
+          add.addEventListener("click", () => {
+            if (state.imgLoras.length >= 4) { showPopup("4 LoRAs max.", true); return; }
+            state.imgLoras.push({ name: "none", strength: 1.0, triggerWord: "", enabled: true });
+            persist(); render();
+          });
+          kids.push(add);
+          wrap.appendChild(panel(kids));
+        }
+        render();
+        return wrap;
+      }
+
       // ══ SEED + GENERATE ═════════════════════════════════════════════════════
       const seedInput = numberField(state.seed, v => { state.seed = v; persist(); }, 1);
       const seedModeDD = select(
@@ -4409,6 +4548,10 @@ app.registerExtension({
         if (seedGenWrap.parentNode && seedGenWrap !== wrap) seedGenWrap.parentNode.removeChild(seedGenWrap);
         if (ppPreviewWrap.parentNode && ppPreviewWrap !== wrap) ppPreviewWrap.parentNode.removeChild(ppPreviewWrap);
         leftOuter.appendChild(wrap);
+        // Default hidden every time — only Image Generator's own render (t2i/ref2i) turns
+        // it back on, right after calling this. Without this reset it stayed visible after
+        // switching away from Image Generator into any other mode (video modes included).
+        imgPreviewBtn.style.display = "none";
       }
 
       const genBtn = button("▶ Generate", null, "primary");
@@ -4494,13 +4637,16 @@ app.registerExtension({
       // Image Generator only (t2i/ref2i): a preview-resolution look before spending the
       // full run's time on the final resolution's latent-upscale pass. Hidden for every
       // other mode (including Character Sheet, which has no preview step) — visibility is
-      // synced from renderImageGenLeft().
+      // synced from renderImageGenLeft(). Its own full-width row, same light-purple/
+      // BRAND-text look as Postprocess's own Preview button, rather than squeezed in as a
+      // 5th small button alongside Generate/Stop/Next/Queue.
       const imgPreviewBtn = el("button", { type: "button", text: "👁 Preview", style: {
-        display: "none", cursor: "pointer", flex: "1", padding: "11px", fontSize: "13px", fontWeight: "700",
-        borderRadius: "6px", border: "none", background: "#e4d4fb", color: BRAND,
+        display: "none", cursor: "pointer", width: "100%", padding: "10px", fontSize: "13px", fontWeight: "700",
+        borderRadius: "6px", border: "none", background: "#e4d4fb", color: BRAND, marginBottom: "4px",
       }});
       imgPreviewBtn.addEventListener("click", () => runImageGen({ final: false }));
-      seedGenWrap.appendChild(row([imgPreviewBtn, genBtn, stopBtn, nextGenBtn, queueListBtn]));
+      seedGenWrap.appendChild(imgPreviewBtn);
+      seedGenWrap.appendChild(row([genBtn, stopBtn, nextGenBtn, queueListBtn]));
 
       // ── Queued-runs popup ──────────────────────────────────────────────────
       const queueListOv = { el: el("div", { style: {
@@ -5818,6 +5964,9 @@ app.registerExtension({
       galleryOv = createGalleryOverlay(state, ctx);
       root.appendChild(galleryOv.el);
       document.body.appendChild(galleryOv.playerEl);   // fullscreen player lives above everything
+
+      imageGalleryOv = createImageGalleryOverlay(state, ctx);
+      root.appendChild(imageGalleryOv.el);
       // Any reference-video picker (left panel media slots, Prompt Edit's per-clip slots)
       // opens this same gallery instead of a separate, badge-less grid of its own.
       ctx.pickVideoFromGallery = (onPick, opts) => galleryOv.showPicker(onPick, opts);
@@ -5831,6 +5980,7 @@ app.registerExtension({
         if (commonOv?.isOpen())    { commonOv.hide(); return; }
         if (promptEditOv?.isOpen()) { promptEditOv.hide(); return; }
         if (galleryOv?.isOpen())   { galleryOv.hide(); return; }
+        if (imageGalleryOv?.isOpen()) { imageGalleryOv.hide(); return; }
         if (helpEl.style.display !== "none") { helpEl.style.display = "none"; return; }
         if (queueListOv.el.style.display !== "none") { queueListOv.el.style.display = "none"; return; }
         if (settingsOv?.el.style.display !== "none") { settingsOv.hide(); return; }

@@ -2249,6 +2249,8 @@ async def mmh3_get_config(request):
         "turbo_lora_strength": cfg.get("turbo_lora_strength", 1.0),
         "upscale_model":    cfg.get("upscale_model",    ""),
         "save_subfolder":   cfg.get("save_subfolder")   or MMH3_SUBFOLDER,
+        "img_save_subfolder": cfg.get("img_save_subfolder", ""),
+        "sheet_video_save_subfolder": cfg.get("sheet_video_save_subfolder", ""),
         "negative_prompt":  cfg.get("negative_prompt",  ""),
         "prompt_suffix":    cfg.get("prompt_suffix",    ""),
         "avg_minutes_per_clip": cfg.get("avg_minutes_per_clip", 13.0),

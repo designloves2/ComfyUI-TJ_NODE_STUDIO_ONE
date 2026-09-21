@@ -580,6 +580,37 @@ export function createSettingsOverlay(state, ctx) {
       el("div", { text: "Every clip is always written to disk as its own video; the stitched file is written alongside them.", style: { fontSize: "10px", color: C.muted } }),
     ]));
 
+    // Image Generator writes stills to its own folder, separate from the video path
+    // above, so the dedicated H3 Image Gallery (which only ever lists this folder) and
+    // the video gallery never mix each other's files just because they share a path.
+    const imgPathIn = el("input", { type: "text", placeholder: SUBFOLDER, style: {
+      width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+      border: `1px solid ${C.border}`, borderRadius: "6px", padding: "7px",
+      fontSize: "12px", fontFamily: "inherit",
+    }});
+    imgPathIn.value = state.imgSaveSubfolder || "";
+    imgPathIn.addEventListener("input", () => { state.imgSaveSubfolder = imgPathIn.value.trim(); ctx.persist(); });
+
+    // Character Sheet saves the raw multi-shot render (the "set" a sheet frame can later
+    // be re-extracted from) as a video, alongside the assembled sheet image — its own path
+    // since it's neither an ordinary H3 clip nor an Image Generator still.
+    const sheetVidPathIn = el("input", { type: "text", placeholder: SUBFOLDER + "/sheets", style: {
+      width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+      border: `1px solid ${C.border}`, borderRadius: "6px", padding: "7px",
+      fontSize: "12px", fontFamily: "inherit",
+    }});
+    sheetVidPathIn.value = state.sheetVideoSaveSubfolder || "";
+    sheetVidPathIn.addEventListener("input", () => { state.sheetVideoSaveSubfolder = sheetVidPathIn.value.trim(); ctx.persist(); });
+
+    wrap.appendChild(panel([
+      label("Image Generator Save Folder (inside ComfyUI output/)"), imgPathIn,
+      el("div", { text: "Empty = same as the Save Folder above. Read by the 🎨 H3 Image Gallery and by T2I/Reference to Image/Character Sheet's own saves.",
+        style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+      label("Character Sheet — paired video Save Folder"), sheetVidPathIn,
+      el("div", { text: "Character Sheet saves the raw 8-shot render here (as a video) alongside the assembled sheet image, so any frame can be re-extracted later. Empty = same as the Image Generator folder above.",
+        style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+    ]));
+
     const avgIn = numField(state.avgMinutesPerClip ?? 13, v => { state.avgMinutesPerClip = v; ctx.persist(); ctx.refreshPlan?.(); }, { step: "0.5" });
     const avgNote = el("div", { text: "Checking Gallery for past clips at the current settings…",
       style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } });
@@ -688,6 +719,8 @@ export function createSettingsOverlay(state, ctx) {
       turbo_lora_strength: state.turboLoraStrength ?? 1.0,
       upscale_model:   state.upscaleModel  || "",
       save_subfolder:  state.saveSubfolder || "",
+      img_save_subfolder: state.imgSaveSubfolder || "",
+      sheet_video_save_subfolder: state.sheetVideoSaveSubfolder || "",
       prompt_suffix:   state.promptSuffix  || "",
       avg_minutes_per_clip: state.avgMinutesPerClip ?? 13,
       preview_tiny_vae: state.previewTinyVae || "",
@@ -894,6 +927,8 @@ export function createSettingsOverlay(state, ctx) {
     // (and the gallery, and every "From gallery" picker) always came back to the
     // hardcoded SUBFOLDER default until you retyped it, every single session.
     if (cfg.save_subfolder && !state.saveSubfolder) state.saveSubfolder = cfg.save_subfolder;
+    if (cfg.img_save_subfolder && !state.imgSaveSubfolder) state.imgSaveSubfolder = cfg.img_save_subfolder;
+    if (cfg.sheet_video_save_subfolder && !state.sheetVideoSaveSubfolder) state.sheetVideoSaveSubfolder = cfg.sheet_video_save_subfolder;
     if (cfg.stitch_at_end != null)          state.stitchAtEnd        = cfg.stitch_at_end;
     if (cfg.trim_last_clip != null)         state.trimLastClip       = cfg.trim_last_clip;
     if (cfg.unload_between_clips != null)   state.unloadBetweenClips = cfg.unload_between_clips;

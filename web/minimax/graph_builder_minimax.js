@@ -1870,7 +1870,7 @@ const IMG = {
   unet: "IMG:unet", sage: "IMG:sage", memSage: "IMG:mem_sage",
   lora: (i) => `IMG:lora_${i}`,
   clip: "IMG:clip", vaeV: "IMG:vae_video",
-  ref: "IMG:ref_image", refResize: "IMG:ref_resize",
+  ref: (i) => `IMG:ref_image_${i}`,
   cond: "IMG:cond",
   noise: "IMG:noise", sampSel1: "IMG:sampler_sel1", sched: "IMG:scheduler",
   guider1: "IMG:guider1", sampler1: "IMG:sampler1",
@@ -1904,15 +1904,19 @@ function buildImageLoraChain(g, state, modelLink) {
  * @param opts.final    false = preview pass only (decode the cheap first pass, don't
  *                      save real metadata); true = full run (adds the latent-upscale
  *                      second pass, decodes at the final resolution, saves for real)
- * @param opts.refImage filename already in ComfyUI's input/ (ref2i only)
+ * @param opts.refImages up to 9 filenames already in ComfyUI's input/ (ref2i only) —
+ *                        same ref_images.ref_image_N shape as the main Reference to
+ *                        Video mode, images only (no ref videos/audios)
+ * @param opts.refImageSize "match" | "max" (ref2va's own ref_image_size option)
  * @param opts.prompt   plain string — MiniMaxH3ImageToVideo/ReferenceToVideo encode text
  *                      themselves, no separate CLIPTextEncode
  * @param opts.seed, opts.previewRes {width,height}, opts.finalRes {width,height}
  * @param opts.filenamePrefix
  */
 export function buildImageGenGraph(state, avail, opts) {
-  const { subMode, final, refImage, prompt, seed, previewRes, finalRes, filenamePrefix } = opts;
-  if (subMode === "ref2i" && !refImage) throw new Error("Reference to Image needs a reference image.");
+  const { subMode, final, refImages, refImageSize, prompt, seed, previewRes, finalRes, filenamePrefix } = opts;
+  const refList = (refImages || []).filter(Boolean).slice(0, 9);
+  if (subMode === "ref2i" && !refList.length) throw new Error("Reference to Image needs at least one reference image.");
   const g = {};
 
   const unetName = subMode === "ref2i" ? state.unetReference : state.unetFirstLast;
@@ -1939,9 +1943,11 @@ export function buildImageGenGraph(state, avail, opts) {
     prompt, width: previewRes.width, height: previewRes.height, length: IMG_LENGTH,
   };
   if (subMode === "ref2i") {
-    g[IMG.ref] = { class_type: "LoadImage", inputs: { image: refImage } };
-    condInputs.ref_image_size = "max";
-    condInputs["ref_images.ref_image_0"] = [IMG.ref, 0];
+    condInputs.ref_image_size = refImageSize || "max";
+    refList.forEach((name, i) => {
+      g[IMG.ref(i)] = { class_type: "LoadImage", inputs: { image: name } };
+      condInputs[`ref_images.ref_image_${i}`] = [IMG.ref(i), 0];
+    });
     g[IMG.cond] = { class_type: "MiniMaxH3ReferenceToVideo", inputs: condInputs };
   } else {
     g[IMG.cond] = { class_type: "MiniMaxH3ImageToVideo", inputs: condInputs };
@@ -1990,5 +1996,46 @@ export function buildImageGenGraph(state, avail, opts) {
   g[IMG.save] = { class_type: "SaveImage", inputs: { filename_prefix: filenamePrefix, images: [IMG.frame, 0] } };
 
   return { graph: g, saveNode: IMG.save };
+}
+
+// ── H3 image gallery post-process (Deblur + RTX VSR only) ───────────────────────────
+//
+// The dedicated H3 image gallery keeps only Deblur/RTX VSR from the video gallery's
+// wider post-process set (no Interpolate/Resize/Stitch — those are video-only concepts,
+// and the image gallery is its own separate module, not the video one modified in
+// place). Same shape as buildUpscaleGraph but LoadImage/SaveImage instead of
+// VHS_LoadVideo/VHS_VideoCombine — a still has no audio/fps/chunking to carry through.
+const IMGPP = { load: "IMGPP:load", deblur: "IMGPP:deblur", rtxCrop: "IMGPP:rtx_crop", rtx: "IMGPP:rtx", save: "IMGPP:save" };
+
+/**
+ * @param opts.inputFile  filename already in ComfyUI's input folder
+ * @param opts.deblur     "none" | "LOW" | "MEDIUM" | "HIGH" | "ULTRA"
+ * @param opts.rtx        null, or { rtxSizeMode, rtxScale, rtxShort, rtxLong, rtxW, rtxH,
+ *                         rtxCropAnchor, rtxQuality, srcW, srcH } to run RTX VSR
+ * @param opts.folder, opts.stem, opts.saveSuffix
+ */
+export function buildImageUpscaleGraph(opts, avail) {
+  const { inputFile, deblur = "none", rtx = null, folder, stem, saveSuffix = "_post" } = opts;
+  const g = {};
+  g[IMGPP.load] = { class_type: "LoadImage", inputs: { image: inputFile } };
+  let image = [IMGPP.load, 0];
+  let used = false;
+
+  if (deblur && deblur !== "none") {
+    if (!has(avail, "TJ_RTXDeblur")) throw new Error("RTX Deblur (TJ_RTXDeblur) is not installed.");
+    g[IMGPP.deblur] = { class_type: "TJ_RTXDeblur", inputs: { images: image, strength: deblur } };
+    image = [IMGPP.deblur, 0];
+    used = true;
+  }
+  if (rtx) {
+    if (!has(avail, "RTXVideoSuperResolution")) throw new Error("RTXVideoSuperResolution is not installed.");
+    const r = buildRtxNode(g, { crop: IMGPP.rtxCrop, rtx: IMGPP.rtx }, image, rtx, rtx.srcW || 1024, rtx.srcH || 1024);
+    image = r.images;
+    used = true;
+  }
+  if (!used) throw new Error("Nothing to do — enable Deblur, RTX VSR, or both.");
+
+  g[IMGPP.save] = { class_type: "SaveImage", inputs: { filename_prefix: `${folder}/${stem}${saveSuffix}`, images: image } };
+  return { graph: g, saveNode: IMGPP.save };
 }
 
