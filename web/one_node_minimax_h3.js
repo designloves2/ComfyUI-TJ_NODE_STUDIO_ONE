@@ -23,7 +23,7 @@ import {
   h3OptimizerBlockedReason, h3OptimizerOverlapNote,
   effectiveTurbo, effectiveSteps, migrateLegacyAccel,
   continuityModesFor, generationModesFor, configIssues, ltxUpscaleReady, ltxUpscaleMissing,
-  faceRefineReady, faceRefineMissing, postprocessReady,
+  faceRefineReady, faceRefineMissing, postprocessReady, IMAGE_GEN_MODES, imageGenSubModeReady,
   clipPlan, formatDuration, formatClock, framesToSeconds, alignFrameCount, FPS, ONE_TAKE_OVERLAP_FRAMES, resolveResolution,
   parseBrief, groupShots, composeClipPrompt, composeStitchedPrompt,
   turboLoraForMode, pddFileForMode, clipAssets, explainGenerationError,
@@ -39,7 +39,7 @@ import {
   saveConfig, analyzeImagesNative, analyzeImagesOpenRouter, writeBriefNative, writeBriefOpenRouter, getMediaInfo,
   listPromptSets, getPromptSet, getClipLastFrame, analyzeImageLlama, writeBriefLlama,
 } from "./minimax/api_minimax.js";
-import { buildClipGraph, buildLtxUpscaleGraph, buildFaceRefineGraph, buildPostprocessGraph, NODE_IDS, previewNodeKey } from "./minimax/graph_builder_minimax.js";
+import { buildClipGraph, buildLtxUpscaleGraph, buildFaceRefineGraph, buildPostprocessGraph, buildImageGenGraph, NODE_IDS, previewNodeKey } from "./minimax/graph_builder_minimax.js";
 import { PIPELINE_PRESETS, allPresets, captureAxes, matchPreset, applyPreset } from "./minimax/presets_minimax.js";
 import { createPresetDialogs } from "./minimax/ui_presets_minimax.js";
 import { createSettingsOverlay } from "./minimax/ui_app_settings_minimax.js";
@@ -1182,18 +1182,19 @@ app.registerExtension({
         const isLtx = state.generationMode === "ltxupscale";
         const isFaceRefine = state.generationMode === "facerefine";
         const isPostprocess = state.generationMode === "postprocess";
+        const isImageGen = state.generationMode === "imagegen";
         // The bottom prompt area is per-mode: the H3 shot list, or (LTX Upscale / Face
-        // Refine) one plain prompt box down here — same spot every mode uses, not the
-        // left panel. Common / Split / Add are H3-only. Postprocess needs no prompt at
-        // all — every control lives in the left panel's accordion, so this area just
-        // says so instead of showing an empty/irrelevant box.
-        const hideShotControls = isLtx || isFaceRefine || isPostprocess;
+        // Refine / Image Generator) one plain prompt box down here — same spot every mode
+        // uses, not the left panel. Common / Split / Add are H3-only. Postprocess needs no
+        // prompt at all — every control lives in the left panel's accordion, so this area
+        // just says so instead of showing an empty/irrelevant box.
+        const hideShotControls = isLtx || isFaceRefine || isPostprocess || isImageGen;
         commonBtn.style.display  = hideShotControls ? "none" : "";
         splitBtn.style.display   = hideShotControls ? "none" : "";
         addBtn.style.display     = hideShotControls ? "none" : "";
         resetTAHBtn.style.display = hideShotControls ? "none" : "";
         promptTitle.textContent = isLtx ? "UPSCALE PROMPT" : isFaceRefine ? "FACE REFINE PROMPT"
-          : isPostprocess ? "POSTPROCESS" : "PROMPTS";
+          : isPostprocess ? "POSTPROCESS" : isImageGen ? "IMAGE PROMPT" : "PROMPTS";
         promptList.style.gap = hideShotControls ? "6px" : "4px";
         if (isLtx) { renderLtxPrompt(); return; }
         if (isFaceRefine) { renderFaceRefinePrompt(); return; }
@@ -1204,6 +1205,7 @@ app.registerExtension({
           }));
           return;
         }
+        if (isImageGen) { renderImageGenPrompt(); return; }
         const plan = currentPlan();
         const onCount = state.prompts.filter(p => promptEnabled(p)).length;
         promptCount.textContent = `(${plan.promptCount} prompt${plan.promptCount > 1 ? "s" : ""} · ${onCount} on → ${plan.count} clip${plan.count > 1 ? "s" : ""} · ${plan.actualSeconds.toFixed(2)}s)`;
@@ -1448,6 +1450,24 @@ app.registerExtension({
         if (_ltxBusy) promptList.append(el("div", {
           text: "⏳ Running the LLM — the prompt box is locked until it returns.",
           style: { fontSize: "10px", color: BRAND, fontWeight: "600" } }));
+      }
+
+      // Image Generator's bottom prompt box — plain single textarea, no LLM helpers (v1).
+      function renderImageGenPrompt() {
+        clear(promptList);
+        promptCount.textContent = "";
+        const ta = el("textarea", {
+          placeholder: "Describe the image…",
+          style: { flex: "1", width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+                   border: `1px solid ${C.border}`, borderRadius: "6px", padding: "8px", fontSize: "12px",
+                   fontFamily: "inherit", outline: "none", resize: "none", minHeight: "0" },
+        });
+        ta.value = state.imgPrompt || "";
+        ta.addEventListener("input", () => { state.imgPrompt = ta.value; persist(); });
+        ta.addEventListener("focus", () => ta.style.borderColor = BRAND);
+        ta.addEventListener("blur", () => ta.style.borderColor = C.border);
+        promptList.style.gap = "6px";
+        promptList.append(ta);
       }
 
       // "Prompt Edit" in LTX mode → a modal: source video on top, prompt below.
@@ -3267,6 +3287,173 @@ app.registerExtension({
         }
       }
 
+      // ── Image Generator mode left panel ──────────────────────────────────────
+      // T2I / Reference to Image (Character Sheet ships separately) — not a new model,
+      // the same H3 fl2va/ref2va pipeline run at a short fixed length and read back as a
+      // still (see buildImageGenGraph's own comment). Keeps Seed/Mode + Generate/Stop
+      // (unlike Postprocess) and adds a "👁 Preview" button next to Generate for a cheap
+      // look at the preview resolution before spending the final-resolution run.
+      function setImgRefSource(inputFilename) {
+        state.imgRefImage = inputFilename;
+        persist(); renderLeft();
+      }
+      function renderImageGenLeft() {
+        const prevScroll = leftPanel.scrollTop;
+        clear(leftPanel);
+        const subMode = IMAGE_GEN_MODES.some(m => m.key === state.imageGenMode) ? state.imageGenMode : "t2i";
+        if (state.imageGenMode !== subMode) { state.imageGenMode = subMode; persist(); }
+
+        // ── sub-mode pills ───────────────────────────────────────────────────
+        const pillRow = el("div", { style: { display: "flex", gap: "4px", flexWrap: "wrap" } });
+        IMAGE_GEN_MODES.forEach(m => {
+          const active = m.key === subMode;
+          const b = el("button", { type: "button", text: m.label, title: m.hint, style: {
+            cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "6px 8px", flex: "1",
+            borderRadius: "6px", fontWeight: active ? "700" : "400",
+            background: active ? BRAND : C.bg2, color: active ? "#fff" : C.text,
+            border: `1px solid ${active ? BRAND : C.border}`,
+          }});
+          b.addEventListener("click", () => { state.imageGenMode = m.key; persist(); renderLeft(); renderPrompts(); });
+          pillRow.appendChild(b);
+        });
+        leftPanel.appendChild(panel([pillRow]));
+
+        const ready = subMode === "charsheet" ? imageGenSubModeReady("ref2i", state) : imageGenSubModeReady(subMode, state);
+        if (!ready) {
+          leftPanel.appendChild(panel([el("div", {
+            html: `⚙ <b>${IMAGE_GEN_MODES.find(m => m.key === subMode).label}</b> needs its model set first — `
+              + `open <b>⚙ Settings → Models</b> and set the ${subMode === "t2i" ? "First/Last" : "Reference"} UNET, text encoder and video VAE.`,
+            style: { fontSize: "12px", lineHeight: "1.6" } })]));
+        }
+
+        // ── reference image (ref2i / charsheet only) ────────────────────────
+        if (subMode === "ref2i" || subMode === "charsheet") {
+          const hasRef = !!state.imgRefImage;
+          const card = el("div", { style: {
+            position: "relative", width: "100%", aspectRatio: "1 / 1", background: "#000",
+            borderRadius: "8px", overflow: "hidden", border: `1px solid ${hasRef ? BRAND : C.border}`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }});
+          if (hasRef) {
+            const img = el("img", { src: `/view?filename=${encodeURIComponent(state.imgRefImage)}&type=input`,
+              style: { width: "100%", height: "100%", objectFit: "contain", display: "block" } });
+            card.appendChild(img);
+            card.appendChild(el("button", { type: "button", text: "✕", title: "Clear reference image", style: {
+              position: "absolute", top: "6px", right: "6px", zIndex: "3", width: "24px", height: "24px",
+              border: "none", borderRadius: "6px", background: "rgba(0,0,0,0.7)", color: "#fff", cursor: "pointer", fontSize: "12px",
+            }, onclick: () => { state.imgRefImage = ""; persist(); renderLeft(); } }));
+          } else {
+            card.appendChild(el("div", { text: "no reference image", style: { color: C.muted, fontSize: "12px" } }));
+          }
+          const imgFileInp = el("input", { type: "file", accept: "image/*", style: { display: "none" } });
+          imgFileInp.addEventListener("change", async () => {
+            const f = imgFileInp.files[0]; imgFileInp.value = "";
+            if (!f) return;
+            try { showPopup("Uploading…", false); const name = await uploadMedia(f); setImgRefSource(name); }
+            catch (e) { showPopup(e.message, true); }
+          });
+          const galBtn = button("🖼 From gallery", () => galleryOv?.showPicker((inputFilename) => setImgRefSource(inputFilename)));
+          const upBtn = button("⬆ Upload", () => imgFileInp.click(), "default");
+          galBtn.style.flex = "1"; upBtn.style.flex = "1";
+          leftPanel.appendChild(panel([label("Reference image"), card,
+            el("div", { style: { display: "flex", gap: "8px" } }, [galBtn, upBtn]), imgFileInp]));
+        }
+
+        // ── resolution — one aspect ratio, separate preview/final megapixels ─
+        leftPanel.appendChild(panel([
+          label("Resolution"),
+          row([col([label("Aspect"), select(ASPECTS.map(a => ({ value: a.label, label: a.label })),
+            state.imgAspect || "2:3 Portrait", v => { state.imgAspect = v; persist(); })])]),
+          row([
+            col([label("Preview MP"), numberField(state.imgPreviewMp ?? 0.2,
+              v => { state.imgPreviewMp = Math.max(0.05, v); persist(); }, 0.05)]),
+            col([label("Final MP"), numberField(state.imgFinalMp ?? 1.0,
+              v => { state.imgFinalMp = Math.max(0.1, v); persist(); }, 0.1)]),
+          ]),
+        ]));
+
+        // ── 3 fixed LoRA slots ────────────────────────────────────────────────
+        const loraOpts = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
+        if (!Array.isArray(state.imgLoras) || state.imgLoras.length !== 3) {
+          state.imgLoras = [0, 1, 2].map(i => (state.imgLoras && state.imgLoras[i]) || { name: "none", strength: 1.0, enabled: true });
+          persist();
+        }
+        const loraKids = [label("LoRA (3 slots)")];
+        state.imgLoras.forEach((l, i) => {
+          const off = l.enabled === false;
+          const tog = el("input", { type: "checkbox" }); tog.checked = !off; tog.style.cursor = "pointer";
+          tog.addEventListener("change", () => { l.enabled = tog.checked; persist(); });
+          const strIn = numberField(l.strength ?? 1.0, v => { l.strength = v; persist(); }, 0.05);
+          const sel = loraSelect(loraOpts, l.name || "none", v => { l.name = v; persist(); });
+          loraKids.push(row([
+            col([el("div", { style: { display: "flex", alignItems: "center", gap: "5px" } }, [tog, sel.el])]),
+            col([label(`slot ${i + 1} strength`), strIn]),
+          ]));
+        });
+        leftPanel.appendChild(panel(loraKids));
+
+        if (subMode === "charsheet") {
+          leftPanel.appendChild(panel([el("div", {
+            text: "Character Sheet ships in a follow-up pass — pick T2I or Reference to Image for now.",
+            style: { fontSize: "11.5px", color: C.warn, lineHeight: "1.6" } })]));
+        }
+
+        useBottomWrap(seedGenWrap);
+        imgPreviewBtn.style.display = (subMode === "t2i" || subMode === "ref2i") ? "" : "none";
+        leftPanel.scrollTop = prevScroll;
+      }
+
+      async function runImageGen({ final = true } = {}) {
+        if (running) return;
+        const subMode = state.imageGenMode === "ref2i" ? "ref2i" : "t2i";
+        if (subMode === "ref2i" && !state.imgRefImage) { showPopup("Pick a reference image first.", true); return; }
+        running = true;
+        const busyBtn = final ? genBtn : imgPreviewBtn;
+        genBtn.disabled = true; imgPreviewBtn.disabled = true;
+        const genLabel = genBtn.textContent, previewLabel = imgPreviewBtn.textContent;
+        busyBtn.textContent = "⏳ Running…";
+        setStatus("Image Generator running…");
+        try {
+          if (!ctx.availability || !Object.keys(ctx.availability).length) {
+            const av = await getNodeAvailability();
+            ctx.availability = av.available || {}; ctx.availabilityInfo = av;
+          }
+          const previewRes = resolveResolution(state.imgAspect || "2:3 Portrait", state.imgPreviewMp ?? 0.2);
+          const finalRes = resolveResolution(state.imgAspect || "2:3 Portrait", state.imgFinalMp ?? 1.0);
+          const seed = state.seedMode === "fixed" ? (state.seed ?? 0) : randomSeed();
+          if (state.seedMode !== "fixed") { state.seed = seed; persist(); seedInput.value = String(seed); }
+          const built = buildImageGenGraph(state, ctx.availability || {}, {
+            subMode, final, refImage: subMode === "ref2i" ? state.imgRefImage : null,
+            prompt: state.imgPrompt || "", seed, previewRes, finalRes,
+            filenamePrefix: `${state.saveSubfolder || SUBFOLDER}/${subMode}_${final ? "final" : "preview"}`,
+          });
+          const res = await queuePrompt(built.graph, {
+            onProgress: (v, m) => setStatus(`Image Generator — ${Math.round((v / (m || 1)) * 100)}%`),
+          });
+          const o = res.byNode[built.saveNode]?.images?.[0];
+          if (!o) throw new Error("No output produced.");
+          const url = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=output`;
+          lastResultURL = url; previewLocked = true;
+          placeholder.style.display = "none"; frDetectBanner.style.display = "none"; fvsrBanner.style.display = "none";
+          try { previewVid.pause(); } catch {}
+          previewVid.style.display = "none";
+          try { resultVid.pause(); } catch {}
+          resultVid.style.display = "none";
+          previewImg.src = url; previewImg.style.display = "block";
+          badge.style.display = "block"; fsBtn.style.display = "none"; compareBtn.style.display = "none";
+          setStatus(`✓ Image Generator done${final ? "" : " (preview)"}.`);
+          showPopup(final ? "Image finished — saved to output." : "Preview ready.", false);
+        } catch (e) {
+          setStatus(`Error: ${e?.message || e}`);
+          showPopup(e?.message || String(e), true);
+        } finally {
+          running = false;
+          genBtn.disabled = false; genBtn.textContent = genLabel || "▶ Generate";
+          imgPreviewBtn.disabled = false; imgPreviewBtn.textContent = previewLabel || "👁 Preview";
+          try { await freeMemory(); } catch {}
+        }
+      }
+
       function renderLeft() {
         // Every control in this column re-runs renderLeft(), which rebuilds the whole
         // panel — and a rebuilt scroll container starts back at the top. Ticking one
@@ -3276,6 +3463,7 @@ app.registerExtension({
         if (state.generationMode === "ltxupscale") { renderLtxUpscaleLeft(); return; }
         if (state.generationMode === "facerefine") { renderFaceRefineLeft(); return; }
         if (state.generationMode === "postprocess") { renderPostprocessLeft(); return; }
+        if (state.generationMode === "imagegen") { renderImageGenLeft(); return; }
         const prevScroll = leftPanel.scrollTop;
         const contModes = continuityModesFor(state.generationMode, state);
         const lockAvailable = !!ctx.availability?.TJ_H3_AudioLock;
@@ -4303,7 +4491,16 @@ app.registerExtension({
         renderQueueListPopup();
         queueListOv.el.style.display = "flex";
       });
-      seedGenWrap.appendChild(row([genBtn, stopBtn, nextGenBtn, queueListBtn]));
+      // Image Generator only (t2i/ref2i): a preview-resolution look before spending the
+      // full run's time on the final resolution's latent-upscale pass. Hidden for every
+      // other mode (including Character Sheet, which has no preview step) — visibility is
+      // synced from renderImageGenLeft().
+      const imgPreviewBtn = el("button", { type: "button", text: "👁 Preview", style: {
+        display: "none", cursor: "pointer", flex: "1", padding: "11px", fontSize: "13px", fontWeight: "700",
+        borderRadius: "6px", border: "none", background: "#e4d4fb", color: BRAND,
+      }});
+      imgPreviewBtn.addEventListener("click", () => runImageGen({ final: false }));
+      seedGenWrap.appendChild(row([imgPreviewBtn, genBtn, stopBtn, nextGenBtn, queueListBtn]));
 
       // ── Queued-runs popup ──────────────────────────────────────────────────
       const queueListOv = { el: el("div", { style: {
@@ -4937,6 +5134,7 @@ app.registerExtension({
         if (running) return;
         if (state.generationMode === "ltxupscale" && !resume) return runLtxUpscale();
         if (state.generationMode === "facerefine" && !resume) return runFaceRefine();
+        if (state.generationMode === "imagegen" && !resume) return runImageGen({ final: true });
         running = true; stopRequested = false;
         startWakeAudio();
         startQueueWatch();

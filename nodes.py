@@ -2727,6 +2727,9 @@ MMH3_OPTIONAL_NODES = [
     # non-generative (YCbCr skin-likelihood mask, no model/checkpoint) — ported from
     # VRGDG-SeedVR2-TensorRT-Studio's apply_skin_finishing()/apply_skin_microtexture().
     "TJ_SkinRetouch",
+    # Image Generator (T2I/Ref2I) — 2nd-pass latent upscale between the cheap preview-res
+    # first pass and the final-res decode.
+    "MinimaxH3LatentUpscaler3D",
     # FlashVSR VSR (lihaoyun6/ComfyUI-FlashVSR-Ultra-Fast, GPL-3.0) — tiled diffusion
     # video super-resolution, offered as a 4th Upscale option alongside RTX VSR
     "FlashVSRInitPipe", "FlashVSRNodeAdv",

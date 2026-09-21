@@ -1855,3 +1855,140 @@ export function buildPostprocessGraph(opts, avail) {
   return { graph: g, saveNode: PPX.save, usedSteps, upscaleUsedInfo };
 }
 
+// ── Image Generator (T2I / Reference to Image) ──────────────────────────────────────
+//
+// Not a separate image model — the same H3 video pipeline (MiniMaxH3ImageToVideo /
+// MiniMaxH3ReferenceToVideo) run at a short fixed length (8 frames) and read back as a
+// single still. Mirrors the reference workflow the user supplied
+// ("MiniMax-H3-Image-Generation.json"): a cheap first pass at the "preview" resolution,
+// then — only for a real (non-preview) run — a second pass through
+// MinimaxH3LatentUpscaler3D up to the "final" resolution, using the exact fixed 3-step
+// sigma schedule the reference workflow wires in (no user-facing step count here; this
+// mode intentionally does not share the main pipeline's turbo/accelerator stack — it's
+// its own small, fixed pipeline plus up to 3 user LoRA slots).
+const IMG = {
+  unet: "IMG:unet", sage: "IMG:sage", memSage: "IMG:mem_sage",
+  lora: (i) => `IMG:lora_${i}`,
+  clip: "IMG:clip", vaeV: "IMG:vae_video",
+  ref: "IMG:ref_image", refResize: "IMG:ref_resize",
+  cond: "IMG:cond",
+  noise: "IMG:noise", sampSel1: "IMG:sampler_sel1", sched: "IMG:scheduler",
+  guider1: "IMG:guider1", sampler1: "IMG:sampler1",
+  sepAV: "IMG:sep_av", latentUp: "IMG:latent_up", concatAV: "IMG:concat_av",
+  sampSel2: "IMG:sampler_sel2", guider2: "IMG:guider2", sigmas2: "IMG:sigmas2", sampler2: "IMG:sampler2",
+  decode: "IMG:decode", frame: "IMG:frame", save: "IMG:save",
+};
+
+// The reference workflow's own fixed second-pass schedule ("3 step Sigmas").
+const IMG_PASS2_SIGMAS = "0.9035, 0.6316, 0.3158, 0.0000";
+// Frame count for the short clip a still is read back from — fixed, not user-facing (the
+// reference workflow's own PrimitiveInt value); ImageFromBatch's batch_index below always
+// matches it, so this is the one place both must agree if it's ever changed.
+const IMG_LENGTH = 8;
+
+function buildImageLoraChain(g, state, modelLink) {
+  const loras = Array.isArray(state.imgLoras) ? state.imgLoras : [];
+  let link = modelLink;
+  loras.slice(0, 3).forEach((l, i) => {
+    if (!l || l.enabled === false || !l.name || l.name === "none") return;
+    g[IMG.lora(i)] = { class_type: "LoraLoaderModelOnly", inputs: {
+      lora_name: l.name, strength_model: l.strength ?? 1.0, model: link,
+    }};
+    link = [IMG.lora(i), 0];
+  });
+  return link;
+}
+
+/**
+ * @param opts.subMode  "t2i" | "ref2i"
+ * @param opts.final    false = preview pass only (decode the cheap first pass, don't
+ *                      save real metadata); true = full run (adds the latent-upscale
+ *                      second pass, decodes at the final resolution, saves for real)
+ * @param opts.refImage filename already in ComfyUI's input/ (ref2i only)
+ * @param opts.prompt   plain string — MiniMaxH3ImageToVideo/ReferenceToVideo encode text
+ *                      themselves, no separate CLIPTextEncode
+ * @param opts.seed, opts.previewRes {width,height}, opts.finalRes {width,height}
+ * @param opts.filenamePrefix
+ */
+export function buildImageGenGraph(state, avail, opts) {
+  const { subMode, final, refImage, prompt, seed, previewRes, finalRes, filenamePrefix } = opts;
+  if (subMode === "ref2i" && !refImage) throw new Error("Reference to Image needs a reference image.");
+  const g = {};
+
+  const unetName = subMode === "ref2i" ? state.unetReference : state.unetFirstLast;
+  if (!unetName || unetName === "none") throw new Error(
+    `${subMode === "ref2i" ? "Reference" : "First/Last"} UNET is not set — check ⚙ Settings → Models.`);
+  g[IMG.unet] = { class_type: "UNETLoader", inputs: { unet_name: unetName, weight_dtype: "default" } };
+  let model = [IMG.unet, 0];
+
+  if (has(avail, "PathchSageAttentionKJ")) {
+    g[IMG.sage] = { class_type: "PathchSageAttentionKJ", inputs: { sage_attention: "auto", allow_compile: true, model } };
+    model = [IMG.sage, 0];
+  }
+  if (has(avail, "MiniMaxH3MemoryEfficientSageAttentionPatch")) {
+    g[IMG.memSage] = { class_type: "MiniMaxH3MemoryEfficientSageAttentionPatch", inputs: { model } };
+    model = [IMG.memSage, 0];
+  }
+  model = buildImageLoraChain(g, state, model);
+
+  g[IMG.clip] = { class_type: "CLIPLoader", inputs: { clip_name: state.clipName, type: "minimax", device: "default" } };
+  g[IMG.vaeV] = { class_type: "VAELoader", inputs: { vae_name: state.vaeVideo } };
+
+  const condInputs = {
+    clip: [IMG.clip, 0], vae: [IMG.vaeV, 0],
+    prompt, width: previewRes.width, height: previewRes.height, length: IMG_LENGTH,
+  };
+  if (subMode === "ref2i") {
+    g[IMG.ref] = { class_type: "LoadImage", inputs: { image: refImage } };
+    condInputs.ref_image_size = "max";
+    condInputs["ref_images.ref_image_0"] = [IMG.ref, 0];
+    g[IMG.cond] = { class_type: "MiniMaxH3ReferenceToVideo", inputs: condInputs };
+  } else {
+    g[IMG.cond] = { class_type: "MiniMaxH3ImageToVideo", inputs: condInputs };
+  }
+
+  g[IMG.noise] = { class_type: "RandomNoise", inputs: { noise_seed: seed ?? 0 } };
+  g[IMG.sampSel1] = { class_type: "KSamplerSelect", inputs: { sampler_name: "euler" } };
+  g[IMG.sched] = { class_type: "BasicScheduler", inputs: { scheduler: "simple", steps: 8, denoise: 1, model } };
+  g[IMG.guider1] = { class_type: "BasicGuider", inputs: { model, conditioning: [IMG.cond, 0] } };
+  g[IMG.sampler1] = { class_type: "SamplerCustomAdvanced", inputs: {
+    noise: [IMG.noise, 0], guider: [IMG.guider1, 0], sampler: [IMG.sampSel1, 0],
+    sigmas: [IMG.sched, 0], latent_image: [IMG.cond, 1],
+  }};
+
+  let decodeSamples;
+  if (!final) {
+    // Preview: decode the cheap first pass directly, at the preview resolution.
+    decodeSamples = [IMG.sampler1, 0];
+  } else {
+    // Real run: latent-upscale the first pass's video component up to the final
+    // resolution, re-attach its (unused) audio component, and run the fixed 3-step
+    // second pass — exactly the reference workflow's own two-pass shape.
+    if (!has(avail, "MinimaxH3LatentUpscaler3D")) throw new Error("MinimaxH3LatentUpscaler3D is not installed.");
+    g[IMG.sepAV] = { class_type: "LTXVSeparateAVLatent", inputs: { av_latent: [IMG.sampler1, 1] } };
+    g[IMG.latentUp] = { class_type: "MinimaxH3LatentUpscaler3D", inputs: {
+      model_name: "minimax_h3_latent_upscaler_3d_bf16.safetensors",
+      mode: "target dimensions", "mode.width": finalRes.width, "mode.height": finalRes.height,
+      align: 32, enable_temporal_chunking: true, force_unload: true, device: "cuda", precision: "fp16",
+      latent: [IMG.sepAV, 0],
+    }};
+    g[IMG.concatAV] = { class_type: "LTXVConcatAVLatent", inputs: {
+      video_latent: [IMG.latentUp, 0], audio_latent: [IMG.sepAV, 1],
+    }};
+    g[IMG.sampSel2] = { class_type: "KSamplerSelect", inputs: { sampler_name: "euler" } };
+    g[IMG.guider2] = { class_type: "BasicGuider", inputs: { model, conditioning: [IMG.cond, 0] } };
+    g[IMG.sigmas2] = { class_type: "ManualSigmas", inputs: { sigmas: IMG_PASS2_SIGMAS } };
+    g[IMG.sampler2] = { class_type: "SamplerCustomAdvanced", inputs: {
+      noise: [IMG.noise, 0], guider: [IMG.guider2, 0], sampler: [IMG.sampSel2, 0],
+      sigmas: [IMG.sigmas2, 0], latent_image: [IMG.concatAV, 0],
+    }};
+    decodeSamples = [IMG.sampler2, 0];
+  }
+
+  g[IMG.decode] = { class_type: "VAEDecode", inputs: { samples: decodeSamples, vae: [IMG.vaeV, 0] } };
+  g[IMG.frame] = { class_type: "ImageFromBatch", inputs: { batch_index: IMG_LENGTH, length: 1, image: [IMG.decode, 0] } };
+  g[IMG.save] = { class_type: "SaveImage", inputs: { filename_prefix: filenamePrefix, images: [IMG.frame, 0] } };
+
+  return { graph: g, saveNode: IMG.save };
+}
+

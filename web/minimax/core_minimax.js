@@ -323,7 +323,28 @@ export const GENERATION_MODES = [
   { key: "facerefine",  label: "Face Refine MMH3",   hint: "re-render a small/distant face per frame (H3)" },
   { key: "ltxupscale",  label: "Upscale by LTX 2.5",   hint: "2x refine an existing clip (LTX 2.5)" },
   { key: "postprocess", label: "Postprocess",   hint: "chain Deblur/Denoise/Upscale/Grain/Interpolate/Resize on an existing clip" },
+  { key: "imagegen",    label: "Image Generator", hint: "single-image T2I / Reference / Character Sheet (H3 fl2va/ref2va)" },
 ];
+
+// Image Generator's own 3 sub-modes, picked from a second pill row inside its left panel
+// (not a top-level GENERATION_MODES entry each, since all 3 share one settings panel shape
+// and swapping between them shouldn't reset the resolution/LoRA/seed fields). Each is the
+// SAME H3 video pipeline (MiniMaxH3ImageToVideo / MiniMaxH3ReferenceToVideo) run at a very
+// short length and read back as a still frame — not a separate image model.
+export const IMAGE_GEN_MODES = [
+  { key: "t2i",       label: "Text to Image",     hint: "MiniMaxH3ImageToVideo (fl2va), no reference image" },
+  { key: "ref2i",     label: "Reference to Image", hint: "MiniMaxH3ReferenceToVideo (ref2va), one reference image" },
+  { key: "charsheet", label: "Character Sheet",   hint: "ref2va 8-shot turnaround + RTX Deblur/VSR + grid assembly" },
+];
+
+// Image Generator needs none of its own model config — t2i reuses the same fl2va models
+// as "Image to Video (F/L)", ref2i/charsheet reuse the same ref2va models as "Reference to
+// Video" (both already required/configured elsewhere), so readiness is just whichever of
+// those two the selected sub-mode needs.
+export function imageGenSubModeReady(subKey, state) {
+  const a = modelAvailability(state);
+  return subKey === "t2i" ? a.fl : a.ref;
+}
 
 // Postprocess touches none of H3's own generation models (unet/clip/vae) — it only runs
 // the same finished-clip effect nodes the gallery's Upscale/Interpolate/Resize bars
@@ -710,7 +731,7 @@ export function generationModesFor(state) {
       return { ...m, enabled: ok, reason: ok ? "" :
         `Set the LTX 2.5 models in ⚙ Settings (missing: ${ltxUpscaleMissing(state).join(", ")})` };
     }
-    if (m.key === "postprocess") {
+    if (m.key === "postprocess" || m.key === "imagegen") {
       return { ...m, enabled: true, reason: "" };
     }
     if (m.key === "facerefine") {
