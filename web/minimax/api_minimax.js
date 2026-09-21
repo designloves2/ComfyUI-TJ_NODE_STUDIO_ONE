@@ -69,8 +69,9 @@ export const MMH3_OPTIONAL_NODES = [
   "UpscaleModelLoader", "ImageUpscaleWithModel", "RIFEInterpolation",
   // Video Resize (TJ) — ships with TJ_NODE; node-side port of the gallery's "↔ Resize" tool
   "TJ_VideoResize",
-  // ComfyUI core — used by Postprocess's Add Grain step
-  "GLSLShader",
+  // ComfyUI core — used by Postprocess's Add Grain step (GLSLShader's own output is RGBA;
+  // SplitImageWithAlpha strips it back to RGB for whatever runs after Grain)
+  "GLSLShader", "SplitImageWithAlpha",
   // video/audio save via VHS's nvenc_h264-mp4 format (real GPU encoding) — falls back
   // to core CreateVideo/SaveVideo (CPU) when not installed
   "VHS_VideoCombine",
