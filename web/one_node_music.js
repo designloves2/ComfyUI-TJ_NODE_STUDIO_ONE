@@ -974,6 +974,15 @@ app.registerExtension({
         return o;
       };
 
+      // Every runLLM() callback here writes its result into `state` AND calls renderCompose()
+      // to redraw from it, rather than poking lyricsTA/styleTA.value directly — an LLM call
+      // is async (jpost round-trip), and ANY unrelated re-render firing during that wait
+      // (title edit, mode switch, etc.) throws away the old lyricsTA/styleTA and builds a
+      // fresh one from getV(). Writing to the stale, now-detached textarea afterwards did
+      // nothing visible: state.lyrics/caption WAS updated correctly, but the on-screen field
+      // never picked it up, showing whatever was there before the LLM ran (reported: "가사
+      // 필드에 입력한게 LLM돌리기 전으로 회귀 되버렸는데. 타임머신인가?"). renderCompose()
+      // always rebuilds from the current (now-correct) state, so it can't go stale this way.
       function headBtns(kind) {
         const isLyr = kind === "lyrics";
         const tb = (label, title, onclick) => el("button", { className: "mmm-tb", text: label, title, onclick });
@@ -992,7 +1001,7 @@ app.registerExtension({
         const varBtn = isLyr ? null : tb("Reroll", "Rewrite the prompt a different way", () =>
           runLLM(CAPTION_ROLE(), state.captionBrief || styleTA.value,
             { lyrics: state.lyrics, chips: (state.styleChips || []).join(", "), ...vocalHints(), variation: Date.now() },
-            (txt) => { state.caption = txt; styleTA.value = txt; persist(); }, styleWrap));
+            (txt) => { state.caption = txt; persist(); renderCompose(); }, styleWrap));
         const expandBtn = tb("Expand", "Full-screen editor", () => isLyr
           ? bigEdit("Lyrics", () => state.lyricsInput || state.lyrics, (v) => { state.lyricsInput = v; state.lyrics = v; })
           : bigEdit(state.engine === "acestep" ? "Style tags" : "Style", () => state.caption || state.captionBrief, (v) => { if (state.engine === "acestep" || !/###\s/.test(v)) state.captionBrief = v; state.caption = v; }));
@@ -1006,13 +1015,13 @@ app.registerExtension({
             else if (intent === "empty") { statusEl.textContent = "Write a brief, or fill in the Title"; return; }
             const durSec = effectiveDuration({ ...state, lyricsInput: cur });
             runLLM(role, input, { engine: state.engine, language: state.language, duration_seconds: durSec, style_caption: state.caption, title: state.title || "" }, (txt) => {
-              state.lyrics = txt; state.lyricsInput = cur; lyricsTA.value = txt; persist();
+              state.lyrics = txt; state.lyricsInput = cur; persist(); renderCompose();
             }, lyricsWrap, "Writing lyrics…");
           } else {
             const brief = (state.captionBrief || styleTA.value || "").trim();
             if (!brief) { statusEl.textContent = "Write a few words of style first"; return; }
             state.captionBrief = brief;
-            runLLM(CAPTION_ROLE(), brief, { lyrics: state.lyrics, chips: (state.styleChips || []).join(", "), ...vocalHints() }, (txt) => { state.caption = txt; styleTA.value = txt; persist(); }, styleWrap, "Writing prompt…");
+            runLLM(CAPTION_ROLE(), brief, { lyrics: state.lyrics, chips: (state.styleChips || []).join(", "), ...vocalHints() }, (txt) => { state.caption = txt; persist(); renderCompose(); }, styleWrap, "Writing prompt…");
           }
         }});
         return [resetBtn, presetBtn, varBtn, expandBtn, spark].filter(Boolean);
