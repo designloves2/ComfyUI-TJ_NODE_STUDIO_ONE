@@ -1987,6 +1987,51 @@ async def mmh3_list_videos(request):
     return web.json_response({"videos": videos, "total": len(found), "offset": offset, "limit": limit})
 
 
+@PromptServer.instance.routes.get("/minimax_h3_one/images")
+async def mmh3_list_images(request):
+    """Stills from Image Generator (T2I/Ref2I/Character Sheet) in the node's output
+    folder, newest first — the dedicated H3 image gallery's own listing, separate from
+    /videos above. Excludes the per-video `_thumbs` frame-thumbnail folders and the
+    gallery's own `._post_chunks` scratch folder, both of which also hold stray PNGs.
+    """
+    output_dir = _get_output_dir()
+    try:
+        offset = max(0, int(request.query.get("offset", 0)))
+    except Exception:
+        offset = 0
+    try:
+        limit = min(max(1, int(request.query.get("limit", 60))), 300)
+    except Exception:
+        limit = 60
+    subf = request.query.get("subfolder", "") or MMH3_SUBFOLDER
+    try:
+        search = _safe_resolve_output_path(output_dir, subf)
+    except ValueError:
+        return web.json_response({"images": [], "total": 0, "error": "invalid subfolder"}, status=400)
+
+    found = []
+    if search and os.path.isdir(search):
+        found = glob.glob(os.path.join(search, "**", "*.png"), recursive=True)
+        found = [f for f in found if "_thumbs" not in f.split(os.sep) and "._post_chunks" not in f.split(os.sep)]
+    found = sorted(set(found), key=os.path.getmtime, reverse=True)
+
+    images = []
+    for f in found[offset:offset + limit]:
+        rel = os.path.relpath(os.path.dirname(f), output_dir)
+        name = os.path.basename(f)
+        meta = _read_json_meta(f) or {}
+        images.append({
+            "filename": name,
+            "subfolder": "" if rel == "." else rel.replace("\\", "/"),
+            "mtime": os.path.getmtime(f),
+            "size": os.path.getsize(f),
+            "meta": meta,
+            "prompt": meta.get("prompt", ""),
+            "favorite": bool(meta.get("favorite") or meta.get("favourite")),
+        })
+    return web.json_response({"images": images, "total": len(found), "offset": offset, "limit": limit})
+
+
 MMH3_THUMB_DIR_NAME = "_thumbs"
 
 
@@ -2272,6 +2317,17 @@ async def mmh3_get_config(request):
         "h3_or_model":           cfg.get("h3_or_model_brief") or cfg.get("h3_or_model", ""),   # back-compat
         "h3_or_model_brief":     cfg.get("h3_or_model_brief") or cfg.get("h3_or_model", ""),
         "h3_or_model_vision":    cfg.get("h3_or_model_vision") or cfg.get("h3_or_model", ""),
+        # Local-GGUF ("llama") backend model picks for H3's own Brief/Vision LLM roles and
+        # for LTX Upscale's vision role — saveAll() (ui_app_settings_minimax.js) has always
+        # sent these on Save All, but this response never read them back, so every reload
+        # silently dropped them back to blank regardless of what was saved (2026-09-21 bug).
+        "h3_llama_vision_model":  cfg.get("h3_llama_vision_model",  ""),
+        "h3_llama_vision_mmproj": cfg.get("h3_llama_vision_mmproj", ""),
+        "h3_llama_brief_model":   cfg.get("h3_llama_brief_model",   ""),
+        "h3_llama_n_ctx":         cfg.get("h3_llama_n_ctx",         16384),
+        "h3_llama_max_tokens":    cfg.get("h3_llama_max_tokens",    4096),
+        "ltx_llama_model":        cfg.get("ltx_llama_model",        ""),
+        "ltx_llama_mmproj":       cfg.get("ltx_llama_mmproj",       ""),
         "filename_prefix":       cfg.get("filename_prefix",       "MMH3"),
         # LTX 2.5 Upscale mode — its own model set (generationMode "ltxupscale")
         "ltx_unet":              cfg.get("ltx_unet",              ""),
