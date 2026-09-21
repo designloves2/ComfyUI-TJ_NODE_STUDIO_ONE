@@ -378,6 +378,20 @@ app.registerExtension({
         color: "#e0a530", fontSize: "16px", fontWeight: "700",
         textShadow: "0 0 12px rgba(224,165,48,0.5)",
       }});
+      // Postprocess and Image Generator have no live per-step sampling preview of their
+      // own either (Postprocess is a fixed video-effects chain; Image Generator's H3
+      // sampling is too short at 8 frames to bother streaming) — same "is it doing
+      // anything?" gap frDetectBanner/fvsrBanner solve above, generic enough for both
+      // (busyBanner.textContent is set per call instead of a fixed string per mode).
+      const busyBanner = el("div", { style: {
+        display: "none", position: "absolute", inset: "0", zIndex: "5",
+        alignItems: "center", justifyContent: "center", textAlign: "center",
+        background: "rgba(0,0,0,0.6)", padding: "0 16px",
+        color: "#b57bff", fontSize: "16px", fontWeight: "700",
+        textShadow: "0 0 12px rgba(181,123,255,0.5)",
+      }});
+      function showBusyBanner(text) { busyBanner.textContent = text; busyBanner.style.display = "flex"; }
+      function hideBusyBanner() { busyBanner.style.display = "none"; }
       // width/height 100% (not max-*) so a small latent preview is scaled UP to fill the
       // box on its long edge; object-fit keeps the aspect ratio.
       const FIT = { width: "100%", height: "100%", objectFit: "contain", display: "none" };
@@ -404,7 +418,7 @@ app.registerExtension({
         color: "#fff", border: "none", borderRadius: "4px", width: "22px", height: "22px",
         cursor: "pointer", fontSize: "12px", padding: "0", display: "none",
       }});
-      previewBox.append(placeholder, frDetectBanner, fvsrBanner, previewImg, previewVid, resultVid, badge, fsBtn, compareBtn);
+      previewBox.append(placeholder, frDetectBanner, fvsrBanner, busyBanner, previewImg, previewVid, resultVid, badge, fsBtn, compareBtn);
 
       let lastResultURL = null;
       // Captured in showResultVideo() at the moment a result becomes the shown preview —
@@ -492,9 +506,15 @@ app.registerExtension({
         // noticeably larger/closer subjects than the original side). objectFit:"fill" here
         // is deliberate: it forces restVid's pixels to exactly match origVid's on-screen
         // rectangle rather than trusting the file's own reported aspect ratio.
+        // Only origVid gets `loop` - it is the master clock (see syncTo below). A Postprocess
+        // Preview's restoredUrl is often a TRIMMED clip (Start(s)/End(s) shorter than the
+        // full source), so if restVid/side clips looped on their own native duration they'd
+        // wrap back to 0 well before origVid does and drift out of sync with it (reported:
+        // "왼쪽 오리지널은 전체 시간 플레이, 오른쪽 프리뷰는 프리뷰 타임으로 어긋나 버린다").
+        // Instead they're forced back onto origVid's clock every timeupdate tick.
         const origVid = el("video", { src: originalUrl, loop: "", muted: "", playsinline: "",
           style: { position: "absolute", objectFit: "fill" } });
-        const restVid = el("video", { src: restoredUrl, loop: "", muted: "", playsinline: "",
+        const restVid = el("video", { src: restoredUrl, muted: "", playsinline: "",
           style: { position: "absolute", objectFit: "fill" } });
         origVid.muted = true; restVid.muted = true;
 
@@ -540,9 +560,9 @@ app.registerExtension({
         // the <video> itself did nothing (its parent isn't a flex container), and left
         // width:0 as the only surviving rule, collapsing both videos to zero width (reported:
         // "사이드 바이 사이드는 영상이 안나와").
-        const sideOrig = el("video", { src: originalUrl, loop: "", muted: "", playsinline: "",
+        const sideOrig = el("video", { src: originalUrl, muted: "", playsinline: "",
           style: { width: "100%", height: "100%", objectFit: "contain", background: "#000" } });
-        const sideRest = el("video", { src: restoredUrl, loop: "", muted: "", playsinline: "",
+        const sideRest = el("video", { src: restoredUrl, muted: "", playsinline: "",
           style: { width: "100%", height: "100%", objectFit: "contain", background: "#000" } });
         sideOrig.muted = true; sideRest.muted = true;
         const sideOrigWrap = el("div", { style: { position: "relative", flex: "1", height: "100%" } }, [sideOrig, label("Original", "left")]);
@@ -725,7 +745,14 @@ app.registerExtension({
         // the clip it started from.
         function allVids() { return [origVid, restVid, sideOrig, sideRest]; }
         function syncTo(t) {
-          for (const v of allVids()) { if (Math.abs(v.currentTime - t) > 0.03) { try { v.currentTime = t; } catch {} } }
+          for (const v of allVids()) {
+            if (Math.abs(v.currentTime - t) > 0.03) { try { v.currentTime = t; } catch {} }
+            // A shorter (trimmed) clip pauses itself on `ended` since it has no `loop` of its
+            // own (only origVid does) - once origVid's clock carries on past that point and
+            // wraps this one back into range, it needs an explicit play() to resume, or it
+            // just sits on its last frame forever while origVid keeps going.
+            if (playing && v.paused) { try { v.play().catch(() => {}); } catch {} }
+          }
         }
         let playing = false;
         function setPlaying(p) {
@@ -746,6 +773,7 @@ app.registerExtension({
           if (dur > 0) scrub.value = String(Math.round((origVid.currentTime / dur) * 1000));
           timeText.textContent = `${fmtT(origVid.currentTime)} / ${fmtT(dur)}`;
           frameText.textContent = `Frame ${Math.round(origVid.currentTime * FPS)} / ${Math.round(dur * FPS)}`;
+          if (playing) syncTo(origVid.currentTime);
         });
 
         function close() {
@@ -823,6 +851,7 @@ app.registerExtension({
         modeResultCache[resultModeKey()] = { kind: "image", url, final };
         if (final) previewLocked = true;
         placeholder.style.display = "none"; frDetectBanner.style.display = "none"; fvsrBanner.style.display = "none";
+        hideBusyBanner();
         try { previewVid.pause(); } catch {}
         previewVid.style.display = "none";
         try { resultVid.pause(); } catch {}
@@ -837,6 +866,7 @@ app.registerExtension({
         placeholder.style.display = "none";
         frDetectBanner.style.display = "none";
         fvsrBanner.style.display = "none";
+        hideBusyBanner();
         previewImg.style.display = "none";
         try { previewVid.pause(); } catch {}
         previewVid.style.display = "none";
@@ -862,6 +892,7 @@ app.registerExtension({
         lastCompareSource = null;
         placeholder.style.display = "block";
         frDetectBanner.style.display = "none";
+        hideBusyBanner();
         previewImg.style.display = "none";
         previewVid.style.display = "none";
         // Hiding a playing <video> does not stop it — previewVid has autoplay+loop for the
@@ -3334,6 +3365,8 @@ app.registerExtension({
         ppGenBtn.disabled = true; ppPreviewBtn.disabled = true;
         busyBtn.textContent = "⏳ Running…"; busyBtn.style.opacity = "0.6";
         setStatus("Postprocess running…");
+        showBusyBanner(full ? "후보정을 반영하여 처리중입니다. 잠시 기다려주세요."
+          : "미리보기 처리중입니다. 잠시 기다려주세요.");
         try {
           if (!ctx.availability || !Object.keys(ctx.availability).length) {
             const av = await getNodeAvailability();
@@ -3447,6 +3480,7 @@ app.registerExtension({
           setStatus(`Error: ${e?.message || e}`);
           showPopup(e?.message || String(e), true);
         } finally {
+          hideBusyBanner();
           ppRunning = false; ppStopRequested = false;
           ppGenBtn.disabled = false; ppGenBtn.textContent = "▶ Generate"; ppGenBtn.style.opacity = "1";
           ppPreviewBtn.disabled = false; ppPreviewBtn.textContent = "Preview"; ppPreviewBtn.style.opacity = "1";
@@ -3765,6 +3799,8 @@ app.registerExtension({
         const genLabel = genBtn.textContent, previewLabel = imgPreviewBtn.textContent;
         busyBtn.textContent = "⏳ Running…";
         setStatus("Image Generator running…");
+        showBusyBanner(final ? "이미지를 생성하는 중입니다. 잠시 기다려주세요."
+          : "미리보기 처리중입니다. 잠시 기다려주세요.");
         try {
           if (!ctx.availability || !Object.keys(ctx.availability).length) {
             const av = await getNodeAvailability();
@@ -3823,6 +3859,7 @@ app.registerExtension({
           running = false;
           genBtn.disabled = false; genBtn.textContent = genLabel || "▶ Generate";
           imgPreviewBtn.disabled = false; imgPreviewBtn.textContent = previewLabel || "👁 Preview";
+          hideBusyBanner();
           try { await freeMemory(); } catch {}
         }
       }
