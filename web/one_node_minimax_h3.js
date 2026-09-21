@@ -40,11 +40,14 @@ import {
   saveConfig, analyzeImagesNative, analyzeImagesOpenRouter, writeBriefNative, writeBriefOpenRouter, getMediaInfo,
   listPromptSets, getPromptSet, getClipLastFrame, analyzeImageLlama, writeBriefLlama,
 } from "./minimax/api_minimax.js";
-import { buildClipGraph, buildLtxUpscaleGraph, buildFaceRefineGraph, buildPostprocessGraph, buildImageGenGraph, NODE_IDS, previewNodeKey } from "./minimax/graph_builder_minimax.js";
+import { buildClipGraph, buildLtxUpscaleGraph, buildFaceRefineGraph, buildPostprocessGraph, buildImageGenGraph,
+  buildCharacterSheetVideoGraph, buildCharacterSheetGridGraph, CHARSHEET_DEFAULT_FRAME_INDICES, CHARSHEET_FRAMES,
+  NODE_IDS, previewNodeKey } from "./minimax/graph_builder_minimax.js";
 import { PIPELINE_PRESETS, allPresets, captureAxes, matchPreset, applyPreset } from "./minimax/presets_minimax.js";
 import { createPresetDialogs } from "./minimax/ui_presets_minimax.js";
 import { createSettingsOverlay } from "./minimax/ui_app_settings_minimax.js";
 import { mountImagePanel, imageSlot } from "./minimax/ui_images_minimax.js";
+import { attachLLMPanel } from "./shared/llm_panel.js";
 import { createPromptEditOverlay } from "./minimax/ui_prompt_edit_minimax.js";
 import { createCommonPromptOverlay } from "./minimax/ui_common_prompt_minimax.js";
 import { createGalleryOverlay } from "./minimax/ui_gallery_minimax.js";
@@ -1022,6 +1025,11 @@ app.registerExtension({
       editBtn.addEventListener("click", () => {
         if (state.generationMode === "ltxupscale") { openLtxPromptEdit(); return; }
         if (state.generationMode === "facerefine") { openFaceRefinePromptEdit(); return; }
+        if (state.generationMode === "imagegen" && state.imageGenMode !== "charsheet") {
+          imgPxTA.value = state.imgPrompt || "";
+          imgPromptExpandOv.show();
+          return;
+        }
         promptEditOv?.show();
       });
       promptHdr.appendChild(editBtn);
@@ -1236,8 +1244,11 @@ app.registerExtension({
         tagBtnRow.style.display = isImageGen ? "none" : "";
         refineBtn.style.display = isImageGen ? "none" : "";
         writeBtn.style.display  = isImageGen ? "none" : "";
-        editBtn.style.display   = isImageGen ? "none" : "";
         const isCharSheetHdr = isImageGen && state.imageGenMode === "charsheet";
+        // editBtn is repurposed as t2i/ref2i's own "🔍 Prompt Edit" (see its onclick's
+        // imagegen branch) — only truly hidden for Character Sheet, which uses
+        // sysPromptSaveBtn/ResetBtn in this same slot instead.
+        editBtn.style.display = isCharSheetHdr ? "none" : "";
         sysPromptSaveBtn.style.display  = isCharSheetHdr ? "" : "none";
         sysPromptResetBtn.style.display = isCharSheetHdr ? "" : "none";
         promptTitle.textContent = isLtx ? "UPSCALE PROMPT" : isFaceRefine ? "FACE REFINE PROMPT"
@@ -1509,12 +1520,14 @@ app.registerExtension({
         promptCount.textContent = "";
         const isCharSheet = state.imageGenMode === "charsheet";
         if (isCharSheet && !state.charSheetPrompt) { state.charSheetPrompt = CHARSHEET_PROMPT_TEMPLATE; persist(); }
-        // Same box sizing as the H3 shot-list textarea (minHeight 120px + a native
-        // vertical resize grip at the bottom-right corner) — the earlier flex:1/resize:none
-        // version rendered only ~2 lines tall with no way to make it bigger.
+        // Deliberately NOT flex:1 — promptList is a column flex container, so flex:1
+        // there controls HEIGHT and fights the native resize handle on every re-layout
+        // (the shot-list textarea's own flex:1 is safe because ITS parent is a row flex
+        // container, where flex only affects width). minHeight alone plus resize:vertical
+        // is what actually lets the user drag it taller.
         const ta = el("textarea", {
           placeholder: "Describe the image…",
-          style: { flex: "1", minHeight: "120px", width: "100%", boxSizing: "border-box",
+          style: { minHeight: "120px", width: "100%", boxSizing: "border-box",
                    background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
                    borderRadius: "6px", padding: "8px", fontSize: "12px",
                    fontFamily: "inherit", outline: "none", resize: "vertical" },
@@ -1528,6 +1541,10 @@ app.registerExtension({
         ta.addEventListener("blur", () => ta.style.borderColor = C.border);
         promptList.style.gap = "6px";
         promptList.append(ta);
+        // t2i/ref2i's "🔍 Prompt Edit" (editBtn, in promptHdr) needs a live handle on
+        // whichever textarea is currently on screen — rebuilt every render, unlike
+        // Krea2's own mount-once box.
+        imgInlineTA = isCharSheet ? null : ta;
         // Save/Reset for Character Sheet live in promptHdr (sysPromptSaveBtn/
         // sysPromptResetBtn) — same slot writeBtn/editBtn use for every other mode —
         // their visibility is synced from renderPrompts() alongside those.
@@ -3350,6 +3367,42 @@ app.registerExtension({
         }
       }
 
+      // Image Generator's "🔍 Prompt Edit" — the same merged single-screen popup
+      // (image/URL analysis, 3-way LLM backend, Enhance/Write/Apply) Krea2/Z-Image/Klein/
+      // Qwen2511/SDXL/Anima all share, reused here rather than rebuilt. t2i and ref2i
+      // share one prompt (state.imgPrompt); Character Sheet has its own system-prompt
+      // flow (sysPromptSaveBtn/Reset) and never opens this. `imgInlineTA` tracks whichever
+      // <textarea> renderImageGenPrompt() most recently built, since (unlike Krea2's
+      // mount-once box) it's rebuilt on every renderPrompts() call.
+      let imgInlineTA = null;
+      const imgPromptExpandEl = el("div", { style: {
+        position: "absolute", inset: "0", zIndex: "9997", background: "rgba(11,11,11,0.97)",
+        borderRadius: "inherit", display: "none", flexDirection: "column", padding: "14px", gap: "8px", boxSizing: "border-box",
+      }});
+      const imgPxHdr = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" } });
+      imgPxHdr.appendChild(el("div", { text: "🔍 Prompt — Full Screen Edit", style: { color: "#fff", fontSize: "13px", fontWeight: "700", flex: "1" } }));
+      const imgPxTA = el("textarea", { style: { flex: "1", background: C.bg2, color: C.text, border: `1px solid ${BRAND}`,
+        borderRadius: "6px", padding: "10px", fontSize: "13px", fontFamily: "inherit", resize: "none", outline: "none" } });
+      const imgPxApply = button("✓ Apply", () => {
+        state.imgPrompt = imgPxTA.value;
+        if (imgInlineTA) imgInlineTA.value = imgPxTA.value;
+        persist();
+        imgPromptExpandEl.style.display = "none";
+      }, "primary");
+      const imgPxClose = button("✕ Close", () => { imgPromptExpandEl.style.display = "none"; }, "danger");
+      imgPxHdr.append(imgPxApply, imgPxClose);
+      imgPromptExpandEl.append(imgPxHdr, imgPxTA);
+      const imgPromptExpandOv = {
+        show() { imgPromptExpandEl._tj_llm_onshow?.(); imgPromptExpandEl.style.display = "flex"; setTimeout(() => imgPxTA.focus(), 50); },
+        hide() { imgPromptExpandEl.style.display = "none"; },
+      };
+      attachLLMPanel({
+        promptExpandEl: imgPromptExpandEl, pxTA: imgPxTA,
+        getModePrompt: () => state.imgPrompt || "", setModePrompt: (_mode, val) => { state.imgPrompt = val; },
+        state, persist, updateCount: () => {}, getPromptTA: () => imgInlineTA,
+        openSettings: () => ctx.openImageLlmSettings?.() ?? settingsOv?.show(),
+      });
+
       // ── Image Generator mode left panel ──────────────────────────────────────
       // T2I / Reference to Image (Character Sheet ships separately) — not a new model,
       // the same H3 fl2va/ref2va pipeline run at a short fixed length and read back as a
@@ -3483,9 +3536,74 @@ app.registerExtension({
           () => [mountImgLoraPanel()]));
 
         if (subMode === "charsheet") {
-          leftPanel.appendChild(panel([el("div", {
-            text: "Character Sheet ships in a follow-up pass — pick T2I or Reference to Image for now.",
-            style: { fontSize: "11.5px", color: C.warn, lineHeight: "1.6" } })]));
+          // Subject name — folds into the saved filename, matching the reference
+          // workflow's own "Subject Name" + Finalize concat.
+          leftPanel.appendChild(panel([
+            label("Subject Name"),
+            (() => {
+              const inp = el("input", { type: "text", value: state.charSheetSubjectName || "Character", style: {
+                width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+                border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px 8px", fontSize: "12px", fontFamily: "inherit",
+              }});
+              inp.addEventListener("input", () => { state.charSheetSubjectName = inp.value.trim() || "Character"; persist(); });
+              return inp;
+            })(),
+          ]));
+
+          // Post-finish on the raw 124-frame render — same tools as everywhere else in
+          // this app (Deblur + native RTX VSR), plus the reference workflow's own
+          // two-pass "Use Latent Upscale" option and per-frame saving.
+          const rtxOn = !!state.charSheetRtxVsr;
+          leftPanel.appendChild(panel([
+            label("Post finish"),
+            row([col([label("Deblur"), select(
+              ["none", "LOW", "MEDIUM", "HIGH", "ULTRA"].map(v => ({ value: v, label: v === "none" ? "Off" : v })),
+              state.charSheetDeblur || "none", v => { state.charSheetDeblur = v; persist(); })])]),
+            checkboxRow("RTX VSR (2× scale, ULTRA quality)", rtxOn,
+              v => { state.charSheetRtxVsr = v; persist(); renderLeft(); }),
+            !rtxOn ? null : checkboxRow("↳ For Supersampling (resize back down to render size)", !!state.charSheetRtxSupersample,
+              v => { state.charSheetRtxSupersample = v; persist(); }),
+            checkboxRow("Use Latent Upscale (cheap first pass, then upscale)", !!state.charSheetUseLatentUpscale,
+              v => { state.charSheetUseLatentUpscale = v; persist(); renderLeft(); }),
+            !state.charSheetUseLatentUpscale ? null : row([col([label("First Pass MP"), numberField(
+              state.charSheetFirstPassRatio ?? 0.36, v => { state.charSheetFirstPassRatio = Math.max(0.05, v); persist(); }, 0.02)])]),
+            checkboxRow("Save Each Frame separately", !!state.charSheetSaveEachFrames,
+              v => { state.charSheetSaveEachFrames = v; persist(); }),
+            row([col([label("Sheet Max Size (px)"), numberField(
+              state.charSheetMaxSize ?? 2048, v => { state.charSheetMaxSize = Math.max(256, Math.round(v)); persist(); }, 64)])]),
+          ]));
+
+          // 8 frame indices, directly editable — same fields the reference workflow
+          // exposed as "indexes"/"indexes_1".."indexes_7" — an alternative to scrubbing
+          // through 🖼 View & Edit Sheet below for a quick numeric tweak.
+          if (!Array.isArray(state.charSheetFrameIndices) || state.charSheetFrameIndices.length !== 8) {
+            state.charSheetFrameIndices = CHARSHEET_DEFAULT_FRAME_INDICES.slice();
+          }
+          leftPanel.appendChild(accordion("charsheetFrames", "Frame Indices (8 shots)",
+            state.charSheetFrameIndices.join(","), () => {
+              const rows = [];
+              for (let i = 0; i < 8; i += 2) {
+                rows.push(row([
+                  col([label(`Shot ${i + 1}`), numberField(state.charSheetFrameIndices[i],
+                    v => { state.charSheetFrameIndices[i] = Math.max(0, Math.min(CHARSHEET_FRAMES - 1, Math.round(v))); persist(); }, 1)]),
+                  col([label(`Shot ${i + 2}`), numberField(state.charSheetFrameIndices[i + 1],
+                    v => { state.charSheetFrameIndices[i + 1] = Math.max(0, Math.min(CHARSHEET_FRAMES - 1, Math.round(v))); persist(); }, 1)]),
+                ]));
+              }
+              rows.push(state.charSheetVideoFile
+                ? button("↻ Rebuild sheet with these indices", async () => {
+                    try { await rebuildCharacterSheetGrid(); showPopup("Sheet rebuilt.", false); }
+                    catch (e) { showPopup(e?.message || String(e), true); }
+                  })
+                : el("div", { text: "Render the sheet once first — these apply on rebuild.", style: { fontSize: "10px", color: C.muted } }));
+              return rows;
+            }));
+
+          if (state.charSheetVideoFile) {
+            const editBtn2 = button("🖼 View & Edit Sheet", () => openCharSheetEditor());
+            editBtn2.style.width = "100%";
+            leftPanel.appendChild(panel([editBtn2]));
+          }
         }
 
         useBottomWrap(seedGenWrap);
@@ -3558,6 +3676,178 @@ app.registerExtension({
           imgPreviewBtn.disabled = false; imgPreviewBtn.textContent = previewLabel || "👁 Preview";
           try { await freeMemory(); } catch {}
         }
+      }
+
+      async function runCharacterSheet() {
+        if (running) return;
+        const refImages = (state.imgRefImages || []).filter(Boolean);
+        if (!refImages.length) { showPopup("Pick at least one reference image first.", true); return; }
+        running = true;
+        genBtn.disabled = true;
+        const genLabel = genBtn.textContent;
+        genBtn.textContent = "⏳ Rendering…";
+        setStatus(`Character Sheet — rendering ${CHARSHEET_FRAMES} frames…`);
+        try {
+          if (!ctx.availability || !Object.keys(ctx.availability).length) {
+            const av = await getNodeAvailability();
+            ctx.availability = av.available || {}; ctx.availabilityInfo = av;
+          }
+          const finalRes = resolveResolution(state.imgAspect || "2:3 Portrait", state.imgFinalMp ?? 1.0);
+          const firstPassRes = state.charSheetUseLatentUpscale
+            ? resolveResolution(state.imgAspect || "2:3 Portrait", state.charSheetFirstPassRatio ?? 0.36) : null;
+          const seed = state.seedMode === "fixed" ? (state.seed ?? 0) : randomSeed();
+          if (state.seedMode !== "fixed") { state.seed = seed; persist(); seedInput.value = String(seed); }
+          const subjectStem = (state.charSheetSubjectName || "Character").replace(/[^\w-]+/g, "_");
+          const built = buildCharacterSheetVideoGraph(state, ctx.availability || {}, {
+            refImages, refImageSize: state.imgRefImageSize || "max",
+            prompt: state.charSheetPrompt || CHARSHEET_PROMPT_TEMPLATE,
+            deblur: state.charSheetDeblur || "none",
+            rtx: state.charSheetRtxVsr ? { rtxSizeMode: "scale", rtxScale: 2.0, rtxQuality: "ULTRA" } : null,
+            rtxSupersample: !!state.charSheetRtxSupersample,
+            useLatentUpscale: !!state.charSheetUseLatentUpscale, firstPassRes,
+            width: finalRes.width, height: finalRes.height, seed,
+            filenamePrefix: `${state.sheetVideoSaveSubfolder || state.imgSaveSubfolder || state.saveSubfolder || SUBFOLDER}/${subjectStem}_${Date.now()}`,
+          });
+          const res = await queuePrompt(built.graph, {
+            onProgress: (v, m) => setStatus(`Character Sheet — ${Math.round((v / (m || 1)) * 100)}%`),
+          });
+          const o = res.byNode[built.saveNode]?.images?.[0] || res.byNode[built.saveNode]?.gifs?.[0];
+          if (!o) throw new Error("No output produced.");
+          setStatus("Character Sheet — preparing for frame picking…");
+          const videoInputFile = await copyOutputToInput(o.filename, o.subfolder || "", "output");
+          state.charSheetVideoFile = videoInputFile;
+          state.charSheetVideoOutput = { filename: o.filename, subfolder: o.subfolder || "" };
+          state.charSheetRefImage = refImages[0];
+          if (!Array.isArray(state.charSheetFrameIndices) || state.charSheetFrameIndices.length !== 8) {
+            state.charSheetFrameIndices = CHARSHEET_DEFAULT_FRAME_INDICES.slice();
+          }
+          state.charSheetCellW = finalRes.width; state.charSheetCellH = finalRes.height;
+          persist();
+          setStatus("Character Sheet — assembling the sheet…");
+          await rebuildCharacterSheetGrid();
+          setStatus("✓ Character Sheet done.");
+          showPopup("Character Sheet finished — pick 🖼 View & Edit Sheet to swap any shot.", false);
+          renderLeft();
+        } catch (e) {
+          setStatus(`Error: ${e?.message || e}`);
+          showPopup(e?.message || String(e), true);
+        } finally {
+          running = false;
+          genBtn.disabled = false; genBtn.textContent = genLabel || "▶ Generate";
+          try { await freeMemory(); } catch {}
+        }
+      }
+
+      // Re-assembles the sheet image from the ALREADY-RENDERED video + whatever
+      // state.charSheetFrameIndices currently holds — cheap, no H3 model touched. Used
+      // both right after the render and every time the editor swaps one shot.
+      async function rebuildCharacterSheetGrid() {
+        const subjectStem = (state.charSheetSubjectName || "Character").replace(/[^\w-]+/g, "_");
+        const folder = state.imgSaveSubfolder || state.saveSubfolder || SUBFOLDER;
+        const built = buildCharacterSheetGridGraph({
+          videoFile: state.charSheetVideoFile, refImage: state.charSheetRefImage,
+          frameIndices: state.charSheetFrameIndices, cellWidth: state.charSheetCellW, cellHeight: state.charSheetCellH,
+          maxDimension: state.charSheetMaxSize ?? 2048,
+          saveEachFrames: !!state.charSheetSaveEachFrames,
+          framesFilenamePrefix: `${folder}/${subjectStem}_frames`,
+          filenamePrefix: `${folder}/${subjectStem}_sheet_${Date.now()}`,
+        }, ctx.availability || {});
+        const res = await queuePrompt(built.graph, {});
+        const o = res.byNode[built.saveNode]?.images?.[0];
+        if (!o) throw new Error("No sheet output produced.");
+        const url = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=output&t=${Date.now()}`;
+        lastResultURL = url; previewLocked = true;
+        placeholder.style.display = "none"; frDetectBanner.style.display = "none"; fvsrBanner.style.display = "none";
+        try { previewVid.pause(); } catch {}
+        previewVid.style.display = "none";
+        try { resultVid.pause(); } catch {}
+        resultVid.style.display = "none";
+        previewImg.src = url; previewImg.style.display = "block";
+        badge.style.display = "block"; fsBtn.style.display = "none"; compareBtn.style.display = "none";
+        await saveMeta(o.filename, o.subfolder || (state.imgSaveSubfolder || state.saveSubfolder || SUBFOLDER), {
+          created: Date.now(), prompt: state.charSheetPrompt || "", subMode: "charsheet",
+          frameIndices: state.charSheetFrameIndices, sheetSource: state.charSheetVideoOutput,
+        }).catch(() => {});
+        return { filename: o.filename, subfolder: o.subfolder || "" };
+      }
+
+      // "🖼 View & Edit Sheet" — scrub the raw render to pick a different frame for any
+      // of the 8 shots, then rebuild just the (cheap) grid. User's own flow: "교체 수정할
+      // 이미지 선택 -> 배치 이미지에서 확인후 교체 -> 최종 시트 이미지 완성."
+      function openCharSheetEditor() {
+        let armedShot = null;
+        const sheetImg = el("img", { src: lastResultURL || "", style: {
+          width: "100%", maxHeight: "50vh", objectFit: "contain", background: "#000", borderRadius: "6px", display: "block" } });
+        const shotRow = el("div", { style: { display: "flex", gap: "5px", flexWrap: "wrap" } });
+        const scrubWrap = el("div", { style: { display: "none", flexDirection: "column", gap: "6px",
+          background: C.bg2, border: `1px solid ${BRAND}`, borderRadius: "6px", padding: "10px" } });
+        const armedLabel = el("div", { style: { fontSize: "12px", color: BRAND, fontWeight: "700" } });
+        const vid = el("video", { muted: true, preload: "metadata", style: { width: "100%", background: "#000", borderRadius: "4px", display: "block" } });
+        vid.src = `/view?filename=${encodeURIComponent(state.charSheetVideoOutput.filename)}&subfolder=${encodeURIComponent(state.charSheetVideoOutput.subfolder || "")}&type=output`;
+        const frameSlider = el("input", { type: "range", min: "0", max: String(CHARSHEET_FRAMES - 1), value: "0",
+          style: { width: "100%", accentColor: BRAND, cursor: "pointer" } });
+        const frameLabel = el("div", { style: { fontSize: "11px", color: C.muted, textAlign: "center" } });
+        const seekTo = (idx) => { try { vid.currentTime = idx / FPS; } catch {} frameLabel.textContent = `frame ${idx} / ${CHARSHEET_FRAMES - 1}`; };
+        frameSlider.addEventListener("input", () => seekTo(parseInt(frameSlider.value, 10)));
+        const useBtn = button("✓ Use this frame", async () => {
+          if (armedShot == null) return;
+          state.charSheetFrameIndices[armedShot] = parseInt(frameSlider.value, 10);
+          persist();
+          useBtn.disabled = true; useBtn.textContent = "⏳ Rebuilding…";
+          try {
+            const o = await rebuildCharacterSheetGrid();
+            sheetImg.src = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=output&t=${Date.now()}`;
+            renderShotRow();
+            showPopup(`Shot ${armedShot + 1} replaced.`, false);
+          } catch (e) { showPopup(e?.message || String(e), true); }
+          useBtn.disabled = false; useBtn.textContent = "✓ Use this frame";
+        }, "primary");
+        scrubWrap.append(armedLabel, vid, frameSlider, frameLabel, useBtn);
+
+        function renderShotRow() {
+          clear(shotRow);
+          for (let i = 0; i < 8; i++) {
+            const active = armedShot === i;
+            const b = el("button", { type: "button", text: `Shot ${i + 1} (f${state.charSheetFrameIndices[i]})`, style: {
+              cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "5px 8px",
+              borderRadius: "6px", background: active ? BRAND : C.bg2, color: active ? "#fff" : C.text,
+              border: `1px solid ${active ? BRAND : C.border}`,
+            }});
+            b.addEventListener("click", () => {
+              armedShot = i;
+              armedLabel.textContent = `Scrubbing for Shot ${i + 1} — drag the slider, then confirm.`;
+              scrubWrap.style.display = "flex";
+              frameSlider.value = String(state.charSheetFrameIndices[i]);
+              seekTo(state.charSheetFrameIndices[i]);
+              renderShotRow();
+            });
+            shotRow.appendChild(b);
+          }
+        }
+        renderShotRow();
+
+        const closeBtn = el("button", { type: "button", text: "✕ Close", style: {
+          cursor: "pointer", fontFamily: "inherit", fontSize: "12px", padding: "6px 14px",
+          borderRadius: "6px", border: "none", background: "#c0392b", color: "#fff", alignSelf: "flex-end",
+        }});
+        const box = el("div", { style: {
+          background: "#141414", border: `1px solid ${C.border}`, borderRadius: "10px",
+          width: "720px", maxWidth: "94%", maxHeight: "92vh", overflowY: "auto", padding: "16px",
+          display: "flex", flexDirection: "column", gap: "10px", boxShadow: "0 16px 50px rgba(0,0,0,0.65)",
+        }}, [
+          el("div", { text: "Character Sheet — View & Edit", style: { color: "#fff", fontSize: "14px", fontWeight: "700" } }),
+          sheetImg, el("div", { text: "Click a shot below, scrub the raw render, then confirm to replace just that cell.",
+            style: { fontSize: "10.5px", color: C.muted } }),
+          shotRow, scrubWrap, closeBtn,
+        ]);
+        const pop = el("div", { style: {
+          position: "fixed", inset: "0", zIndex: "100060", display: "flex",
+          alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.72)",
+        }}, [box]);
+        const close = () => { try { vid.pause(); } catch {} pop.remove(); };
+        closeBtn.addEventListener("click", close);
+        pop.addEventListener("mousedown", e => { if (e.target === pop) close(); });
+        document.body.appendChild(pop);
       }
 
       function renderLeft() {
@@ -5355,7 +5645,9 @@ app.registerExtension({
         if (running) return;
         if (state.generationMode === "ltxupscale" && !resume) return runLtxUpscale();
         if (state.generationMode === "facerefine" && !resume) return runFaceRefine();
-        if (state.generationMode === "imagegen" && !resume) return runImageGen({ final: true });
+        if (state.generationMode === "imagegen" && !resume) {
+          return state.imageGenMode === "charsheet" ? runCharacterSheet() : runImageGen({ final: true });
+        }
         running = true; stopRequested = false;
         startWakeAudio();
         startQueueWatch();
@@ -6068,6 +6360,7 @@ app.registerExtension({
 
       imageGalleryOv = createImageGalleryOverlay(state, ctx);
       root.appendChild(imageGalleryOv.el);
+      root.appendChild(imgPromptExpandEl);
       // Any reference-video picker (left panel media slots, Prompt Edit's per-clip slots)
       // opens this same gallery instead of a separate, badge-less grid of its own.
       ctx.pickVideoFromGallery = (onPick, opts) => galleryOv.showPicker(onPick, opts);

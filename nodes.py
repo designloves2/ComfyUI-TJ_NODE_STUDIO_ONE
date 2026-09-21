@@ -2789,6 +2789,10 @@ MMH3_OPTIONAL_NODES = [
     # Image Generator (T2I/Ref2I) — 2nd-pass latent upscale between the cheap preview-res
     # first pass and the final-res decode.
     "MinimaxH3LatentUpscaler3D",
+    # Character Sheet's grid-assembly step (buildCharacterSheetGridGraph) — batches the
+    # reference photo + 8 picked frames, lays them into a 3-column grid, caps the result
+    # at a max dimension.
+    "BatchImagesNode", "ImageGrid", "ImageScaleToMaxDimension",
     # FlashVSR VSR (lihaoyun6/ComfyUI-FlashVSR-Ultra-Fast, GPL-3.0) — tiled diffusion
     # video super-resolution, offered as a 4th Upscale option alongside RTX VSR
     "FlashVSRInitPipe", "FlashVSRNodeAdv",

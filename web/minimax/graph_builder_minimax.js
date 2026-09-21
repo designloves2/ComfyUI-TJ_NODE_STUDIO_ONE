@@ -2039,3 +2039,217 @@ export function buildImageUpscaleGraph(opts, avail) {
   return { graph: g, saveNode: IMGPP.save };
 }
 
+// ── Character Sheet ──────────────────────────────────────────────────────────────────
+//
+// Two separate graphs, deliberately: the H3 render (124-frame ref2va turnaround) is the
+// expensive part and only needs to run once; picking different frames for the sheet's 8
+// cells afterward (the user's own edit loop — pick a shot, scrub the raw video, replace,
+// repeat) re-runs only the cheap grid-assembly graph against the ALREADY-SAVED video, not
+// the whole render again.
+const CS = {
+  unet: "CS:unet", sage: "CS:sage", memSage: "CS:mem_sage",
+  lora: (i) => `CS:lora_${i}`,
+  shift: "CS:shift",
+  clip: "CS:clip", vaeV: "CS:vae_video",
+  ref: (i) => `CS:ref_image_${i}`,
+  cond: "CS:cond",
+  noise: "CS:noise", sampSel: "CS:sampler_sel", sched: "CS:scheduler",
+  guider: "CS:guider", sampler: "CS:sampler",
+  sepAV: "CS:sep_av", latentUp: "CS:latent_up", concatAV: "CS:concat_av",
+  sampSel2: "CS:sampler_sel2", guider2: "CS:guider2", sigmas2: "CS:sigmas2", sampler2: "CS:sampler2",
+  decode: "CS:decode", deblur: "CS:deblur", rtxCrop: "CS:rtx_crop", rtx: "CS:rtx", rtxDown: "CS:rtx_downsize",
+  video: "CS:video", save: "CS:save",
+};
+const CS_PASS2_SIGMAS = "0.9035, 0.6316, 0.3158, 0.0000";
+
+// Frame count for the 8-shot turnaround — fixed by the reference workflow's own timed
+// prompt (each [Shot N] At MM:SS.mmm marker assumes this exact length/fps).
+export const CHARSHEET_FRAMES = 124;
+// The reference workflow's own 8 frame picks (indices into the 124-frame render) — the
+// grid graph's default before the user replaces any of them one at a time.
+export const CHARSHEET_DEFAULT_FRAME_INDICES = [7, 22, 37, 52, 67, 82, 107, 118];
+
+/**
+ * The H3 render only — ref2va at CHARSHEET_FRAMES length, sigma-shifted, up to 3 user
+ * LoRAs, optional Deblur/RTX VSR on the decoded frames, saved as a plain video (no audio
+ * — a character sheet has no dialogue to preserve) to its own folder so the frame-picking
+ * UI and the grid graph below can both come back to it later.
+ *
+ * @param opts.refImages   1-9 filenames already in ComfyUI's input/
+ * @param opts.refImageSize "match" | "max"
+ * @param opts.prompt      the Character Sheet system/edited prompt (plain string)
+ * @param opts.deblur      "none" | "LOW" | "MEDIUM" | "HIGH" | "ULTRA"
+ * @param opts.rtx         null, or { rtxSizeMode, rtxScale, ..., rtxQuality } — see
+ *                         buildImageUpscaleGraph's own opts.rtx for the same shape
+ * @param opts.rtxSupersample after RTX VSR, resize back down to width/height instead of
+ *                         leaving the clip at the upscaled size — "RTX VSR for
+ *                         supersampling" in the reference workflow: a cleaner-detail
+ *                         same-size result rather than an actually-larger one.
+ * @param opts.useLatentUpscale when true, renders a cheap first pass at firstPassRes
+ *                         then latent-upscales to width/height for the real decode
+ *                         (reference workflow's own "Use Latent Upscale" + "First Pass
+ *                         Wanted Ratio" — that ratio is just the first pass's megapixel
+ *                         count, so firstPassRes is computed the same way
+ *                         buildImageGenGraph's own previewRes is: resolveResolution at
+ *                         that MP value); false renders straight at width/height.
+ * @param opts.firstPassRes {width,height} — only read when useLatentUpscale is true
+ * @param opts.width/height render (final) resolution; opts.seed; opts.filenamePrefix
+ */
+export function buildCharacterSheetVideoGraph(state, avail, opts) {
+  const { refImages, refImageSize, prompt, deblur = "none", rtx = null, rtxSupersample = false,
+          useLatentUpscale = false, firstPassRes, width, height, seed, filenamePrefix } = opts;
+  const refList = (refImages || []).filter(Boolean).slice(0, 9);
+  if (!refList.length) throw new Error("Character Sheet needs at least one reference image.");
+  if (!state.unetReference || state.unetReference === "none")
+    throw new Error("Reference UNET is not set — check ⚙ Settings → Models.");
+  const g = {};
+
+  g[CS.unet] = { class_type: "UNETLoader", inputs: { unet_name: state.unetReference, weight_dtype: "default" } };
+  let model = [CS.unet, 0];
+  if (has(avail, "PathchSageAttentionKJ")) {
+    g[CS.sage] = { class_type: "PathchSageAttentionKJ", inputs: { sage_attention: "auto", allow_compile: false, model } };
+    model = [CS.sage, 0];
+  }
+  if (has(avail, "MiniMaxH3MemoryEfficientSageAttentionPatch")) {
+    g[CS.memSage] = { class_type: "MiniMaxH3MemoryEfficientSageAttentionPatch", inputs: { model } };
+    model = [CS.memSage, 0];
+  }
+  model = buildImageLoraChain(g, state, model);
+  g[CS.shift] = { class_type: "MiniMaxH3SigmaShift", inputs: { model, shift_video: 12, shift_audio: 3 } };
+  model = [CS.shift, 0];
+
+  g[CS.clip] = { class_type: "CLIPLoader", inputs: { clip_name: state.clipName, type: "minimax", device: "default" } };
+  g[CS.vaeV] = { class_type: "VAELoader", inputs: { vae_name: state.vaeVideo } };
+
+  const passRes = useLatentUpscale && firstPassRes ? firstPassRes : { width, height };
+  const condInputs = {
+    clip: [CS.clip, 0], vae: [CS.vaeV, 0],
+    prompt, width: passRes.width, height: passRes.height, length: CHARSHEET_FRAMES, ref_image_size: refImageSize || "max",
+  };
+  refList.forEach((name, i) => {
+    g[CS.ref(i)] = { class_type: "LoadImage", inputs: { image: name } };
+    condInputs[`ref_images.ref_image_${i}`] = [CS.ref(i), 0];
+  });
+  g[CS.cond] = { class_type: "MiniMaxH3ReferenceToVideo", inputs: condInputs };
+
+  g[CS.noise] = { class_type: "RandomNoise", inputs: { noise_seed: seed ?? 0 } };
+  g[CS.sampSel] = { class_type: "KSamplerSelect", inputs: { sampler_name: "euler" } };
+  g[CS.sched] = { class_type: "BasicScheduler", inputs: { scheduler: "simple", steps: 8, denoise: 1, model } };
+  g[CS.guider] = { class_type: "BasicGuider", inputs: { model, conditioning: [CS.cond, 0] } };
+  g[CS.sampler] = { class_type: "SamplerCustomAdvanced", inputs: {
+    noise: [CS.noise, 0], guider: [CS.guider, 0], sampler: [CS.sampSel, 0],
+    sigmas: [CS.sched, 0], latent_image: [CS.cond, 1],
+  }};
+
+  let decodeSamples = [CS.sampler, 0];
+  if (useLatentUpscale) {
+    if (!has(avail, "MinimaxH3LatentUpscaler3D")) throw new Error("MinimaxH3LatentUpscaler3D is not installed.");
+    g[CS.sepAV] = { class_type: "LTXVSeparateAVLatent", inputs: { av_latent: [CS.sampler, 1] } };
+    g[CS.latentUp] = { class_type: "MinimaxH3LatentUpscaler3D", inputs: {
+      model_name: "minimax_h3_latent_upscaler_3d_bf16.safetensors",
+      mode: "target dimensions", "mode.width": width, "mode.height": height,
+      align: 32, enable_temporal_chunking: true, force_unload: true, device: "cuda", precision: "fp16",
+      latent: [CS.sepAV, 0],
+    }};
+    g[CS.concatAV] = { class_type: "LTXVConcatAVLatent", inputs: { video_latent: [CS.latentUp, 0], audio_latent: [CS.sepAV, 1] } };
+    g[CS.sampSel2] = { class_type: "KSamplerSelect", inputs: { sampler_name: "euler" } };
+    g[CS.guider2] = { class_type: "BasicGuider", inputs: { model, conditioning: [CS.cond, 0] } };
+    g[CS.sigmas2] = { class_type: "ManualSigmas", inputs: { sigmas: CS_PASS2_SIGMAS } };
+    g[CS.sampler2] = { class_type: "SamplerCustomAdvanced", inputs: {
+      noise: [CS.noise, 0], guider: [CS.guider2, 0], sampler: [CS.sampSel2, 0],
+      sigmas: [CS.sigmas2, 0], latent_image: [CS.concatAV, 0],
+    }};
+    decodeSamples = [CS.sampler2, 0];
+  }
+  g[CS.decode] = { class_type: "VAEDecode", inputs: { samples: decodeSamples, vae: [CS.vaeV, 0] } };
+  let images = [CS.decode, 0];
+
+  if (deblur && deblur !== "none") {
+    if (!has(avail, "TJ_RTXDeblur")) throw new Error("RTX Deblur (TJ_RTXDeblur) is not installed.");
+    g[CS.deblur] = { class_type: "TJ_RTXDeblur", inputs: { images, strength: deblur } };
+    images = [CS.deblur, 0];
+  }
+  if (rtx) {
+    if (!has(avail, "RTXVideoSuperResolution")) throw new Error("RTXVideoSuperResolution is not installed.");
+    const r = buildRtxNode(g, { crop: CS.rtxCrop, rtx: CS.rtx }, images, rtx, width, height);
+    images = r.images;
+    if (rtxSupersample) {
+      g[CS.rtxDown] = { class_type: "ImageScale", inputs: { image: images, upscale_method: "lanczos", width, height, crop: "center" } };
+      images = [CS.rtxDown, 0];
+    }
+  }
+
+  // No audio track — a character sheet has no dialogue to carry, and VHS_VideoCombine's
+  // audio input is optional.
+  if (has(avail, "VHS_VideoCombine")) {
+    g[CS.save] = { class_type: "VHS_VideoCombine", inputs: {
+      images, frame_rate: FPS, loop_count: 0, filename_prefix: filenamePrefix,
+      format: "video/nvenc_h264-mp4", pingpong: false, save_output: true,
+    }};
+  } else {
+    g[CS.video] = { class_type: "CreateVideo", inputs: { images, fps: FPS } };
+    g[CS.save] = { class_type: "SaveVideo", inputs: { video: [CS.video, 0], filename_prefix: filenamePrefix, format: "auto", codec: "auto" } };
+  }
+  return { graph: g, saveNode: CS.save };
+}
+
+const CSG = {
+  load: "CSG:load", ref: "CSG:ref", refResize: "CSG:ref_resize",
+  frame: (i) => `CSG:frame_${i}`,
+  frameSave: (i) => `CSG:frame_save_${i}`,
+  batch: "CSG:batch", grid: "CSG:grid", scaleMax: "CSG:scale_max", save: "CSG:save",
+};
+
+/**
+ * Assemble (or re-assemble) the sheet image from an already-rendered Character Sheet
+ * video — the reference photo as cell 0, then one frame per index in `frameIndices` (8 by
+ * default) as cells 1-N, in a 3-column grid. Cheap and fast: no H3 model touched.
+ *
+ * @param opts.videoFile    the raw sheet video, already in ComfyUI's input/
+ * @param opts.refImage     the reference photo, already in ComfyUI's input/ (cell 0)
+ * @param opts.frameIndices up to 8 frame numbers (0-based) into the video
+ * @param opts.cellWidth/cellHeight the render resolution every cell is padded/scaled to
+ * @param opts.maxDimension final ImageScaleToMaxDimension cap (default 2048, matches the
+ *                          reference workflow's own SheetMaxSize)
+ * @param opts.saveEachFrames when true, also SaveImage each of the 8 picked frames on
+ *                          their own (reference workflow's own "Save Each Frames")
+ * @param opts.folder/opts.stem/opts.filenamePrefix
+ */
+export function buildCharacterSheetGridGraph(opts, avail) {
+  const { videoFile, refImage, frameIndices, cellWidth, cellHeight, maxDimension = 2048,
+          saveEachFrames = false, framesFilenamePrefix, filenamePrefix } = opts;
+  const indices = (frameIndices && frameIndices.length ? frameIndices : CHARSHEET_DEFAULT_FRAME_INDICES).slice(0, 8);
+  for (const n of ["BatchImagesNode", "ImageGrid", "ImageScaleToMaxDimension"]) {
+    if (!has(avail, n)) throw new Error(`${n} is not installed.`);
+  }
+  const g = {};
+
+  g[CSG.load] = { class_type: "VHS_LoadVideo", inputs: {
+    video: videoFile, force_rate: 0, custom_width: 0, custom_height: 0,
+    frame_load_cap: 0, skip_first_frames: 0, select_every_nth: 1,
+  }};
+  g[CSG.ref] = { class_type: "LoadImage", inputs: { image: refImage } };
+  g[CSG.refResize] = { class_type: "ImageScale", inputs: {
+    image: [CSG.ref, 0], upscale_method: "lanczos", width: cellWidth, height: cellHeight, crop: "center",
+  }};
+
+  const batchInputs = { "images.image0": [CSG.refResize, 0] };
+  indices.forEach((idx, i) => {
+    g[CSG.frame(i)] = { class_type: "ImageFromBatch", inputs: { batch_index: idx, length: 1, image: [CSG.load, 0] } };
+    batchInputs[`images.image${i + 1}`] = [CSG.frame(i), 0];
+    if (saveEachFrames) {
+      g[CSG.frameSave(i)] = { class_type: "SaveImage", inputs: {
+        filename_prefix: `${framesFilenamePrefix || filenamePrefix}_shot${i + 1}`, images: [CSG.frame(i), 0],
+      }};
+    }
+  });
+  g[CSG.batch] = { class_type: "BatchImagesNode", inputs: batchInputs };
+  g[CSG.grid] = { class_type: "ImageGrid", inputs: {
+    columns: 3, cell_width: cellWidth, cell_height: cellHeight, padding: 8, images: [CSG.batch, 0],
+  }};
+  g[CSG.scaleMax] = { class_type: "ImageScaleToMaxDimension", inputs: {
+    upscale_method: "area", largest_size: maxDimension, image: [CSG.grid, 0],
+  }};
+  g[CSG.save] = { class_type: "SaveImage", inputs: { filename_prefix: filenamePrefix, images: [CSG.scaleMax, 0] } };
+  return { graph: g, saveNode: CSG.save };
+}

@@ -4,6 +4,7 @@
 import { C, BRAND, el, clear, SUBFOLDER } from "./core_minimax.js";
 import { panel, label, button, select, numberField, row, col } from "../klein/ui_common.js";
 import { getModels, getConfig, saveConfig, getNodeAvailability, listVideos } from "./api_minimax.js";
+import { mountLLMSettingsSection } from "../shared/llm_panel.js";
 
 function searchableSelect(options, value, onChange) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } });
@@ -74,7 +75,7 @@ export function createSettingsOverlay(state, ctx) {
   ov.appendChild(topRow);
 
   // ── tab bar ────────────────────────────────────────────────────────────────
-  const TABS = ["H3 Model", "UpScale Model", "FaceRefine Model", "LLM Setting", "Preview", "Output"];
+  const TABS = ["H3 Model", "UpScale Model", "FaceRefine Model", "LLM Setting", "Image LLM", "Preview", "Output"];
   let activeTab = "H3 Model";
   const tabBar = el("div", { style: { display: "flex", gap: "6px", flexShrink: "0" } });
   const bodyWrap = el("div", { style: { flex: "1", overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px", paddingRight: "4px" } });
@@ -673,14 +674,29 @@ export function createSettingsOverlay(state, ctx) {
     return wrap;
   }
 
+  // Image Generator's "🔍 Prompt Edit" popup (T2I/Reference to Image, shared with Krea2/
+  // Z-Image/Klein/Qwen2511/SDXL/Anima) reads its backend/model config from the SAME
+  // cross-tool "tj_studio_one_llm_settings" store those 6 tools use — a separate system
+  // from "LLM Setting" above, which is H3's own video-brief/vision backend
+  // (h3_brief_backend etc.) and has nothing to do with the image prompt popup.
+  function imageLlmTab() {
+    const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } });
+    const llmPanel = panel([]);
+    wrap.appendChild(llmPanel);
+    mountLLMSettingsSection(llmPanel, ctx);
+    return wrap;
+  }
+
   function renderBody() {
     clear(bodyWrap);
     const fn = {
       "H3 Model": h3ModelTab, "UpScale Model": upscaleModelTab, "FaceRefine Model": faceRefineModelTab,
-      "LLM Setting": samplingTab, Preview: previewTab, Output: outputTab,
+      "LLM Setting": samplingTab, "Image LLM": imageLlmTab, Preview: previewTab, Output: outputTab,
     }[activeTab];
     bodyWrap.appendChild(fn());
   }
+  // The Image Generator popup's own "⚙" shortcut jumps straight to this tab.
+  ctx.openImageLlmSettings = () => { activeTab = "Image LLM"; renderTabs(); renderBody(); ov.style.display = "flex"; refreshModels(); };
 
   function saveAll() {
     ctx.persist();
