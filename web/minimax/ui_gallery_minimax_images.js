@@ -534,7 +534,10 @@ export function createImageGalleryOverlay(state, ctx) {
     const im = el("img", { style: {
       maxWidth: "100%", maxHeight: "100%", objectFit: "contain", display: "block",
       transformOrigin: "center center", cursor: "default", userSelect: "none",
+      WebkitUserDrag: "none", pointerEvents: "none",
     }});
+    im.draggable = false;
+    im.addEventListener("dragstart", (e) => e.preventDefault());
     imgWrap.appendChild(im);
 
     // Pan (drag) / zoom (wheel, cursor-anchored) / fit (double-click reset) — same
