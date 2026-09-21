@@ -18,6 +18,26 @@ import { listImages, revealOutputFolder, deleteImage, copyOutputToInput, discard
 import { buildImageUpscaleGraph } from "./graph_builder_minimax.js";
 import { mediaKey, isBlurred, attachSensitiveToggle, makeSensitiveControl } from "../shared/ui_sensitive_media.js";
 
+// Named aspect ratios a real render is actually likely to land on — same table the video
+// gallery's own card badge uses.
+const NAMED_RATIOS = [
+  ["1:1", 1], ["16:9", 16 / 9], ["9:16", 9 / 16], ["4:3", 4 / 3], ["3:4", 3 / 4],
+  ["21:9", 21 / 9], ["3:2", 3 / 2], ["2:3", 2 / 3], ["5:4", 5 / 4], ["4:5", 4 / 5],
+];
+function aspectRatioLabel(w, h) {
+  if (!w || !h) return "";
+  const r = w / h;
+  let best = null, bestErr = Infinity;
+  for (const [label, val] of NAMED_RATIOS) {
+    const err = Math.abs(r - val) / val;
+    if (err < bestErr) { bestErr = err; best = label; }
+  }
+  if (best && bestErr <= 0.015) return best;
+  const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+  const g = gcd(w, h) || 1;
+  return `${w / g}:${h / g}`;
+}
+
 function imageURL(v) {
   return `/view?filename=${encodeURIComponent(v.filename)}`
     + `&subfolder=${encodeURIComponent(v.subfolder || "")}&type=output&t=${v.mtime || ""}`;
@@ -413,7 +433,8 @@ export function createImageGalleryOverlay(state, ctx) {
     const meta = el("div", { style: { padding: "5px 7px", display: "flex", flexDirection: "column", gap: "1px" } });
     if (v.meta?.w && v.meta?.h) {
       const mp = ((v.meta.w * v.meta.h) / 1_000_000).toFixed(1);
-      meta.appendChild(el("div", { text: `[${v.meta.w}x${v.meta.h}px / ${mp}MP]`,
+      const ratio = aspectRatioLabel(v.meta.w, v.meta.h);
+      meta.appendChild(el("div", { text: `[${v.meta.w}x${v.meta.h}px / ${mp}MP${ratio ? `    ${ratio}` : ""}]`,
         style: { fontSize: "9px", color: "#fff", fontWeight: "600" } }));
     }
     meta.append(
@@ -431,26 +452,30 @@ export function createImageGalleryOverlay(state, ctx) {
       }});
       p.title = promptText;
       meta.appendChild(p);
-
-      const mini = (txt, tip, fn, full) => {
-        const b = el("button", { text: txt, style: {
-          flex: full ? "1 1 100%" : "1", fontSize: "9px", padding: "3px 0", cursor: "pointer",
-          background: C.bg2, color: C.text, border: `1px solid ${C.border}`, borderRadius: "4px",
-        }});
-        b.title = tip;
-        b.addEventListener("click", e => { e.stopPropagation(); fn(); });
-        return b;
-      };
-      // Row 1: Reuse Setting alone; Row 2: Prompt View + Prompt Copy side by side —
-      // the user's own requested layout.
-      const row1 = el("div", { style: { display: "flex", gap: "4px", marginTop: "4px" } },
-        [mini("↩ Reuse Setting", "Restore this image's prompt and settings into the Image Generator panel", () => doReuse(v), true)]);
-      const row2 = el("div", { style: { display: "flex", gap: "4px", marginTop: "4px" } }, [
-        mini("📄 Prompt View", "View the full prompt, image and info in one popup", () => openPromptViewPopup(idx)),
-        mini("⧉ Prompt Copy", "Copy the prompt to the clipboard", () => doCopyPrompt(promptText)),
-      ]);
-      meta.append(row1, row2);
     }
+
+    // Always shown, prompt or not — Reuse Setting still restores whatever settings ARE
+    // saved, and View/Copy are harmless on an empty prompt too. Matches the enlarged
+    // popup, which already shows this footer unconditionally (user: "버튼은 크게
+    // 보기에서도 있는데 밖에서도 보이게").
+    const mini = (txt, tip, fn, full) => {
+      const b = el("button", { text: txt, style: {
+        flex: full ? "1 1 100%" : "1", fontSize: "9px", padding: "3px 0", cursor: "pointer",
+        background: C.bg2, color: C.text, border: `1px solid ${C.border}`, borderRadius: "4px",
+      }});
+      b.title = tip;
+      b.addEventListener("click", e => { e.stopPropagation(); fn(); });
+      return b;
+    };
+    // Row 1: Reuse Setting alone (full width); Row 2: Prompt View + Prompt Copy split
+    // 1:1 — the user's own requested layout.
+    const row1 = el("div", { style: { display: "flex", gap: "4px", marginTop: "4px" } },
+      [mini("↩ Reuse Setting", "Restore this image's prompt and settings into the Image Generator panel", () => doReuse(v), true)]);
+    const row2 = el("div", { style: { display: "flex", gap: "4px", marginTop: "4px" } }, [
+      mini("📄 Prompt View", "View the full prompt, image and info in one popup", () => openPromptViewPopup(idx)),
+      mini("⧉ Prompt Copy", "Copy the prompt to the clipboard", () => doCopyPrompt(promptText || "")),
+    ]);
+    meta.append(row1, row2);
 
     card.append(thumbWrap, meta);
     return card;
@@ -473,6 +498,7 @@ export function createImageGalleryOverlay(state, ctx) {
     if (ok) hide();
   }
   function doCopyPrompt(promptText) {
+    if (!promptText) { ctx.showPopup?.("No prompt saved for this image.", true); return; }
     navigator.clipboard?.writeText(promptText)
       .then(() => ctx.showPopup?.("Prompt copied.", false))
       .catch(() => ctx.showPopup?.("Copy failed.", true));
