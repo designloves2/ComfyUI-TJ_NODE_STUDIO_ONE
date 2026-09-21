@@ -1862,13 +1862,18 @@ export function buildPostprocessGraph(opts, avail) {
 // single still. Mirrors the reference workflow the user supplied
 // ("MiniMax-H3-Image-Generation.json"): a cheap first pass at the "preview" resolution,
 // then — only for a real (non-preview) run — a second pass through
-// MinimaxH3LatentUpscaler3D up to the "final" resolution, using the exact fixed 3-step
-// sigma schedule the reference workflow wires in (no user-facing step count here; this
-// mode intentionally does not share the main pipeline's turbo/accelerator stack — it's
-// its own small, fixed pipeline plus up to 3 user LoRA slots).
+// MinimaxH3LatentUpscaler3D up to the "final" resolution. A user-facing Turbo switch
+// (off by default) optionally patches in one LoRA — separate slots for T2I/Ref2I, same
+// reasoning as the main pipeline's own turboLora/turboLoraReference split, since a turbo
+// LoRA is trained against one base model. With Turbo on, the second pass keeps the
+// reference workflow's own fixed 3-step sigma schedule ("3 step Sigmas") that schedule is
+// built for; with Turbo off, both passes run a plain schedule at the user's own step
+// count. This is still its own small pipeline plus up to 3 user LoRA slots, not the main
+// pipeline's turbo/accelerator stack (no attention backend, block cache, etc.).
 const IMG = {
   unet: "IMG:unet", sage: "IMG:sage", memSage: "IMG:mem_sage",
   lora: (i) => `IMG:lora_${i}`,
+  turboLora: "IMG:turbo_lora",
   clip: "IMG:clip", vaeV: "IMG:vae_video",
   ref: (i) => `IMG:ref_image_${i}`,
   cond: "IMG:cond",
@@ -1912,9 +1917,17 @@ function buildImageLoraChain(g, state, modelLink) {
  *                      themselves, no separate CLIPTextEncode
  * @param opts.seed, opts.previewRes {width,height}, opts.finalRes {width,height}
  * @param opts.filenamePrefix
+ * @param opts.steps        first-pass step count (also both passes' count with Turbo
+ *                          off); default 8, the reference workflow's own fixed value
+ * @param opts.turboOn      false (default) = plain render, no LoRA, opts.steps both passes
+ * @param opts.turboLora, opts.turboLoraStrength  ignored unless opts.turboOn
+ * @param opts.savePreview  false (default) = a !final run's still goes to PreviewImage
+ *                          (ComfyUI's temp/ folder, not the output gallery) instead of
+ *                          SaveImage; ignored when opts.final is true (always saved)
  */
 export function buildImageGenGraph(state, avail, opts) {
-  const { subMode, final, refImages, refImageSize, prompt, seed, previewRes, finalRes, filenamePrefix } = opts;
+  const { subMode, final, refImages, refImageSize, prompt, seed, previewRes, finalRes, filenamePrefix,
+          steps, turboOn, turboLora, turboLoraStrength, savePreview } = opts;
   const refList = (refImages || []).filter(Boolean).slice(0, 9);
   if (subMode === "ref2i" && !refList.length) throw new Error("Reference to Image needs at least one reference image.");
   const g = {};
@@ -1935,6 +1948,15 @@ export function buildImageGenGraph(state, avail, opts) {
   }
   model = buildImageLoraChain(g, state, model);
 
+  // Turbo LoRA — user-selectable, off by default (goes after the user LoRA chain so it
+  // sits closest to the sampler, same ordering the main pipeline's own turbo LoRA uses).
+  if (turboOn && turboLora && turboLora !== "none") {
+    g[IMG.turboLora] = { class_type: "LoraLoaderModelOnly", inputs: {
+      model, lora_name: turboLora, strength_model: turboLoraStrength ?? 1.0,
+    }};
+    model = [IMG.turboLora, 0];
+  }
+
   g[IMG.clip] = { class_type: "CLIPLoader", inputs: { clip_name: state.clipName, type: "minimax", device: "default" } };
   g[IMG.vaeV] = { class_type: "VAELoader", inputs: { vae_name: state.vaeVideo } };
 
@@ -1953,9 +1975,10 @@ export function buildImageGenGraph(state, avail, opts) {
     g[IMG.cond] = { class_type: "MiniMaxH3ImageToVideo", inputs: condInputs };
   }
 
+  const stepCount = Math.max(1, Math.round(steps ?? 8));
   g[IMG.noise] = { class_type: "RandomNoise", inputs: { noise_seed: seed ?? 0 } };
   g[IMG.sampSel1] = { class_type: "KSamplerSelect", inputs: { sampler_name: "euler" } };
-  g[IMG.sched] = { class_type: "BasicScheduler", inputs: { scheduler: "simple", steps: 8, denoise: 1, model } };
+  g[IMG.sched] = { class_type: "BasicScheduler", inputs: { scheduler: "simple", steps: stepCount, denoise: 1, model } };
   g[IMG.guider1] = { class_type: "BasicGuider", inputs: { model, conditioning: [IMG.cond, 0] } };
   g[IMG.sampler1] = { class_type: "SamplerCustomAdvanced", inputs: {
     noise: [IMG.noise, 0], guider: [IMG.guider1, 0], sampler: [IMG.sampSel1, 0],
@@ -1983,7 +2006,12 @@ export function buildImageGenGraph(state, avail, opts) {
     }};
     g[IMG.sampSel2] = { class_type: "KSamplerSelect", inputs: { sampler_name: "euler" } };
     g[IMG.guider2] = { class_type: "BasicGuider", inputs: { model, conditioning: [IMG.cond, 0] } };
-    g[IMG.sigmas2] = { class_type: "ManualSigmas", inputs: { sigmas: IMG_PASS2_SIGMAS } };
+    // Turbo on: the reference workflow's own fixed 3-step schedule, built for a turbo
+    // LoRA's distilled step count. Turbo off: a plain schedule at the same step count as
+    // the first pass, since there's no turbo LoRA here to justify only 3 steps.
+    g[IMG.sigmas2] = turboOn
+      ? { class_type: "ManualSigmas", inputs: { sigmas: IMG_PASS2_SIGMAS } }
+      : { class_type: "BasicScheduler", inputs: { scheduler: "simple", steps: stepCount, denoise: 1, model } };
     g[IMG.sampler2] = { class_type: "SamplerCustomAdvanced", inputs: {
       noise: [IMG.noise, 0], guider: [IMG.guider2, 0], sampler: [IMG.sampSel2, 0],
       sigmas: [IMG.sigmas2, 0], latent_image: [IMG.concatAV, 0],
@@ -1993,7 +2021,12 @@ export function buildImageGenGraph(state, avail, opts) {
 
   g[IMG.decode] = { class_type: "VAEDecode", inputs: { samples: decodeSamples, vae: [IMG.vaeV, 0] } };
   g[IMG.frame] = { class_type: "ImageFromBatch", inputs: { batch_index: IMG_LENGTH, length: 1, image: [IMG.decode, 0] } };
-  g[IMG.save] = { class_type: "SaveImage", inputs: { filename_prefix: filenamePrefix, images: [IMG.frame, 0] } };
+  // A preview the user hasn't opted to keep goes to PreviewImage (ComfyUI's own temp/
+  // folder) instead of SaveImage, so it never lands in the output folder the H3 image
+  // gallery scans — nothing to clean up afterward. A real (final) run always saves.
+  g[IMG.save] = (final || savePreview)
+    ? { class_type: "SaveImage", inputs: { filename_prefix: filenamePrefix, images: [IMG.frame, 0] } }
+    : { class_type: "PreviewImage", inputs: { images: [IMG.frame, 0] } };
 
   return { graph: g, saveNode: IMG.save };
 }

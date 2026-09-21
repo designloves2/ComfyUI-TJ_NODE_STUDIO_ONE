@@ -3531,12 +3531,48 @@ app.registerExtension({
             col([label("Final MP"), numberField(state.imgFinalMp ?? 1.0,
               v => { state.imgFinalMp = Math.max(0.1, v); persist(); }, 0.1)]),
           ]),
+          (subMode === "t2i" || subMode === "ref2i")
+            ? checkboxRow("Save Preview to Gallery", !!state.imgPreviewSaveToGallery,
+                v => { state.imgPreviewSaveToGallery = v; persist(); })
+            : null,
         ]));
 
         // ── LoRA — same dynamic Add-LoRA accordion as the video modes ───────────
         const imgLoraOn = (state.imgLoras || []).filter(l => l && l.enabled !== false && l.name && l.name !== "none").length;
         leftPanel.appendChild(accordion("imgLora", "LoRA", imgLoraOn ? `${imgLoraOn} active` : "None",
           () => [mountImgLoraPanel()]));
+
+        // ── Turbo — T2I/Ref2I only (Character Sheet's render shares the main pipeline's
+        // own turbo stack via effectiveTurbo, unrelated to this). Off by default: with no
+        // turbo LoRA this pipeline runs as a plain, non-accelerated render at the chosen
+        // step count. Two separate LoRA slots (t2i/ref2i) since a turbo LoRA is trained
+        // against one base model, same reasoning as the main pipeline's own turboLora /
+        // turboLoraReference split.
+        if (subMode === "t2i" || subMode === "ref2i") {
+          const turboKey = subMode === "ref2i" ? "imgTurboLoraRef2i" : "imgTurboLoraT2i";
+          const turboOn = !!state.imgTurboOn;
+          leftPanel.appendChild(accordion("imgTurbo", "Turbo",
+            turboOn ? `${state[turboKey] && state[turboKey] !== "none" ? state[turboKey] : "no LoRA set"}` : "Off",
+            () => {
+              const loraOpts = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
+              const kids = [
+                checkboxRow("Use Turbo LoRA", turboOn, v => { state.imgTurboOn = v; persist(); renderLeft(); }),
+              ];
+              if (turboOn) {
+                kids.push(row([col([label(`Turbo LoRA (${subMode === "ref2i" ? "Reference" : "Text/First-Last"})`),
+                  loraSelect(loraOpts, state[turboKey] || "none", v => { state[turboKey] = v; persist(); }).el])]));
+                kids.push(row([col([label("strength"), numberField(state.imgTurboLoraStrength ?? 1.0,
+                  v => { state.imgTurboLoraStrength = v; persist(); }, 0.05)])]));
+              }
+              kids.push(row([col([label("Steps"), numberField(state.imgSteps ?? 8,
+                v => { state.imgSteps = Math.max(1, Math.round(v)); persist(); }, 1)])]));
+              kids.push(el("div", { text: turboOn
+                ? "Turbo on — the second (final-resolution) pass still uses the reference workflow's own fixed 3-step schedule; Steps only sets the first (preview) pass."
+                : "Turbo off — a plain render at Steps count, no LoRA. Both passes use this step count.",
+                style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
+              return kids;
+            }));
+        }
 
         if (subMode === "charsheet") {
           // Subject name — folds into the saved filename, matching the reference
@@ -3633,19 +3669,26 @@ app.registerExtension({
           const finalRes = resolveResolution(state.imgAspect || "2:3 Portrait", state.imgFinalMp ?? 1.0);
           const seed = state.seedMode === "fixed" ? (state.seed ?? 0) : randomSeed();
           if (state.seedMode !== "fixed") { state.seed = seed; persist(); seedInput.value = String(seed); }
+          const turboKey = subMode === "ref2i" ? "imgTurboLoraRef2i" : "imgTurboLoraT2i";
           const built = buildImageGenGraph(state, ctx.availability || {}, {
             subMode, final,
             refImages: subMode === "ref2i" ? state.imgRefImages : null,
             refImageSize: state.imgRefImageSize || "max",
             prompt: state.imgPrompt || "", seed, previewRes, finalRes,
             filenamePrefix: `${state.imgSaveSubfolder || state.saveSubfolder || SUBFOLDER}/${subMode}_${final ? "final" : "preview"}`,
+            steps: state.imgSteps ?? 8,
+            turboOn: !!state.imgTurboOn, turboLora: state[turboKey], turboLoraStrength: state.imgTurboLoraStrength ?? 1.0,
+            savePreview: !!state.imgPreviewSaveToGallery,
           });
           const res = await queuePrompt(built.graph, {
             onProgress: (v, m) => setStatus(`Image Generator — ${Math.round((v / (m || 1)) * 100)}%`),
           });
           const o = res.byNode[built.saveNode]?.images?.[0];
           if (!o) throw new Error("No output produced.");
-          const url = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=output`;
+          // A preview that wasn't opted into the gallery comes back as a PreviewImage
+          // output (type "temp"), not SaveImage's "output" — /view needs the right type
+          // or it 404s.
+          const url = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=${encodeURIComponent(o.type || "output")}`;
           lastResultURL = url; previewLocked = true;
           placeholder.style.display = "none"; frDetectBanner.style.display = "none"; fvsrBanner.style.display = "none";
           try { previewVid.pause(); } catch {}
@@ -3666,6 +3709,10 @@ app.registerExtension({
               imgLoras: state.imgLoras || [], subMode,
               refImages: subMode === "ref2i" ? (state.imgRefImages || []) : [],
               refImageSize: state.imgRefImageSize || "max", seed,
+              imgSteps: state.imgSteps ?? 8,
+              imgTurboOn: !!state.imgTurboOn,
+              imgTurboLora: state.imgTurboOn ? (state[turboKey] || null) : null,
+              imgTurboLoraStrength: state.imgTurboLoraStrength ?? 1.0,
             }).catch(() => {});
           }
           setStatus(`✓ Image Generator done${final ? "" : " (preview)"}.`);
@@ -6297,6 +6344,13 @@ app.registerExtension({
         if (Array.isArray(meta.refImages)) state.imgRefImages = meta.refImages.slice();
         if (meta.refImageSize) state.imgRefImageSize = meta.refImageSize;
         if (meta.seed != null) { state.seed = meta.seed; state.seedMode = "fixed"; seedInput.value = meta.seed; seedModeDD.value = "fixed"; }
+        if (meta.imgSteps != null) state.imgSteps = meta.imgSteps;
+        if (meta.imgTurboOn != null) state.imgTurboOn = !!meta.imgTurboOn;
+        if (meta.imgTurboLora) {
+          const turboKey = subMode === "ref2i" ? "imgTurboLoraRef2i" : "imgTurboLoraT2i";
+          state[turboKey] = meta.imgTurboLora;
+        }
+        if (meta.imgTurboLoraStrength != null) state.imgTurboLoraStrength = meta.imgTurboLoraStrength;
         persist();
         renderPills(); renderLeft(); renderPrompts();
         return true;
