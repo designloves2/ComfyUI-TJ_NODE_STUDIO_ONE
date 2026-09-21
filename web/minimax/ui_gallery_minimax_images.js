@@ -594,13 +594,7 @@ export function createImageGalleryOverlay(state, ctx) {
       flexShrink: "0", fontSize: "10px", color: C.text, lineHeight: "1.6", whiteSpace: "pre-wrap", wordBreak: "break-all",
       background: C.bg2, border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px 8px", margin: "0 14px",
     }});
-    const promptBox = el("div", { style: {
-      flexShrink: "0", background: C.bg2, border: `1px solid ${C.border}`, borderRadius: "6px",
-      padding: "10px", fontSize: "12px", color: C.text, lineHeight: "1.5", whiteSpace: "pre-wrap",
-      overflowY: "auto", maxHeight: "18vh", margin: "8px 14px 0",
-    }});
-
-    // ── footer — Reuse Setting / Prompt Copy ──────────────────────────────────────
+    // ── footer — Reuse Setting / Prompt View ──────────────────────────────────────
     const footBtn = (txt, tip, fn, primary) => {
       const b = el("button", { type: "button", text: txt, style: {
         flex: "1", cursor: "pointer", fontFamily: "inherit", fontSize: "13px", fontWeight: primary ? "700" : "400",
@@ -614,10 +608,41 @@ export function createImageGalleryOverlay(state, ctx) {
     const footRow = el("div", { style: { flexShrink: "0", display: "flex", gap: "8px", padding: "10px 14px 14px" } }, [
       footBtn("↩ Reuse Setting", "Restore this image's prompt and settings into the panel",
         () => { closePop(); doReuse(filtered[i]); }, true),
-      footBtn("⧉ Prompt Copy", "Copy the prompt to the clipboard", () => doCopyPrompt(currentPromptText())),
+      footBtn("📄 Prompt View", "Show the full prompt in its own window", () => openPromptTextPopup(currentPromptText())),
     ]);
 
-    pop.append(topBar, imgWrap, navRow, hintRow, infoBox, promptBox, footRow);
+    pop.append(topBar, imgWrap, navRow, hintRow, infoBox, footRow);
+
+    // ── Prompt View — a small centered modal on top of the full-screen popup, with the
+    // prompt text and Prompt Copy / Close underneath. Kept separate from the main prompt
+    // field per the user's request (no inline prompt field in the full-screen view).
+    function openPromptTextPopup(text) {
+      const overlay = el("div", { style: {
+        position: "fixed", inset: "0", zIndex: "100070", display: "flex",
+        alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.6)",
+      }});
+      const box = el("div", { style: {
+        width: "560px", maxWidth: "90%", maxHeight: "70vh", display: "flex", flexDirection: "column",
+        gap: "10px", background: "#141414", border: `1px solid ${C.border}`, borderRadius: "10px",
+        padding: "16px", boxShadow: "0 16px 50px rgba(0,0,0,0.65)",
+      }});
+      const title = el("div", { text: "Prompt", style: { color: "#fff", fontSize: "13px", fontWeight: "700" } });
+      const textBox = el("div", { text: text || "(no prompt saved)", style: {
+        flex: "1", minHeight: "0", overflowY: "auto", background: C.bg2, border: `1px solid ${C.border}`,
+        borderRadius: "6px", padding: "10px", fontSize: "12px", color: C.text, lineHeight: "1.5",
+        whiteSpace: "pre-wrap",
+      }});
+      const btnRow = el("div", { style: { display: "flex", gap: "8px" } }, [
+        footBtn("⧉ Prompt Copy", "Copy the prompt to the clipboard", () => doCopyPrompt(text)),
+        footBtn("✕ Close", "Close", () => { document.removeEventListener("keydown", onOvKey, true); overlay.remove(); }),
+      ]);
+      box.append(title, textBox, btnRow);
+      overlay.appendChild(box);
+      const onOvKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); document.removeEventListener("keydown", onOvKey, true); overlay.remove(); } };
+      overlay.addEventListener("mousedown", e => { if (e.target === overlay) { document.removeEventListener("keydown", onOvKey, true); overlay.remove(); } });
+      document.addEventListener("keydown", onOvKey, true);
+      document.body.appendChild(overlay);
+    }
 
     function render() {
       const v = filtered[i];
@@ -627,7 +652,6 @@ export function createImageGalleryOverlay(state, ctx) {
       posEl.textContent = `${i + 1} / ${filtered.length}`;
       const lines = buildInfoLines(v);
       infoBox.textContent = lines.length ? lines.join("\n") : "No settings saved for this image.";
-      promptBox.textContent = currentPromptText() || "(no prompt saved)";
       // Blur/reveal toggle stays live across nav — re-applies to whichever image is
       // current, same rule the thumbnail grid follows.
       resetTransform();
