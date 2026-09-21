@@ -417,6 +417,41 @@ export const LTX_CONVERT_LLM_PROMPT =
   + "Natural cinematic language only — no bullet points, no keyword lists, no quality "
   + "boosters, no negative phrasing. Output only the paragraph.";
 
+// Character Sheet's default prompt — verbatim from the user's own reference workflow
+// ("[TJ]OneCharacterSheet-H3.json", nodes 1232:1241 + 1232:1242's string concatenation),
+// so the box always shows exactly what that workflow sends rather than starting blank.
+// Editable like any other prompt — this is just the starting value.
+export const CHARSHEET_PROMPT_TEMPLATE =
+  "subject_definitions:\n@image1 is <Subject 1>, Protagonist.\n\nstyle_definitions:\n"
+  + "@style is <Style 1>, @image1 High quality and detailed 3d anime"
+  + "\n\nretention_analysis:\n<Subject 1>: fully_preserved the exact facial identity, "
+  + "anatomy, clothing, skin color, skin texture, skin shade, skin radiance and "
+  + "proportions of <Subject 1>. Never render @image1 as a shot.\n<Style 1>: "
+  + "fully_preserved the artistic medium, line weight, shading, and texture across all "
+  + "angles.\n\ndetailed_description:\nThe scene is a character model sheet on a "
+  + "seamless neutral white studio backdrop with even lighting. No border. @style is "
+  + "applied throughout. Start directly at Shot 1. \n  \n[Shot 1]: Static full-body shot, "
+  + "front view from head to toe. <Subject 1> maintains a neutral pose and expression, "
+  + "arms relaxed at sides with empty open hands.\n[[Shot 2] At 00:00.625]: Static "
+  + "full-body shot, back view from head to toe. <Subject 1> maintains a neutral pose "
+  + "and expression, arms relaxed at sides with empty open hands.\n[[Shot 3] At "
+  + "00:01.250]: Static full-body shot of <Subject 1>, showing left and right profile "
+  + "views. <Subject 1> maintains a neutral pose and expression, arms relaxed at sides "
+  + "with empty open hands.\n[[Shot 4] At 00:01.875]: Static front_three_quarter view "
+  + "(framed from mid-thigh to top of head) of <Subject 1>. <Subject 1> maintains a "
+  + "neutral pose and expression, arms relaxed at sides with empty open hands.\n[[Shot "
+  + "5] At 00:02.500]: Static Back_three_quarter (framed from mid-thigh to top of head) "
+  + "of <Subject 1>. <Subject 1> maintains a neutral pose and expression, arms relaxed "
+  + "at sides with empty open hands.\n[[Shot 6] At 00:03.125]: Static tight close-up "
+  + "shot of <Subject 1>, framed directly on the face from shoulders to top of head, "
+  + "facing front. <Subject 1> has a neutral expression.\n[[Shot 7] At 00:03.750]: "
+  + "Static tight close-up shot of <Subject 1>, framed directly on the face from "
+  + "shoulders to top of head, facing front. <Subject 1> has a happy smile "
+  + "expression.\n[[Shot 8] At 00:04.375]: Static tight close-up shot of <Subject 1>, "
+  + "framed directly on the face from shoulders to top of head, facing front. <Subject "
+  + "1> has an very angry expression.\n\n\noverall_soundscape: N/A\n"
+  + "non_diegetic_music: N/A\n";
+
 // LTX 2.5 Upscale mode is a standalone refine pass — not an H3 render. It needs its own
 // model set configured in Settings (the LTX unet, latent upscaler, text encoder, and the
 // LTX video + audio VAEs). A missing piece disables the mode rather than failing at run.

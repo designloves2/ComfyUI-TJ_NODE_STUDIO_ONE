@@ -24,6 +24,7 @@ import {
   effectiveTurbo, effectiveSteps, migrateLegacyAccel,
   continuityModesFor, generationModesFor, configIssues, ltxUpscaleReady, ltxUpscaleMissing,
   faceRefineReady, faceRefineMissing, postprocessReady, IMAGE_GEN_MODES, imageGenSubModeReady,
+  CHARSHEET_PROMPT_TEMPLATE,
   clipPlan, formatDuration, formatClock, framesToSeconds, alignFrameCount, FPS, ONE_TAKE_OVERLAP_FRAMES, resolveResolution,
   parseBrief, groupShots, composeClipPrompt, composeStitchedPrompt,
   turboLoraForMode, pddFileForMode, clipAssets, explainGenerationError,
@@ -1455,17 +1456,26 @@ app.registerExtension({
       }
 
       // Image Generator's bottom prompt box — plain single textarea, no LLM helpers (v1).
+      // Character Sheet gets its own prompt field (state.charSheetPrompt), always
+      // pre-filled with the reference workflow's own structured prompt (subject_
+      // definitions/style_definitions/8-shot detailed_description) so the box never
+      // starts blank — still fully editable, this is just the starting value.
       function renderImageGenPrompt() {
         clear(promptList);
         promptCount.textContent = "";
+        const isCharSheet = state.imageGenMode === "charsheet";
+        if (isCharSheet && !state.charSheetPrompt) { state.charSheetPrompt = CHARSHEET_PROMPT_TEMPLATE; persist(); }
         const ta = el("textarea", {
           placeholder: "Describe the image…",
           style: { flex: "1", width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
                    border: `1px solid ${C.border}`, borderRadius: "6px", padding: "8px", fontSize: "12px",
                    fontFamily: "inherit", outline: "none", resize: "none", minHeight: "0" },
         });
-        ta.value = state.imgPrompt || "";
-        ta.addEventListener("input", () => { state.imgPrompt = ta.value; persist(); });
+        ta.value = isCharSheet ? (state.charSheetPrompt || "") : (state.imgPrompt || "");
+        ta.addEventListener("input", () => {
+          if (isCharSheet) state.charSheetPrompt = ta.value; else state.imgPrompt = ta.value;
+          persist();
+        });
         ta.addEventListener("focus", () => ta.style.borderColor = BRAND);
         ta.addEventListener("blur", () => ta.style.borderColor = C.border);
         promptList.style.gap = "6px";
