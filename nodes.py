@@ -2251,6 +2251,7 @@ async def mmh3_get_config(request):
         "save_subfolder":   cfg.get("save_subfolder")   or MMH3_SUBFOLDER,
         "img_save_subfolder": cfg.get("img_save_subfolder", ""),
         "sheet_video_save_subfolder": cfg.get("sheet_video_save_subfolder", ""),
+        "charsheet_system_prompt": cfg.get("charsheet_system_prompt", ""),
         "negative_prompt":  cfg.get("negative_prompt",  ""),
         "prompt_suffix":    cfg.get("prompt_suffix",    ""),
         "avg_minutes_per_clip": cfg.get("avg_minutes_per_clip", 13.0),

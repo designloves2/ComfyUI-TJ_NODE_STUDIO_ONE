@@ -258,21 +258,32 @@ export function createImageGalleryOverlay(state, ctx) {
   }
 
   // ── grid ─────────────────────────────────────────────────────────────────────────
+  // gridAutoRows is a fixed pixel height (not "auto") deliberately: relying on the card's
+  // own CSS aspect-ratio (or an <img>'s intrinsic size before it loads) left every row's
+  // auto-computed height near zero in this environment, since the wrapper's only
+  // non-absolutely-positioned child was the still-unsized image — rows overlapped and the
+  // whole gallery looked like everything crammed onto one unscrollable page. A fixed row
+  // height needs nothing from the image to lay out correctly.
+  const THUMB = 140;
   const grid = el("div", { style: {
     flex: "1", overflowY: "auto", display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: "10px", alignContent: "start",
+    gridTemplateColumns: `repeat(auto-fill, minmax(${THUMB}px, 1fr))`, gridAutoRows: `${THUMB}px`,
+    gap: "10px", alignContent: "start",
   }});
   const hint = el("div", { text: "No images yet.", style: { color: C.muted, fontSize: "12px", textAlign: "center", padding: "30px 0", display: "none" } });
 
   function thumb(v) {
     const key = mediaKey(v.filename, v.subfolder || "");
     const picked = postMode && postPick === vKey(v);
+    // Card fills its fixed-height grid cell exactly (see the grid's own comment above);
+    // the image is absolutely positioned to match, so it needs nothing of its own to
+    // establish a size before or after it loads.
     const card = el("div", { style: {
-      position: "relative", borderRadius: "8px", overflow: "hidden", background: "#000",
-      aspectRatio: "1 / 1", border: `1px solid ${picked ? BRAND : C.border}`, cursor: "pointer",
+      position: "relative", width: "100%", height: "100%", borderRadius: "8px", overflow: "hidden",
+      background: "#000", border: `1px solid ${picked ? BRAND : C.border}`, cursor: "pointer",
     }});
     const img = el("img", { src: imageURL(v), loading: "lazy",
-      style: { width: "100%", height: "100%", objectFit: "cover", display: "block" } });
+      style: { position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "cover", display: "block" } });
     card.appendChild(img);
     attachSensitiveToggle?.(card, img, key);
 

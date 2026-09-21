@@ -1026,6 +1026,38 @@ app.registerExtension({
       });
       promptHdr.appendChild(editBtn);
 
+      // Character Sheet's own pair, same slot/size as writeBtn/editBtn above — occupies
+      // that spot instead of a separate row under the textarea (user: "기존 ✨ Prompt
+      // Write 📝 Prompt Edit가 있던 자리와 사이즈 동일하게").
+      const sysPromptSaveBtn = el("button", { type: "button", text: "💾 System Prompt Save", title: "Save the current box contents as the system prompt", style: {
+        cursor: "pointer", fontFamily: "inherit", fontSize: "10px", display: "none",
+        padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text,
+        border: `1px solid ${BRAND}`, fontWeight: "600",
+      }});
+      sysPromptSaveBtn.addEventListener("click", () => {
+        const overwriting = !!state.charSheetSystemPrompt;
+        if (!window.confirm(overwriting
+          ? "This replaces the saved system prompt with the current box contents. Continue?"
+          : "Save the current box contents as the system prompt (used whenever Reset is pressed, or a new session opens Character Sheet for the first time)?")) return;
+        const ta = promptList.querySelector("textarea");
+        state.charSheetSystemPrompt = ta ? ta.value : (state.charSheetPrompt || "");
+        persist();
+        saveConfig({ charsheet_system_prompt: state.charSheetSystemPrompt });
+        showPopup("System prompt saved.", false);
+      });
+      promptHdr.appendChild(sysPromptSaveBtn);
+
+      const sysPromptResetBtn = el("button", { type: "button", text: "↺ System Prompt Reset", title: "Discard edits and reload the saved system prompt", style: {
+        cursor: "pointer", fontFamily: "inherit", fontSize: "10px", display: "none",
+        padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text,
+        border: `1px solid ${C.border}`,
+      }});
+      sysPromptResetBtn.addEventListener("click", () => {
+        state.charSheetPrompt = state.charSheetSystemPrompt || CHARSHEET_PROMPT_TEMPLATE;
+        persist(); renderPrompts();
+      });
+      promptHdr.appendChild(sysPromptResetBtn);
+
       const splitBtn = el("button", { type: "button", text: "✂ Split into clips", title: "Split this brief into one prompt per clip", style: {
         cursor: "pointer", fontFamily: "inherit", fontSize: "10px",
         padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
@@ -1196,6 +1228,18 @@ app.registerExtension({
         splitBtn.style.display   = hideShotControls ? "none" : "";
         addBtn.style.display     = hideShotControls ? "none" : "";
         resetTAHBtn.style.display = hideShotControls ? "none" : "";
+        // Picture/Subject/Shot tag-inserters and Refine/Prompt Write/Prompt Edit all act
+        // on the H3 shot list's per-clip textareas (lastFocusedPromptTA/clip index) — none
+        // of that exists in Image Generator's single plain prompt box, so they were dead
+        // weight left visible there (user: "Picture Subject Shot 🔧 Refine ✨ Prompt Write
+        // 📝 Prompt Edit 이거는 지우고").
+        tagBtnRow.style.display = isImageGen ? "none" : "";
+        refineBtn.style.display = isImageGen ? "none" : "";
+        writeBtn.style.display  = isImageGen ? "none" : "";
+        editBtn.style.display   = isImageGen ? "none" : "";
+        const isCharSheetHdr = isImageGen && state.imageGenMode === "charsheet";
+        sysPromptSaveBtn.style.display  = isCharSheetHdr ? "" : "none";
+        sysPromptResetBtn.style.display = isCharSheetHdr ? "" : "none";
         promptTitle.textContent = isLtx ? "UPSCALE PROMPT" : isFaceRefine ? "FACE REFINE PROMPT"
           : isPostprocess ? "POSTPROCESS" : isImageGen ? "IMAGE PROMPT" : "PROMPTS";
         promptList.style.gap = hideShotControls ? "6px" : "4px";
@@ -1465,11 +1509,15 @@ app.registerExtension({
         promptCount.textContent = "";
         const isCharSheet = state.imageGenMode === "charsheet";
         if (isCharSheet && !state.charSheetPrompt) { state.charSheetPrompt = CHARSHEET_PROMPT_TEMPLATE; persist(); }
+        // Same box sizing as the H3 shot-list textarea (minHeight 120px + a native
+        // vertical resize grip at the bottom-right corner) — the earlier flex:1/resize:none
+        // version rendered only ~2 lines tall with no way to make it bigger.
         const ta = el("textarea", {
           placeholder: "Describe the image…",
-          style: { flex: "1", width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
-                   border: `1px solid ${C.border}`, borderRadius: "6px", padding: "8px", fontSize: "12px",
-                   fontFamily: "inherit", outline: "none", resize: "none", minHeight: "0" },
+          style: { flex: "1", minHeight: "120px", width: "100%", boxSizing: "border-box",
+                   background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+                   borderRadius: "6px", padding: "8px", fontSize: "12px",
+                   fontFamily: "inherit", outline: "none", resize: "vertical" },
         });
         ta.value = isCharSheet ? (state.charSheetPrompt || "") : (state.imgPrompt || "");
         ta.addEventListener("input", () => {
@@ -1480,6 +1528,9 @@ app.registerExtension({
         ta.addEventListener("blur", () => ta.style.borderColor = C.border);
         promptList.style.gap = "6px";
         promptList.append(ta);
+        // Save/Reset for Character Sheet live in promptHdr (sysPromptSaveBtn/
+        // sysPromptResetBtn) — same slot writeBtn/editBtn use for every other mode —
+        // their visibility is synced from renderPrompts() alongside those.
       }
 
       // "Prompt Edit" in LTX mode → a modal: source video on top, prompt below.

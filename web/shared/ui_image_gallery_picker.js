@@ -21,6 +21,10 @@ export const IMAGE_GALLERY_TOOLS = [
   { id: "klein",    label: "Flux2 Klein",     api: "/flux_klein",    subfolder: "one_flux2-klein" },
   { id: "qwen2511", label: "Qwen Image 2511", api: "/qwen2511_one",  subfolder: "one_qwen2511" },
   { id: "sdxl",     label: "SDXL",            api: "/sdxl_one",      subfolder: "one_sdxl" },
+  { id: "anima",    label: "Anima",           api: "/anima_one",     subfolder: "one_anima" },
+  // MiniMax H3's Image Generator (T2I/Reference to Image/Character Sheet) stills — same
+  // generic PNG /gallery route every other tool above uses, already registered server-side.
+  { id: "minimaxh3", label: "MinimaxH3",      api: "/minimax_h3_one", subfolder: "one_minimax_h3" },
 ];
 
 const BRAND = "#7612DA";

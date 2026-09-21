@@ -929,6 +929,7 @@ export function createSettingsOverlay(state, ctx) {
     if (cfg.save_subfolder && !state.saveSubfolder) state.saveSubfolder = cfg.save_subfolder;
     if (cfg.img_save_subfolder && !state.imgSaveSubfolder) state.imgSaveSubfolder = cfg.img_save_subfolder;
     if (cfg.sheet_video_save_subfolder && !state.sheetVideoSaveSubfolder) state.sheetVideoSaveSubfolder = cfg.sheet_video_save_subfolder;
+    if (cfg.charsheet_system_prompt && !state.charSheetSystemPrompt) state.charSheetSystemPrompt = cfg.charsheet_system_prompt;
     if (cfg.stitch_at_end != null)          state.stitchAtEnd        = cfg.stitch_at_end;
     if (cfg.trim_last_clip != null)         state.trimLastClip       = cfg.trim_last_clip;
     if (cfg.unload_between_clips != null)   state.unloadBetweenClips = cfg.unload_between_clips;
