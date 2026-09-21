@@ -3575,10 +3575,10 @@ app.registerExtension({
                 kids.push(row([col([label("strength"), numberField(state.imgTurboLoraStrength ?? 1.0,
                   v => { state.imgTurboLoraStrength = v; rememberLora({ img_turbo_lora_strength: v }); }, 0.05)])]));
               }
-              kids.push(row([col([label("Steps"), numberField(state.imgSteps ?? 8,
+              kids.push(row([col([label("Steps"), numberField(state.imgSteps ?? 20,
                 v => { state.imgSteps = Math.max(1, Math.round(v)); persist(); }, 1)])]));
               kids.push(el("div", {
-                text: "Steps sets the first (preview) pass only. The second (final-resolution) pass always uses the reference workflow's own fixed 3-step schedule, with or without Turbo.",
+                text: "Steps sets the first (preview) pass only — 20+ for a plain render (no turbo LoRA); a turbo LoRA is trained for far fewer, typically 3/4/8 depending on the LoRA. The second (final-resolution) pass always uses the reference workflow's own fixed 3-step schedule, with or without Turbo.",
                 style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
               return kids;
             }));
@@ -3691,7 +3691,7 @@ app.registerExtension({
             refImageSize: state.imgRefImageSize || "max",
             prompt: state.imgPrompt || "", seed, previewRes, finalRes,
             filenamePrefix: `${state.imgSaveSubfolder || state.saveSubfolder || SUBFOLDER}/${subMode}_${final ? "final" : "preview"}`,
-            steps: state.imgSteps ?? 8,
+            steps: state.imgSteps ?? 20,
             turboOn: !!state.imgTurboOn, turboLora: state[turboKey], turboLoraStrength: state.imgTurboLoraStrength ?? 1.0,
             savePreview: !!state.imgPreviewSaveToGallery,
           });
@@ -3724,7 +3724,7 @@ app.registerExtension({
               imgLoras: state.imgLoras || [], subMode,
               refImages: subMode === "ref2i" ? (state.imgRefImages || []) : [],
               refImageSize: state.imgRefImageSize || "max", seed,
-              imgSteps: state.imgSteps ?? 8,
+              imgSteps: state.imgSteps ?? 20,
               imgTurboOn: !!state.imgTurboOn,
               imgTurboLora: state.imgTurboOn ? (state[turboKey] || null) : null,
               imgTurboLoraStrength: state.imgTurboLoraStrength ?? 1.0,

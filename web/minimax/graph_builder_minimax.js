@@ -1918,7 +1918,9 @@ function buildImageLoraChain(g, state, modelLink) {
  *                      themselves, no separate CLIPTextEncode
  * @param opts.seed, opts.previewRes {width,height}, opts.finalRes {width,height}
  * @param opts.filenamePrefix
- * @param opts.steps        first-pass step count only; default 8. The second (latent-
+ * @param opts.steps        first-pass step count only; default 20 (a plain, non-turbo
+ *                          render needs 20+ steps — turbo LoRAs are trained for far fewer,
+ *                          typically 3/4/8 depending on the LoRA). The second (latent-
  *                          upscale) pass always uses the reference workflow's own fixed
  *                          3-step sigma schedule, regardless of this or opts.turboOn.
  * @param opts.turboOn      false (default) = no LoRA on the first pass
@@ -1977,7 +1979,7 @@ export function buildImageGenGraph(state, avail, opts) {
     g[IMG.cond] = { class_type: "MiniMaxH3ImageToVideo", inputs: condInputs };
   }
 
-  const stepCount = Math.max(1, Math.round(steps ?? 8));
+  const stepCount = Math.max(1, Math.round(steps ?? 20));
   g[IMG.noise] = { class_type: "RandomNoise", inputs: { noise_seed: seed ?? 0 } };
   g[IMG.sampSel1] = { class_type: "KSamplerSelect", inputs: { sampler_name: "euler" } };
   g[IMG.sched] = { class_type: "BasicScheduler", inputs: { scheduler: "simple", steps: stepCount, denoise: 1, model } };
