@@ -111,6 +111,12 @@ app.registerExtension({
         normalize: (raw) => { const s = defaultState(raw); migrateLegacyAccel(s); return s; },
         rerender: () => self._mmh3Repaint?.(),
       });
+      // Install-level defaults — beyond the per-node/per-workflow `persist()`, these also
+      // round-trip through the shared backend config (saveConfig/getConfig), so a freshly
+      // dropped node (or one on a different workflow) starts with the *last value used
+      // anywhere*, not just "unset". Same mechanism the main pipeline's own turboLora/
+      // turboLoraReference already use.
+      const rememberLora = (patch) => { persist(); saveConfig(patch).catch(() => {}); };
 
       if (!document.getElementById("mmh3-styles")) {
         const s = document.createElement("style"); s.id = "mmh3-styles";
@@ -3556,13 +3562,18 @@ app.registerExtension({
             () => {
               const loraOpts = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
               const kids = [
-                checkboxRow("Use Turbo LoRA", turboOn, v => { state.imgTurboOn = v; persist(); renderLeft(); }),
+                checkboxRow("Use Turbo LoRA", turboOn, v => {
+                  state.imgTurboOn = v; rememberLora({ img_turbo_on: v }); renderLeft();
+                }),
               ];
               if (turboOn) {
                 kids.push(row([col([label(`Turbo LoRA (${subMode === "ref2i" ? "Reference" : "Text/First-Last"})`),
-                  loraSelect(loraOpts, state[turboKey] || "none", v => { state[turboKey] = v; persist(); }).el])]));
+                  loraSelect(loraOpts, state[turboKey] || "none", v => {
+                    state[turboKey] = v;
+                    rememberLora(subMode === "ref2i" ? { img_turbo_lora_ref2i: v } : { img_turbo_lora_t2i: v });
+                  }).el])]));
                 kids.push(row([col([label("strength"), numberField(state.imgTurboLoraStrength ?? 1.0,
-                  v => { state.imgTurboLoraStrength = v; persist(); }, 0.05)])]));
+                  v => { state.imgTurboLoraStrength = v; rememberLora({ img_turbo_lora_strength: v }); }, 0.05)])]));
               }
               kids.push(row([col([label("Steps"), numberField(state.imgSteps ?? 8,
                 v => { state.imgSteps = Math.max(1, Math.round(v)); persist(); }, 1)])]));
@@ -3591,25 +3602,30 @@ app.registerExtension({
 
           // Post-finish on the raw 124-frame render — same tools as everywhere else in
           // this app (Deblur + native RTX VSR), plus the reference workflow's own
-          // two-pass "Use Latent Upscale" option and per-frame saving.
+          // two-pass "Use Latent Upscale" option and per-frame saving. Install-level
+          // defaults via rememberLora, same as the Turbo panel above — these settings
+          // tend to be a per-user habit ("I always deblur + latent-upscale my sheets"),
+          // not something that should reset to Off on every fresh node.
           const rtxOn = !!state.charSheetRtxVsr;
           leftPanel.appendChild(panel([
             label("Post finish"),
             row([col([label("Deblur"), select(
               ["none", "LOW", "MEDIUM", "HIGH", "ULTRA"].map(v => ({ value: v, label: v === "none" ? "Off" : v })),
-              state.charSheetDeblur || "none", v => { state.charSheetDeblur = v; persist(); })])]),
+              state.charSheetDeblur || "none", v => { state.charSheetDeblur = v; rememberLora({ charsheet_deblur: v }); })])]),
             checkboxRow("RTX VSR (2× scale, ULTRA quality)", rtxOn,
-              v => { state.charSheetRtxVsr = v; persist(); renderLeft(); }),
+              v => { state.charSheetRtxVsr = v; rememberLora({ charsheet_rtx_vsr: v }); renderLeft(); }),
             !rtxOn ? null : checkboxRow("↳ For Supersampling (resize back down to render size)", !!state.charSheetRtxSupersample,
-              v => { state.charSheetRtxSupersample = v; persist(); }),
+              v => { state.charSheetRtxSupersample = v; rememberLora({ charsheet_rtx_supersample: v }); }),
             checkboxRow("Use Latent Upscale (cheap first pass, then upscale)", !!state.charSheetUseLatentUpscale,
-              v => { state.charSheetUseLatentUpscale = v; persist(); renderLeft(); }),
+              v => { state.charSheetUseLatentUpscale = v; rememberLora({ charsheet_use_latent_upscale: v }); renderLeft(); }),
             !state.charSheetUseLatentUpscale ? null : row([col([label("First Pass MP"), numberField(
-              state.charSheetFirstPassRatio ?? 0.36, v => { state.charSheetFirstPassRatio = Math.max(0.05, v); persist(); }, 0.02)])]),
+              state.charSheetFirstPassRatio ?? 0.36,
+              v => { state.charSheetFirstPassRatio = Math.max(0.05, v); rememberLora({ charsheet_first_pass_ratio: state.charSheetFirstPassRatio }); }, 0.02)])]),
             checkboxRow("Save Each Frame separately", !!state.charSheetSaveEachFrames,
-              v => { state.charSheetSaveEachFrames = v; persist(); }),
+              v => { state.charSheetSaveEachFrames = v; rememberLora({ charsheet_save_each_frames: v }); }),
             row([col([label("Sheet Max Size (px)"), numberField(
-              state.charSheetMaxSize ?? 2048, v => { state.charSheetMaxSize = Math.max(256, Math.round(v)); persist(); }, 64)])]),
+              state.charSheetMaxSize ?? 2048,
+              v => { state.charSheetMaxSize = Math.max(256, Math.round(v)); rememberLora({ charsheet_max_size: state.charSheetMaxSize }); }, 64)])]),
           ]));
 
           // 8 frame indices, directly editable — same fields the reference workflow
@@ -4127,9 +4143,6 @@ app.registerExtension({
             return { value: o.key, disabled: !!why, label: why ? `${o.label} — ${why}` : o.label };
           }), value, onChange);
         const loraOpts = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
-        // Turbo LoRA choices are install-level, not per-run, so they round-trip through
-        // the server config the way the model pickers do — picked once, remembered.
-        const rememberLora = (patch) => { persist(); saveConfig(patch).catch(() => {}); };
         const shortLabel = (s) => String(s || "").replace(/ \(.*\)/, "");
 
         const turboMode = state.turboMode || "none";

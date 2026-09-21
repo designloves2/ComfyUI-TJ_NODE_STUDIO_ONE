@@ -839,6 +839,21 @@ export function createSettingsOverlay(state, ctx) {
     take("vaeVideo",      cfg.vae_video);
     take("vaeAudio",      cfg.vae_audio);
     take("turboLora",     cfg.turbo_lora);
+    // Image Generator's Turbo switch (T2I/Ref2I) — same "remember the last value used
+    // anywhere" treatment as turboLora above, requested separately from per-image
+    // Reuse Setting (2026-09-21).
+    if (state.imgTurboOn == null && cfg.img_turbo_on != null) state.imgTurboOn = cfg.img_turbo_on;
+    take("imgTurboLoraT2i",      cfg.img_turbo_lora_t2i);
+    take("imgTurboLoraRef2i",    cfg.img_turbo_lora_ref2i);
+    if (state.imgTurboLoraStrength == null && cfg.img_turbo_lora_strength != null) state.imgTurboLoraStrength = cfg.img_turbo_lora_strength;
+    // Character Sheet's Post-finish panel — same treatment.
+    take("charSheetDeblur", cfg.charsheet_deblur);
+    if (state.charSheetRtxVsr == null && cfg.charsheet_rtx_vsr != null) state.charSheetRtxVsr = cfg.charsheet_rtx_vsr;
+    if (state.charSheetRtxSupersample == null && cfg.charsheet_rtx_supersample != null) state.charSheetRtxSupersample = cfg.charsheet_rtx_supersample;
+    if (state.charSheetUseLatentUpscale == null && cfg.charsheet_use_latent_upscale != null) state.charSheetUseLatentUpscale = cfg.charsheet_use_latent_upscale;
+    if (state.charSheetFirstPassRatio == null && cfg.charsheet_first_pass_ratio != null) state.charSheetFirstPassRatio = cfg.charsheet_first_pass_ratio;
+    if (state.charSheetSaveEachFrames == null && cfg.charsheet_save_each_frames != null) state.charSheetSaveEachFrames = cfg.charsheet_save_each_frames;
+    if (state.charSheetMaxSize == null && cfg.charsheet_max_size != null) state.charSheetMaxSize = cfg.charsheet_max_size;
     take("upscaleModel",  cfg.upscale_model);
     take("previewTinyVae", cfg.preview_tiny_vae);
     take("ltxUnet",           cfg.ltx_unet);

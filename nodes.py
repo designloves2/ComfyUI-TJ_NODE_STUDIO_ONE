@@ -2252,6 +2252,20 @@ async def mmh3_get_config(request):
         "img_save_subfolder": cfg.get("img_save_subfolder", ""),
         "sheet_video_save_subfolder": cfg.get("sheet_video_save_subfolder", ""),
         "charsheet_system_prompt": cfg.get("charsheet_system_prompt", ""),
+        # Image Generator's Turbo switch (T2I/Ref2I) — install-level default, remembered
+        # across nodes/sessions the same way turbo_lora/turbo_lora_reference are above.
+        "img_turbo_on":            cfg.get("img_turbo_on",            False),
+        "img_turbo_lora_t2i":      cfg.get("img_turbo_lora_t2i",      ""),
+        "img_turbo_lora_ref2i":    cfg.get("img_turbo_lora_ref2i",    ""),
+        "img_turbo_lora_strength": cfg.get("img_turbo_lora_strength", 1.0),
+        # Character Sheet's Post-finish panel — same "remembered" treatment.
+        "charsheet_deblur":             cfg.get("charsheet_deblur",             "none"),
+        "charsheet_rtx_vsr":            cfg.get("charsheet_rtx_vsr",            False),
+        "charsheet_rtx_supersample":    cfg.get("charsheet_rtx_supersample",    False),
+        "charsheet_use_latent_upscale": cfg.get("charsheet_use_latent_upscale", False),
+        "charsheet_first_pass_ratio":   cfg.get("charsheet_first_pass_ratio",   0.36),
+        "charsheet_save_each_frames":   cfg.get("charsheet_save_each_frames",   False),
+        "charsheet_max_size":           cfg.get("charsheet_max_size",           2048),
         "negative_prompt":  cfg.get("negative_prompt",  ""),
         "prompt_suffix":    cfg.get("prompt_suffix",    ""),
         "avg_minutes_per_clip": cfg.get("avg_minutes_per_clip", 13.0),
