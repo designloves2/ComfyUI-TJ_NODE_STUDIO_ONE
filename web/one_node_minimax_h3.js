@@ -3577,9 +3577,8 @@ app.registerExtension({
               }
               kids.push(row([col([label("Steps"), numberField(state.imgSteps ?? 8,
                 v => { state.imgSteps = Math.max(1, Math.round(v)); persist(); }, 1)])]));
-              kids.push(el("div", { text: turboOn
-                ? "Turbo on — the second (final-resolution) pass still uses the reference workflow's own fixed 3-step schedule; Steps only sets the first (preview) pass."
-                : "Turbo off — a plain render at Steps count, no LoRA. Both passes use this step count.",
+              kids.push(el("div", {
+                text: "Steps sets the first (preview) pass only. The second (final-resolution) pass always uses the reference workflow's own fixed 3-step schedule, with or without Turbo.",
                 style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
               return kids;
             }));

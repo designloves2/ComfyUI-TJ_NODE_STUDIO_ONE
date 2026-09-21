@@ -1862,14 +1862,15 @@ export function buildPostprocessGraph(opts, avail) {
 // single still. Mirrors the reference workflow the user supplied
 // ("MiniMax-H3-Image-Generation.json"): a cheap first pass at the "preview" resolution,
 // then — only for a real (non-preview) run — a second pass through
-// MinimaxH3LatentUpscaler3D up to the "final" resolution. A user-facing Turbo switch
-// (off by default) optionally patches in one LoRA — separate slots for T2I/Ref2I, same
+// MinimaxH3LatentUpscaler3D up to the "final" resolution, refining that upscaled latent
+// with the reference workflow's own fixed 3-step sigma schedule ("3 step Sigmas") —
+// always, regardless of Turbo, since that pass refines an already-upscaled latent rather
+// than sampling from scratch. A user-facing Turbo switch (off by default) optionally
+// patches in one LoRA for the FIRST pass only — separate slots for T2I/Ref2I, same
 // reasoning as the main pipeline's own turboLora/turboLoraReference split, since a turbo
-// LoRA is trained against one base model. With Turbo on, the second pass keeps the
-// reference workflow's own fixed 3-step sigma schedule ("3 step Sigmas") that schedule is
-// built for; with Turbo off, both passes run a plain schedule at the user's own step
-// count. This is still its own small pipeline plus up to 3 user LoRA slots, not the main
-// pipeline's turbo/accelerator stack (no attention backend, block cache, etc.).
+// LoRA is trained against one base model. The user-facing Steps field only ever sets the
+// first pass's step count. This is still its own small pipeline plus up to 3 user LoRA
+// slots, not the main pipeline's turbo/accelerator stack (no attention backend, etc.).
 const IMG = {
   unet: "IMG:unet", sage: "IMG:sage", memSage: "IMG:mem_sage",
   lora: (i) => `IMG:lora_${i}`,
@@ -1917,9 +1918,10 @@ function buildImageLoraChain(g, state, modelLink) {
  *                      themselves, no separate CLIPTextEncode
  * @param opts.seed, opts.previewRes {width,height}, opts.finalRes {width,height}
  * @param opts.filenamePrefix
- * @param opts.steps        first-pass step count (also both passes' count with Turbo
- *                          off); default 8, the reference workflow's own fixed value
- * @param opts.turboOn      false (default) = plain render, no LoRA, opts.steps both passes
+ * @param opts.steps        first-pass step count only; default 8. The second (latent-
+ *                          upscale) pass always uses the reference workflow's own fixed
+ *                          3-step sigma schedule, regardless of this or opts.turboOn.
+ * @param opts.turboOn      false (default) = no LoRA on the first pass
  * @param opts.turboLora, opts.turboLoraStrength  ignored unless opts.turboOn
  * @param opts.savePreview  false (default) = a !final run's still goes to PreviewImage
  *                          (ComfyUI's temp/ folder, not the output gallery) instead of
@@ -2006,12 +2008,10 @@ export function buildImageGenGraph(state, avail, opts) {
     }};
     g[IMG.sampSel2] = { class_type: "KSamplerSelect", inputs: { sampler_name: "euler" } };
     g[IMG.guider2] = { class_type: "BasicGuider", inputs: { model, conditioning: [IMG.cond, 0] } };
-    // Turbo on: the reference workflow's own fixed 3-step schedule, built for a turbo
-    // LoRA's distilled step count. Turbo off: a plain schedule at the same step count as
-    // the first pass, since there's no turbo LoRA here to justify only 3 steps.
-    g[IMG.sigmas2] = turboOn
-      ? { class_type: "ManualSigmas", inputs: { sigmas: IMG_PASS2_SIGMAS } }
-      : { class_type: "BasicScheduler", inputs: { scheduler: "simple", steps: stepCount, denoise: 1, model } };
+    // Always the reference workflow's own fixed 3-step schedule ("3 step Sigmas") — the
+    // second pass refines an already-upscaled latent, not a from-scratch sample, so it
+    // doesn't need (and Turbo on/off doesn't change) the first pass's own step count.
+    g[IMG.sigmas2] = { class_type: "ManualSigmas", inputs: { sigmas: IMG_PASS2_SIGMAS } };
     g[IMG.sampler2] = { class_type: "SamplerCustomAdvanced", inputs: {
       noise: [IMG.noise, 0], guider: [IMG.guider2, 0], sampler: [IMG.sampSel2, 0],
       sigmas: [IMG.sigmas2, 0], latent_image: [IMG.concatAV, 0],
