@@ -3369,7 +3369,12 @@ app.registerExtension({
           if (!o) throw new Error("No output produced.");
           // A Preview run's VHS_VideoCombine has save_output:false, so ComfyUI reports it
           // back with type "temp", not "output" — a hardcoded type=output 404s for it.
-          const url = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=${encodeURIComponent(o.type || "output")}`;
+          // &t=Date.now() busts the browser's HTTP cache: a preview's counter resets
+          // every backend restart (and VHS's own numbering can repeat), so two different
+          // preview runs can share the exact same filename/subfolder/type — without this,
+          // the SECOND (and every later) preview click just re-shows the FIRST run's
+          // cached response, no matter what Start/End/effects actually changed.
+          const url = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=${encodeURIComponent(o.type || "output")}&t=${Date.now()}`;
           showResultVideo(url, { final: true });
           if (full) {
             // A full-range run (not a short preview) writes real metadata — spreads the
@@ -3753,8 +3758,9 @@ app.registerExtension({
           if (!o) throw new Error("No output produced.");
           // A preview that wasn't opted into the gallery comes back as a PreviewImage
           // output (type "temp"), not SaveImage's "output" — /view needs the right type
-          // or it 404s.
-          const url = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=${encodeURIComponent(o.type || "output")}`;
+          // or it 404s. &t=Date.now() busts the browser cache too — PreviewImage's own
+          // counter can repeat the same filename across separate runs.
+          const url = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=${encodeURIComponent(o.type || "output")}&t=${Date.now()}`;
           lastResultURL = url; previewLocked = true;
           placeholder.style.display = "none"; frDetectBanner.style.display = "none"; fvsrBanner.style.display = "none";
           try { previewVid.pause(); } catch {}

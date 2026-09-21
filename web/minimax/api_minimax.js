@@ -495,6 +495,12 @@ export function queuePrompt(promptGraph, { onProgress, onNode, onQueued, sampler
           if (!Array.isArray(arr)) continue;
           for (const item of arr) {
             if (!item?.filename) continue;
+            // The rename endpoint only ever resolves paths inside the real output/ dir
+            // (see _make_rename_handler in nodes.py) — a preview's save_output:false
+            // result comes back with type "temp" and 404s there every time, harmlessly
+            // but noisily (console spam on every single preview run). Only attempt it
+            // for a real output-type item.
+            if ((item.type || "output") !== "output") continue;
             const r = await stripAudioSuffix(item.filename, item.subfolder || "");
             item.filename = r.filename;
           }
