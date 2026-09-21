@@ -1015,7 +1015,15 @@ app.registerExtension({
             else if (intent === "empty") { statusEl.textContent = "Write a brief, or fill in the Title"; return; }
             const durSec = effectiveDuration({ ...state, lyricsInput: cur });
             runLLM(role, input, { engine: state.engine, language: state.language, duration_seconds: durSec, style_caption: state.caption, title: state.title || "" }, (txt) => {
-              state.lyrics = txt; state.lyricsInput = cur; persist(); renderCompose();
+              // The field's getV() is `state.lyricsInput || state.lyrics` — lyricsInput is
+              // the user's ORIGINAL brief/theme, which stays truthy after this. Writing the
+              // result only into state.lyrics (keeping lyricsInput = cur, the pre-LLM text)
+              // meant the box kept showing the brief forever, never the generated lyrics
+              // (reported: "가사에 llm 요청 문구가 있는데 LLM을 돌리면 요청 문구 그대로
+              // 있고 결과 문구로 변하지 않음"). Both now get the result, same as if the user
+              // had typed it in directly — matches the live textarea's own input handler,
+              // which always keeps the two in sync.
+              state.lyrics = txt; state.lyricsInput = txt; persist(); renderCompose();
             }, lyricsWrap, "Writing lyrics…");
           } else {
             const brief = (state.captionBrief || styleTA.value || "").trim();
@@ -1436,7 +1444,7 @@ app.registerExtension({
         // 1) resolve caption + lyrics from this job's own snapshot
         if (!st.caption && st.captionBrief) {
           job.stage = "Writing prompt…"; paintJob(job);
-          const role = st.engine === "acestep" ? "caption_acestep" : "caption_minimax";
+          const role = st.engine === "acestep" ? "caption_acestep" : st.engine === "yue2" ? "caption_yue2" : "caption_minimax";
           const c = await llmOnce(role, st.captionBrief, { lyrics: st.lyrics, ...vocalHintsOf(st) });
           if (c) st.caption = c;
         }

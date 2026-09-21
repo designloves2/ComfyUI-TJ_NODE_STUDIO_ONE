@@ -179,6 +179,13 @@ export function defaultState(saved) {
     styleChips:   Array.isArray(saved.styleChips) ? saved.styleChips : [],
     styleFamily:  saved.styleFamily  || "",
     title:        saved.title        || "",
+    // Whether the user actually typed a title themselves — processJob() only lets the
+    // finished track keep an LLM-generated title when this is false. Missing from this
+    // whitelist meant it silently reverted to falsy on any state rebuild even though the
+    // user HAD typed one, so a completed track's title kept getting overwritten by the
+    // auto-title LLM call (reported: "제목을 넣어서 만들었는데 완성된 음악의 플레이리스트를
+    // 확인하면 제목이 다른게 들어가 있음").
+    titleTouched: saved.titleTouched ?? false,
     instrumental: saved.instrumental ?? false,   // explicit — no lyrics, no auto lyric-gen
     vocalGender:  saved.vocalGender  || "auto",
     vocalStyle:   saved.vocalStyle   || "auto",
