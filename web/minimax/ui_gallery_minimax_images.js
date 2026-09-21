@@ -354,7 +354,7 @@ export function createImageGalleryOverlay(state, ctx) {
 
     const thumbWrap = el("div", { style: { position: "relative", width: "100%", overflow: "hidden", borderRadius: "7px 7px 0 0" } });
     const img = el("img", { loading: "lazy", src: imageURL(v),
-      style: { width: "100%", aspectRatio: "1 / 1", objectFit: "cover", background: "#000", display: "block" } });
+      style: { width: "100%", aspectRatio: "1 / 1", objectFit: "contain", background: "#000", display: "block" } });
     thumbWrap.appendChild(img);
     attachSensitiveToggle?.(thumbWrap, img, key);   // ⊘ eye toggle — bottom-right by default
 
