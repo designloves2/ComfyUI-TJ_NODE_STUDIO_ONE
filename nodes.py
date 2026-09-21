@@ -2266,6 +2266,7 @@ async def mmh3_get_config(request):
         "charsheet_first_pass_ratio":   cfg.get("charsheet_first_pass_ratio",   0.36),
         "charsheet_save_each_frames":   cfg.get("charsheet_save_each_frames",   False),
         "charsheet_max_size":           cfg.get("charsheet_max_size",           2048),
+        "charsheet_second_pass_steps":  cfg.get("charsheet_second_pass_steps",  3),
         "negative_prompt":  cfg.get("negative_prompt",  ""),
         "prompt_suffix":    cfg.get("prompt_suffix",    ""),
         "avg_minutes_per_clip": cfg.get("avg_minutes_per_clip", 13.0),

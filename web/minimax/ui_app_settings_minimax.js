@@ -854,6 +854,7 @@ export function createSettingsOverlay(state, ctx) {
     if (state.charSheetFirstPassRatio == null && cfg.charsheet_first_pass_ratio != null) state.charSheetFirstPassRatio = cfg.charsheet_first_pass_ratio;
     if (state.charSheetSaveEachFrames == null && cfg.charsheet_save_each_frames != null) state.charSheetSaveEachFrames = cfg.charsheet_save_each_frames;
     if (state.charSheetMaxSize == null && cfg.charsheet_max_size != null) state.charSheetMaxSize = cfg.charsheet_max_size;
+    if (state.charSheetSecondPassSteps == null && cfg.charsheet_second_pass_steps != null) state.charSheetSecondPassSteps = cfg.charsheet_second_pass_steps;
     take("upscaleModel",  cfg.upscale_model);
     take("previewTinyVae", cfg.preview_tiny_vae);
     take("ltxUnet",           cfg.ltx_unet);

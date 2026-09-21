@@ -3575,10 +3575,16 @@ app.registerExtension({
                 kids.push(row([col([label("strength"), numberField(state.imgTurboLoraStrength ?? 1.0,
                   v => { state.imgTurboLoraStrength = v; rememberLora({ img_turbo_lora_strength: v }); }, 0.05)])]));
               }
-              kids.push(row([col([label("Steps"), numberField(state.imgSteps ?? 20,
-                v => { state.imgSteps = Math.max(1, Math.round(v)); persist(); }, 1)])]));
+              kids.push(row([
+                col([label("Steps"), numberField(state.imgSteps ?? 20,
+                  v => { state.imgSteps = Math.max(1, Math.round(v)); persist(); }, 1)]),
+                col([label("2nd Pass Steps"), select(
+                  [3, 4, 5].map(n => ({ value: String(n), label: `${n} step` })),
+                  String(state.imgSecondPassSteps ?? 3),
+                  v => { state.imgSecondPassSteps = Number(v); persist(); })]),
+              ]));
               kids.push(el("div", {
-                text: "Steps sets the first (preview) pass only — 20+ for a plain render (no turbo LoRA); a turbo LoRA is trained for far fewer, typically 3/4/8 depending on the LoRA. The second (final-resolution) pass always uses the reference workflow's own fixed 3-step schedule, with or without Turbo.",
+                text: "Steps sets the first (preview) pass only — 20+ for a plain render (no turbo LoRA); a turbo LoRA is trained for far fewer, typically 3/4/8 depending on the LoRA. 2nd Pass Steps picks which fixed sigma schedule the final-resolution pass uses — independent of Steps and Turbo.",
                 style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
               return kids;
             }));
@@ -3617,9 +3623,15 @@ app.registerExtension({
               v => { state.charSheetRtxSupersample = v; rememberLora({ charsheet_rtx_supersample: v }); }),
             checkboxRow("Use Latent Upscale (cheap first pass, then upscale)", !!state.charSheetUseLatentUpscale,
               v => { state.charSheetUseLatentUpscale = v; rememberLora({ charsheet_use_latent_upscale: v }); renderLeft(); }),
-            !state.charSheetUseLatentUpscale ? null : row([col([label("First Pass MP"), numberField(
-              state.charSheetFirstPassRatio ?? 0.36,
-              v => { state.charSheetFirstPassRatio = Math.max(0.05, v); rememberLora({ charsheet_first_pass_ratio: state.charSheetFirstPassRatio }); }, 0.02)])]),
+            !state.charSheetUseLatentUpscale ? null : row([
+              col([label("First Pass MP"), numberField(
+                state.charSheetFirstPassRatio ?? 0.36,
+                v => { state.charSheetFirstPassRatio = Math.max(0.05, v); rememberLora({ charsheet_first_pass_ratio: state.charSheetFirstPassRatio }); }, 0.02)]),
+              col([label("2nd Pass Steps"), select(
+                [3, 4, 5].map(n => ({ value: String(n), label: `${n} step` })),
+                String(state.charSheetSecondPassSteps ?? 3),
+                v => { state.charSheetSecondPassSteps = Number(v); rememberLora({ charsheet_second_pass_steps: Number(v) }); })]),
+            ]),
             checkboxRow("Save Each Frame separately", !!state.charSheetSaveEachFrames,
               v => { state.charSheetSaveEachFrames = v; rememberLora({ charsheet_save_each_frames: v }); }),
             row([col([label("Sheet Max Size (px)"), numberField(
@@ -3691,7 +3703,7 @@ app.registerExtension({
             refImageSize: state.imgRefImageSize || "max",
             prompt: state.imgPrompt || "", seed, previewRes, finalRes,
             filenamePrefix: `${state.imgSaveSubfolder || state.saveSubfolder || SUBFOLDER}/${subMode}_${final ? "final" : "preview"}`,
-            steps: state.imgSteps ?? 20,
+            steps: state.imgSteps ?? 20, secondPassSteps: state.imgSecondPassSteps ?? 3,
             turboOn: !!state.imgTurboOn, turboLora: state[turboKey], turboLoraStrength: state.imgTurboLoraStrength ?? 1.0,
             savePreview: !!state.imgPreviewSaveToGallery,
           });
@@ -3724,7 +3736,7 @@ app.registerExtension({
               imgLoras: state.imgLoras || [], subMode,
               refImages: subMode === "ref2i" ? (state.imgRefImages || []) : [],
               refImageSize: state.imgRefImageSize || "max", seed,
-              imgSteps: state.imgSteps ?? 20,
+              imgSteps: state.imgSteps ?? 20, imgSecondPassSteps: state.imgSecondPassSteps ?? 3,
               imgTurboOn: !!state.imgTurboOn,
               imgTurboLora: state.imgTurboOn ? (state[turboKey] || null) : null,
               imgTurboLoraStrength: state.imgTurboLoraStrength ?? 1.0,
@@ -3770,6 +3782,7 @@ app.registerExtension({
             rtx: state.charSheetRtxVsr ? { rtxSizeMode: "scale", rtxScale: 2.0, rtxQuality: "ULTRA" } : null,
             rtxSupersample: !!state.charSheetRtxSupersample,
             useLatentUpscale: !!state.charSheetUseLatentUpscale, firstPassRes,
+            secondPassSteps: state.charSheetSecondPassSteps ?? 3,
             width: finalRes.width, height: finalRes.height, seed,
             filenamePrefix: `${state.sheetVideoSaveSubfolder || state.imgSaveSubfolder || state.saveSubfolder || SUBFOLDER}/${subjectStem}_${Date.now()}`,
           });
@@ -6357,6 +6370,7 @@ app.registerExtension({
         if (meta.refImageSize) state.imgRefImageSize = meta.refImageSize;
         if (meta.seed != null) { state.seed = meta.seed; state.seedMode = "fixed"; seedInput.value = meta.seed; seedModeDD.value = "fixed"; }
         if (meta.imgSteps != null) state.imgSteps = meta.imgSteps;
+        if (meta.imgSecondPassSteps != null) state.imgSecondPassSteps = meta.imgSecondPassSteps;
         if (meta.imgTurboOn != null) state.imgTurboOn = !!meta.imgTurboOn;
         if (meta.imgTurboLora) {
           const turboKey = subMode === "ref2i" ? "imgTurboLoraRef2i" : "imgTurboLoraT2i";

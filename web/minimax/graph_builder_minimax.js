@@ -1863,9 +1863,9 @@ export function buildPostprocessGraph(opts, avail) {
 // ("MiniMax-H3-Image-Generation.json"): a cheap first pass at the "preview" resolution,
 // then — only for a real (non-preview) run — a second pass through
 // MinimaxH3LatentUpscaler3D up to the "final" resolution, refining that upscaled latent
-// with the reference workflow's own fixed 3-step sigma schedule ("3 step Sigmas") —
-// always, regardless of Turbo, since that pass refines an already-upscaled latent rather
-// than sampling from scratch. A user-facing Turbo switch (off by default) optionally
+// with one of the reference workflow's own fixed sigma schedules (3/4/5 step, user-
+// selectable) — independent of Turbo, since that pass refines an already-upscaled latent
+// rather than sampling from scratch. A user-facing Turbo switch (off by default) optionally
 // patches in one LoRA for the FIRST pass only — separate slots for T2I/Ref2I, same
 // reasoning as the main pipeline's own turboLora/turboLoraReference split, since a turbo
 // LoRA is trained against one base model. The user-facing Steps field only ever sets the
@@ -1885,8 +1885,14 @@ const IMG = {
   decode: "IMG:decode", frame: "IMG:frame", save: "IMG:save",
 };
 
-// The reference workflow's own fixed second-pass schedule ("3 step Sigmas").
-const IMG_PASS2_SIGMAS = "0.9035, 0.6316, 0.3158, 0.0000";
+// The reference workflow's own fixed second-pass schedules, by step count — user-selectable
+// (3/4/5), not derived: each is its own hand-tuned sigma curve, not a subdivision of the
+// others.
+export const IMG_PASS2_SIGMAS_BY_STEPS = {
+  3: "0.9035, 0.6316, 0.3158, 0.0000",
+  4: "0.9035, 0.8000, 0.6316, 0.3158, 0.0000",
+  5: "0.9231, 0.8780, 0.8000, 0.6316, 0.3158, 0.0000",
+};
 // Frame count for the short clip a still is read back from — fixed, not user-facing (the
 // reference workflow's own PrimitiveInt value); ImageFromBatch's batch_index below always
 // matches it, so this is the one place both must agree if it's ever changed.
@@ -1920,9 +1926,11 @@ function buildImageLoraChain(g, state, modelLink) {
  * @param opts.filenamePrefix
  * @param opts.steps        first-pass step count only; default 20 (a plain, non-turbo
  *                          render needs 20+ steps — turbo LoRAs are trained for far fewer,
- *                          typically 3/4/8 depending on the LoRA). The second (latent-
- *                          upscale) pass always uses the reference workflow's own fixed
- *                          3-step sigma schedule, regardless of this or opts.turboOn.
+ *                          typically 3/4/8 depending on the LoRA).
+ * @param opts.secondPassSteps  3 | 4 | 5 (default 3) — which of the reference workflow's
+ *                          own fixed sigma schedules (IMG_PASS2_SIGMAS_BY_STEPS) the
+ *                          latent-upscale second pass uses. Independent of opts.steps and
+ *                          opts.turboOn — these are hand-tuned curves, not derived.
  * @param opts.turboOn      false (default) = no LoRA on the first pass
  * @param opts.turboLora, opts.turboLoraStrength  ignored unless opts.turboOn
  * @param opts.savePreview  false (default) = a !final run's still goes to PreviewImage
@@ -1931,7 +1939,7 @@ function buildImageLoraChain(g, state, modelLink) {
  */
 export function buildImageGenGraph(state, avail, opts) {
   const { subMode, final, refImages, refImageSize, prompt, seed, previewRes, finalRes, filenamePrefix,
-          steps, turboOn, turboLora, turboLoraStrength, savePreview } = opts;
+          steps, secondPassSteps, turboOn, turboLora, turboLoraStrength, savePreview } = opts;
   const refList = (refImages || []).filter(Boolean).slice(0, 9);
   if (subMode === "ref2i" && !refList.length) throw new Error("Reference to Image needs at least one reference image.");
   const g = {};
@@ -2010,10 +2018,11 @@ export function buildImageGenGraph(state, avail, opts) {
     }};
     g[IMG.sampSel2] = { class_type: "KSamplerSelect", inputs: { sampler_name: "euler" } };
     g[IMG.guider2] = { class_type: "BasicGuider", inputs: { model, conditioning: [IMG.cond, 0] } };
-    // Always the reference workflow's own fixed 3-step schedule ("3 step Sigmas") — the
-    // second pass refines an already-upscaled latent, not a from-scratch sample, so it
-    // doesn't need (and Turbo on/off doesn't change) the first pass's own step count.
-    g[IMG.sigmas2] = { class_type: "ManualSigmas", inputs: { sigmas: IMG_PASS2_SIGMAS } };
+    // One of the reference workflow's own fixed sigma schedules — the second pass refines
+    // an already-upscaled latent, not a from-scratch sample, so it doesn't need (and
+    // Turbo on/off doesn't change) the first pass's own step count.
+    const pass2Sigmas = IMG_PASS2_SIGMAS_BY_STEPS[secondPassSteps] || IMG_PASS2_SIGMAS_BY_STEPS[3];
+    g[IMG.sigmas2] = { class_type: "ManualSigmas", inputs: { sigmas: pass2Sigmas } };
     g[IMG.sampler2] = { class_type: "SamplerCustomAdvanced", inputs: {
       noise: [IMG.noise, 0], guider: [IMG.guider2, 0], sampler: [IMG.sampSel2, 0],
       sigmas: [IMG.sigmas2, 0], latent_image: [IMG.concatAV, 0],
@@ -2095,8 +2104,6 @@ const CS = {
   decode: "CS:decode", deblur: "CS:deblur", rtxCrop: "CS:rtx_crop", rtx: "CS:rtx", rtxDown: "CS:rtx_downsize",
   video: "CS:video", save: "CS:save",
 };
-const CS_PASS2_SIGMAS = "0.9035, 0.6316, 0.3158, 0.0000";
-
 // Frame count for the 8-shot turnaround — fixed by the reference workflow's own timed
 // prompt (each [Shot N] At MM:SS.mmm marker assumes this exact length/fps).
 export const CHARSHEET_FRAMES = 124;
@@ -2128,11 +2135,13 @@ export const CHARSHEET_DEFAULT_FRAME_INDICES = [7, 22, 37, 52, 67, 82, 107, 118]
  *                         buildImageGenGraph's own previewRes is: resolveResolution at
  *                         that MP value); false renders straight at width/height.
  * @param opts.firstPassRes {width,height} — only read when useLatentUpscale is true
+ * @param opts.secondPassSteps 3 | 4 | 5 (default 3) — only read when useLatentUpscale is
+ *                         true; which of IMG_PASS2_SIGMAS_BY_STEPS the second pass uses.
  * @param opts.width/height render (final) resolution; opts.seed; opts.filenamePrefix
  */
 export function buildCharacterSheetVideoGraph(state, avail, opts) {
   const { refImages, refImageSize, prompt, deblur = "none", rtx = null, rtxSupersample = false,
-          useLatentUpscale = false, firstPassRes, width, height, seed, filenamePrefix } = opts;
+          useLatentUpscale = false, firstPassRes, secondPassSteps, width, height, seed, filenamePrefix } = opts;
   const refList = (refImages || []).filter(Boolean).slice(0, 9);
   if (!refList.length) throw new Error("Character Sheet needs at least one reference image.");
   if (!state.unetReference || state.unetReference === "none")
@@ -2189,7 +2198,9 @@ export function buildCharacterSheetVideoGraph(state, avail, opts) {
     g[CS.concatAV] = { class_type: "LTXVConcatAVLatent", inputs: { video_latent: [CS.latentUp, 0], audio_latent: [CS.sepAV, 1] } };
     g[CS.sampSel2] = { class_type: "KSamplerSelect", inputs: { sampler_name: "euler" } };
     g[CS.guider2] = { class_type: "BasicGuider", inputs: { model, conditioning: [CS.cond, 0] } };
-    g[CS.sigmas2] = { class_type: "ManualSigmas", inputs: { sigmas: CS_PASS2_SIGMAS } };
+    g[CS.sigmas2] = { class_type: "ManualSigmas", inputs: {
+      sigmas: IMG_PASS2_SIGMAS_BY_STEPS[secondPassSteps] || IMG_PASS2_SIGMAS_BY_STEPS[3],
+    }};
     g[CS.sampler2] = { class_type: "SamplerCustomAdvanced", inputs: {
       noise: [CS.noise, 0], guider: [CS.guider2, 0], sampler: [CS.sampSel2, 0],
       sigmas: [CS.sigmas2, 0], latent_image: [CS.concatAV, 0],
