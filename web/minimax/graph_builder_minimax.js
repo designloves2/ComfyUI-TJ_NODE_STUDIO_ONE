@@ -1563,6 +1563,7 @@ const PPX = {
   upApply:"PPX:upscale",
   skinRetouch: "PPX:skin_retouch",
   grain:  "PPX:grain",
+  grainDealpha: "PPX:grain_dealpha",
   rife:   "PPX:rife",
   resize: "PPX:resize",
   video:  "PPX:video",
@@ -1813,7 +1814,15 @@ export function buildPostprocessGraph(opts, avail) {
       "floats.u_float3": grain.lumBias ?? 0,
       "ints.u_int0": grain.noiseMode === "grainy" ? 1 : 0,
     }};
-    images = [PPX.grain, 0];   // IMAGE0 output
+    // GLSLShader's IMAGE0 output is RGBA (4 channels) even though every input frame here
+    // is plain RGB — every downstream node in this chain (RIFEInterpolation, TJ_VideoResize,
+    // VHS_VideoCombine) expects [N,H,W,3] and throws otherwise (live error: "Expected image
+    // tensor shape [N, H, W, 3], got torch.Size([12, 1472, 2688, 4])" out of ComfyUI-VFI's
+    // RIFEInterpolation, the very next step after Grain). SplitImageWithAlpha (ComfyUI core)
+    // strips it back down to RGB; its MASK output is discarded, nothing downstream wants it.
+    if (!has(avail, "SplitImageWithAlpha")) throw new Error("SplitImageWithAlpha is not installed (ComfyUI core is out of date).");
+    g[PPX.grainDealpha] = { class_type: "SplitImageWithAlpha", inputs: { image: [PPX.grain, 0] } };
+    images = [PPX.grainDealpha, 0];
     usedSteps.push("grain");
   }
 
