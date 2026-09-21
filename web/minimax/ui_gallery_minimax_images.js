@@ -132,6 +132,40 @@ export function createImageGalleryOverlay(state, ctx) {
   const countTag = el("div", { style: { fontSize: "10.5px", color: C.muted, flex: "1" } });
   hdr.appendChild(countTag);
 
+  // ── multi-select (same pattern as the image-node galleries' own Select/bulk-delete) ─
+  let selectMode = false;
+  const selected = new Set();   // mediaKey() strings
+  let cellRefs = [];            // { key, checkbox } — toggled visible/hidden together
+  const bulkDeleteBtn = el("button", { type: "button", text: "Delete", style: {
+    display: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "5px 11px",
+    borderRadius: "6px", background: "#c0392b", color: "#fff", border: "none", fontWeight: "700",
+  }});
+  const selectBtn = el("button", { type: "button", text: "Select", style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "5px 11px",
+    borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+  }});
+  function updateSelectionUI() {
+    selectBtn.textContent = selected.size ? `${selected.size} Select` : "Select";
+    bulkDeleteBtn.textContent = `Delete ${selected.size} Image${selected.size === 1 ? "" : "s"}`;
+    bulkDeleteBtn.style.display = selected.size ? "" : "none";
+  }
+  function setSelectMode(on) {
+    selectMode = on; if (!on) selected.clear();
+    selectBtn.style.background  = on ? BRAND : C.bg2;
+    selectBtn.style.borderColor = on ? BRAND : C.border;
+    cellRefs.forEach(ref => { ref.checkbox.style.display = on ? "" : "none"; ref.info.style.display = on ? "none" : ""; });
+    updateSelectionUI();
+  }
+  selectBtn.addEventListener("click", () => setSelectMode(!selectMode));
+  bulkDeleteBtn.addEventListener("click", async () => {
+    if (!selected.size) return;
+    if (!window.confirm(`Delete ${selected.size} image(s)? This can't be undone.`)) return;
+    const targets = filtered.filter(v => selected.has(mediaKey(v.filename, v.subfolder || "")));
+    for (const v of targets) await deleteImage(v.filename, v.subfolder || "").catch(() => {});
+    setSelectMode(false);
+    await refresh();
+  });
+
   const filterSel = el("select", { style: {
     cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "5px 8px",
     borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
@@ -185,7 +219,7 @@ export function createImageGalleryOverlay(state, ctx) {
   }
   postBtn.addEventListener("click", () => setPostMode(!postMode));
 
-  hdr.append(filterSel, postBtn, refreshBtn, folderBtn, button("✕ Close", () => hide(), "danger"));
+  hdr.append(bulkDeleteBtn, selectBtn, filterSel, postBtn, refreshBtn, folderBtn, button("✕ Close", () => hide(), "danger"));
 
   const barStyle = {
     display: "none", flexShrink: "0", alignItems: "center", gap: "8px", flexWrap: "wrap",
@@ -291,8 +325,10 @@ export function createImageGalleryOverlay(state, ctx) {
   function thumb(v, idx) {
     const key = mediaKey(v.filename, v.subfolder || "");
     const picked = postMode && postPick === vKey(v);
+    const isSel = selected.has(key);
     const card = el("div", { style: {
-      position: "relative", background: C.bg1, border: `1px solid ${picked ? BRAND : C.border}`,
+      position: "relative", background: C.bg1,
+      border: `1px solid ${picked || isSel ? BRAND : C.border}`,
       borderRadius: "8px", cursor: "pointer", display: "flex", flexDirection: "column",
     }});
 
@@ -300,12 +336,45 @@ export function createImageGalleryOverlay(state, ctx) {
     const img = el("img", { loading: "lazy", src: imageURL(v),
       style: { width: "100%", aspectRatio: "1 / 1", objectFit: "cover", background: "#000", display: "block" } });
     thumbWrap.appendChild(img);
-    attachSensitiveToggle?.(thumbWrap, img, key);
+    attachSensitiveToggle?.(thumbWrap, img, key);   // ⊘ eye toggle — bottom-right by default
 
-    if (v.favorite) thumbWrap.appendChild(el("div", { text: "★", title: "Favorite", style: {
-      position: "absolute", top: "4px", left: "4px", zIndex: "2", color: "#ffd75e", fontSize: "13px",
-      textShadow: "0 0 3px rgba(0,0,0,0.9)",
-    }}));
+    // ⓘ info hover (top-left) — read-only look at everything Reuse Setting would
+    // restore. Swaps for a checkbox in the same spot while Select mode is on.
+    const infoBtn = el("button", { type: "button", text: "ⓘ", style: {
+      position: "absolute", top: "4px", left: "4px", zIndex: "2", width: "18px", height: "18px",
+      lineHeight: "16px", padding: "0", cursor: "default", fontSize: "11px", fontFamily: "inherit",
+      background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "4px",
+    }});
+    infoBtn.addEventListener("click", e => e.stopPropagation());
+    let infoPopup = null;
+    infoBtn.addEventListener("mouseenter", () => {
+      const lines = buildInfoLines(v);
+      infoPopup = el("div", { style: {
+        position: "fixed", zIndex: "10001", background: "rgba(10,10,10,0.97)",
+        border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px 8px",
+        fontSize: "10px", color: C.text, lineHeight: "1.6", whiteSpace: "pre-wrap", wordBreak: "break-all",
+        pointerEvents: "none", maxWidth: "220px", boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
+      }});
+      infoPopup.textContent = lines.length ? lines.join("\n") : "No settings saved for this image.";
+      document.body.appendChild(infoPopup);
+      const r = infoBtn.getBoundingClientRect();
+      infoPopup.style.left = `${r.right + 6}px`; infoPopup.style.top = `${r.top}px`;
+    });
+    infoBtn.addEventListener("mouseleave", () => { infoPopup?.remove(); infoPopup = null; });
+    thumbWrap.appendChild(infoBtn);
+
+    const checkbox = el("input", { type: "checkbox" });
+    checkbox.checked = isSel;
+    checkbox.style.cssText = "position:absolute;top:4px;left:4px;z-index:2;width:16px;height:16px;cursor:pointer;display:none;";
+    checkbox.addEventListener("click", e => e.stopPropagation());
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) selected.add(key); else selected.delete(key);
+      card.style.borderColor = checkbox.checked ? BRAND : C.border;
+      updateSelectionUI();
+    });
+    thumbWrap.appendChild(checkbox);
+    cellRefs.push({ key, checkbox, info: infoBtn });
+    if (selectMode) { infoBtn.style.display = "none"; checkbox.style.display = ""; }
 
     const del = el("button", { type: "button", text: "✕", title: "Delete", style: {
       position: "absolute", top: "4px", right: "4px", zIndex: "2", width: "20px", height: "20px",
@@ -315,7 +384,27 @@ export function createImageGalleryOverlay(state, ctx) {
     del.addEventListener("click", (e) => { e.stopPropagation(); askDelete(v); });
     thumbWrap.appendChild(del);
 
+    // ⇪✧ marks — bottom-left, same glyphs/meaning as the video gallery's own
+    // post-process marks (⇪ = upscaled, ✧ = deblurred).
+    {
+      const m = v.meta || {};
+      const marks = [];
+      if (m.upscale) marks.push(["⇪", m.upscale.method === "rtx"
+        ? `Upscaled — RTX VSR ×${m.upscale.scale ?? "?"} (${m.upscale.quality})`
+        : `Upscaled — ${String(m.upscale.model || "model").split(/[\\/]/).pop()}`]);
+      if (m.deblur && m.deblur !== "none") marks.push(["✧", `Deblurred — strength ${m.deblur}`]);
+      if (marks.length) {
+        const bar = el("div", { style: { position: "absolute", bottom: "4px", left: "4px", zIndex: "2", display: "flex", gap: "3px" } });
+        marks.forEach(([glyph, tip]) => bar.appendChild(el("div", { text: glyph, title: tip, style: {
+          width: "18px", height: "18px", lineHeight: "18px", textAlign: "center",
+          fontSize: "11px", borderRadius: "4px", color: "#fff", background: "rgba(0,0,0,0.6)",
+        }})));
+        thumbWrap.appendChild(bar);
+      }
+    }
+
     thumbWrap.addEventListener("click", () => {
+      if (selectMode) { checkbox.checked = !checkbox.checked; checkbox.dispatchEvent(new Event("change")); return; }
       if (pickCallback) { pickImage(v); return; }
       if (postMode) { postPick = vKey(v); refreshPostBar(); renderGrid(); return; }
       openPromptViewPopup(idx);
@@ -343,22 +432,24 @@ export function createImageGalleryOverlay(state, ctx) {
       p.title = promptText;
       meta.appendChild(p);
 
-      const bar = el("div", { style: { display: "flex", gap: "4px", marginTop: "4px" } });
-      const mini = (txt, tip, fn) => {
+      const mini = (txt, tip, fn, full) => {
         const b = el("button", { text: txt, style: {
-          flex: "1", fontSize: "9px", padding: "3px 0", cursor: "pointer",
+          flex: full ? "1 1 100%" : "1", fontSize: "9px", padding: "3px 0", cursor: "pointer",
           background: C.bg2, color: C.text, border: `1px solid ${C.border}`, borderRadius: "4px",
         }});
         b.title = tip;
         b.addEventListener("click", e => { e.stopPropagation(); fn(); });
         return b;
       };
-      bar.append(
-        mini("↩ Reuse", "Restore this image's prompt and settings into the Image Generator panel", () => doReuse(v)),
-        mini("📄 View", "View the full prompt, image and info in one popup", () => openPromptViewPopup(idx)),
-        mini("⧉ Copy", "Copy the prompt to the clipboard", () => doCopyPrompt(promptText)),
-      );
-      meta.appendChild(bar);
+      // Row 1: Reuse Setting alone; Row 2: Prompt View + Prompt Copy side by side —
+      // the user's own requested layout.
+      const row1 = el("div", { style: { display: "flex", gap: "4px", marginTop: "4px" } },
+        [mini("↩ Reuse Setting", "Restore this image's prompt and settings into the Image Generator panel", () => doReuse(v), true)]);
+      const row2 = el("div", { style: { display: "flex", gap: "4px", marginTop: "4px" } }, [
+        mini("📄 Prompt View", "View the full prompt, image and info in one popup", () => openPromptViewPopup(idx)),
+        mini("⧉ Prompt Copy", "Copy the prompt to the clipboard", () => doCopyPrompt(promptText)),
+      ]);
+      meta.append(row1, row2);
     }
 
     card.append(thumbWrap, meta);
@@ -367,6 +458,7 @@ export function createImageGalleryOverlay(state, ctx) {
 
   function renderGrid() {
     clear(grid);
+    cellRefs = [];
     filtered = images.filter(matchesFilter);
     countTag.textContent = `${filtered.length} image${filtered.length === 1 ? "" : "s"}`;
     hint.style.display = filtered.length ? "none" : "block";
@@ -401,8 +493,45 @@ export function createImageGalleryOverlay(state, ctx) {
       position: "relative", width: "100%", aspectRatio: "1 / 1", background: "#000",
       borderRadius: "6px", overflow: "hidden", border: `1px solid ${C.border}`, flexShrink: "0",
     }});
-    const im = el("img", { style: { width: "100%", height: "100%", objectFit: "contain", background: "#000", display: "block" } });
+    const im = el("img", { style: {
+      width: "100%", height: "100%", objectFit: "contain", background: "#000", display: "block",
+      transformOrigin: "center center", cursor: "default",
+    }});
     imgWrap.appendChild(im);
+
+    // Pan (drag) / zoom (wheel, cursor-anchored) / fit (double-click reset) — same gesture
+    // set the main node's own compare viewer uses, applied to this single image.
+    let zoom = 1, panX = 0, panY = 0;
+    const applyTransform = () => { im.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`; };
+    const resetTransform = () => { zoom = 1; panX = 0; panY = 0; applyTransform(); im.style.cursor = "default"; };
+    imgWrap.style.overflow = "hidden";
+    imgWrap.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const rect = imgWrap.getBoundingClientRect();
+      const cx = e.clientX - rect.left - rect.width / 2;
+      const cy = e.clientY - rect.top - rect.height / 2;
+      const prevZoom = zoom;
+      zoom = Math.min(6, Math.max(1, zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+      const ratio = zoom / prevZoom;
+      panX = cx - (cx - panX) * ratio; panY = cy - (cy - panY) * ratio;
+      if (zoom === 1) { panX = 0; panY = 0; }
+      im.style.cursor = zoom > 1 ? "grab" : "default";
+      applyTransform();
+    }, { passive: false });
+    let dragging = false, dragStartX = 0, dragStartY = 0, dragPanX = 0, dragPanY = 0;
+    imgWrap.addEventListener("pointerdown", (e) => {
+      if (zoom <= 1) return;
+      dragging = true; dragStartX = e.clientX; dragStartY = e.clientY; dragPanX = panX; dragPanY = panY;
+      imgWrap.setPointerCapture(e.pointerId);
+      im.style.cursor = "grabbing";
+    });
+    imgWrap.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      panX = dragPanX + (e.clientX - dragStartX); panY = dragPanY + (e.clientY - dragStartY);
+      applyTransform();
+    });
+    imgWrap.addEventListener("pointerup", () => { dragging = false; if (zoom > 1) im.style.cursor = "grab"; });
+    imgWrap.addEventListener("dblclick", resetTransform);
     const infoBox = el("div", { style: {
       fontSize: "10px", color: C.text, lineHeight: "1.6", whiteSpace: "pre-wrap", wordBreak: "break-all",
       background: C.bg2, border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px 8px",
@@ -461,6 +590,7 @@ export function createImageGalleryOverlay(state, ctx) {
       promptBox.textContent = currentPromptText() || "(no prompt saved)";
       // Blur/reveal toggle stays live across nav — re-applies to whichever image is
       // current, same rule the thumbnail grid follows.
+      resetTransform();
       clear(imgWrap); imgWrap.appendChild(im);
       const { eye, shade } = makeSensitiveControl(im, key, () => {
         if (isBlurred(key)) { im.removeAttribute("src"); }
@@ -510,6 +640,7 @@ export function createImageGalleryOverlay(state, ctx) {
     ov.style.display = "none";
     pickCallback = null;
     setPostMode(false);
+    setSelectMode(false);
   }
   function showPicker(onPick) {
     pickCallback = onPick;

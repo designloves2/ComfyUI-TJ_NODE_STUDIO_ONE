@@ -1020,7 +1020,7 @@ app.registerExtension({
       const editBtn = el("button", { type: "button", text: "📝 Prompt Edit", title: "Open the full prompt editor (with local enhance)", style: {
         cursor: "pointer", fontFamily: "inherit", fontSize: "10px",
         padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text,
-        border: `1px solid ${BRAND}`, fontWeight: "600",
+        border: `1px solid ${BRAND}`, fontWeight: "600", marginLeft: "auto",
       }});
       editBtn.addEventListener("click", () => {
         if (state.generationMode === "ltxupscale") { openLtxPromptEdit(); return; }
@@ -1040,7 +1040,7 @@ app.registerExtension({
       const sysPromptSaveBtn = el("button", { type: "button", text: "💾 System Prompt Save", title: "Save the current box contents as the system prompt", style: {
         cursor: "pointer", fontFamily: "inherit", fontSize: "10px", display: "none",
         padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text,
-        border: `1px solid ${BRAND}`, fontWeight: "600",
+        border: `1px solid ${BRAND}`, fontWeight: "600", marginLeft: "auto",
       }});
       sysPromptSaveBtn.addEventListener("click", () => {
         const overwriting = !!state.charSheetSystemPrompt;
@@ -1457,11 +1457,13 @@ app.registerExtension({
       function renderLtxPrompt() {
         clear(promptList);
         promptCount.textContent = state.ltxSource ? "" : "(no source clip)";
+        // Not flex:1 — promptList is a column flex container, so flex:1 there fights the
+        // native resize handle (same bug fixed for Image Generator's own prompt box).
         const ta = el("textarea", {
           placeholder: "Prompt for the refine pass — should match the source clip closely. Gallery picks auto-fill from the clip's saved prompt; ✨ writes one from an upload.",
-          style: { flex: "1", width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+          style: { minHeight: "120px", width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
                    border: `1px solid ${C.border}`, borderRadius: "6px", padding: "8px", fontSize: "12px",
-                   fontFamily: "inherit", outline: "none", resize: "none", minHeight: "0" },
+                   fontFamily: "inherit", outline: "none", resize: "vertical" },
         });
         ta.value = state.ltxPrompt || "";   // textarea content must be set as a property — el() only setAttribute()s
         ta.addEventListener("input", () => { state.ltxPrompt = ta.value; persist(); });
@@ -1778,11 +1780,12 @@ app.registerExtension({
       function renderFaceRefinePrompt() {
         clear(promptList);
         promptCount.textContent = state.frSource ? "" : "(no source clip)";
+        // Not flex:1 — same resize-handle fix as the LTX/Image Generator prompt boxes.
         const ta = el("textarea", {
           placeholder: "Describe the clip (character, scene) — helps H3 re-render the face consistently.",
-          style: { flex: "1", width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+          style: { minHeight: "120px", width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
                    border: `1px solid ${C.border}`, borderRadius: "6px", padding: "8px", fontSize: "12px",
-                   fontFamily: "inherit", outline: "none", resize: "none", minHeight: "0" },
+                   fontFamily: "inherit", outline: "none", resize: "vertical" },
         });
         ta.value = state.frPrompt || "";   // textarea content must be set as a property
         ta.addEventListener("input", () => { state.frPrompt = ta.value; persist(); });
