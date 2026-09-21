@@ -1797,17 +1797,25 @@ export function buildPostprocessGraph(opts, avail) {
   // u_int0 (0 = smooth/interpolated, 1 = grainy/pure hash noise).
   if (grain.enabled) {
     if (!has(avail, "GLSLShader")) throw new Error("GLSLShader is not installed (ComfyUI core is out of date).");
+    // GLSLShader's images/floats/ints groups are COMFY_AUTOGROW_V3 (verified against
+    // /object_info/GLSLShader live) — each instantiated slot is its own FLAT top-level
+    // input key (image0, u_float0, u_int0, …), not nested under the group name and not
+    // a dotted "images.image0" (that dotted convention is COMFY_DYNAMICCOMBO_V3's own
+    // shape, e.g. SaveAudioAdvanced's format/"format.quality" elsewhere in this
+    // codebase — a different V3 combo type). The earlier nested-object shape here left
+    // the real top-level "image0" key missing entirely, which is exactly why the
+    // validator rejected the prompt with "Required input is missing: image0".
+    // size_mode IS a COMFY_DYNAMICCOMBO_V3, and "from_input" has no sub-fields of its
+    // own, so it needs no dotted companion key.
     g[PPX.grain] = { class_type: "GLSLShader", inputs: {
       fragment_shader: GRAIN_FRAGMENT_SHADER,
-      size_mode: { size_mode: "from_input" },
-      images: { image0: images },
-      floats: {
-        u_float0: grain.amount ?? 0.25,
-        u_float1: grain.size ?? 0.1,
-        u_float2: grain.color ?? 0,
-        u_float3: grain.lumBias ?? 0,
-      },
-      ints: { u_int0: grain.noiseMode === "grainy" ? 1 : 0 },
+      size_mode: "from_input",
+      image0: images,
+      u_float0: grain.amount ?? 0.25,
+      u_float1: grain.size ?? 0.1,
+      u_float2: grain.color ?? 0,
+      u_float3: grain.lumBias ?? 0,
+      u_int0: grain.noiseMode === "grainy" ? 1 : 0,
     }};
     images = [PPX.grain, 0];   // IMAGE0 output
     usedSteps.push("grain");
