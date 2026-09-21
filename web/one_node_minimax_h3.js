@@ -3252,8 +3252,8 @@ app.registerExtension({
       // a short slice — plus the usual ▶ Generate / ■ Stop pair underneath, which always
       // runs (and saves) the FULL clip regardless of the range fields. Preview is an
       // optional check, not a gate: Generate works with nothing previewed at all.
-      const ppPreviewStartIn = numberField(0, v => { state.ppPreviewStart = Math.max(0, v); persist(); }, 0.5);
-      const ppPreviewEndIn = numberField(0, v => { state.ppPreviewEnd = Math.max(0, v); persist(); }, 0.5);
+      const ppPreviewStartIn = numberField(0, v => { state.ppPreviewStart = Math.max(0, v); persist(); }, 0.1);
+      const ppPreviewEndIn = numberField(0, v => { state.ppPreviewEnd = Math.max(0, v); persist(); }, 0.1);
       const ppPreviewBtn = el("button", { type: "button", text: "Preview", style: {
         cursor: "pointer", width: "100%", padding: "10px", fontSize: "13px", fontWeight: "700",
         borderRadius: "6px", border: "none", background: "#e4d4fb", color: BRAND,
