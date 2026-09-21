@@ -3533,6 +3533,20 @@ app.registerExtension({
           resultVid.style.display = "none";
           previewImg.src = url; previewImg.style.display = "block";
           badge.style.display = "block"; fsBtn.style.display = "none"; compareBtn.style.display = "none";
+          if (final) {
+            // Everything the gallery's own "↩ Reuse Setting" needs to restore this exact
+            // run into the panel — same idea as the main clip's own meta, scoped to what
+            // Image Generator actually has (no accelerator/turbo stack of its own).
+            await saveMeta(o.filename, o.subfolder || (state.imgSaveSubfolder || state.saveSubfolder || SUBFOLDER), {
+              created: Date.now(), prompt: state.imgPrompt || state.charSheetPrompt || "",
+              w: finalRes.width, h: finalRes.height,
+              imgAspect: state.imgAspect || "2:3 Portrait",
+              imgPreviewMp: state.imgPreviewMp ?? 0.2, imgFinalMp: state.imgFinalMp ?? 1.0,
+              imgLoras: state.imgLoras || [], subMode,
+              refImages: subMode === "ref2i" ? (state.imgRefImages || []) : [],
+              refImageSize: state.imgRefImageSize || "max", seed,
+            }).catch(() => {});
+          }
           setStatus(`✓ Image Generator done${final ? "" : " (preview)"}.`);
           showPopup(final ? "Image finished — saved to output." : "Preview ready.", false);
         } catch (e) {
@@ -5964,6 +5978,32 @@ app.registerExtension({
         persist();
         refreshPlan();
         renderLeft();
+        return true;
+      };
+
+      // H3 Image Gallery's own "↩ Reuse Setting" — Image Generator has none of the main
+      // clip's accelerator/turbo stack, so this is a separate, much smaller restore than
+      // ctx.reuseAll rather than a variant of it: prompt, sub-mode, resolution, LoRAs and
+      // (for Reference to Image) the reference image set.
+      ctx.reuseImageSettings = (meta) => {
+        if (!meta) return false;
+        state.generationMode = "imagegen";
+        const subMode = ["t2i", "ref2i", "charsheet"].includes(meta.subMode) ? meta.subMode : "t2i";
+        state.imageGenMode = subMode;
+        if (subMode === "charsheet") state.charSheetPrompt = String(meta.prompt || "");
+        else state.imgPrompt = String(meta.prompt || "");
+        if (meta.imgAspect) state.imgAspect = meta.imgAspect;
+        if (meta.imgPreviewMp != null) state.imgPreviewMp = meta.imgPreviewMp;
+        if (meta.imgFinalMp != null) state.imgFinalMp = meta.imgFinalMp;
+        if (Array.isArray(meta.imgLoras)) state.imgLoras = meta.imgLoras.map(l => ({
+          name: l.name || "none", strength: l.strength ?? 1.0,
+          triggerWord: l.triggerWord || "", enabled: l.enabled !== false,
+        }));
+        if (Array.isArray(meta.refImages)) state.imgRefImages = meta.refImages.slice();
+        if (meta.refImageSize) state.imgRefImageSize = meta.refImageSize;
+        if (meta.seed != null) { state.seed = meta.seed; state.seedMode = "fixed"; seedInput.value = meta.seed; seedModeDD.value = "fixed"; }
+        persist();
+        renderPills(); renderLeft(); renderPrompts();
         return true;
       };
 

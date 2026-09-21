@@ -16,11 +16,25 @@ import { button } from "../klein/ui_common.js";
 import { listImages, revealOutputFolder, deleteImage, copyOutputToInput, discardInputCopy,
          saveMeta, queuePrompt } from "./api_minimax.js";
 import { buildImageUpscaleGraph } from "./graph_builder_minimax.js";
-import { mediaKey, isBlurred, attachSensitiveToggle } from "../shared/ui_sensitive_media.js";
+import { mediaKey, isBlurred, attachSensitiveToggle, makeSensitiveControl } from "../shared/ui_sensitive_media.js";
 
 function imageURL(v) {
   return `/view?filename=${encodeURIComponent(v.filename)}`
-    + `&subfolder=${encodeURIComponent(v.subfolder || "")}&type=output`;
+    + `&subfolder=${encodeURIComponent(v.subfolder || "")}&type=output&t=${v.mtime || ""}`;
+}
+// Read-only look at everything Reuse Setting would restore — same idea as the video
+// gallery's own buildInfoLines, scoped to what Image Generator actually saves.
+function buildInfoLines(v) {
+  const m = v.meta || {};
+  const lines = [];
+  if (m.subMode) lines.push(`mode: ${m.subMode}`);
+  if (m.imgAspect) lines.push(`aspect: ${m.imgAspect}`);
+  if (m.imgFinalMp != null) lines.push(`final MP: ${m.imgFinalMp}`);
+  if (m.seed != null) lines.push(`seed: ${m.seed}`);
+  const loraOn = (m.imgLoras || []).filter(l => l && l.enabled !== false && l.name && l.name !== "none");
+  if (loraOn.length) lines.push(`LoRA: ${loraOn.map(l => `${String(l.name).split(/[\\/]/).pop()} (${l.strength ?? 1.0})`).join(", ")}`);
+  if (m.refImages?.length) lines.push(`reference images: ${m.refImages.length}`);
+  return lines;
 }
 function fmtSize(bytes) {
   if (!bytes) return "";
@@ -258,70 +272,226 @@ export function createImageGalleryOverlay(state, ctx) {
   }
 
   // ── grid ─────────────────────────────────────────────────────────────────────────
-  // gridAutoRows is a fixed pixel height (not "auto") deliberately: relying on the card's
-  // own CSS aspect-ratio (or an <img>'s intrinsic size before it loads) left every row's
-  // auto-computed height near zero in this environment, since the wrapper's only
-  // non-absolutely-positioned child was the still-unsized image — rows overlapped and the
-  // whole gallery looked like everything crammed onto one unscrollable page. A fixed row
-  // height needs nothing from the image to lay out correctly.
-  const THUMB = 140;
+  // No `overflow` other than visible on `card` (the grid item) — same fix the video
+  // gallery's own grid already documents: a grid item's automatic minimum size collapses
+  // to 0 instead of its content's natural height whenever its own overflow isn't
+  // "visible", which is what squashed every row into a sliver and stacked all 146 cards
+  // on top of each other. Clipping happens on `thumbWrap` (an inner child) instead, and
+  // the thumbnail image stays in NORMAL FLOW sized by aspect-ratio (not absolutely
+  // positioned) so it contributes real height the same way the video gallery's own
+  // thumbnail does.
   const grid = el("div", { style: {
     flex: "1", overflowY: "auto", display: "grid",
-    gridTemplateColumns: `repeat(auto-fill, minmax(${THUMB}px, 1fr))`, gridAutoRows: `${THUMB}px`,
-    gap: "10px", alignContent: "start",
+    gridTemplateColumns: "repeat(auto-fill, minmax(168px, 1fr))", gap: "10px", alignContent: "start",
+    paddingRight: "4px",
   }});
   const hint = el("div", { text: "No images yet.", style: { color: C.muted, fontSize: "12px", textAlign: "center", padding: "30px 0", display: "none" } });
+  let filtered = [];   // current filtered order — Prompt View's prev/next navigate this
 
-  function thumb(v) {
+  function thumb(v, idx) {
     const key = mediaKey(v.filename, v.subfolder || "");
     const picked = postMode && postPick === vKey(v);
-    // Card fills its fixed-height grid cell exactly (see the grid's own comment above);
-    // the image is absolutely positioned to match, so it needs nothing of its own to
-    // establish a size before or after it loads.
     const card = el("div", { style: {
-      position: "relative", width: "100%", height: "100%", borderRadius: "8px", overflow: "hidden",
-      background: "#000", border: `1px solid ${picked ? BRAND : C.border}`, cursor: "pointer",
+      position: "relative", background: C.bg1, border: `1px solid ${picked ? BRAND : C.border}`,
+      borderRadius: "8px", cursor: "pointer", display: "flex", flexDirection: "column",
     }});
-    const img = el("img", { src: imageURL(v), loading: "lazy",
-      style: { position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "cover", display: "block" } });
-    card.appendChild(img);
-    attachSensitiveToggle?.(card, img, key);
 
-    if (v.favorite) card.appendChild(el("div", { text: "★", title: "Favorite", style: {
-      position: "absolute", top: "4px", left: "4px", color: "#ffd75e", fontSize: "13px",
+    const thumbWrap = el("div", { style: { position: "relative", width: "100%", overflow: "hidden", borderRadius: "7px 7px 0 0" } });
+    const img = el("img", { loading: "lazy", src: imageURL(v),
+      style: { width: "100%", aspectRatio: "1 / 1", objectFit: "cover", background: "#000", display: "block" } });
+    thumbWrap.appendChild(img);
+    attachSensitiveToggle?.(thumbWrap, img, key);
+
+    if (v.favorite) thumbWrap.appendChild(el("div", { text: "★", title: "Favorite", style: {
+      position: "absolute", top: "4px", left: "4px", zIndex: "2", color: "#ffd75e", fontSize: "13px",
       textShadow: "0 0 3px rgba(0,0,0,0.9)",
     }}));
 
     const del = el("button", { type: "button", text: "✕", title: "Delete", style: {
-      position: "absolute", top: "4px", right: "4px", width: "20px", height: "20px",
+      position: "absolute", top: "4px", right: "4px", zIndex: "2", width: "20px", height: "20px",
       border: "none", borderRadius: "5px", background: "rgba(0,0,0,0.7)", color: "#fff",
       cursor: "pointer", fontSize: "11px", lineHeight: "20px", padding: "0",
     }});
     del.addEventListener("click", (e) => { e.stopPropagation(); askDelete(v); });
-    card.appendChild(del);
+    thumbWrap.appendChild(del);
 
-    const infoBar = el("div", { style: {
-      position: "absolute", left: "0", right: "0", bottom: "0", padding: "3px 5px",
-      background: "linear-gradient(transparent, rgba(0,0,0,0.85))", fontSize: "9.5px", color: "#ddd",
-    }});
-    infoBar.textContent = `${fmtSize(v.size)} · ${fmtWhen(v.mtime)}`;
-    card.appendChild(infoBar);
-
-    card.addEventListener("click", () => {
+    thumbWrap.addEventListener("click", () => {
       if (pickCallback) { pickImage(v); return; }
       if (postMode) { postPick = vKey(v); refreshPostBar(); renderGrid(); return; }
-      window.open(imageURL(v), "_blank");
+      openPromptViewPopup(idx);
     });
+
+    const meta = el("div", { style: { padding: "5px 7px", display: "flex", flexDirection: "column", gap: "1px" } });
+    if (v.meta?.w && v.meta?.h) {
+      const mp = ((v.meta.w * v.meta.h) / 1_000_000).toFixed(1);
+      meta.appendChild(el("div", { text: `[${v.meta.w}x${v.meta.h}px / ${mp}MP]`,
+        style: { fontSize: "9px", color: "#fff", fontWeight: "600" } }));
+    }
+    meta.append(
+      el("div", { text: v.filename, title: v.filename, style: {
+        fontSize: "10px", color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }),
+      el("div", { text: `${fmtSize(v.size)} · ${fmtWhen(v.mtime)}`, style: { fontSize: "9px", color: C.muted } }),
+    );
+
+    const promptText = String(v.prompt || v.meta?.prompt || "").trim();
+    if (promptText) {
+      const p = el("div", { text: promptText, style: {
+        fontSize: "9px", color: C.muted, lineHeight: "1.35", marginTop: "2px",
+        display: "-webkit-box", WebkitLineClamp: "3", WebkitBoxOrient: "vertical",
+        overflow: "hidden", cursor: "text",
+      }});
+      p.title = promptText;
+      meta.appendChild(p);
+
+      const bar = el("div", { style: { display: "flex", gap: "4px", marginTop: "4px" } });
+      const mini = (txt, tip, fn) => {
+        const b = el("button", { text: txt, style: {
+          flex: "1", fontSize: "9px", padding: "3px 0", cursor: "pointer",
+          background: C.bg2, color: C.text, border: `1px solid ${C.border}`, borderRadius: "4px",
+        }});
+        b.title = tip;
+        b.addEventListener("click", e => { e.stopPropagation(); fn(); });
+        return b;
+      };
+      bar.append(
+        mini("↩ Reuse", "Restore this image's prompt and settings into the Image Generator panel", () => doReuse(v)),
+        mini("📄 View", "View the full prompt, image and info in one popup", () => openPromptViewPopup(idx)),
+        mini("⧉ Copy", "Copy the prompt to the clipboard", () => doCopyPrompt(promptText)),
+      );
+      meta.appendChild(bar);
+    }
+
+    card.append(thumbWrap, meta);
     return card;
   }
 
   function renderGrid() {
     clear(grid);
-    const filtered = images.filter(matchesFilter);
+    filtered = images.filter(matchesFilter);
     countTag.textContent = `${filtered.length} image${filtered.length === 1 ? "" : "s"}`;
     hint.style.display = filtered.length ? "none" : "block";
-    filtered.forEach(v => grid.appendChild(thumb(v)));
+    filtered.forEach((v, idx) => grid.appendChild(thumb(v, idx)));
     refreshPostBar();
+  }
+
+  function doReuse(v) {
+    const m = v.meta || { prompt: v.prompt || "" };
+    const ok = ctx.reuseImageSettings?.(m);
+    ctx.showPopup?.(ok ? "Image settings loaded into the panel." : "No prompt stored for this image.", !ok);
+    if (ok) hide();
+  }
+  function doCopyPrompt(promptText) {
+    navigator.clipboard?.writeText(promptText)
+      .then(() => ctx.showPopup?.("Prompt copied.", false))
+      .catch(() => ctx.showPopup?.("Copy failed.", true));
+  }
+
+  // ── Prompt View — image + info left, full prompt right, Reuse/Copy footer, same shape
+  // as the video gallery's own popup — plus ←/→ to step through the current filtered
+  // list without closing, and the same blur/reveal toggle the thumbnail itself has.
+  function openPromptViewPopup(idx) {
+    let i = idx;
+    const box = el("div", { style: {
+      position: "relative", background: "#141414", border: `1px solid ${C.border}`, borderRadius: "10px",
+      width: "760px", maxWidth: "94%", padding: "16px", display: "flex", flexDirection: "column",
+      gap: "12px", boxShadow: "0 16px 50px rgba(0,0,0,0.65)",
+    }});
+    const titleEl = el("div", { text: "Prompt", style: { color: "#fff", fontSize: "13px", fontWeight: "700" } });
+    const imgWrap = el("div", { style: {
+      position: "relative", width: "100%", aspectRatio: "1 / 1", background: "#000",
+      borderRadius: "6px", overflow: "hidden", border: `1px solid ${C.border}`, flexShrink: "0",
+    }});
+    const im = el("img", { style: { width: "100%", height: "100%", objectFit: "contain", background: "#000", display: "block" } });
+    imgWrap.appendChild(im);
+    const infoBox = el("div", { style: {
+      fontSize: "10px", color: C.text, lineHeight: "1.6", whiteSpace: "pre-wrap", wordBreak: "break-all",
+      background: C.bg2, border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px 8px",
+    }});
+    const leftCol = el("div", { style: { display: "flex", flexDirection: "column", gap: "8px", flex: "1", minWidth: "0" } }, [imgWrap, infoBox]);
+    const promptBox = el("div", { style: {
+      flex: "1", minWidth: "0", background: C.bg2, border: `1px solid ${C.border}`, borderRadius: "6px",
+      padding: "10px", fontSize: "12px", color: C.text, lineHeight: "1.5", whiteSpace: "pre-wrap",
+      overflowY: "auto", maxHeight: "360px",
+    }});
+    const topRow = el("div", { style: { display: "flex", gap: "10px" } }, [leftCol, promptBox]);
+
+    const footBtn = (txt, tip, fn, primary) => {
+      const b = el("button", { type: "button", text: txt, style: {
+        flex: "1", cursor: "pointer", fontFamily: "inherit", fontSize: "12px", fontWeight: primary ? "700" : "400",
+        padding: "8px 0", borderRadius: "6px", border: `1px solid ${primary ? "transparent" : C.border}`,
+        background: primary ? BRAND : C.bg2, color: primary ? "#fff" : C.text,
+      }});
+      b.title = tip; b.addEventListener("click", fn);
+      return b;
+    };
+    const currentPromptText = () => String(filtered[i]?.prompt || filtered[i]?.meta?.prompt || "").trim();
+    const footRow = el("div", { style: { display: "flex", gap: "8px" } }, [
+      footBtn("↩ Reuse Setting", "Restore this image's prompt and settings into the panel",
+        () => { closePop(); doReuse(filtered[i]); }, true),
+      footBtn("⧉ Prompt Copy", "Copy the prompt to the clipboard", () => doCopyPrompt(currentPromptText())),
+    ]);
+
+    const navBtn = (txt, tip, fn) => el("button", { type: "button", text: txt, title: tip, style: {
+      position: "absolute", top: "50%", transform: "translateY(-50%)", zIndex: "3",
+      width: "30px", height: "30px", borderRadius: "50%", border: "none",
+      background: "rgba(0,0,0,0.6)", color: "#fff", cursor: "pointer", fontSize: "14px",
+    }, onclick: fn });
+    const prevBtn = navBtn("‹", "Previous image (←)", () => step(-1));
+    prevBtn.style.left = "-15px";
+    const nextBtn = navBtn("›", "Next image (→)", () => step(1));
+    nextBtn.style.right = "-15px";
+
+    const closeBtn = el("button", { type: "button", text: "✕", style: {
+      position: "absolute", top: "8px", right: "8px", width: "26px", height: "26px",
+      border: "none", borderRadius: "6px", background: "rgba(255,255,255,0.08)", color: C.text,
+      cursor: "pointer", fontSize: "13px",
+    }});
+    box.append(titleEl, topRow, footRow, closeBtn, prevBtn, nextBtn);
+    const pop = el("div", { style: {
+      position: "fixed", inset: "0", zIndex: "100060", display: "flex",
+      alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.72)",
+    }}, [box]);
+
+    function render() {
+      const v = filtered[i];
+      if (!v) return;
+      const key = mediaKey(v.filename, v.subfolder || "");
+      const lines = buildInfoLines(v);
+      infoBox.textContent = lines.length ? lines.join("\n") : "No settings saved for this image.";
+      promptBox.textContent = currentPromptText() || "(no prompt saved)";
+      // Blur/reveal toggle stays live across nav — re-applies to whichever image is
+      // current, same rule the thumbnail grid follows.
+      clear(imgWrap); imgWrap.appendChild(im);
+      const { eye, shade } = makeSensitiveControl(im, key, () => {
+        if (isBlurred(key)) { im.removeAttribute("src"); }
+        else if (!im.getAttribute("src")) { im.src = imageURL(v); }
+      });
+      if (!isBlurred(key)) im.src = imageURL(v); else im.removeAttribute("src");
+      eye.style.cssText += ";position:absolute;bottom:6px;right:6px;z-index:3;"
+        + "width:26px;height:26px;font-size:14px;background:rgba(0,0,0,0.7);border-radius:6px;";
+      imgWrap.append(shade, eye);
+      prevBtn.style.display = i > 0 ? "" : "none";
+      nextBtn.style.display = i < filtered.length - 1 ? "" : "none";
+    }
+    function step(d) {
+      const n = i + d;
+      if (n < 0 || n >= filtered.length) return;
+      i = n; render();
+    }
+    const onKey = (e) => {
+      if (e.key === "Escape") { closePop(); return; }
+      if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
+    };
+    function closePop() {
+      document.removeEventListener("keydown", onKey);
+      pop.remove();
+    }
+    closeBtn.addEventListener("click", closePop);
+    pop.addEventListener("mousedown", e => { if (e.target === pop) closePop(); });
+    document.addEventListener("keydown", onKey);
+    render();
+    document.body.appendChild(pop);
   }
 
   async function refresh() {
