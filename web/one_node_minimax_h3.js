@@ -2217,6 +2217,13 @@ app.registerExtension({
         state.ppSourceMeta = (m.w || m.h || m.fps || m.frames || durM)
           ? { w: m.w || 0, h: m.h || 0, fps: m.fps || 0, frames: m.frames || 0, duration: durM }
           : null;
+        // The full source meta (prompt, seed, loras, everything) — kept separately from
+        // the numeric subset above so the panel's own display logic is unaffected;
+        // runPostprocess spreads this onto the output's own meta (same "carry the
+        // source's own info forward" shape the gallery's own post-process tools use —
+        // writePostMeta in ui_gallery_minimax.js), which is what feeds the bottom-left
+        // info strip and Reuse Setting for a Postprocess output.
+        state.ppSourceFullMeta = (m && Object.keys(m).length) ? m : null;
         // A different source invalidates any preview range picked against the old clip's
         // length — 0/0 (whole clip) is always safe regardless of the new duration.
         state.ppPreviewStart = 0; state.ppPreviewEnd = 0;
@@ -3354,12 +3361,33 @@ app.registerExtension({
           const url = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=output`;
           showResultVideo(url, { final: true });
           if (!frameLoadCap) {
-            // A full-range run (not a short preview) writes real metadata, same shape the
-            // gallery's own post-process tools write, so Reuse/the info strip pick it up.
+            // A full-range run (not a short preview) writes real metadata — spreads the
+            // SOURCE clip's own full meta (prompt, seed, loras, everything) forward first,
+            // same shape the gallery's own post-process tools use (writePostMeta in
+            // ui_gallery_minimax.js), so Reuse/the bottom-left info strip pick it up; only
+            // then overwrite created/postProcess/postSource and recompute geometry/fps for
+            // whatever the job actually produced (an upscale/resize step changes those).
             try {
-              await saveMeta(o.filename, o.subfolder || (state.saveSubfolder || SUBFOLDER), {
+              const patched = {
+                ...(state.ppSourceFullMeta || {}),
                 created: Date.now(), postProcess: built.usedSteps.join(" + "), postSource: state.ppSource,
-              });
+              };
+              delete patched.elapsedSec;
+              delete patched.sourceW; delete patched.sourceH;
+              try {
+                const oi = await getVideoInfo(o.filename, o.subfolder || "", "output");
+                if (oi?.width || oi?.height) {
+                  const srcW = state.ppSourceMeta?.w, srcH = state.ppSourceMeta?.h;
+                  if ((oi.width && oi.width !== srcW) || (oi.height && oi.height !== srcH)) {
+                    patched.sourceW = srcW; patched.sourceH = srcH;
+                  }
+                  if (oi.width)  patched.w = oi.width;
+                  if (oi.height) patched.h = oi.height;
+                }
+                if (oi?.frames) { patched.frames = oi.frames; patched.durationSeconds = oi.frames / (oi.fps || FPS); }
+                if (oi?.fps)    patched.fps = oi.fps;
+              } catch { /* keep the source geometry rather than fail */ }
+              await saveMeta(o.filename, o.subfolder || (state.saveSubfolder || SUBFOLDER), patched);
             } catch {}
           }
           setStatus(`✓ Postprocess done (${built.usedSteps.join(" + ")})${frameLoadCap ? " — preview range only, not saved to the gallery as final" : ""}.`);
