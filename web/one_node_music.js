@@ -78,7 +78,8 @@ app.registerExtension({
       const state = defaultState(loadState());
       const persist = () => saveState(state);
       const ctx = { availability: {}, models: {}, prompts: {} };
-      const CAPTION_ROLE = () => (state.engine === "acestep" ? "caption_acestep" : "caption_minimax");
+      const CAPTION_ROLE = () => (state.engine === "acestep" ? "caption_acestep"
+        : state.engine === "yue2" ? "caption_yue2" : "caption_minimax");
       // the output subfolder — user-configurable in Settings; falls back to the default.
       const SUB = () => (state.saveSubfolder || "").trim().replace(/^[\/\\]+|[\/\\]+$/g, "") || SUBFOLDER;
 

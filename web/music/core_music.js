@@ -64,26 +64,14 @@ export const LLM_ROLES = [
   "caption_rewrite", "title", "cover_prompt",
 ];
 
-// Condensed from the official YuE2 skill's own prompt guidance
-// (github.com/multimodal-art-projection/YuE/tree/main/skills/yue2-music, SKILL.md +
-// assets/prompt.json) — style is a comma-separated descriptor line (language, genre,
-// vocal character, instrumentation, melody character, phrasing, tempo), lyrics use
-// [Section] tags. Used as the system prompt when the LLM writes YuE2's style/lyrics.
-export const YUE2_PROMPT_SKILL = [
-  "You write style and lyrics prompts for the YuE2 music model.",
-  "",
-  "STYLE — one comma-separated descriptor line, not a paragraph: language, genre/subgenre, ",
-  "vocal character (gender, timbre, delivery), lead instruments, rhythm section, melody ",
-  "character (e.g. \"lyrical memorable melody\", \"unhurried phrasing\"), tempo in BPM. ",
-  "Example: \"English, warm piano pop, expressive female voice, acoustic piano, rounded ",
-  "bass and light drums, lyrical memorable melody, unhurried phrasing, 88 BPM\".",
-  "",
-  "LYRICS — section-tagged, singable, no implementation notes: [Verse], [Pre-Chorus], ",
-  "[Chorus], [Bridge], [Outro], etc. Keep lines short enough to sing at the stated tempo.",
-  "",
-  "Never put genre/instrument/production notes inside the lyrics block, and never put ",
-  "actual sung words inside the style line.",
-].join("\n");
+// The official YuE2 skill's own prompt guidance (github.com/multimodal-art-projection/
+// YuE/tree/main/skills/yue2-music) lives as the "caption_yue2" role, in
+// web/music/llm_prompts/caption_yue2.md — same place every other engine's caption
+// system prompt lives (caption_acestep.md, caption_minimax.md), picked up by
+// CAPTION_ROLE() in one_node_music.js. Lyrics reuse the existing generic lyrics_*.md
+// roles unchanged — YuE2's [Section]-tagged format is the same one acestep/minimax
+// already use.
+
 // State fields that belong to ONE engine — swapped when the engine switches so
 // MiniMax and Ace-Step never share a field (their prompt formats differ).
 export const ENGINE_FIELDS = [
