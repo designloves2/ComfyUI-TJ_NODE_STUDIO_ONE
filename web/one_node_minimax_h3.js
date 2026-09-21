@@ -198,6 +198,7 @@ app.registerExtension({
           state.generationMode = key;
           // Turbo isn't offered in Reference mode, so don't leave it selected there.
           persist(); renderPills(); renderLeft(); renderPrompts();
+          restoreModeResult();
         }));
 
         const issues = configIssues(state);
@@ -798,8 +799,40 @@ app.registerExtension({
         }
         badge.style.display = "block";
       }
+      // Every mode/sub-mode shared ONE preview box with no memory of its own — switching
+      // from, say, Postprocess to Image Generator kept showing Postprocess's last result,
+      // since lastResultURL is a single variable and nothing ever repainted the box on a
+      // mode switch (user: "프리뷰창의 결과물이 왜 모든 메뉴 프리뷰창에 동일하게
+      // 적용되지???? 전부 독립적으로 동작되야하는데"). This cache keys the last shown
+      // result by mode (Image Generator further by its own t2i/ref2i/charsheet sub-mode,
+      // since those are just as independent as the top-level pills), and
+      // restoreModeResult() repaints the box to match whenever the mode/sub-mode changes.
+      const modeResultCache = {};
+      function resultModeKey() {
+        return state.generationMode === "imagegen"
+          ? `imagegen:${state.imageGenMode || "t2i"}` : state.generationMode;
+      }
+      function restoreModeResult() {
+        const cached = modeResultCache[resultModeKey()];
+        if (!cached) { resetPreview(); return; }
+        if (cached.kind === "image") showResultImage(cached.url, { final: cached.final });
+        else showResultVideo(cached.url, { final: cached.final });
+      }
+      function showResultImage(url, { final = false } = {}) {
+        lastResultURL = url;
+        modeResultCache[resultModeKey()] = { kind: "image", url, final };
+        if (final) previewLocked = true;
+        placeholder.style.display = "none"; frDetectBanner.style.display = "none"; fvsrBanner.style.display = "none";
+        try { previewVid.pause(); } catch {}
+        previewVid.style.display = "none";
+        try { resultVid.pause(); } catch {}
+        resultVid.style.display = "none";
+        previewImg.src = url; previewImg.style.display = "block";
+        badge.style.display = "block"; fsBtn.style.display = "none"; compareBtn.style.display = "none";
+      }
       function showResultVideo(url, { final = false } = {}) {
         lastResultURL = url;
+        modeResultCache[resultModeKey()] = { kind: "video", url, final };
         if (final) previewLocked = true;
         placeholder.style.display = "none";
         frDetectBanner.style.display = "none";
@@ -808,6 +841,7 @@ app.registerExtension({
         try { previewVid.pause(); } catch {}
         previewVid.style.display = "none";
         resultVid.src = url;
+        try { resultVid.load(); } catch {}
         resultVid.style.display = "block";
         // Loaded and ready, but left paused — a clip finishing mid-run should not start
         // making noise on its own. The user presses play.
@@ -3478,7 +3512,7 @@ app.registerExtension({
             background: active ? BRAND : C.bg2, color: active ? "#fff" : C.text,
             border: `1px solid ${active ? BRAND : C.border}`,
           }});
-          b.addEventListener("click", () => { state.imageGenMode = m.key; persist(); renderLeft(); renderPrompts(); });
+          b.addEventListener("click", () => { state.imageGenMode = m.key; persist(); renderLeft(); renderPrompts(); restoreModeResult(); });
           pillRow.appendChild(b);
         });
         leftPanel.appendChild(panel([pillRow]));
@@ -3761,14 +3795,7 @@ app.registerExtension({
           // or it 404s. &t=Date.now() busts the browser cache too — PreviewImage's own
           // counter can repeat the same filename across separate runs.
           const url = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=${encodeURIComponent(o.type || "output")}&t=${Date.now()}`;
-          lastResultURL = url; previewLocked = true;
-          placeholder.style.display = "none"; frDetectBanner.style.display = "none"; fvsrBanner.style.display = "none";
-          try { previewVid.pause(); } catch {}
-          previewVid.style.display = "none";
-          try { resultVid.pause(); } catch {}
-          resultVid.style.display = "none";
-          previewImg.src = url; previewImg.style.display = "block";
-          badge.style.display = "block"; fsBtn.style.display = "none"; compareBtn.style.display = "none";
+          showResultImage(url, { final });
           if (final) {
             // Everything the gallery's own "↩ Reuse Setting" needs to restore this exact
             // run into the panel — same idea as the main clip's own meta, scoped to what
@@ -3879,14 +3906,7 @@ app.registerExtension({
         const o = res.byNode[built.saveNode]?.images?.[0];
         if (!o) throw new Error("No sheet output produced.");
         const url = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=output&t=${Date.now()}`;
-        lastResultURL = url; previewLocked = true;
-        placeholder.style.display = "none"; frDetectBanner.style.display = "none"; fvsrBanner.style.display = "none";
-        try { previewVid.pause(); } catch {}
-        previewVid.style.display = "none";
-        try { resultVid.pause(); } catch {}
-        resultVid.style.display = "none";
-        previewImg.src = url; previewImg.style.display = "block";
-        badge.style.display = "block"; fsBtn.style.display = "none"; compareBtn.style.display = "none";
+        showResultImage(url, { final: true });
         await saveMeta(o.filename, o.subfolder || (state.imgSaveSubfolder || state.saveSubfolder || SUBFOLDER), {
           created: Date.now(), prompt: state.charSheetPrompt || "", subMode: "charsheet",
           frameIndices: state.charSheetFrameIndices, sheetSource: state.charSheetVideoOutput,
