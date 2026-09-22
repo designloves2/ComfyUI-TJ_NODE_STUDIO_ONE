@@ -365,7 +365,7 @@ app.registerExtension({
         }
       }
       function renderTimeline() {
-        renderRuler(); renderLanes(); updatePlayhead(); renderMedia();
+        renderRuler(); renderLanes(); updatePlayhead(); renderMedia(); updatePreview();
       }
 
       // ── waveform (ported verbatim from ITDA — the piece the user specifically cared about) ──

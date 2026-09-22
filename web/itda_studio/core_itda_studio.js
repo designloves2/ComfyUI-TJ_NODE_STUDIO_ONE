@@ -36,6 +36,8 @@ export function el(tag, props, children) {
       if (k === "style") Object.assign(n.style, props[k]);
       else if (k === "text") n.textContent = props[k];
       else if (k === "html") n.innerHTML = props[k];
+      else if (k === "className" || k === "class") n.className = props[k];
+      else if (k === "value") n.value = props[k];
       else if (k.startsWith("on") && typeof props[k] === "function") n.addEventListener(k.slice(2).toLowerCase(), props[k]);
       else if (props[k] === false || props[k] == null) {}
       else n.setAttribute(k, props[k] === true ? "" : props[k]);
@@ -66,7 +68,11 @@ export function defaultState(saved) {
     laneHeight: saved.laneHeight ?? DEFAULT_LANE_H,
     lockedLanes: saved.lockedLanes || {},
     hiddenLanes: saved.hiddenLanes || {},
-    mediaThumb: saved.mediaThumb ?? 88,
+    // Kept modest on purpose — user: "미디어롤에 불러오는 영상의 썸네일 사이즈는
+    // 크지 안아도 되" (a media-bin row thumbnail, not a preview). 52px matches the
+    // other tools' own list-row thumbnails (MusicMaker's mmm-cover, the audio
+    // gallery picker's cov box).
+    mediaThumb: saved.mediaThumb ?? 52,
   };
 }
 
