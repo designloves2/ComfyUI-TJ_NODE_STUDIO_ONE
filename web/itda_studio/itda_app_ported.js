@@ -285,8 +285,15 @@ export function mountItdaApp(ROOT, IDS, HOOKS) {
     const clipEl=canvas.closest('.clip');
     const clipRect=(clipEl||canvas).getBoundingClientRect();
     const barsRect=canvas.parentElement.getBoundingClientRect();
-    const cssW=Math.max(1, Math.round(clipRect.width));
-    const cssH=Math.max(1, Math.round(barsRect.height));
+    // Same canvas-zoom scale correction as the mouse-position math above: these rects
+    // are SCREEN pixels (this node's whole DOM widget is drawn through ComfyUI's own
+    // canvas transform), but canvas.style.width/height are interpreted as unscaled CSS
+    // px by the browser — without dividing out the scale, the waveform canvas rendered
+    // narrower/shorter than the clip box it's supposed to fill at any zoom other than
+    // 1.0, leaving visible gaps or nothing at all. User: "웨이브폼 적용안됬에."
+    const wfScale=(clipEl||canvas).offsetWidth ? (clipRect.width/(clipEl||canvas).offsetWidth) : 1;
+    const cssW=Math.max(1, Math.round(clipRect.width/wfScale));
+    const cssH=Math.max(1, Math.round(barsRect.height/wfScale));
     canvas.style.width=`${cssW}px`;
     canvas.style.height=`${cssH}px`;
     const dpr=window.devicePixelRatio || 1;
@@ -307,6 +314,11 @@ export function mountItdaApp(ROOT, IDS, HOOKS) {
       const b=Math.max(a+1, Math.min(peaks.length, Math.ceil(frameB/sourceTotal*peaks.length)));
       let peak=0;
       for(let j=a;j<b;j++){ const v=Math.abs(Number(peaks[j])||0); if(v>peak) peak=v; }
+      // Real source audio (especially H3-rendered clips) rarely peaks anywhere near
+      // full scale, so plotting the raw 0-1 value drew as a near-invisible sliver —
+      // boosted (clamped back to 1) the same way any NLE's waveform display isn't a
+      // literal 1:1 plot either.
+      peak=Math.min(1, peak*2.8);
       const h=Math.max(1, peak*mid);
       ctx.fillRect(x, mid-h, 1, h*2);
     }
@@ -494,7 +506,10 @@ Timeline ${c.start}f–${c.start+c.length}f`; const icon=stitched?'◆':c.kind==
   function onClipPointer(e){
     if(!state.drag) return; e.preventDefault();
     const c=findClip(state.drag.clipId); if(!c) return;
-    const dxFrames=Math.round((e.clientX-state.drag.startX)/state.pxPerFrame);
+    // Same scale correction as frameFromTimelineEvent/laneFromClientY above — this is a
+    // SCREEN-pixel clientX delta divided by an unscaled CSS pxPerFrame, which drifted the
+    // same way dragging a clip as scrubbing did at any canvas zoom other than 1.0.
+    const dxFrames=Math.round((e.clientX-state.drag.startX)/elScale($('timeline'))/state.pxPerFrame);
     if(Math.abs(e.clientX-state.drag.startX)>2 || Math.abs(e.clientY-state.drag.startY)>2) state.drag.moved=true;
     if(state.drag.trim==='left'){
       const oldEnd=state.drag.origStart+state.drag.origLen;
@@ -532,13 +547,26 @@ Timeline ${c.start}f–${c.start+c.length}f`; const icon=stitched?'◆':c.kind==
     renderTimeline(); updateProps(); updatePlayhead();
   }
   function endClipPointer(e){ document.removeEventListener('pointermove',onClipPointer); state.drag=null; renderAll(); }
-  function frameFromTimelineEvent(e){ const rect=$('timeline').getBoundingClientRect(); return clamp(Math.round((e.clientX-rect.left+$('timeline').scrollLeft-LEFT_PAD)/state.pxPerFrame),0,maxFrame()); }
+  // Embedding-environment fix, not a logic change: this node's whole DOM widget is
+  // drawn through ComfyUI's own canvas zoom (a CSS transform: scale(...)), so
+  // getBoundingClientRect() returns SCREEN pixels while LEFT_PAD/pxPerFrame/laneH()
+  // are unscaled CSS pixels used to position everything via inline `left`/`top`
+  // styles. ITDA's original math (e.clientX - rect.left - LEFT_PAD) assumed both
+  // sides were in the same 1:1 units, true only when running as its own full,
+  // unscaled page. Reported: "커서 위치랑 네비게이션바 위치가 어긋남... 네비게이션바가
+  // 왼쪽에 있고 마우스 커서가 오른쪽 옆에 있음." elScale() reads the live ratio between
+  // an element's on-screen size and its real CSS layout size (robust to whatever the
+  // current zoom happens to be, no reach into LiteGraph internals needed) so every
+  // mouse-position calculation below converts screen pixels back to the same CSS-pixel
+  // space LEFT_PAD/pxPerFrame/laneH() already live in, before doing the original math.
+  function elScale(elm){ const r=elm.getBoundingClientRect(); return elm.offsetWidth ? (r.width/elm.offsetWidth) : 1; }
+  function frameFromTimelineEvent(e){ const tl=$('timeline'); const rect=tl.getBoundingClientRect(); const s=elScale(tl); return clamp(Math.round(((e.clientX-rect.left)/s+tl.scrollLeft-LEFT_PAD)/state.pxPerFrame),0,maxFrame()); }
   // #lanes is a normal-flow (non-sticky) child, so its own getBoundingClientRect()
   // already reflects the current scroll position - it visually shifts as
   // #timeline scrolls, unlike #timeline's own rect (which never moves for its
   // own internal scrolling). Adding scrollTop again here double-counts it and
   // drifts the hit-test away from the cursor by exactly that scroll amount.
-  function laneFromClientY(y){ const rect=$('lanes').getBoundingClientRect(); return clamp(Math.floor((y-rect.top)/laneH()),0,LANE_COUNT-1); }
+  function laneFromClientY(y){ const lanesEl=$('lanes'); const rect=lanesEl.getBoundingClientRect(); const s=elScale(lanesEl); return clamp(Math.floor((y-rect.top)/s/laneH()),0,LANE_COUNT-1); }
   function laneFromTimelineEvent(e){ return laneFromClientY(e.clientY); }
 
   function childClipAtFrame(stitched, frame, kinds=null){
@@ -1537,15 +1565,15 @@ Timeline ${c.start}f–${c.start+c.length}f`; const icon=stitched?'◆':c.kind==
       const onMove=ev=>{
         if(Math.abs(ev.clientX-box.startX)>3 || Math.abs(ev.clientY-box.startY)>3) box.moved=true;
         if(!box.moved) return;
-        const rect=timeline.getBoundingClientRect();
-        const x1=Math.min(box.startX,ev.clientX)-rect.left+timeline.scrollLeft, x2=Math.max(box.startX,ev.clientX)-rect.left+timeline.scrollLeft;
+        const rect=timeline.getBoundingClientRect(); const bscale=elScale(timeline);
+        const x1=(Math.min(box.startX,ev.clientX)-rect.left)/bscale+timeline.scrollLeft, x2=(Math.max(box.startX,ev.clientX)-rect.left)/bscale+timeline.scrollLeft;
         // y1/y2 are already correct #timeline-relative content coordinates -
         // #boxSelect is positioned absolute within #timeline, whose content
         // space starts at its own top (the sticky ruler still reserves its
         // 48px of flow space there). The old "-48" here subtracted that
         // reserved space a second time, drawing the box a constant 48px
         // above the actual cursor regardless of scroll.
-        const y1=Math.min(box.startY,ev.clientY)-rect.top+timeline.scrollTop, y2=Math.max(box.startY,ev.clientY)-rect.top+timeline.scrollTop;
+        const y1=(Math.min(box.startY,ev.clientY)-rect.top)/bscale+timeline.scrollTop, y2=(Math.max(box.startY,ev.clientY)-rect.top)/bscale+timeline.scrollTop;
         const bs=$('boxSelect'); bs.style.display='block'; bs.style.left=`${x1}px`; bs.style.width=`${Math.max(1,x2-x1)}px`; bs.style.top=`${Math.max(0,y1)}px`; bs.style.height=`${Math.max(1,y2-y1)}px`;
       };
       const onUp=ev=>{

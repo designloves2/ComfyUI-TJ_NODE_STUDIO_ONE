@@ -21,17 +21,24 @@ export function buildItdaDom() {
   const reg = (elm) => { if (elm && elm.id) IDS[elm.id] = elm; return elm; };
   const R = (tag, id, props, children) => reg(mk(tag, id, props, children));
 
-  // ── topbar ──
+  // ── topbar — decluttered: this node's own purple title bar already reads
+  // "ITDA STUDIO (TJ)", so the original's redundant in-panel brand text is dropped, and
+  // Settings/Project/Save/Export/Send-to-ComfyUI (all real, all still wired to the exact
+  // same ids/handlers) live inside one "☰ Menu" dropdown instead of five separate
+  // top-level buttons — this node is nowhere near ITDA's original full-page width.
+  const menuDropdown = R("div", "itdaMenuDropdown", { className: "itda-menu-dropdown" }, [
+    R("button", "settingsTop", { text: "⚙ Project Settings" }),
+    R("button", "projectMenu", { text: "📁 Project…" }),
+    R("button", "saveProject", { text: "💾 Save" }),
+    R("button", "exportProject", { text: "⇩ Export" }),
+    R("button", "sendComfy", { text: "➤ Send To ComfyUI" }),
+  ]);
+  const menuBtn = R("button", "itdaMenuBtn", { className: "top-menu", title: "Menu", text: "☰ Menu" });
   const topbar = R("header", null, { className: "topbar" }, [
-    R("button", "settingsTop", { className: "top-icon", title: "Project Settings", text: "⚙" }),
-    R("button", "projectMenu", { className: "top-menu", text: "Project" }),
+    mk("div", null, { className: "itda-menu-wrap", style: { position: "relative" } }, [menuBtn, menuDropdown]),
     R("input", "projectName", { value: "itda-project-1", spellcheck: "false" }),
-    R("button", "saveProject", { className: "top-menu", text: "Save" }),
-    R("button", "exportProject", { className: "top-menu", text: "Export" }),
-    R("button", "sendComfy", { className: "top-menu", text: "Send To ComfyUI" }),
-    R("button", "nodeFsBtn", { className: "top-menu", title: "Fullscreen this node", text: "⛶ Node" }),
     mk("div", null, { className: "spacer" }),
-    mk("div", null, { className: "brand right-brand" }, [mk("b", null, { text: "ITDA STUDIO" }), mk("span", null, { text: "Frame-Accurate AI Video Stitching" })]),
+    R("button", "nodeFsBtn", { className: "top-menu", title: "Fullscreen this node", text: "⛶" }),
   ]);
 
   // ── media bin (video/audio only — gallery + local upload) ──
@@ -117,30 +124,33 @@ export function buildItdaDom() {
 
   const upperPane = R("section", "upperPane", { className: "upper" }, [mediaBin, previewPanel, propsPanel]);
 
-  // ── timeline action row (full original tool set) ──
-  const actionRow = mk("div", null, { className: "timeline-action-row" }, [
-    R("button", "markIn", { text: "I" }),
-    R("button", "markOut", { text: "O" }),
-    R("button", "clearRange", { text: "Clear Range" }),
-    R("button", "snapToggle", { className: "active", text: "🧲 Snap" }),
-    R("button", "peakSnapToggle", { title: "Also snap clip edges to audio waveform peaks (beats/transients)", text: "〜 Peak Match" }),
-    R("button", "splitClip", { text: "Split" }),
-    R("button", "stitchClip", { text: "Stitch" }),
-    R("button", "unstitchClip", { text: "UnStitch" }),
-    R("button", "autoStitchClip", { disabled: "", title: "Select 2 video clips (in time order) to analyze the best overlap cut point", text: "Auto Stitch" }),
-    R("button", "addTransition", { disabled: "", title: "Select 2 adjacent video clips to insert a transition at the join", text: "🎞 Transition" }),
-    R("button", "aiDetect", { disabled: "", title: "Scene / Beat detection for the selected clip", text: "✨ AI Detect" }),
-    R("button", "groupClip", { text: "Group" }),
-    R("button", "ungroupClip", { text: "Ungroup" }),
-    R("button", "detachAudio", { text: "Detach Audio" }),
-    R("button", "mergeAudio", { text: "Merge Audio" }),
-    R("button", "prerender", { text: "Pre-render" }),
-    R("button", "deleteClip", { text: "Clip Delete" }),
+  // ── timeline action row — icon buttons + tooltip (title carries the tool name,
+  // same title text always shown as a native tooltip; ids/handlers unchanged) ──
+  const actionRow = mk("div", null, { className: "timeline-action-row itda-icon-row" }, [
+    R("button", "markIn", { title: "Mark In (I)", text: "⏮" }),
+    R("button", "markOut", { title: "Mark Out (O)", text: "⏭" }),
+    R("button", "clearRange", { title: "Clear Range", text: "⊘" }),
+    R("button", "snapToggle", { className: "active", title: "Snap", text: "🧲" }),
+    R("button", "peakSnapToggle", { title: "Peak Match — also snap clip edges to audio waveform peaks (beats/transients)", text: "〜" }),
+    R("button", "splitClip", { title: "Split", text: "✂" }),
+    R("button", "stitchClip", { title: "Stitch", text: "🧵" }),
+    R("button", "unstitchClip", { title: "UnStitch", text: "🪢" }),
+    R("button", "autoStitchClip", { disabled: "", title: "Auto Stitch — select 2 video clips (in time order) to analyze the best overlap cut point", text: "🪄" }),
+    R("button", "addTransition", { disabled: "", title: "Transition — select 2 adjacent video clips to insert a transition at the join", text: "🎞" }),
+    R("button", "aiDetect", { disabled: "", title: "AI Detect — Scene / Beat detection for the selected clip", text: "✨" }),
+    R("button", "groupClip", { title: "Group", text: "🔗" }),
+    R("button", "ungroupClip", { title: "Ungroup", text: "⛓️‍💥" }),
+    R("button", "detachAudio", { title: "Detach Audio", text: "🔈⊘" }),
+    R("button", "mergeAudio", { title: "Merge Audio", text: "🔈+" }),
+    R("button", "prerender", { title: "Pre-render", text: "⏩" }),
+    R("button", "deleteClip", { title: "Clip Delete", text: "🗑" }),
     propsToggle,
-    mk("div", null, { className: "timeline-zoom" }, [
-      mk("label", null, { title: "Horizontal Zoom" }, [mk("span", null, { text: "↔ " }), R("input", "hZoom", { type: "range", min: "0.5", max: "20", step: "0.5", value: "4" })]),
-      mk("label", null, { title: "Vertical Track Zoom" }, [mk("span", null, { text: "↕ " }), R("input", "vZoom", { type: "range", min: "44", max: "140", value: "74" })]),
-    ]),
+  ]);
+  // Zoom gets its own row — squeezed into the icon row's flex-wrap tail it was easy to
+  // miss entirely ("타임라인 가로확대/세로확대 기능도 누락된것 같은데").
+  const zoomRow = mk("div", null, { className: "itda-zoom-row" }, [
+    mk("label", null, { title: "Horizontal Zoom" }, [mk("span", null, { text: "↔ Zoom" }), R("input", "hZoom", { type: "range", min: "0.5", max: "20", step: "0.5", value: "4" })]),
+    mk("label", null, { title: "Vertical Track Zoom" }, [mk("span", null, { text: "↕ Track" }), R("input", "vZoom", { type: "range", min: "44", max: "140", value: "74" })]),
   ]);
 
   const timeline = R("div", "timeline", { className: "timeline", tabindex: "0" }, [
@@ -158,7 +168,7 @@ export function buildItdaDom() {
     R("span", "status", { text: "Ready" }),
   ]);
 
-  const lowerPane = mk("section", null, { className: "lower timeline-panel" }, [actionRow, timeline, statusbar]);
+  const lowerPane = mk("section", null, { className: "lower timeline-panel" }, [actionRow, zoomRow, timeline, statusbar]);
 
   const resizeHandle = R("div", "resizeHandle", { className: "resize-handle" });
   const app = R("div", "app", {}, [topbar, mk("main", null, { className: "workspace" }, [upperPane, resizeHandle, lowerPane])]);

@@ -72,6 +72,28 @@ function injectScopedStyles(css) {
       button.active,.top-menu.active{font-weight:600}
       .lane-label{font-weight:600}
       .transport-readout{font-weight:600}
+    }` +
+    // ☰ Menu dropdown (Settings/Project/Save/Export/Send-to-ComfyUI) — declutters the
+    // topbar down to just the menu button, project name, and fullscreen.
+    `@scope (.itda-studio-root) {
+      .itda-menu-dropdown{display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:50;
+        flex-direction:column;min-width:180px;background:var(--flat-surface,#1c1e24);
+        border:1px solid var(--flat-line,#2b2f38);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.4);
+        padding:4px;gap:2px}
+      .itda-menu-dropdown.open{display:flex}
+      .itda-menu-dropdown button{width:100%;text-align:left;height:auto;padding:7px 10px}
+    }` +
+    // Timeline action row — square icon buttons instead of wide text buttons, tool
+    // name moved to the native title tooltip (dom_build.js).
+    `@scope (.itda-studio-root) {
+      .itda-icon-row{flex-wrap:wrap;height:auto!important;padding:4px 8px!important}
+      .itda-icon-row button:not(#propsToggle){width:28px;min-width:28px;height:28px;padding:0!important;
+        display:inline-flex;align-items:center;justify-content:center;font-size:13px}
+      .itda-zoom-row{display:flex;align-items:center;gap:18px;padding:5px 10px;
+        background:var(--flat-surface2,#20232a);border-left:1px solid var(--flat-line,#2b2f38);
+        border-right:1px solid var(--flat-line,#2b2f38)}
+      .itda-zoom-row label{display:flex;align-items:center;gap:7px;color:var(--muted,#a9adb7);font-size:10px}
+      .itda-zoom-row input[type=range]{width:110px;height:16px;padding:0}
     }`;
   document.head.appendChild(s);
 }
@@ -117,6 +139,21 @@ app.registerExtension({
       // Collapsible Clip Properties (our own addition — see injectScopedStyles).
       IDS.propsToggle.addEventListener("click", () => {
         IDS.propsPanel.classList.toggle("open");
+      });
+
+      // ☰ Menu dropdown — click the button to toggle, click anywhere else to close.
+      IDS.itdaMenuBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        IDS.itdaMenuDropdown.classList.toggle("open");
+      });
+      IDS.itdaMenuDropdown.addEventListener("click", (e) => {
+        // Let the actual menu item's own onclick (Save/Export/...) run, then close.
+        if (e.target.tagName === "BUTTON") setTimeout(() => IDS.itdaMenuDropdown.classList.remove("open"), 0);
+      });
+      document.addEventListener("click", (e) => {
+        if (!IDS.itdaMenuDropdown.contains(e.target) && e.target !== IDS.itdaMenuBtn) {
+          IDS.itdaMenuDropdown.classList.remove("open");
+        }
       });
 
       const HOOKS = {
