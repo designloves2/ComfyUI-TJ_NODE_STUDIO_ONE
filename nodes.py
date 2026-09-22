@@ -4804,375 +4804,69 @@ async def music_set_last_audio(request):
     return web.json_response({"ok": True})
 
 
-# ── ITDA Studio (TJ) — B-1/B-2's sibling: a 3-lane video/audio stitch timeline ──────
+# -- ITDA STUDIO (TJ) -- a 3-lane video/audio stitch timeline --------------------
 #
-# Absorbed from the standalone ComfyUI-ITDA custom node (Korean "잇다" = "to stitch/
-# connect" — the name is kept on purpose, this IS that project, brought in-graph) after
-# the user decided against depending on it as a separate node: same project JSON shape
-# (media[]/clips[]/lanes[]), same frame-accurate trim/snap math, same real ffmpeg peak
-# waveform cache — but as a DOM widget on this node like every other ONE STUDIO tool,
-# not a window.open() popup editor, and with its own gallery-picker import queued up
-# for the frontend pass (H3 video gallery + MusicMaker playlist + local upload) instead
-# of ITDA's local-input-folder-only media bin. Narrowed from ITDA's 5 lanes / video+
-# audio+image+text to 3 lanes / video+audio only per the user's explicit scope cut.
-#
-# This tool never touches the ComfyUI prompt graph — export is a direct ffmpeg
-# subprocess call server-side (ITDA's own export.py/stitch.py pattern), same as how
-# gallery post-process chunking in this file already shells out to ffmpeg directly.
+# Absorbed from the standalone ComfyUI-ITDA custom node (Korean "itda" = "to
+# stitch/connect" -- the project's own name, kept on purpose) as REAL COPIED CODE,
+# not a dependency on that separate node -- itda_studio_backend/ is a verbatim copy
+# of itda/{media,project,export,stitch,analyze,paths}.py with only the storage
+# root renamed (ITDA -> ITDA_STUDIO, own folder, own identity) and the route
+# prefix changed (/itda/ -> /itda_studio_one/). Every route below (project CRUD,
+# media scan/upload/delete, waveform, stitch analyze/bridge, scene/beat detect,
+# export, pre-render, snapshot, send-to-comfy) is the SAME code that already works
+# in the original, not a reimplementation.
+try:
+    from .itda_studio_backend.server import register_itda_studio_routes
+    register_itda_studio_routes()
+except Exception as _e:
+    print(f"[ITDA_STUDIO] route registration failed, node pack continuing without it: {_e}")
 
-def _itda_studio_root():
-    root = os.path.join(folder_paths.get_input_directory(), "ITDA_STUDIO")
-    os.makedirs(root, exist_ok=True)
-    return root
-
-
-def _itda_studio_projects_dir():
-    d = os.path.join(_itda_studio_root(), "projects")
-    os.makedirs(d, exist_ok=True)
-    return d
-
-
-def _itda_studio_default_project(name: str) -> dict:
-    now = int(time.time())
-    return {
-        "schema": "itda_studio.project",
-        "version": "1.0.0",
-        "name": name,
-        "created_at": now,
-        "updated_at": now,
-        "settings": {"fps": 24, "total_frames": 360, "snap": True, "loop": False, "mute": False},
-        "range": {"start": None, "end": None},
-        "media": [],
-        "clips": [],
-        "lanes": [],
-    }
-
-
-@PromptServer.instance.routes.get("/itda_studio_one/project/{name}")
-async def itda_studio_load_project(request):
-    name = request.match_info.get("name", "") or "untitled"
-    safe = "".join(c for c in name if c.isalnum() or c in "-_ ").strip() or "untitled"
-    path = os.path.join(_itda_studio_projects_dir(), f"{safe}.itda_studio.json")
-    if os.path.isfile(path):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except Exception as e:
-            return web.json_response({"ok": False, "error": str(e)}, status=500)
-    else:
-        data = _itda_studio_default_project(safe)
-    return web.json_response({"ok": True, "project": data})
-
-
-@PromptServer.instance.routes.post("/itda_studio_one/project/{name}")
-async def itda_studio_save_project(request):
-    name = request.match_info.get("name", "") or "untitled"
-    safe = "".join(c for c in name if c.isalnum() or c in "-_ ").strip() or "untitled"
+# One addition beyond the copied code: importing straight from THIS app's own
+# galleries (H3 video, MusicMaker playlist) instead of ITDA's local-input-folder-
+# only media bin, per the user's own ask ("우리는 갤러리에서 불러오면 되는거라
+# 우리가 더 편리하게 될것 같은데"). Drops the picked gallery file directly into
+# the SAME per-project media folder /itda_studio_one/media/upload already uses
+# (input/ITDA_STUDIO/media/<project>/), so the existing scanMedia() call in the
+# ported app.js picks it up with no other glue code needed.
+@PromptServer.instance.routes.post("/itda_studio_one/media/from_gallery")
+async def itda_studio_media_from_gallery(request):
+    from .itda_studio_backend.paths import ensure_dirs, itda_root, safe_name
+    from .itda_studio_backend.media import classify, make_video_thumbnail
     try:
         data = await request.json()
-    except Exception as e:
-        return web.json_response({"ok": False, "error": str(e)}, status=400)
-    data["name"] = safe
-    data["updated_at"] = int(time.time())
-    path = os.path.join(_itda_studio_projects_dir(), f"{safe}.itda_studio.json")
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=1)
-    return web.json_response({"ok": True, "project": data})
-
-
-@PromptServer.instance.routes.get("/itda_studio_one/projects")
-async def itda_studio_list_projects(request):
-    d = _itda_studio_projects_dir()
-    items = []
-    for fn in sorted(os.listdir(d)):
-        if fn.endswith(".itda_studio.json"):
-            items.append(fn[: -len(".itda_studio.json")])
-    return web.json_response({"ok": True, "projects": items})
-
-
-# ITDA's own make_audio_waveform() (itda/media.py), ported verbatim — real peak data
-# decoded from the actual audio stream via ffmpeg, no synthetic/random fallback. The
-# user specifically called this piece out as something they put real effort into
-# getting right, so it travels over unchanged rather than being "improved."
-def _itda_studio_waveform_cache_path(path: str, bars: int) -> str:
-    import hashlib
-    h = hashlib.sha1(f"{path}|{bars}".encode("utf-8")).hexdigest()[:16]
-    d = os.path.join(_itda_studio_root(), "waveform_cache")
-    os.makedirs(d, exist_ok=True)
-    return os.path.join(d, f"{h}.json")
-
-
-@PromptServer.instance.routes.post("/itda_studio_one/waveform")
-async def itda_studio_waveform(request):
-    try:
-        data = await request.json()
+        project = safe_name(data.get("project") or "itda-project-1")
         filename = data.get("filename", "")
-        bars = max(24, min(1200, int(data.get("bars", 240) or 240)))
-        try:
-            path = _safe_resolve_path(folder_paths.get_input_directory(), "", filename)
-        except ValueError:
-            return web.json_response({"ok": False, "error": "invalid path"}, status=400)
-        if not os.path.isfile(path):
-            return web.json_response({"ok": False, "error": "file not found"}, status=404)
-
-        cache = _itda_studio_waveform_cache_path(path, bars)
-        if os.path.isfile(cache) and os.path.getmtime(cache) >= os.path.getmtime(path):
+        subfolder = data.get("subfolder", "") or ""
+        src_type = data.get("type", "output")
+        if src_type == "output":
+            base = folder_paths.get_output_directory()
+        elif src_type == "temp":
+            base = folder_paths.get_temp_directory()
+        else:
+            base = folder_paths.get_input_directory()
+        src = _safe_resolve_path(base, subfolder, filename)
+        if not os.path.isfile(src):
+            return web.json_response({"ok": False, "error": "source not found"}, status=404)
+        ensure_dirs(project)
+        dest_dir = os.path.join(str(itda_root()), "media", project)
+        os.makedirs(dest_dir, exist_ok=True)
+        base_name, ext = os.path.splitext(os.path.basename(filename))
+        dest = os.path.join(dest_dir, f"{base_name}{ext}")
+        i = 1
+        while os.path.exists(dest):
+            dest = os.path.join(dest_dir, f"{base_name}_{i}{ext}")
+            i += 1
+        shutil.copy2(src, dest)
+        from pathlib import Path as _Path
+        kind = classify(_Path(dest))
+        if kind == "video":
             try:
-                with open(cache, "r", encoding="utf-8") as f:
-                    return web.json_response(json.load(f))
+                make_video_thumbnail(_Path(dest), project)
             except Exception:
                 pass
-
-        ffmpeg = _ffmpeg_exe()
-        if not ffmpeg:
-            return web.json_response({"ok": False, "error": "ffmpeg not found"}, status=500)
-        cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-i", path,
-               "-vn", "-ac", "1", "-ar", "8000", "-f", "s16le", "pipe:1"]
-        raw = subprocess.check_output(cmd, stderr=subprocess.STDOUT, timeout=45)
-        sample_count = len(raw) // 2
-        if sample_count <= 0:
-            return web.json_response({"ok": False, "error": "no audio stream", "peaks": []})
-
-        import array
-        samples = array.array("h")
-        samples.frombytes(raw[: sample_count * 2])
-        if __import__("sys").byteorder != "little":
-            samples.byteswap()
-
-        window = max(1, sample_count // bars)
-        peaks = []
-        for i in range(bars):
-            start = i * window
-            end = sample_count if i == bars - 1 else min(sample_count, start + window)
-            if start >= sample_count:
-                peaks.append(0.0)
-                continue
-            peak = 0
-            for v in samples[start:end]:
-                av = abs(int(v))
-                if av > peak:
-                    peak = av
-            peaks.append(round(min(1.0, peak / 32768.0), 4))
-
-        result = {"ok": True, "filename": filename, "bars": bars, "sample_rate": 8000, "peaks": peaks}
-        with open(cache, "w", encoding="utf-8") as f:
-            json.dump(result, f, ensure_ascii=False)
-        return web.json_response(result)
-    except Exception as e:
-        return web.json_response({"ok": False, "error": str(e), "peaks": []})
-
-
-# Import path for both media kinds this tool keeps (video/audio) is the same generic
-# output->input copy every other tool's gallery picker already uses — a gallery pick
-# (H3 video, MusicMaker track) lands in input/ under an "itda_..." prefix, same as a
-# local upload does through ComfyUI's own core /upload/image route (used file-type-
-# agnostically elsewhere in this app already, see uploadCoverAudio in one_node_music.js).
-PromptServer.instance.routes.post("/itda_studio_one/copy_to_input")(_make_copy_to_input_handler("itda"))
-
-
-# ── Stitch Apply — real ffmpeg composite, video+audio only ──────────────────────────
-#
-# Adapted from ITDA's own export.py (export_timeline) — same filter_complex approach
-# (a black base canvas, one overlay layer per lane low-to-high so T1 occludes T2/T3,
-# an xfade crossfade layer wherever two clips overlap across lanes — THE stitch, this
-# tool's whole reason to exist — then a delayed/mixed audio track), with every image-
-# and text-clip branch removed since this tool never has those kinds. Any lane-overlap
-# is treated as a "fade" crossfade automatically — there is no per-clip transition-type
-# UI yet, so the overlap itself IS the stitch request, same as dragging clip B onto a
-# higher lane so it head-overlaps clip A's tail already meant in the original.
-_ITDA_STUDIO_XFADE_TYPE = "fade"
-
-
-def _itda_studio_pick_canvas_size(visual):
-    for c in visual:
-        w, h = c.get("width"), c.get("height")
-        if w and h:
-            return int(w), int(h)
-    return 1920, 1080
-
-
-def _itda_studio_find_transitions(visual):
-    out = {}
-    for b in visual:
-        b_start = float(b.get("start", 0) or 0)
-        b_len = max(1.0, float(b.get("length", 1) or 1))
-        best = None
-        for a in visual:
-            if a is b:
-                continue
-            a_start = float(a.get("start", 0) or 0)
-            if a_start <= b_start < a_start + max(1.0, float(a.get("length", 1) or 1)):
-                if best is None or a_start > float(best.get("start", 0) or 0):
-                    best = a
-        if best is None:
-            continue
-        natural_end = min(
-            float(best.get("start", 0) or 0) + max(1.0, float(best.get("length", 1) or 1)),
-            b_start + b_len,
-        )
-        overlap_len = natural_end - b_start
-        if overlap_len < 1:
-            continue
-        out[b["id"]] = {"a": best, "b": b, "overlap_start": b_start, "overlap_end": b_start + overlap_len}
-    return out
-
-
-def _itda_studio_render(project):
-    settings = project.get("settings") or {}
-    fps = float(settings.get("fps") or 24)
-    total_frames = int(settings.get("total_frames") or 360)
-    duration_sec = max(1.0 / fps, total_frames / fps)
-
-    clips = project.get("clips") or []
-    for c in clips:
-        raw = c.get("path")
-        if raw:
-            try:
-                _safe_resolve_path(folder_paths.get_input_directory(), "", raw)
-            except ValueError:
-                raise RuntimeError(f"Clip '{c.get('name') or c.get('id')}' points outside input/ ({raw}).")
-    visual = [c for c in clips if c.get("kind") == "video" and c.get("path")]
-    audio_capable = [c for c in clips if c.get("kind") in ("video", "audio") and c.get("path") and c.get("audio_enabled") is not False]
-
-    width, height = _itda_studio_pick_canvas_size(visual)
-    in_dir = folder_paths.get_input_directory()
-
-    inputs = []
-    filter_parts = []
-    input_index = 0
-
-    def add_input(name):
-        nonlocal input_index
-        inputs.extend(["-i", os.path.join(in_dir, name)])
-        idx = input_index
-        input_index += 1
-        return idx
-
-    filter_parts.append(f"color=size={width}x{height}:rate={fps}:color=black:duration={duration_sec:.6f}[base0]")
-    base_label = "base0"
-    layer_n = 0
-
-    transitions = _itda_studio_find_transitions(visual)
-
-    for c in sorted(visual, key=lambda c: -int(c.get("lane", 0) or 0)):
-        start = float(c.get("start", 0) or 0)
-        length = max(1.0, float(c.get("length", 1) or 1))
-        start_sec = start / fps
-        end_sec = (start + length) / fps
-        enable_start_sec = start_sec
-        trans = transitions.get(c.get("id"))
-        if trans:
-            enable_start_sec = trans["overlap_end"] / fps
-        src_in = float(c.get("source_in", 0) or 0)
-        src_out = float(c.get("source_out", src_in + length) or (src_in + length))
-        idx = add_input(c["path"])
-        filter_parts.append(
-            f"[{idx}:v]trim=start={(src_in/fps):.6f}:end={(src_out/fps):.6f},setpts=PTS-STARTPTS+{start_sec:.6f}/TB,"
-            f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2[v{layer_n}]"
-        )
-        new_base = f"base{layer_n + 1}"
-        filter_parts.append(f"[{base_label}][v{layer_n}]overlay=enable='between(t,{enable_start_sec:.6f},{end_sec:.6f})'[{new_base}]")
-        base_label = new_base
-        layer_n += 1
-
-    for trans in transitions.values():
-        a, b = trans["a"], trans["b"]
-        overlap_start, overlap_end = trans["overlap_start"], trans["overlap_end"]
-        overlap_len_frames = overlap_end - overlap_start
-        if overlap_len_frames <= 0:
-            continue
-        overlap_len_sec = overlap_len_frames / fps
-        a_src_in = float(a.get("source_in", 0) or 0)
-        a_content_start = float(a.get("start", 0) or 0)
-        b_src_in = float(b.get("source_in", 0) or 0)
-        a_trim_start = a_src_in + (overlap_start - a_content_start)
-        a_trim_end = a_trim_start + overlap_len_frames
-        idx_a = add_input(a["path"])
-        idx_b = add_input(b["path"])
-        filter_parts.append(
-            f"[{idx_a}:v]trim=start={(a_trim_start/fps):.6f}:end={(a_trim_end/fps):.6f},setpts=PTS-STARTPTS,"
-            f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,fps={fps}[tx{layer_n}a]"
-        )
-        filter_parts.append(
-            f"[{idx_b}:v]trim=start={(b_src_in/fps):.6f}:end={(b_src_in/fps)+overlap_len_sec:.6f},setpts=PTS-STARTPTS,"
-            f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,fps={fps}[tx{layer_n}b]"
-        )
-        filter_parts.append(
-            f"[tx{layer_n}a][tx{layer_n}b]xfade=transition={_ITDA_STUDIO_XFADE_TYPE}:duration={overlap_len_sec:.6f}:offset=0,"
-            f"setpts=PTS-STARTPTS+{overlap_start/fps:.6f}/TB[tx{layer_n}out]"
-        )
-        new_base = f"base{layer_n + 1}"
-        filter_parts.append(f"[{base_label}][tx{layer_n}out]overlay=enable='between(t,{overlap_start/fps:.6f},{overlap_end/fps:.6f})'[{new_base}]")
-        base_label = new_base
-        layer_n += 1
-
-    audio_labels = []
-    for c in audio_capable:
-        start = float(c.get("start", 0) or 0)
-        length = max(1.0, float(c.get("length", 1) or 1))
-        src_in = float(c.get("source_in", 0) or 0)
-        src_out = float(c.get("source_out", src_in + length) or (src_in + length))
-        idx = add_input(c["path"])
-        start_ms = max(0.0, (start / fps) * 1000.0)
-        alabel = f"a{len(audio_labels)}"
-        filter_parts.append(
-            f"[{idx}:a]atrim=start={(src_in/fps):.6f}:end={(src_out/fps):.6f},asetpts=PTS-STARTPTS,"
-            f"adelay={start_ms:.0f}|{start_ms:.0f}[{alabel}]"
-        )
-        audio_labels.append(alabel)
-    has_audio = bool(audio_labels)
-    if has_audio:
-        mix_inputs = "".join(f"[{l}]" for l in audio_labels)
-        filter_parts.append(f"{mix_inputs}amix=inputs={len(audio_labels)}:duration=longest:normalize=0[aout]")
-
-    if not visual and not audio_labels:
-        raise RuntimeError("Nothing on the timeline to export — place at least one clip first.")
-
-    filter_complex = ";".join(filter_parts)
-    safe = "".join(c for c in (project.get("name") or "untitled") if c.isalnum() or c in "-_ ").strip() or "untitled"
-    out_dir = os.path.join(folder_paths.get_output_directory(), "one_itda_studio", safe)
-    os.makedirs(out_dir, exist_ok=True)
-    stem = f"{safe}_{time.strftime('%Y%m%d_%H%M%S')}"
-    out_path = os.path.join(out_dir, f"{stem}.mp4")
-
-    ffmpeg = _ffmpeg_exe()
-    if not ffmpeg:
-        raise RuntimeError("ffmpeg not found")
-    cmd = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error"]
-    cmd += inputs
-    cmd += ["-filter_complex", filter_complex, "-map", f"[{base_label}]"]
-    if has_audio:
-        cmd += ["-map", "[aout]"]
-    cmd += ["-t", f"{duration_sec:.6f}", "-r", str(fps),
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p"]
-    if has_audio:
-        cmd += ["-c:a", "aac"]
-    cmd += [out_path]
-
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
-    if proc.returncode != 0 or not os.path.isfile(out_path):
-        raise RuntimeError(proc.stderr or "ffmpeg failed")
-
-    meta = {
-        "v": 1, "itda_studio_project": safe, "w": width, "h": height,
-        "fps": fps, "frames": total_frames, "durationSeconds": duration_sec,
-        "has_audio": has_audio, "created": int(time.time() * 1000),
-        "source": "ITDA STUDIO (TJ)",
-    }
-    _write_json_meta(out_path, meta)
-    return {"filename": f"{stem}.mp4", "subfolder": f"one_itda_studio/{safe}", "type": "output", "meta": meta}
-
-
-@PromptServer.instance.routes.post("/itda_studio_one/export")
-async def itda_studio_export(request):
-    try:
-        data = await request.json()
-        project = data.get("project")
-        if not isinstance(project, dict):
-            return web.json_response({"ok": False, "error": "no project"}, status=400)
-        import asyncio as _aio_itda
-        result = await _aio_itda.get_event_loop().run_in_executor(None, _itda_studio_render, project)
-        return web.json_response({"ok": True, **result})
+        return web.json_response({"ok": True, "path": dest})
+    except ValueError:
+        return web.json_response({"ok": False, "error": "invalid path"}, status=400)
     except Exception as e:
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 
