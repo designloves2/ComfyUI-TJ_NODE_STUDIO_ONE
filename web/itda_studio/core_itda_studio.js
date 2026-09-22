@@ -73,6 +73,10 @@ export function defaultState(saved) {
     // other tools' own list-row thumbnails (MusicMaker's mmm-cover, the audio
     // gallery picker's cov box).
     mediaThumb: saved.mediaThumb ?? 52,
+    // User-resizable preview stage height — a bottom-edge drag grip on the preview
+    // box, same pattern as MusicMaker's lyrics/style textarea resize (resizableBox
+    // in one_node_music.js), persisted the same way (this file's own ui state).
+    previewH: saved.previewH ?? 320,
   };
 }
 

@@ -23,6 +23,7 @@ import {
 } from "./itda_studio/core_itda_studio.js";
 import { openVideoGalleryPicker } from "./minimax/ui_video_picker_minimax.js";
 import { openAudioGalleryPicker } from "./shared/ui_audio_gallery_picker.js";
+import { createNodeFullscreen } from "./shared/node_fullscreen.js";
 
 const jget  = (p)    => api.fetchApi(p).then(r => r.json());
 const jpost = (p, b) => api.fetchApi(p, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }).then(r => r.json());
@@ -105,15 +106,28 @@ app.registerExtension({
         fontFamily: "inherit", fontSize: "12px", padding: "5px 8px", width: "180px",
       }});
       const saveBtn = el("button", { className: "itda-btn", text: "💾 Save Project" });
-      const exportBtn = el("button", { className: "itda-btn", text: "⇩ Export (coming soon)" });
-      exportBtn.title = "Real ffmpeg export — not ported yet, coming in the next pass.";
-      exportBtn.disabled = true; exportBtn.style.opacity = "0.5"; exportBtn.style.cursor = "default";
+      // Real ffmpeg composite — a black base canvas, one overlay layer per lane (T1
+      // occludes T2/T3), an auto-crossfade wherever two clips overlap across lanes
+      // (the stitch itself — no separate "set transition" step needed yet, overlapping
+      // IS the request), delayed/mixed audio. Writes to output/one_itda_studio/<project>/
+      // with the same meta.json sidecar convention every other tool's gallery reads, so
+      // a finished stitch shows up in the app's OUTPUT gallery like any other render.
+      const exportBtn = el("button", { className: "itda-btn", text: "🧵 Stitch Apply" });
+      // Same in-place "blow the node up to fill the monitor" pattern MiniMax H3 uses
+      // (shared/node_fullscreen.js) — not the browser's own Fullscreen API, no second page.
+      const nodeFsBtn = el("button", { className: "itda-btn", text: "⛶", title: "Fullscreen this node" });
+      const fullscreen = createNodeFullscreen(root, NODE_W, NODE_H, (open) => {
+        nodeFsBtn.style.background = open ? "#ffffff" : "";
+        nodeFsBtn.style.color = open ? "#000000" : "";
+        nodeFsBtn.title = open ? "Exit fullscreen" : "Fullscreen this node";
+      });
+      nodeFsBtn.addEventListener("click", () => fullscreen.toggle());
       const topBar = el("div", { style: {
         display: "flex", alignItems: "center", gap: "8px", padding: `${PAD}px`,
         borderBottom: `1px solid ${C.border}`, flexShrink: "0",
       }}, [
         el("div", { text: "🧵 ITDA STUDIO", style: { fontWeight: "700", fontSize: "13px", color: BRAND } }),
-        projectNameIn, saveBtn, exportBtn, statusEl,
+        projectNameIn, saveBtn, exportBtn, nodeFsBtn, statusEl,
       ]);
 
       // ── body: left media bin + right timeline/preview ──
@@ -141,14 +155,40 @@ app.registerExtension({
       const previewPlaceholder = el("div", { text: "타임라인에 클립을 올려주세요", style: {
         color: C.muted, fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%",
       }});
-      const previewStage = el("div", { style: { flex: "1", background: "#000", position: "relative", minHeight: "0", display: "flex" } }, [previewVid, previewAudio, previewPlaceholder]);
+      const previewStage = el("div", { style: {
+        height: `${ui.previewH}px`, flexShrink: "0", background: "#000", position: "relative", display: "flex",
+      }}, [previewVid, previewAudio, previewPlaceholder]);
+      // Bottom-edge drag grip — same resize pattern as MusicMaker's lyrics/style
+      // textareas (resizableBox in one_node_music.js): drag to resize, persisted.
+      const previewGrip = el("div", { style: {
+        height: "8px", flexShrink: "0", cursor: "ns-resize", background: C.bg1,
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}, [el("div", { style: { width: "28px", height: "3px", borderRadius: "2px", background: C.borderH } })]);
+      previewGrip.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        const y0 = e.clientY, h0 = ui.previewH;
+        const onMove = (ev) => {
+          const nh = Math.max(120, Math.min(700, h0 + ev.clientY - y0));
+          ui.previewH = nh; previewStage.style.height = `${nh}px`;
+        };
+        const onUp = () => {
+          persistUi();
+          document.removeEventListener("pointermove", onMove);
+          document.removeEventListener("pointerup", onUp);
+        };
+        document.addEventListener("pointermove", onMove);
+        document.addEventListener("pointerup", onUp);
+      });
 
       // -- transport --
       const playBtn = el("button", { className: "itda-btn", text: "▶" });
       const timeLabel = el("div", { text: "00:00.000", style: { fontSize: "11px", color: C.muted, fontVariantNumeric: "tabular-nums" } });
       const snapChk = el("input", { type: "checkbox" }); snapChk.checked = ui.snap;
+      const zoomOutBtn = el("button", { className: "itda-btn", text: "－", title: "Zoom out (timeline)" });
+      const zoomInBtn = el("button", { className: "itda-btn", text: "＋", title: "Zoom in (timeline)" });
+      const zoomFitBtn = el("button", { className: "itda-btn", text: "⤢", title: "Reset zoom" });
       const transport = el("div", { style: { display: "flex", alignItems: "center", gap: "10px", padding: "6px 10px", borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}` } },
-        [playBtn, timeLabel, el("label", { style: { fontSize: "11px", color: C.muted, marginLeft: "auto", display: "flex", alignItems: "center", gap: "4px" } }, [snapChk, el("span", { text: "Snap" })])]);
+        [playBtn, timeLabel, zoomOutBtn, zoomInBtn, zoomFitBtn, el("label", { style: { fontSize: "11px", color: C.muted, marginLeft: "auto", display: "flex", alignItems: "center", gap: "4px" } }, [snapChk, el("span", { text: "Snap" })])]);
 
       // -- timeline --
       const ruler = el("div", { style: { position: "relative", height: "22px", background: C.bg1 } });
@@ -158,7 +198,7 @@ app.registerExtension({
       const timeline = el("div", { style: { flex: "1", overflow: "auto", position: "relative", minHeight: "0" } }, [timelineInner]);
 
       const rightCol = el("div", { style: { flex: "1", display: "flex", flexDirection: "column", minWidth: "0" } },
-        [previewStage, transport, timeline]);
+        [previewStage, previewGrip, transport, timeline]);
 
       body.append(mediaBin, rightCol);
       root.append(topBar, body);
@@ -353,7 +393,11 @@ app.registerExtension({
           clipEl.dataset.clipId = c.id;
           clipEl.title = `${c.name}\n${c.source_in}f–${c.source_out}f · timeline ${c.start}f–${c.start + c.length}f`;
           clipEl.appendChild(el("div", { className: "itda-clip-title", text: `${c.kind === "audio" ? "♫" : "▣"} ${c.name}` }));
-          if (c.kind === "audio") {
+          // Every video clip's own audio TRACK gets a waveform too, not just standalone
+          // audio clips — matches ITDA's own audioCapable() (['video','audio']). Missed
+          // this on the first port and it read as "the waveform feature disappeared"
+          // for any video clip, which was never the intent.
+          if (c.kind === "video" || c.kind === "audio") {
             const canvas = el("canvas", { style: { position: "absolute", inset: "0", top: "18px" } });
             clipEl.appendChild(canvas);
             drawWaveformFor(c, canvas);
@@ -493,13 +537,40 @@ app.registerExtension({
         currentFrame = Math.max(0, Math.round((e.clientX - rect.left + timeline.scrollLeft - LEFT_PAD) / pxPerFrame));
         updatePlayhead(); updatePreview();
       });
-      ruler.addEventListener("pointerdown", (e) => {
+      // Scrub: drag anywhere on the ruler OR the lane area (not just click-once) to seek
+      // continuously, same as dragging the playhead in any real NLE. Dragging the ruler
+      // always scrubs; dragging empty lane space (not a clip) scrubs too — a clip itself
+      // still starts a move/trim drag via its own pointerdown handler.
+      function scrubFromEvent(e) {
         const rect = timeline.getBoundingClientRect();
         currentFrame = Math.max(0, Math.round((e.clientX - rect.left + timeline.scrollLeft - LEFT_PAD) / pxPerFrame));
         updatePlayhead(); updatePreview();
-      });
+      }
+      function startScrub(e) {
+        if (playing) setPlaying(false);
+        scrubFromEvent(e);
+        const onMove = (ev) => scrubFromEvent(ev);
+        const onUp = () => { document.removeEventListener("pointermove", onMove); document.removeEventListener("pointerup", onUp); };
+        document.addEventListener("pointermove", onMove);
+        document.addEventListener("pointerup", onUp, { once: true });
+      }
+      ruler.addEventListener("pointerdown", startScrub);
+      lanesWrap.addEventListener("pointerdown", (e) => { if (e.target === lanesWrap || e.target.classList.contains("itda-lane")) startScrub(e); });
       snapChk.addEventListener("change", () => { ui.snap = snapChk.checked; persistUi(); });
-      self._itdaStop = () => { setPlaying(false); try { previewVid.pause(); previewAudio.pause(); } catch {} };
+      function setZoom(next) {
+        pxPerFrame = Math.max(0.5, Math.min(24, next));
+        ui.pxPerFrame = pxPerFrame; persistUi();
+        renderTimeline();
+      }
+      zoomOutBtn.addEventListener("click", () => setZoom(pxPerFrame / 1.4));
+      zoomInBtn.addEventListener("click", () => setZoom(pxPerFrame * 1.4));
+      zoomFitBtn.addEventListener("click", () => setZoom(4));
+      timeline.addEventListener("wheel", (e) => {
+        if (!e.ctrlKey) return; // plain wheel still scrolls the timeline normally
+        e.preventDefault();
+        setZoom(pxPerFrame * (e.deltaY < 0 ? 1.15 : 1 / 1.15));
+      }, { passive: false });
+      self._itdaStop = () => { setPlaying(false); try { previewVid.pause(); previewAudio.pause(); } catch {} try { fullscreen.exit(); } catch {} };
 
       // ══════════════════════════ project save/load ══════════════════════════
       async function loadProject(name) {
@@ -522,6 +593,25 @@ app.registerExtension({
           statusEl.textContent = `saved "${project.name}"`;
         } catch (e) { statusEl.textContent = `save failed: ${e?.message || e}`; }
       }
+      async function stitchApply() {
+        if (!project.clips || !project.clips.length) { statusEl.textContent = "타임라인에 클립을 먼저 올려주세요"; return; }
+        await saveProject(); // export reads whatever's on disk-equivalent state, so persist first
+        exportBtn.disabled = true; exportBtn.textContent = "⏳ Rendering…";
+        statusEl.textContent = "스티치 렌더링 중…";
+        try {
+          const d = await jpost(`${API}/export`, { project });
+          if (!d.ok) throw new Error(d.error || "export failed");
+          statusEl.textContent = `✓ 렌더 완료 — ${d.subfolder}/${d.filename}`;
+          const url = `/view?filename=${encodeURIComponent(d.filename)}&subfolder=${encodeURIComponent(d.subfolder)}&type=output&t=${Date.now()}`;
+          previewPlaceholder.style.display = "none"; previewAudio.style.display = "none"; previewVid.style.display = "block";
+          previewVid.src = url; previewVid.dataset.src = url;
+        } catch (e) {
+          statusEl.textContent = `렌더 실패: ${e?.message || e}`;
+        } finally {
+          exportBtn.disabled = false; exportBtn.textContent = "🧵 Stitch Apply";
+        }
+      }
+      exportBtn.addEventListener("click", stitchApply);
       saveBtn.addEventListener("click", saveProject);
       projectNameIn.addEventListener("change", () => loadProject(projectNameIn.value.trim() || "untitled"));
 
