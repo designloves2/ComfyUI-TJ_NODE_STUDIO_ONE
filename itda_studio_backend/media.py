@@ -154,7 +154,7 @@ def scan_media(project_name: str) -> list[dict[str, Any]]:
                 thumb = make_video_thumbnail(path, project_name)
                 if thumb:
                     item["thumb_path"] = thumb
-                    item["thumb_url"] = f"/itda/api/file?path={thumb}&project={safe_name(project_name)}"
+                    item["thumb_url"] = f"/itda_studio_one/api/file?path={thumb}&project={safe_name(project_name)}"
             elif kind == "audio":
                 item["duration"] = probe_audio_duration(path)
             items.append(item)

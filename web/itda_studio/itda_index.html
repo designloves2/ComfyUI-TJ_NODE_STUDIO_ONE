@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ITDA v1.0 — Frame-Accurate AI Video Stitching</title>
+  <link rel="stylesheet" href="/itda/web/style.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <button id="settingsTop" class="top-icon" title="Project Settings">⚙</button>
+      <button id="projectMenu" class="top-menu">Project</button>
+      <input id="projectName" value="itda-project-1" spellcheck="false" readonly aria-readonly="true" title="Current Project" />
+      <button id="saveProject" class="top-menu">Save</button>
+      <button id="exportProject" class="top-menu">Export</button>
+      <button id="sendComfy" class="top-menu">Send To ComfyUI</button>
+      <div class="spacer"></div>
+      <div class="brand right-brand"><b>ITDA</b><span>Frame-Accurate AI Video Stitching</span></div>
+      <div class="version">v1.0</div>
+    </header>
+
+    <main class="workspace">
+      <section class="upper" id="upperPane">
+        <aside class="panel media-bin">
+          <div class="panel-title">Media Bin</div>
+          <div class="import-row">
+            <button id="addVideo">+ Video</button>
+            <button id="addAudio">+ Audio</button>
+            <button id="addImage">+ Image</button>
+            <button id="addText">+ Text</button>
+          </div>
+          <div class="bin-view-row">
+            <button id="gridView" class="active" title="Thumbnail View">▦</button>
+            <button id="listView" title="List View">☰</button>
+            <button id="clearMedia">Clear</button>
+          </div>
+          <div id="mediaList" class="media-list"></div>
+          <div class="bin-footer"><span id="mediaCount">0 items</span><label class="thumb-scale">▣ <input id="thumbScale" type="range" min="72" max="160" value="104"> ⌕</label></div>
+        </aside>
+
+        <section class="panel preview-panel">
+          <div class="preview-toolbar">
+            <div class="mode-tabs">
+              <button id="previewMode" class="active">Single</button>
+              <button id="compareTop" disabled>Compare</button>
+              <button id="overlayTop" disabled>Overlay</button>
+              <button id="wipeTop" disabled>Wipe</button>
+            </div>
+            <div class="preview-tools">
+              <button id="snapshotTop" title="Snapshot">▣</button>
+              <button id="fullscreenTop" title="Full Screen">⛶</button>
+            </div>
+          </div>
+          <div class="preview-stage" id="previewStage" title="Click to Play/Pause">
+            <video id="previewVideo" playsinline></video>
+            <video id="previewVideoB" playsinline muted></video>
+            <img id="previewImage" alt="" />
+            <img id="previewImageB" alt="" />
+            <div id="textOverlay" class="text-overlay"></div>
+            <div id="textOverlayB" class="text-overlay compare-text"></div>
+            <div id="previewPlaceholder">Preview</div>
+            <div id="snapshotToast" class="toast hidden">Snapshot saved</div>
+            <div id="wipeHandle" class="wipe-handle"><div class="wipe-grip">↔</div></div>
+          </div>
+          <div class="preview-transport">
+            <div class="transport-controls" aria-label="Preview Transport Controls">
+              <button id="gotoClipStart" title="Selected Clip Start">◀|</button>
+              <button data-step="-5" title="Step Back 5 Frames">◀◀</button>
+              <button data-step="-1" title="Step Back 1 Frame">◀</button>
+              <button id="playPause" class="main-play" title="Play / Pause">▶</button>
+              <button data-step="1" title="Step Forward 1 Frame">▶</button>
+              <button data-step="5" title="Step Forward 5 Frames">▶▶</button>
+              <button id="gotoClipEnd" title="Selected Clip End">|▶</button>
+              <button id="loopToggle">Loop</button>
+              <button id="muteToggle" title="Mute (M)">Mute</button><button id="scrubAudioToggle" class="active" title="Scrub Audio Toggle (A)">Scrub</button><label class="volume-control" title="Monitor Volume"><span>Vol</span><input id="monitorVolume" type="range" min="0" max="100" value="100"><b id="volumeLabel">100%</b></label>
+            </div>
+            <div class="transport-readout">
+              <div class="center-readout"><b id="frameLabel">Frame 0</b><b id="timeLabel">00:00.000</b></div>
+              <div id="projectFpsStatus" class="project-fps-status">FPS 24.000 · Total 360f</div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel props-panel">
+          <div class="panel-title">Clip Properties</div>
+          <div id="clipProps" class="props-body">No clip selected.</div>
+        </aside>
+      </section>
+
+      <div id="resizeHandle" class="resize-handle"></div>
+
+      <section class="lower timeline-panel">
+        <div class="timeline-action-row">
+          <button id="markIn">I</button>
+          <button id="markOut">O</button>
+          <button id="clearRange">Clear Range</button>
+          <button id="snapToggle" class="active">🧲 Snap</button>
+          <button id="peakSnapToggle" title="Also snap clip edges to audio waveform peaks (beats/transients)">〜 Peak Match</button>
+          <button id="splitClip">Split</button>
+          <button id="stitchClip">Stitch</button>
+          <button id="unstitchClip">UnStitch</button>
+          <button id="autoStitchClip" disabled title="Select 2 video clips (in time order) to analyze the best overlap cut point">Auto Stitch</button>
+          <button id="addTransition" disabled title="Select 2 adjacent video/image clips to insert a transition (dissolve, wipe, slide, etc.) at the join">🎞 Transition</button>
+          <button id="aiDetect" disabled title="Scene / Beat detection for the selected clip">✨ AI Detect</button>
+          <button id="groupClip">Group</button>
+          <button id="ungroupClip">Ungroup</button>
+          <button id="detachAudio">Detach Audio</button>
+          <button id="mergeAudio">Merge Audio</button>
+          <button id="prerender">Pre-render</button>
+          <button id="deleteClip">Clip Delete</button>
+          <div class="timeline-zoom"><label title="Horizontal Zoom">↔ <input id="hZoom" type="range" min="0.5" max="20" step="0.5" value="4"></label><label title="Vertical Track Zoom">↕ <input id="vZoom" type="range" min="44" max="140" value="74"></label></div>
+        </div>
+        <div id="timeline" class="timeline" tabindex="0">
+          <div id="ruler" class="ruler"></div>
+          <div id="rangeLayer" class="range-layer"></div>
+          <div id="playhead" class="playhead"><div class="playhead-head"></div></div>
+          <div id="lanes" class="lanes"></div>
+          <div id="boxSelect" class="box-select" style="display:none;"></div>
+        </div>
+        <div class="statusbar"><span id="statusbarFps">Project FPS: 24.000</span><span>Snap: <b id="snapStatus">ON</b></span><span id="totalStatus">Total: 360f / 00:15.000</span><span id="status">Ready</span></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head"><b id="modalTitle">ITDA</b><button id="modalClose">×</button></div>
+      <div id="modalBody" class="modal-body"></div>
+      <div id="modalFooter" class="modal-footer"></div>
+    </div>
+  </div>
+
+  <input id="filePicker" type="file" multiple hidden />
+  <script src="/itda/web/app.js"></script>
+</body>
+</html>

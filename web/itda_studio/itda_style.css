@@ -1,0 +1,303 @@
+:root{
+  --bg:#0d0e10;--panel:#17191c;--panel2:#1d2024;--panel3:#22252a;--line:#30343b;--line2:#24282e;
+  --text:#f4f4f7;--muted:#a9adb7;--dim:#737986;--accent:#7612da;--accent2:#9b5cff;
+  --video:#6b2ec9;--audio:#178b63;--image:#c87519;--textclip:#1b9bd7;--red:#ff4242;--shadow:0 10px 30px rgba(0,0,0,.28);
+  --btn-h:clamp(26px,1.65vw,34px);--font:clamp(11px,.72vw,13px);--icon:clamp(13px,.9vw,17px);--thumb:104px;
+}
+*{box-sizing:border-box} body,.timeline,.ruler,.lanes,.clip,.preview-transport,.transport-controls,.transport-readout,.timeline-action-row,.media-bin{user-select:none;-webkit-user-select:none} input,textarea,select{user-select:text;-webkit-user-select:text}html,body,#app{height:100%}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif;overflow:hidden;font-size:var(--font)}
+button,input,select,textarea{font:inherit;color:var(--text)}button{height:var(--btn-h);padding:0 clamp(8px,.75vw,14px);border:1px solid var(--line);border-radius:7px;background:linear-gradient(#272a30,#1d2025);font-weight:750;cursor:pointer;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);white-space:nowrap}button:hover{border-color:#555b66;background:linear-gradient(#30343b,#22262c)}button.active,.top-menu.active{background:linear-gradient(180deg,#43206c,#2b1745);border-color:var(--accent);box-shadow:0 0 0 1px rgba(118,18,218,.25),inset 0 1px 0 rgba(255,255,255,.08)}button:disabled{opacity:.45;cursor:not-allowed}input,select,textarea{height:30px;border:1px solid var(--line);border-radius:6px;background:#101217;outline:0;padding:0 8px}textarea{height:70px;resize:vertical;padding:8px;line-height:1.4}.topbar{height:46px;background:#0b0c0e;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 14px;gap:12px;box-shadow:var(--shadow);z-index:20}.top-icon{width:36px;padding:0;font-size:var(--icon)}#projectName{min-width:180px;font-weight:800;background:#101217}.spacer{flex:1}.brand{display:flex;align-items:baseline;gap:10px}.brand b{font-size:clamp(17px,1.2vw,22px);letter-spacing:.08em}.brand span{font-size:clamp(10px,.66vw,12px);color:#c4c8d0}.version{font-size:11px;color:var(--dim)}
+.workspace{height:calc(100vh - 46px);display:flex;flex-direction:column}.upper{height:56%;min-height:320px;display:grid;grid-template-columns:26% 49% 25%;gap:4px;padding:4px 4px 0}.panel{background:linear-gradient(180deg,var(--panel),#14161a);border:1px solid var(--line2);border-radius:7px;overflow:hidden;box-shadow:var(--shadow)}.panel-title{height:40px;padding:12px 14px;border-bottom:1px solid var(--line2);font-size:clamp(13px,.9vw,16px);font-weight:850}.media-bin{display:flex;flex-direction:column}.import-row{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:10px 10px 7px}.bin-view-row{display:grid;grid-template-columns:40px 40px 1fr;gap:7px;padding:0 10px 8px}.media-list{flex:1;overflow:auto;padding:10px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-content:start;gap:12px}.media-list.list-view{display:block}.media-item{min-width:0;cursor:grab;background:#111318;border:1px solid transparent;border-radius:7px;padding:5px;position:relative;max-width:calc(var(--thumb,104px) + 16px)}.media-list.list-view .media-item{display:grid;grid-template-columns:52px 1fr;gap:8px;margin-bottom:6px}.media-item:hover{border-color:#3c4250;background:#161a20}.media-delete{position:absolute;left:6px;top:6px;width:20px;height:20px;padding:0;border-radius:50%;background:#160b0b;border-color:#623232;color:#ffb5b5;z-index:3}.thumb{width:var(--thumb,104px);height:var(--thumb,104px);aspect-ratio:1/1;background:#000;border-radius:5px;overflow:hidden;display:flex;align-items:center;justify-content:center;border:1px solid #20242b;min-height:72px;max-width:100%}.thumb img,.thumb video{width:100%;height:100%;object-fit:contain;background:#000}.thumb .icon{font-size:clamp(24px,2.2vw,42px);color:var(--accent2)}.media-name{font-size:clamp(10px,.66vw,11px);line-height:1.2;margin-top:7px;font-weight:850;word-break:break-word;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.media-meta{font-size:10px;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.empty{color:var(--muted);line-height:1.55;padding:16px;grid-column:1/-1}.bin-footer{height:34px;border-top:1px solid var(--line2);display:flex;align-items:center;justify-content:space-between;padding:0 10px;color:#cdd1dc}.thumb-scale{display:flex;align-items:center;gap:6px;color:var(--muted)}.thumb-scale input{width:86px;height:18px;padding:0}
+.preview-panel{display:flex;flex-direction:column;background:#08090b}.preview-toolbar{height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;background:#111318;border-bottom:1px solid var(--line2)}.mode-tabs,.preview-tools{display:flex;gap:7px}.mode-tabs button{min-width:70px}.preview-tools button{width:38px;padding:0}.preview-stage{flex:1;position:relative;background:#000;display:flex;align-items:center;justify-content:center;min-height:0;overflow:hidden}.preview-stage video,.preview-stage img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;display:none}.preview-stage.has-primary-video #previewVideo,.preview-stage.has-primary-image #previewImage,.preview-stage.has-secondary-video #previewVideoB,.preview-stage.has-secondary-image #previewImageB{display:block}.preview-stage.compare #previewVideo,.preview-stage.compare #previewImage{clip-path:inset(0 50% 0 0)}.preview-stage.compare #previewVideoB,.preview-stage.compare #previewImageB{clip-path:inset(0 0 0 50%)}.preview-stage.overlay #previewVideoB,.preview-stage.overlay #previewImageB{opacity:.5}.preview-stage.overlay #previewVideo,.preview-stage.overlay #previewImage{opacity:1}.preview-stage.has-content #previewPlaceholder{display:none}#previewPlaceholder{color:#5f6672;font-weight:850;font-size:clamp(24px,2.4vw,44px);letter-spacing:.06em}.text-overlay{position:absolute;left:50%;bottom:12%;transform:translateX(-50%);font-size:42px;font-weight:800;text-align:center;text-shadow:none;color:#fff;max-width:88%;white-space:pre-wrap;display:none}.preview-stage.has-text #textOverlay,.preview-stage.has-text-b #textOverlayB{display:block}.compare-text{top:10%;bottom:auto;color:#87dfff}.toast{position:absolute;right:14px;bottom:14px;background:#12151a;border:1px solid var(--accent);padding:8px 12px;border-radius:8px;box-shadow:var(--shadow)}.hidden{display:none!important}.preview-transport{height:72px;display:flex;flex-direction:column;align-items:stretch;justify-content:center;gap:5px;padding:6px 14px;background:#111318;border-top:1px solid var(--line2);position:relative}.transport-controls{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:32px}.transport-controls button{height:30px;min-width:36px;padding:0 10px}.main-play{width:40px;min-width:40px!important;padding:0!important;border-radius:50%;font-size:var(--icon)}.transport-readout{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;width:100%;min-height:20px;font-size:clamp(11px,.82vw,15px);line-height:1.05;letter-spacing:.01em;pointer-events:none}.center-readout{grid-column:2;justify-self:center;display:flex;flex-direction:row;align-items:center;justify-content:center;gap:30px;font-weight:850}.project-fps-status{grid-column:3;justify-self:end;color:var(--muted);font-size:clamp(10px,.7vw,12px)}
+.props-panel{display:flex;flex-direction:column}.props-body{padding:12px;overflow:auto;color:#d9dce5}.props-grid{display:grid;grid-template-columns:92px minmax(0,1fr);gap:8px;align-items:center}.props-grid label{color:var(--muted)}.props-grid input,.props-grid select{width:100%;height:30px}.props-grid textarea{width:100%;grid-column:1/-1}.props-section{font-weight:900;color:#fff;border-top:1px solid var(--line2);padding-top:10px;margin-top:10px;grid-column:1/-1}.muted{color:var(--muted)}
+.resize-handle{height:5px;background:#0b0c0e;border-top:1px solid #252932;border-bottom:1px solid #252932;cursor:row-resize}.lower{flex:1;min-height:220px;display:flex;flex-direction:column;margin:0 4px 4px}.timeline-action-row{height:42px;display:flex;align-items:center;gap:7px;padding:0 8px;background:#111318;border:1px solid var(--line2);border-bottom:0;border-radius:7px 7px 0 0;overflow:hidden}.timeline-action-row button{height:28px}.timeline-zoom{margin-left:auto;display:flex;align-items:center;gap:6px}.timeline-zoom input{width:92px;height:18px;padding:0}.timeline{flex:1;position:relative;background:#121418;border:1px solid var(--line2);overflow:auto;scrollbar-color:#3a3f49 #0d0e10;scrollbar-width:thin}.timeline::-webkit-scrollbar,.media-list::-webkit-scrollbar,.props-body::-webkit-scrollbar{width:10px;height:10px}.timeline::-webkit-scrollbar-track,.media-list::-webkit-scrollbar-track,.props-body::-webkit-scrollbar-track{background:#0d0e10}.timeline::-webkit-scrollbar-thumb,.media-list::-webkit-scrollbar-thumb,.props-body::-webkit-scrollbar-thumb{background:#3a3f49;border-radius:10px;border:2px solid #0d0e10}.ruler{height:48px;position:relative;background:#15171c;border-bottom:1px solid var(--line2);min-width:100%}.tick{position:absolute;top:0;width:1px;height:48px;border-left:1px solid #444a55;color:#d4d8e2;font-size:11px;padding-left:4px;padding-top:6px}.tick .sub{display:block;color:#8c929f;font-size:10px;margin-top:2px}.tick.minor{height:16px;border-left-color:#2d323a;color:transparent}.range-layer{position:absolute;top:48px;bottom:0;pointer-events:none;z-index:2}.range-box{position:absolute;top:0;bottom:0;background:rgba(118,18,218,.18);border-left:1px solid rgba(155,92,255,.8);border-right:1px solid rgba(155,92,255,.8)}.playhead{position:absolute;top:0;bottom:0;width:2px;background:var(--red);z-index:7;pointer-events:none}.playhead-head{position:absolute;top:0;left:50%;transform:translateX(-50%);width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid var(--red)}.lanes{position:relative;min-width:100%}.lane{position:relative;height:74px;border-bottom:1px solid #24282e;background:#181b20}.lane:nth-child(even){background:#1d2025}.lane-label{position:sticky;left:0;z-index:3;width:148px;height:100%;background:linear-gradient(90deg,#15171b,#15171bea,#15171b55);border-right:1px solid #2e333b;padding:10px;font-weight:900;color:#ccd1dc}.lane-label .tools{display:block;margin-top:12px;font-size:12px;color:#818895;letter-spacing:7px}.lane.locked{opacity:.72}.lane.hidden-lane .clip{opacity:.15}.clip{position:absolute;top:9px;height:55px;border-radius:8px;border:1px solid rgba(255,255,255,.12);box-shadow:0 7px 18px rgba(0,0,0,.28);overflow:hidden;cursor:grab;z-index:4;background:linear-gradient(180deg,#7d40df,#4d238d)}.clip.video{background:linear-gradient(180deg,#7d40df,#4d238d)}.clip.audio{background:linear-gradient(180deg,#1fa878,#116244)}.clip.image{background:linear-gradient(180deg,#e08a28,#8b4b10)}.clip.text{background:linear-gradient(180deg,#22aeea,#126b9b)}.clip.selected{outline:2px solid #fff;z-index:6}.clip.dimmed{opacity:.6}.clip-title{padding:8px 10px 2px;font-weight:900;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.clip-trim{padding:0 10px;color:#e8e9eecc;font-size:10px}.clip-bars{position:absolute;left:8px;right:8px;bottom:7px;height:4px;background:rgba(0,0,0,.28);border-radius:5px}.clip-handle{position:absolute;top:0;width:8px;height:100%;background:rgba(255,255,255,.16);cursor:ew-resize}.clip-handle.left{left:0}.clip-handle.right{right:0}.statusbar{height:30px;display:flex;align-items:center;gap:20px;padding:0 10px;background:#0f1115;border:1px solid var(--line2);border-top:0;border-radius:0 0 7px 7px;color:var(--muted);font-size:12px}.statusbar span:last-child{margin-left:auto;color:#c5c9d3}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:100}.modal-card{width:min(560px,90vw);background:#15181d;border:1px solid #343946;border-radius:10px;box-shadow:var(--shadow);overflow:hidden}.modal-head{height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;border-bottom:1px solid var(--line2)}.modal-head button{width:30px;padding:0}.modal-body{padding:16px;max-height:60vh;overflow:auto}.modal-footer{padding:12px 16px;border-top:1px solid var(--line2);display:flex;justify-content:flex-end;gap:8px}.modal-grid{display:grid;grid-template-columns:160px 1fr;gap:10px;align-items:center}.modal-grid input,.modal-grid select{width:100%}
+@media (max-width:1400px){.upper{grid-template-columns:27% 48% 25%}.topbar{gap:8px}.brand span{display:none}.timeline-action-row{gap:5px}.timeline-action-row button{padding:0 8px}}
+
+.ruler,.timeline,.clip{touch-action:none;}
+.preview-stage{background:#000!important;}
+
+.total-frame-marker{position:absolute;top:0;height:48px;width:2px;background:#ffd25a;box-shadow:0 0 0 1px rgba(0,0,0,.35);z-index:4}.total-frame-marker span{position:absolute;top:4px;left:6px;color:#ffd25a;font-size:10px;font-weight:900;letter-spacing:.03em}
+
+
+/* v0.1.5e UX hotfix */
+.volume-control{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11px;margin-left:4px}
+.volume-control input{width:92px;height:18px;padding:0}
+.volume-control b{min-width:36px;text-align:right;color:#d6dae4;font-size:11px}
+.clip.grouped{background:linear-gradient(180deg,#37e0c3,#178d7f)!important;box-shadow:0 0 0 2px rgba(55,224,195,.75),0 7px 18px rgba(0,0,0,.28)}
+.clip.stitched{background:linear-gradient(180deg,#ff62c7,#9f2e7e)!important;box-shadow:0 0 0 2px rgba(255,98,199,.6),0 7px 18px rgba(0,0,0,.28)}
+.clip.stitched.grouped{box-shadow:0 0 0 2px rgba(55,224,195,.8),0 0 0 4px rgba(255,98,199,.35),0 7px 18px rgba(0,0,0,.28)}
+.text-overlay{background:transparent!important;border:0!important;pointer-events:none;}
+.timeline-action-row button,.transport-controls button,.topbar button{position:relative}
+
+
+/* v0.1.5-final import/text overlay patch */
+.media-bin.drag-over{outline:2px dashed var(--accent2);outline-offset:-6px;background:linear-gradient(180deg,#1a1722,#14161a)}
+.text-overlay{background:transparent!important;border:0!important;box-shadow:none!important;color:#fff;z-index:5;mix-blend-mode:normal;}
+.preview-stage.has-text #textOverlay,.preview-stage.has-text-b #textOverlayB{display:block;background:transparent!important;}
+.props-grid input[type="color"]{padding:2px;width:70px;min-width:70px;cursor:pointer;background:#101217;}
+
+
+/* v0.1.5 final4 track state visual hotfix */
+.lane-label{transition:background .12s ease,border-color .12s ease,color .12s ease;}
+.lane-label .lane-name{font-weight:900;line-height:1;}
+.lane-label .tools{display:flex!important;gap:7px;align-items:center;margin-top:12px!important;letter-spacing:0!important;}
+.lane-tool{width:26px;height:24px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;border:1px solid #303744;background:#1b1f27;color:#cfd5df;font-size:12px;line-height:1;cursor:pointer;}
+.lane-tool:hover{border-color:#6f44cf;background:#242936;}
+.lane-tool.vis.on{color:#9fd2ff;border-color:#3f5772;background:#172331;}
+.lane-tool.vis.off{color:#9aa0a9;border-color:#4a4d54;background:#2b2d31;}
+.lane-tool.lock.on{color:#ffd3d3;border-color:#743030;background:#3a1719;}
+.lane-tool.lock.off{color:#f2c15d;border-color:#5b4823;background:#241e12;}
+.lane.preview-off .lane-label{background:linear-gradient(90deg,#34373d,#2b2e34ee,#1a1c2055)!important;border-right-color:#575b64;color:#d1d4da;}
+.lane.locked .lane-label{background:linear-gradient(90deg,#4b171c,#321115ee,#1a0b0d55)!important;border-right-color:#8a2e38;color:#ffd8d8;}
+.lane.locked.preview-off .lane-label{background:linear-gradient(90deg,#4b171c,#302227ee,#1a0b0d55)!important;border-right-color:#8a2e38;color:#ffd8d8;}
+.lane.locked .clip{cursor:not-allowed;}
+.lane.hidden-lane .clip{opacity:.22;filter:saturate(.45);}
+
+/* v0.2.0 project-library / live-track-state patch */
+#projectName[readonly]{
+  color:#f2f3f6;
+  background:#11141a;
+  border-color:#2f3540;
+  cursor:default;
+  user-select:none;
+  -webkit-user-select:none;
+}
+.project-list{display:flex;flex-direction:column;gap:6px;margin:10px 0 12px;max-height:220px;overflow:auto;border:1px solid var(--line2);border-radius:8px;padding:8px;background:#101217}
+.project-row{height:30px;display:flex;align-items:center;padding:0 10px;border:1px solid transparent;border-radius:6px;color:#d9dde7;background:#15181e;cursor:pointer}
+.project-row:hover{border-color:#3e4552;background:#1b2028}
+.project-row.active{border-color:var(--accent);background:#2a1840;color:#fff}
+.project-library-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.lane.state-refresh{animation:itdaStatePulse .12s linear 1}
+@keyframes itdaStatePulse{from{filter:brightness(1.18)}to{filter:brightness(1)}}
+
+.inline-check{display:flex;align-items:center;gap:8px;color:var(--text)!important}.inline-check input{width:auto;height:auto}.props-grid select[data-prop=font_family]{min-width:0;}
+
+/* v0.2.7 real audio waveform patch */
+#scrubAudioToggle.active{background:linear-gradient(180deg,#243d31,#16281f);border-color:#178b63;color:#c9ffe9}
+.waveform{position:absolute;left:0;right:0;bottom:0;height:100%;display:flex;align-items:center;gap:1px;padding:0 3px;opacity:.56;pointer-events:none;z-index:0;overflow:hidden}
+.waveform i{flex:1;min-width:1px;max-width:3px;background:rgba(255,255,255,.65);border-radius:2px;display:block;align-self:center}
+.clip-title,.clip-trim{position:relative;z-index:2;text-shadow:0 1px 2px rgba(0,0,0,.45)}
+.clip-bars{height:18px;background:rgba(0,0,0,.20);overflow:hidden}
+.clip.audio .waveform i,.clip.video .waveform i{background:rgba(255,255,255,.72)}
+
+.waveform-loading::after{content:"";position:absolute;left:4px;right:4px;bottom:12%;height:1px;background:rgba(255,255,255,.18);}
+
+
+/* v0.2.8 waveform/trim/audio hotfix */
+/* The trim handle used to always paint a translucent white gradient over the
+   full clip height at both edges - exactly where the waveform sits, washing
+   it out and making split/trim points at clip boundaries look like there was
+   a gap in the waveform when there wasn't. Keep the same 14px full-height hit
+   target for dragging, but only show the highlight on hover/active-drag so
+   the waveform reads cleanly right up to the true edge otherwise. */
+.clip-handle{z-index:12!important;top:0!important;bottom:0!important;height:100%!important;width:14px!important;pointer-events:auto!important;background:transparent!important;transition:background .1s ease;}
+.clip-handle:hover,.clip-handle:active{background:linear-gradient(90deg,rgba(255,255,255,.22),rgba(255,255,255,.05))!important;}
+.clip-handle.right:hover,.clip-handle.right:active{background:linear-gradient(270deg,rgba(255,255,255,.22),rgba(255,255,255,.05))!important;}
+/* Waveform track now fills the clip edge-to-edge and most of its height
+   (only leaving room for the title/trim text strip above) - no visible
+   purple margin around the dark track box itself. */
+.clip-bars{height:clamp(30px,58%,58px)!important;left:0!important;right:0!important;bottom:0!important;background:rgba(0,0,0,.32)!important;border-radius:0 0 2px 2px!important;z-index:1;}
+/* Frame-count/duration ("0f / 00:00.000") used to sit on its own line below
+   the title and got covered once the waveform track grew - the audio
+   waveform is the important part, so this info now shares the title's single
+   compact row instead of competing with the waveform for vertical space. */
+.clip-title{display:flex!important;align-items:baseline;justify-content:space-between;gap:6px;padding:5px 8px 0!important;}
+.clip-title .clip-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+.clip-title .clip-trim{flex:none;font-size:9px;font-weight:700;color:#e8e9eecc;padding:0;}
+.clip-audio-icon{flex:none;font-size:11px;line-height:1;opacity:.95;}
+.clip-audio-icon.off{opacity:.55;filter:grayscale(.4);}
+
+.export-progress{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:10px 0}
+.export-progress .spinner{width:36px;height:36px;border:4px solid var(--flat-line,#2b2f38);border-top-color:var(--flat-accent,#6a5cff);border-radius:50%;animation:itdaSpin .8s linear infinite;margin-bottom:6px}
+@keyframes itdaSpin{to{transform:rotate(360deg)}}
+.waveform{opacity:.92!important;align-items:center!important;gap:1px!important;padding:2px 4px!important;}
+.waveform i{background:rgba(255,255,255,.88)!important;box-shadow:0 0 2px rgba(255,255,255,.25);min-height:2px;}
+.clip.audio .waveform i{background:rgba(205,255,235,.92)!important;}
+.clip.video .waveform i{background:rgba(238,222,255,.92)!important;}
+.waveform-loading::after{height:2px!important;bottom:50%!important;background:rgba(255,255,255,.35)!important;}
+#scrubAudioToggle.active{background:linear-gradient(180deg,#243d31,#16281f);border-color:#178b63;color:#c9ffe9;}
+#scrubAudioToggle:not(.active){background:linear-gradient(#272a30,#1d2025);border-color:var(--line);color:var(--muted);}
+
+
+/* v0.3.2 timeline navigation/waveform alignment hotfix */
+.ruler{
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 20 !important;
+}
+.range-layer{
+  top: 48px !important;
+  bottom: auto !important;
+}
+.playhead{
+  top: 0 !important;
+  bottom: auto !important;
+  min-height: 100% !important;
+  z-index: 25 !important;
+}
+.lanes{
+  min-height: calc(5 * var(--lane-h, 74px));
+}
+.waveform.source-aligned{
+  display:block!important;
+  position:absolute!important;
+  left:0!important;
+  right:0!important;
+  top:0!important;
+  bottom:0!important;
+  height:100%!important;
+  padding:0!important;
+  opacity:.94!important;
+}
+.waveform.source-aligned i{
+  position:absolute!important;
+  top:50%!important;
+  transform:translateY(-50%)!important;
+  min-width:1px!important;
+  max-width:none!important;
+  border-radius:2px!important;
+  display:block!important;
+}
+
+/* v0.4.1 flat/modern (CapCut-style) design pass */
+:root{
+  --flat-accent:#6a5cff;--flat-accent2:#8f7bff;--flat-surface:#1c1e24;--flat-surface2:#20232a;
+  --flat-line:#2b2f38;--flat-radius:10px;
+}
+button{background:var(--flat-surface2);box-shadow:none;border-color:var(--flat-line);border-radius:var(--flat-radius);transition:background .12s ease,border-color .12s ease,transform .06s ease}
+button:hover{background:#282c34;border-color:#3a3f4b;transform:translateY(-1px)}
+button:active{transform:translateY(0)}
+button.active,.top-menu.active{background:var(--flat-accent);border-color:var(--flat-accent);box-shadow:none;color:#fff}
+.panel{background:var(--flat-surface);border-color:var(--flat-line);border-radius:12px;box-shadow:none}
+.panel-title{border-color:var(--flat-line)}
+.topbar{background:#101218;box-shadow:none;border-bottom-color:var(--flat-line)}
+input,select,textarea{background:#15171d;border-color:var(--flat-line);border-radius:8px}
+/* Bottom corners are nearly square (not var(--flat-radius)): the waveform
+   canvas sits right at the bottom edge of the clip, and a full rounded corner
+   there visually clips a few pixels of waveform exactly where users need to
+   see the true clip start/end for accurate splitting. */
+.clip{border-radius:var(--flat-radius) var(--flat-radius) 2px 2px;box-shadow:0 2px 8px rgba(0,0,0,.25);border-color:rgba(255,255,255,.08)}
+.clip.video{background:#5b3fd6}
+.clip.audio{background:#1f9d74}
+.clip.image{background:#d68b2c}
+.clip.text{background:#2098d1}
+.clip.grouped{background:#22c7ab!important;box-shadow:0 0 0 2px rgba(34,199,171,.6),0 2px 8px rgba(0,0,0,.25)}
+.clip.stitched{background:#e556ac!important;box-shadow:0 0 0 2px rgba(229,86,172,.55),0 2px 8px rgba(0,0,0,.25)}
+.clip.selected{outline:none;filter:brightness(1.12)}
+/* No outline on the selected clip anymore, so unselected clips need to read
+   as clearly darker/dimmer (not just semi-transparent) for the selection to
+   still stand out. */
+.clip.dimmed{opacity:.5;filter:brightness(.55) saturate(.75)}
+.modal-card{background:var(--flat-surface);border-color:var(--flat-line);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.35)}
+
+/* Slider (range) fields in Clip Properties */
+.slider-field{display:flex;align-items:center;gap:8px}
+.slider-field input[type="range"]{flex:1;-webkit-appearance:none;appearance:none;height:4px;background:var(--flat-line);border-radius:999px;border:0;padding:0}
+.slider-field input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:15px;height:15px;border-radius:50%;background:var(--flat-accent2);border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4);cursor:pointer}
+.slider-field input[type="range"]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:var(--flat-accent2);border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4);cursor:pointer}
+.slider-field input.mirror-num{width:58px;flex:none;height:26px;padding:0 6px;text-align:center}
+
+/* Toggle switch (Shadow On/Off, etc.) */
+.switch{position:relative;display:inline-flex;width:42px;height:24px;cursor:pointer}
+.switch input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+.switch .slider-track{position:absolute;inset:0;background:var(--flat-line);border-radius:999px;transition:background .15s ease}
+.switch .slider-track::before{content:"";position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .15s ease}
+.switch input:checked+.slider-track{background:var(--flat-accent)}
+.switch input:checked+.slider-track::before{transform:translateX(18px)}
+
+/* Media Bin flat pass */
+.media-item{background:var(--flat-surface2);border:1px solid var(--flat-line);border-radius:var(--flat-radius);transition:border-color .12s ease,background .12s ease}
+.media-item:hover{border-color:var(--flat-accent2);background:#242730}
+.thumb{background:#0e0f13;border-color:var(--flat-line);border-radius:8px}
+.thumb .icon{color:var(--flat-accent2)}
+.media-delete{background:#241417;border-color:#4a2530;color:#ffb0b0;border-radius:50%}
+.media-name{color:var(--text)}
+.media-meta{color:var(--muted)}
+.bin-footer{border-top-color:var(--flat-line)}
+.import-row button,.bin-view-row button{background:var(--flat-surface2);border-color:var(--flat-line)}
+.media-bin.drag-over{outline-color:var(--flat-accent2);background:#181a22}
+
+/* Timeline / lanes flat pass */
+.timeline{background:#15171c;border-color:var(--flat-line)}
+.ruler{background:#181a20;border-bottom-color:var(--flat-line)}
+.tick{border-left-color:#33384280}
+.tick.minor{border-left-color:#22262e}
+.lane{background:#191b21;border-bottom-color:var(--flat-line)}
+.lane:nth-child(even){background:#1c1e25}
+.lane-label{background:#15171c;border-right-color:var(--flat-line)}
+.lane-tool{background:var(--flat-surface2);border-color:var(--flat-line);border-radius:6px}
+.lane-tool:hover{border-color:var(--flat-accent2);background:#2a2e38}
+.lane-tool.vis.on{color:#9fd2ff;border-color:#33506e;background:#182432}
+.lane-tool.lock.on{color:#ffb3b3;border-color:#5c2c33;background:#2a1418}
+.lane.locked .lane-label{background:#241417;border-right-color:#5c2c33}
+.lane.preview-off .lane-label{background:#20222a;border-right-color:#3a3f4b}
+.range-box{background:rgba(106,92,255,.16);border-color:rgba(143,123,255,.7)}
+.playhead{background:#ff5f5f}
+.playhead-head{border-top-color:#ff5f5f}
+.timeline-action-row{background:#15171c;border-color:var(--flat-line);border-radius:10px 10px 0 0}
+.statusbar{background:#14161b;border-color:var(--flat-line);border-radius:0 0 10px 10px}
+
+/* Modals flat pass */
+.modal-head{border-bottom-color:var(--flat-line)}
+.modal-footer{border-top-color:var(--flat-line)}
+.project-list{background:#15171c;border-color:var(--flat-line)}
+.project-row{background:var(--flat-surface2);border-color:transparent;border-radius:8px}
+.project-row:hover{border-color:var(--flat-accent2);background:#282c34}
+.project-row.active{border-color:var(--flat-accent);background:#2a2550;color:#fff}
+
+/* Real pixel-dense waveform canvas (replaces the old per-frame <i> bar approach) */
+/* .clip-bars now has no left/right inset of its own, so the canvas just
+   anchors at its parent's left edge. Width/height are still set explicitly
+   in JS (drawClipWaveform) because <canvas> is a replaced element and won't
+   reliably CSS-stretch via percentage/left-right like a div. */
+.wf-canvas{position:absolute;left:0;top:0;display:block}
+
+.box-select{position:absolute;top:48px;left:0;background:rgba(118,18,218,.14);border:1px solid rgba(155,92,255,.85);pointer-events:none;z-index:8}
+
+/* Wipe Compare: A is clipped to the left of --wipe-pos, B to the right -
+   same two <video>/<img> elements Compare/Overlay already use, just with a
+   draggable split instead of a fixed 50%. */
+.preview-stage{--wipe-pos:50%}
+.preview-stage.wipe #previewVideo,.preview-stage.wipe #previewImage{clip-path:inset(0 calc(100% - var(--wipe-pos)) 0 0)}
+.preview-stage.wipe #previewVideoB,.preview-stage.wipe #previewImageB{clip-path:inset(0 0 0 var(--wipe-pos))}
+.wipe-handle{display:none;position:absolute;top:0;bottom:0;left:var(--wipe-pos);width:2px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.4);z-index:9;cursor:ew-resize}
+.preview-stage.wipe .wipe-handle{display:block}
+.wipe-grip{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:28px;height:28px;border-radius:50%;background:#fff;color:#111;display:flex;align-items:center;justify-content:center;font-weight:900;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+
+.version-list{grid-column:1/-1;display:flex;flex-direction:column;gap:5px;margin-bottom:4px}
+.version-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 9px;border-radius:6px;background:#181b20;border:1px solid var(--line2);cursor:pointer}
+.version-row:hover{border-color:#4a5060}
+.version-row.active{border-color:var(--accent2);background:#241a3d}
+.version-row.compare-sel{outline:2px solid #ffd25a}
+.version-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.version-delete{width:20px;height:20px;padding:0;border-radius:50%;background:#160b0b;border-color:#623232;color:#ffb5b5;flex:none}
+.version-actions{grid-column:1/-1;display:flex;gap:7px;margin-bottom:4px}
+.version-actions button{flex:1}
+
+.stitch-candidate-list{display:flex;flex-direction:column;gap:8px}
+.stitch-candidate{border:1px solid var(--line2);border-radius:8px;padding:10px 12px;background:#181b20}
+.stitch-candidate.best{border-color:#ffd25a;background:#241f14}
+.stitch-candidate-scores{font-size:13px;margin-bottom:2px}
+.stitch-apply-btn{margin-top:8px}
+
+/* Makes it unmistakable that the preview is showing a cached composite
+   rather than the live layer stack. */
+.preview-stage.prerendered::after{
+  content:"PRE-RENDERED";
+  position:absolute;left:12px;top:12px;z-index:10;
+  padding:3px 8px;border-radius:5px;
+  background:rgba(255,210,90,.9);color:#111;
+  font-size:10px;font-weight:900;letter-spacing:.08em;pointer-events:none;
+}
+
+/* Detected beats, drawn over the waveform but under the trim handles. */
+.beat-ticks{position:absolute;left:0;right:0;bottom:0;height:clamp(30px,58%,58px);pointer-events:none;z-index:1}
+.beat-ticks i{position:absolute;top:0;bottom:0;width:1px;background:rgba(255,210,90,.85);box-shadow:0 0 3px rgba(255,210,90,.55)}
+.ai-section{border:1px solid var(--line2);border-radius:8px;padding:12px;background:#181b20;margin-bottom:10px}
+.ai-section:last-child{margin-bottom:0}
+.ai-section p{margin:6px 0 10px}
+.ai-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.ai-row label{color:var(--muted);flex:none}
+.ai-row input[type="range"]{flex:1;height:18px;padding:0}
+#sceneResult,#beatResult{margin-top:10px}
+#sceneResult p,#beatResult p{margin:4px 0}
