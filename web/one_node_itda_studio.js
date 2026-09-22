@@ -57,6 +57,21 @@ function injectScopedStyles(css) {
       .itda-props-slide.open{width:280px;min-width:280px;border-left:1px solid var(--flat-line,#2b2f38)!important}
       .upper{grid-template-columns:26% 1fr 0!important}
       .upper:has(.itda-props-slide.open){grid-template-columns:24% 1fr 280px!important}
+    }` +
+    // Font pass: ITDA's own --font var + per-element font-weight overrides read as
+    // oversized/too-bold once squeezed into this node's much narrower panels — an
+    // override layer (not an edit to the original stylesheet text above) rather than
+    // hand-patching every individual rule.
+    `@scope (.itda-studio-root) {
+      :root, .itda-studio-root{--font:10px}
+      button{font-weight:500}
+      .panel-title{font-weight:600;font-size:12px}
+      .clip-title{font-weight:600}
+      .media-name{font-weight:600}
+      .brand b{font-weight:700}
+      button.active,.top-menu.active{font-weight:600}
+      .lane-label{font-weight:600}
+      .transport-readout{font-weight:600}
     }`;
   document.head.appendChild(s);
 }
