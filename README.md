@@ -204,7 +204,7 @@ chmod +x install_requirements.sh
 | [ComfyUI-NK2E](https://github.com/Nynxz/ComfyUI-NK2E) 🧪 | Krea2 NK2E in-context (canny)<br><sub>Krea2 NK2E in-context (canny)</sub>| Krea2 ControlNet Canny |
 | [ComfyUI-MiniMaxH3-FirstBlockCache](https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache) 🧪 | 스텝 재사용 캐시<br><sub>step-reuse cache</sub>| MiniMax H3 (선택)<br><sub>optional</sub>|
 | [ComfyUI-PlagueKind-Nodes](https://github.com/PlagueKind/ComfyUI-PlagueKind-Nodes) 🧪 | H3 SLA Attention (블록-스파스)<br><sub>H3 SLA Attention (block-sparse)</sub>| MiniMax H3 (선택)<br><sub>optional</sub>|
-| [ComfyUI-sol-attn](https://github.com/Saganaki22/ComfyUI-sol-attn) 🧪 | H3 전용 Sol 어텐션 · Fused Modulation<br><sub>H3-specific Sol attention + AdaLN fusion</sub>| MiniMax H3 (선택)<br><sub>optional</sub>|
+| [ComfyUI-sol-attn](https://github.com/designloves2/ComfyUI-sol-attn) 🧪 | H3 전용 Sol 어텐션 · Fused Modulation<br><sub>H3-specific Sol attention + AdaLN fusion</sub>| MiniMax H3 (선택)<br><sub>optional</sub>|
 | [ComfyUI-MiniMax-H3-Turbo](https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo) 🧪 | Turbo LoRA · Turbo 샘플러<br><sub>turbo LoRA + sampler</sub>| MiniMax H3 Accel=Turbo |
 | [ComfyUI-SolAttn_triton](https://github.com/kijai/ComfyUI-SolAttn_triton) 🧪 | SolAttn 가속<br><sub>SolAttn acceleration</sub>| MiniMax H3 Accel=SolAttn (기본값)<br><sub>default</sub>|
 | [ComfyUI-Spectrum-MiniMax-H3](https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3) 🧪 | Spectrum 가속<br><sub>Spectrum acceleration</sub>| MiniMax H3 Accel=Spectrum |
@@ -621,7 +621,7 @@ only `BasicGuider` (positive-only), like MiniMax H3, don't have this problem.
 | [ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes) | 라이브 프리뷰 · SageAttention 패치<br><sub>live preview, SageAttention patch</sub>| 프리뷰만 비활성<br><sub>preview disabled</sub>|
 | [ComfyUI-MiniMaxH3-FirstBlockCache](https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache) | 스텝 캐시 가속<br><sub>step-reuse cache</sub>| 해당 옵션만 비활성<br><sub>that option disabled</sub>|
 | [ComfyUI-PlagueKind-Nodes](https://github.com/PlagueKind/ComfyUI-PlagueKind-Nodes) | H3 SLA Attention<br><sub>block-sparse attention</sub>| 해당 옵션만 비활성<br><sub>that option disabled</sub>|
-| [ComfyUI-sol-attn](https://github.com/Saganaki22/ComfyUI-sol-attn) | H3 Sol 어텐션 · Fused Modulation<br><sub>H3 Sol attention + AdaLN fusion</sub>| 해당 옵션만 비활성<br><sub>that option disabled</sub>|
+| [ComfyUI-sol-attn](https://github.com/designloves2/ComfyUI-sol-attn) | H3 Sol 어텐션 · Fused Modulation<br><sub>H3 Sol attention + AdaLN fusion</sub>| 해당 옵션만 비활성<br><sub>that option disabled</sub>|
 | [ComfyUI-MiniMax-H3-Turbo](https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo) | Turbo LoRA / Turbo 샘플러<br><sub>turbo LoRA + sampler</sub>| Accel=Turbo 비활성<br><sub>turbo accel disabled</sub>|
 | [ComfyUI-SolAttn_triton](https://github.com/kijai/ComfyUI-SolAttn_triton) | SolAttn 가속<br><sub>SolAttn acceleration</sub>| Accel=SolAttn 비활성<br><sub>SolAttn disabled</sub>|
 | [Nvidia RTX Nodes](https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI) | RTX Video Super Resolution | RTX 업스케일만 비활성<br><sub>RTX upscale disabled</sub>|
@@ -1590,7 +1590,7 @@ Several nodes were heavily reworked and integrated into the TJ wireless workflow
 - [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3) — 모델 / models
 - [duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache](https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache) — 스텝 재사용 캐시 / step-reuse cache
 - [PlagueKind/ComfyUI-PlagueKind-Nodes](https://github.com/PlagueKind/ComfyUI-PlagueKind-Nodes) — H3 SLA Attention (블록-스파스) / H3 SLA Attention (block-sparse)
-- [Saganaki22/ComfyUI-sol-attn](https://github.com/Saganaki22/ComfyUI-sol-attn) — H3 Sol 어텐션 · Fused Modulation / H3 Sol attention + AdaLN fusion
+- [designloves2/ComfyUI-sol-attn](https://github.com/designloves2/ComfyUI-sol-attn) — H3 Sol 어텐션 · Fused Modulation / H3 Sol attention + AdaLN fusion (원 저장소 삭제되어 미러 / original repo deleted, this is a mirror)
 - [Larryvrh/ComfyUI-MiniMax-H3-Turbo](https://github.com/Larryvrh/ComfyUI-MiniMax-H3-Turbo) — Turbo LoRA · 샘플러 / turbo LoRA + sampler
 - [kijai/ComfyUI-SolAttn_triton](https://github.com/kijai/ComfyUI-SolAttn_triton) — SolAttn 가속 / acceleration
 - [xmarre/ComfyUI-Spectrum-MiniMax-H3](https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3) — Spectrum 가속 / acceleration

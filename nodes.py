@@ -2822,7 +2822,7 @@ MMH3_OPTIONAL_NODES = [
     # Frees the text encoder right after conditioning is built, before sampling starts
     # (ships with TJ_NODE) — see SPEC_FREE_TEXT_ENCODER_VRAM_PORT.md
     "TJ_FreeTextEncoderVRAM",
-    # Saganaki22/ComfyUI-sol-attn
+    # designloves2/ComfyUI-sol-attn (mirror; original Saganaki22 repo was deleted)
     "MiniMaxH3ScheduledSolAttentionPatch",
     "MiniMaxH3FusedModulation",
     "MiniMaxH3TurboSampler",

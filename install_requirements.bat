@@ -138,7 +138,7 @@ set REPOS[14]=https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite
 set REPOS[15]=https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3
 set REPOS[16]=https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache
 set REPOS[17]=https://github.com/PlagueKind/ComfyUI-PlagueKind-Nodes
-set REPOS[18]=https://github.com/Saganaki22/ComfyUI-sol-attn
+set REPOS[18]=https://github.com/designloves2/ComfyUI-sol-attn
 rem Sibling pack. Ships TJ_FreeTextEncoderVRAM, TJ_RTXDeblur, the H3 Audio Lock and
 rem One-Take latent-continuation nodes, TJ_MultiImageLoader, and the LLM / vision utils.
 set REPOS[19]=https://github.com/designloves2/ComfyUI-TJ_NODE

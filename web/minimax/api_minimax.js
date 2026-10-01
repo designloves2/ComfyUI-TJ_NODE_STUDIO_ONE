@@ -45,7 +45,7 @@ export const MMH3_OPTIONAL_NODES = [
   "ModelAttentionBackend", "H3SLAAttention", "TJ_FreeTextEncoderVRAM",
   // H3-Optimizations (Zironic) — backend-preserving VRAM + optional sparse attention
   "H3MemoryOptimization", "H3SparseAttention",
-  // Saganaki22/ComfyUI-sol-attn — H3-specific sparse attention + AdaLN fusion
+  // designloves2/ComfyUI-sol-attn (mirror; original Saganaki22 repo was deleted) — H3-specific sparse attention + AdaLN fusion
   "MiniMaxH3ScheduledSolAttentionPatch", "MiniMaxH3FusedModulation",
   "MiniMaxH3TurboSampler", "MiniMaxH3TurboLoRA", "SolAttnPatch",
   "SpectrumApplyMiniMaxH3", "RTXVideoSuperResolution", "TJ_RTXDeblur",

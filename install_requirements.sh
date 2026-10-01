@@ -149,7 +149,7 @@ REPOS=(
     "https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3"
     "https://github.com/duckyshell/ComfyUI-MiniMaxH3-FirstBlockCache"
     "https://github.com/PlagueKind/ComfyUI-PlagueKind-Nodes"
-    "https://github.com/Saganaki22/ComfyUI-sol-attn"
+    "https://github.com/designloves2/ComfyUI-sol-attn"
     # Sibling pack - TJ_FreeTextEncoderVRAM, TJ_RTXDeblur, the H3 Audio Lock and One-Take
     # latent-continuation nodes, TJ_MultiImageLoader, and the LLM / vision utilities.
     "https://github.com/designloves2/ComfyUI-TJ_NODE"
