@@ -4001,9 +4001,116 @@ async def _music_delete(request):
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 
 
+def _music_tag_file(vpath, meta):
+    """Embed title/artist/comment/lyrics/cover art directly into the saved track (in
+    place, via ffmpeg -c copy — no re-encode). Called right after generation and again
+    whenever title/lyrics/cover change, so the file on disk always carries its own tags
+    and /music_one/download can just serve it as-is."""
+    ffmpeg = _ffmpeg_exe()
+    if not ffmpeg:
+        return False
+    ext = os.path.splitext(vpath)[1].lower().lstrip(".")
+    title = (meta.get("title") or "").strip()
+    caption = (meta.get("caption") or meta.get("captionBrief") or "").strip()
+    lyrics = (meta.get("lyrics") or "").strip()
+    engine = {"acestep": "Ace-Step 1.5", "yue2": "YuE2", "minimax": "MiniMax Music 3"}.get(meta.get("engine"), "")
+
+    cover = ""
+    if meta.get("coverImage"):
+        try:
+            c = _safe_resolve_output_path(_get_output_dir(), MUSIC_SUBFOLDER + "/covers", meta["coverImage"])
+            if os.path.isfile(c):
+                cover = c
+        except ValueError:
+            pass
+    embed_cover = cover and ext in ("mp3", "flac")   # ogg/opus cover-art muxing is unreliable in ffmpeg
+
+    tmp = vpath + ".tagtmp." + ext
+    cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", vpath]
+    if embed_cover:
+        cmd += ["-i", cover]
+    cmd += ["-map", "0:a", "-c:a", "copy"]
+    if embed_cover:
+        cmd += ["-map", "1:v", "-c:v", "mjpeg", "-disposition:v", "attached_pic",
+                "-metadata:s:v", "title=Album cover", "-metadata:s:v", "comment=Cover (front)"]
+    if ext == "mp3":
+        cmd += ["-id3v2_version", "3"]
+    cmd += ["-metadata", f"title={title}",
+            "-metadata", "artist=AI ONE STUDIO",
+            "-metadata", "album=MusicMaker",
+            "-metadata", f"comment={caption}"]
+    if engine:
+        cmd += ["-metadata", f"encoded_by={engine}"]
+    if lyrics:
+        cmd += ["-metadata", f"lyrics={lyrics}"]
+    if meta.get("seed") is not None:
+        cmd += ["-metadata", f"MMM_SEED={meta.get('seed')}"]
+    cmd += [tmp]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+        if proc.returncode != 0 or not os.path.isfile(tmp):
+            print(f"[TJ_NODE_ONE/music] tag embed failed: {(proc.stderr or '')[-300:]}")
+            return False
+        os.replace(tmp, vpath)
+        return True
+    except Exception as e:
+        print(f"[TJ_NODE_ONE/music] tag embed error: {e}")
+        return False
+    finally:
+        if os.path.isfile(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+
+async def _music_save_meta(request):
+    data = await request.json()
+    filename = data.get("filename", "")
+    subfolder = data.get("subfolder", "") or MUSIC_SUBFOLDER
+    meta = data.get("meta", {})
+    if not filename:
+        return web.json_response({"ok": False, "error": "no filename"})
+    output_dir = _get_output_dir()
+    try:
+        vpath = _safe_resolve_output_path(output_dir, subfolder, filename)
+    except ValueError:
+        return web.json_response({"ok": False, "error": "invalid path"}, status=400)
+    if not os.path.exists(vpath):
+        return web.json_response({"ok": False, "error": f"not found: {vpath}"})
+    ok = _write_json_meta(vpath, meta)
+    _music_tag_file(vpath, meta)
+    return web.json_response({"ok": ok, "filename": filename})
+
+
+async def _music_update_meta(request):
+    data = await request.json()
+    filename = data.get("filename", "")
+    subfolder = data.get("subfolder", "") or MUSIC_SUBFOLDER
+    patch = data.get("patch", {})
+    if not filename or not isinstance(patch, dict):
+        return web.json_response({"ok": False, "error": "bad request"})
+    output_dir = _get_output_dir()
+    try:
+        vpath = _safe_resolve_output_path(output_dir, subfolder, filename)
+    except ValueError:
+        return web.json_response({"ok": False, "error": "invalid path"}, status=400)
+    existing = _read_json_meta(vpath) or {}
+    existing.update(patch)
+    ok = _write_json_meta(vpath, existing)
+    if "favorite" in patch:
+        if patch["favorite"] is True:
+            _favorites_add("music", filename)
+        else:
+            _favorites_remove("music", filename)
+    if any(k in patch for k in ("title", "lyrics", "caption", "captionBrief", "coverImage")):
+        _music_tag_file(vpath, existing)
+    return web.json_response({"ok": ok})
+
+
 async def _music_download(request):
-    """Deliver the track as an MP3 with cover art + lyrics + metadata embedded (ID3v2)."""
-    import re
+    """Serve the track file as-is — tags are already embedded at generation/edit time
+    by _music_tag_file, so no transcode happens here."""
     fname = request.query.get("filename", "")
     sub = request.query.get("subfolder", "") or MUSIC_SUBFOLDER
     output_dir = _get_output_dir()
@@ -4016,62 +4123,20 @@ async def _music_download(request):
 
     meta = _read_json_meta(src) or {}
     title = (meta.get("title") or os.path.splitext(os.path.basename(fname))[0]).strip()
-    caption = (meta.get("caption") or meta.get("captionBrief") or "").strip()
-    lyrics = (meta.get("lyrics") or "").strip()
-    engine = "Ace-Step 1.5" if meta.get("engine") == "acestep" else "MiniMax Music 3"
-
-    cover = ""
-    if meta.get("coverImage"):
-        try:
-            c = _safe_resolve_output_path(output_dir, MUSIC_SUBFOLDER + "/covers", meta["coverImage"])
-            if os.path.isfile(c):
-                cover = c
-        except ValueError:
-            pass
-
-    exp_dir = os.path.join(os.path.dirname(src), ".export")
-    os.makedirs(exp_dir, exist_ok=True)
+    ext = os.path.splitext(fname)[1] or ".flac"
+    import re
     safe_title = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", title)[:120] or "track"
-    out = os.path.join(exp_dir, safe_title + ".mp3")
 
-    newest_in = max([os.path.getmtime(p) for p in (src, _meta_path(src), cover) if p and os.path.isfile(p)] or [0])
-    if not (os.path.isfile(out) and os.path.getmtime(out) >= newest_in):
-        ffmpeg = _ffmpeg_exe()
-        if not ffmpeg:
-            return web.Response(status=500, text="ffmpeg not found (install imageio-ffmpeg)")
-        cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", src]
-        if cover:
-            cmd += ["-i", cover]
-        cmd += ["-map", "0:a"]
-        if cover:
-            cmd += ["-map", "1:v", "-c:v", "mjpeg", "-disposition:v", "attached_pic",
-                    "-metadata:s:v", "title=Album cover", "-metadata:s:v", "comment=Cover (front)"]
-        cmd += ["-c:a", "libmp3lame", "-q:a", "2", "-id3v2_version", "3",
-                "-metadata", f"title={title}",
-                "-metadata", "artist=AI ONE STUDIO",
-                "-metadata", "album=MusicMaker",
-                "-metadata", f"comment={caption}",
-                "-metadata", f"encoded_by={engine}"]
-        if lyrics:
-            cmd += ["-metadata", f"lyrics={lyrics}"]
-        if meta.get("seed") is not None:
-            cmd += ["-metadata", f"MMM_SEED={meta.get('seed')}"]
-        cmd += [out]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
-        if proc.returncode != 0 or not os.path.isfile(out):
-            return web.Response(status=500, text=(proc.stderr or "ffmpeg failed")[-400:])
-
-    return web.FileResponse(out, headers={
-        "Content-Disposition": f'attachment; filename="{safe_title}.mp3"',
-        "Content-Type": "audio/mpeg",
+    return web.FileResponse(src, headers={
+        "Content-Disposition": f'attachment; filename="{safe_title}{ext}"',
     })
 
 
 PromptServer.instance.routes.get("/music_one/playlist")(_music_playlist)
 PromptServer.instance.routes.get("/music_one/download")(_music_download)
 PromptServer.instance.routes.get("/music_one/meta")(_make_meta_get_handler())
-PromptServer.instance.routes.post("/music_one/save_meta")(_make_save_meta_handler("music"))
-PromptServer.instance.routes.post("/music_one/update_meta")(_make_update_meta_handler("music"))
+PromptServer.instance.routes.post("/music_one/save_meta")(_music_save_meta)
+PromptServer.instance.routes.post("/music_one/update_meta")(_music_update_meta)
 PromptServer.instance.routes.post("/music_one/open_folder")(_make_open_folder_handler())
 PromptServer.instance.routes.post("/music_one/delete")(_music_delete)
 

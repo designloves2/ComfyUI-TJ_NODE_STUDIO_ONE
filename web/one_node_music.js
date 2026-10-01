@@ -598,7 +598,7 @@ app.registerExtension({
         const acts = el("div", { className: "mmm-acts" });
         acts.appendChild(el("button", { className: "mmm-ib", title: "Reuse settings", text: "↺", onclick: (e) => { e.stopPropagation(); reuse(t); }}));
         acts.appendChild(el("button", { className: "mmm-ib", title: "Info", text: "ⓘ", onclick: (e) => { e.stopPropagation(); showInfo(t); }}));
-        acts.appendChild(el("button", { className: "mmm-ib", title: "Download tagged MP3", text: "↓", onclick: async (e) => {
+        acts.appendChild(el("button", { className: "mmm-ib", title: "Download (tags already embedded)", text: "↓", onclick: async (e) => {
           e.stopPropagation();
           const btn = e.currentTarget; const old = btn.textContent; btn.textContent = "…"; btn.disabled = true;
           try {
@@ -606,9 +606,10 @@ app.registerExtension({
             const r = await api.fetchApi(url);
             if (!r.ok) throw new Error(await r.text());
             const blob = await r.blob();
+            const ext = (t.filename.match(/\.[^.]+$/) || [".flac"])[0];
             const a = document.createElement("a");
             a.href = URL.createObjectURL(blob);
-            a.download = (t.title || t.filename).replace(/[\\/:*?"<>|]/g, "_") + ".mp3";
+            a.download = (t.title || t.filename).replace(/[\\/:*?"<>|]/g, "_") + ext;
             a.click();
             setTimeout(() => URL.revokeObjectURL(a.href), 4000);
           } catch (err) { statusEl.textContent = "Download failed: " + String(err).slice(0, 80); }
