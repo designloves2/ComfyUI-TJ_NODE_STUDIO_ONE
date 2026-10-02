@@ -39,6 +39,10 @@ export function defaultState(saved) {
     // Model loader mode: "checkpoint" | "separate"
     modelLoaderMode: saved.modelLoaderMode || "checkpoint",
 
+    // Runs Prompt Enhance on the current prompt right before Generate, updating the
+    // PROMPT field in place. Ported from Qwen Image 2.1's pilot.
+    autoEnhance: saved.autoEnhance ?? false,
+
     // Checkpoint mode
     checkpoint:        saved.checkpoint        || "",
     useRefiner:        saved.useRefiner        || false,

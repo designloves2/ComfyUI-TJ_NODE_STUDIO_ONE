@@ -271,7 +271,7 @@ app.registerExtension({
       // ── Prompt expand overlay ──────────────────────────────────────────────
       const promptExpandEl = el("div",{style:{position:"absolute",inset:"0",zIndex:"9997",background:"rgba(11,11,11,0.97)",borderRadius:"inherit",display:"none",flexDirection:"column",padding:"14px",gap:"8px",boxSizing:"border-box"}});
       const pxHdr = el("div",{style:{display:"flex",alignItems:"center",gap:"8px",flexShrink:"0"}});
-      pxHdr.appendChild(el("div",{text:"Prompt — Full Screen Edit",style:{color:"#fff",fontSize:"13px",fontWeight:"700",flex:"1"}}));
+      pxHdr.appendChild(el("div",{text:"🔍 Prompt — Full Screen Edit",style:{color:"#fff",fontSize:"13px",fontWeight:"700",flex:"1"}}));
       const pxTA    = el("textarea",{style:{flex:"1",background:C.bg2,color:C.text,border:`1px solid ${BRAND}`,borderRadius:"6px",padding:"10px",fontSize:"13px",fontFamily:"inherit",resize:"none",outline:"none"}});
       const pxApply = button("✓ Apply",()=>{ setModePrompt(state.mode,pxTA.value); promptTA.value=pxTA.value; persist(); updateCount(); promptExpandEl.style.display="none"; },"primary");
       const pxClose = button("✕ Close",()=>{ promptExpandEl.style.display="none"; },"danger");
@@ -281,7 +281,9 @@ app.registerExtension({
         show(){ promptExpandEl._tj_llm_onshow?.(); promptExpandEl.style.display="flex"; setTimeout(()=>pxTA.focus(),50); },
         hide(){ promptExpandEl.style.display="none"; },
       };
-      attachLLMPanel({promptExpandEl,pxTA,getModePrompt,setModePrompt,state,persist,updateCount,getPromptTA:()=>promptTA,openSettings:()=>settingsOv?.show()});
+      // Default Model Format for THIS node's Prompt Edit — ported from Qwen Image 2.1's
+      // pilot. Applied inside attachLLMPanel once its model list actually loads.
+      const llmApi = attachLLMPanel({promptExpandEl,pxTA,getModePrompt,setModePrompt,state,persist,updateCount,getPromptTA:()=>promptTA,openSettings:()=>settingsOv?.show(),defaultModelFormat:"Anima (anime illustration prose)"});
 
       // ── Prompt area ────────────────────────────────────────────────────────
       const promptWrap = el("div",{style:{height:`${PROMPT_H}px`,flexShrink:"0",display:"flex",flexDirection:"column",gap:"4px"}});
@@ -289,7 +291,12 @@ app.registerExtension({
       const promptHdr  = el("div",{style:{display:"flex",alignItems:"center",height:`${PROMPT_LBL}px`}});
       promptHdr.appendChild(el("div",{text:"PROMPT",style:{color:C.muted,fontSize:"11px",textTransform:"uppercase",letterSpacing:"0.04em"}}));
       promptHdr.appendChild(charCount);
-      const expandBtn  = el("button",{type:"button",text:"🔍 Prompt Edit",title:"Expand edit",style:{cursor:"pointer",background:BRAND,border:"none",borderRadius:"4px",fontSize:"11px",fontWeight:"700",color:"#fff",padding:"3px 8px",marginLeft:"auto"},onclick:()=>promptExpandOv.show()});
+      const autoEnhanceChk = el("input",{type:"checkbox",style:{cursor:"pointer",marginLeft:"auto"}});
+      autoEnhanceChk.checked = !!state.autoEnhance;
+      autoEnhanceChk.addEventListener("change",()=>{state.autoEnhance=autoEnhanceChk.checked;persist();});
+      const autoEnhanceLbl = el("label",{title:"Automatically run Prompt Enhance on the current prompt right before Generate, updating the PROMPT field in place.",style:{display:"flex",alignItems:"center",gap:"4px",fontSize:"11px",color:C.muted,cursor:"pointer",marginLeft:"auto"}},[autoEnhanceChk,el("span",{text:"Auto Enhance"})]);
+      promptHdr.appendChild(autoEnhanceLbl);
+      const expandBtn  = el("button",{type:"button",text:"🔍 Prompt Edit",title:"Expand edit",style:{cursor:"pointer",background:BRAND,border:"none",borderRadius:"4px",fontSize:"11px",fontWeight:"700",color:"#fff",padding:"3px 8px",marginLeft:"6px"},onclick:()=>promptExpandOv.show()});
       promptHdr.appendChild(expandBtn);
       const tplBtn = button("📋 Prompt Preset",null,"default");
       tplBtn.title="Load Template"; tplBtn.style.cssText+=`padding:3px 8px;font-size:11px;margin-left:4px;background:${BRAND};border:none;color:#fff;font-weight:700;`;
@@ -351,6 +358,18 @@ app.registerExtension({
         else if(state.seedMode==="increment"){state.seed=(state.seed||0)+1;seedField.value=state.seed;}
         else if(state.seedMode==="decrement"){state.seed=Math.max(0,(state.seed||0)-1);seedField.value=state.seed;}
         persist();
+
+        if(state.autoEnhance&&getModePrompt(state.mode).trim()){
+          genBtn.textContent="⏳ Enhancing…";
+          try{
+            pxTA.value=getModePrompt(state.mode);
+            await llmApi.enhance();
+            setModePrompt(state.mode,pxTA.value);promptTA.value=pxTA.value;persist();updateCount();
+          }catch(err){
+            alert(`Auto Enhance failed: ${err.message}`);running=false;genBtn.disabled=false;genBtn.textContent="▶ Generate";loadingOv.style.display="none";if(!modeResults[state.mode])resetPreview();return;
+          }
+          genBtn.textContent="⏳ Queuing…";
+        }
 
         try{await modeHandle.beforeGenerate?.();}catch(err){alert(err.message);running=false;genBtn.disabled=false;genBtn.textContent="▶ Generate";loadingOv.style.display="none";if(!modeResults[state.mode])resetPreview();return;}
 

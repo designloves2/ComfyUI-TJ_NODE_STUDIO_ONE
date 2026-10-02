@@ -69,6 +69,10 @@ export function defaultState(saved) {
     textEncoder: saved.textEncoder || "",
     vae: saved.vae || "",
 
+    // Runs Prompt Enhance on the current prompt right before Generate, updating the
+    // PROMPT field in place. Ported from Qwen Image 2.1's pilot.
+    autoEnhance: saved.autoEnhance ?? false,
+
     prompt: saved.prompt || "",
     promptsByMode: saved.promptsByMode || {},
     promptSuffix: saved.promptSuffix || "",

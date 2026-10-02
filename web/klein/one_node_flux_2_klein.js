@@ -628,7 +628,7 @@ app.registerExtension({
         boxSizing: "border-box",
       }});
       const pxHdr = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" }});
-      pxHdr.appendChild(el("div", { text: "🔍 Prompt (전체 화면 편집)", style: { color: "#fff", fontSize: "13px", fontWeight: "700", flex: "1" }}));
+      pxHdr.appendChild(el("div", { text: "🔍 Prompt — Full Screen Edit", style: { color: "#fff", fontSize: "13px", fontWeight: "700", flex: "1" }}));
       const pxTA = el("textarea", { style: {
         flex: "1", background: C.bg2, color: C.text,
         border: `1px solid ${LIME}`, borderRadius: "6px",
@@ -653,7 +653,9 @@ app.registerExtension({
         },
         hide() { promptExpandEl.style.display = "none"; },
       };
-      attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA: () => promptTA, openSettings: () => settingsOv?.show() });
+      // Default Model Format for THIS node's Prompt Edit — ported from Qwen Image 2.1's
+      // pilot. Applied inside attachLLMPanel once its model list actually loads.
+      const llmApi = attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA: () => promptTA, openSettings: () => settingsOv?.show(), defaultModelFormat: "Flux & Chroma (natural language)" });
 
       // ── Prompt area ────────────────────────────────────────────────────────
       const promptWrap = el("div", { style: {
@@ -665,15 +667,21 @@ app.registerExtension({
       promptHdr.appendChild(el("div", { text: "PROMPT", style: { color: C.muted, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.04em" } }));
       promptHdr.appendChild(charCount);
 
-      const expandBtn = el("button", { type: "button", text: "🔍 Prompt Edit", title: "확장 편집", style: {
-        cursor: "pointer", background: C.lime, border: "none", borderRadius: "4px", fontSize: "11px",
-        fontWeight: "700", color: "#fff", padding: "3px 8px", marginLeft: "auto",
+      const autoEnhanceChk = el("input", { type: "checkbox", style: { cursor: "pointer", marginLeft: "auto" } });
+      autoEnhanceChk.checked = !!state.autoEnhance;
+      autoEnhanceChk.addEventListener("change", () => { state.autoEnhance = autoEnhanceChk.checked; persist(); });
+      const autoEnhanceLbl = el("label", { title: "Automatically run Prompt Enhance on the current prompt right before Generate, updating the PROMPT field in place.", style: { display: "flex", alignItems: "center", gap: "4px", fontSize: "11px", color: C.muted, cursor: "pointer", marginLeft: "auto" } }, [autoEnhanceChk, el("span", { text: "Auto Enhance" })]);
+      promptHdr.appendChild(autoEnhanceLbl);
+
+      const expandBtn = el("button", { type: "button", text: "🔍 Prompt Edit", title: "Expand edit", style: {
+        cursor: "pointer", background: LIME, border: "none", borderRadius: "4px", fontSize: "11px",
+        fontWeight: "700", color: "#fff", padding: "3px 8px", marginLeft: "6px",
       }, onclick: () => promptExpandOv.show() });
       promptHdr.appendChild(expandBtn);
 
       const tplBtn = button("📋 Prompt Preset", null, "default");
       tplBtn.title = "Load Template";
-      tplBtn.style.cssText += `padding:3px 8px;font-size:11px;margin-left:4px;background:${C.lime};border:none;color:#fff;font-weight:700;`;
+      tplBtn.style.cssText += `padding:3px 8px;font-size:11px;margin-left:4px;background:${LIME};border:none;color:#fff;font-weight:700;`;
       promptHdr.appendChild(tplBtn);
 
       const promptTA = el("textarea", {
@@ -802,6 +810,18 @@ app.registerExtension({
           state.vaeOverride   = getOverrideSlot("vae_override");
         } else {
           state.modelOverride = ""; state.clipOverride = ""; state.vaeOverride = "";
+        }
+
+        if (state.autoEnhance && getModePrompt(state.mode).trim()) {
+          genBtn.textContent = "⏳ Enhancing…";
+          try {
+            pxTA.value = getModePrompt(state.mode);
+            await llmApi.enhance();
+            setModePrompt(state.mode, pxTA.value); promptTA.value = pxTA.value; persist(); updateCount();
+          } catch (err) {
+            alert(`Auto Enhance failed: ${err.message}`); running = false; genBtn.disabled = false; genBtn.textContent = "▶ Generate"; loadingOv.style.display = "none"; if (!modeResults[state.mode]) resetPreview(); return;
+          }
+          genBtn.textContent = "⏳ Queuing…";
         }
 
         // PromptDB pipe — present fields override node settings at generation only (UI unchanged).

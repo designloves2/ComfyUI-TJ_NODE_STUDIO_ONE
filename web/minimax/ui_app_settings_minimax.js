@@ -160,6 +160,12 @@ export function createSettingsOverlay(state, ctx) {
       el("div", { html: "→ <code>models/text_encoders/</code> · <code>models/vae/</code>", style: { fontSize: "10px", color: C.muted } }),
     ]));
 
+    const refreshBtn = button("↻ Refresh Models", async () => {
+      refreshBtn.textContent = "Loading…";
+      try { await refreshModels(); } finally { refreshBtn.textContent = "↻ Refresh Models"; }
+    });
+    wrap.appendChild(refreshBtn);
+
     wrap.appendChild(el("div", { text: "Turbo LoRAs, attention, block cache, Spectrum and the model patches now live in "
       + "the node's left panel — they are per-run choices, so they sit next to the run.",
       style: { fontSize: "10px", color: C.muted, lineHeight: "1.55" } }));
@@ -202,6 +208,11 @@ export function createSettingsOverlay(state, ctx) {
         style: { fontSize: "10px", color: C.muted, lineHeight: "1.6" } }),
     ]));
     // (the ✨ vision model + instruction for this mode live under the LLM Setting tab)
+    const upscaleRefreshBtn = button("↻ Refresh Models", async () => {
+      upscaleRefreshBtn.textContent = "Loading…";
+      try { await refreshModels(); } finally { upscaleRefreshBtn.textContent = "↻ Refresh Models"; }
+    });
+    wrap.appendChild(upscaleRefreshBtn);
     wrap.appendChild(packStatusPanel());
     return wrap;
   }
@@ -260,6 +271,11 @@ export function createSettingsOverlay(state, ctx) {
         style: { fontSize: "10px", color: C.muted, lineHeight: "1.6" } }),
     );
     wrap.appendChild(panel(kids));
+    const frRefreshBtn = button("↻ Refresh Models", async () => {
+      frRefreshBtn.textContent = "Loading…";
+      try { await refreshModels(); } finally { frRefreshBtn.textContent = "↻ Refresh Models"; }
+    });
+    wrap.appendChild(frRefreshBtn);
     wrap.appendChild(packStatusPanel());
     return wrap;
   }

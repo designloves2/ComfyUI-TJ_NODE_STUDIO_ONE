@@ -41,6 +41,10 @@ export function defaultState(saved) {
     vae:          saved.vae          || "",
     kvCacheOverride: saved.kvCacheOverride || "auto",
 
+    // Runs Prompt Enhance on the current prompt right before Generate, updating the
+    // PROMPT field in place. Ported from Qwen Image 2.1's pilot.
+    autoEnhance: saved.autoEnhance ?? false,
+
     prompt:         saved.prompt         || "",
     promptsByMode:  saved.promptsByMode  || {},
     negativePrompt: saved.negativePrompt || DEFAULT_NEG,

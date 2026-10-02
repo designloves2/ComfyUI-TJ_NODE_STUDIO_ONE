@@ -335,7 +335,9 @@ app.registerExtension({
         show(){ promptExpandEl._tj_llm_onshow?.(); promptExpandEl.style.display="flex"; setTimeout(()=>pxTA.focus(),50); },
         hide(){ promptExpandEl.style.display="none"; },
       };
-      attachLLMPanel({promptExpandEl,pxTA,getModePrompt,setModePrompt,state,persist,updateCount,getPromptTA:()=>promptTA,openSettings:()=>settingsOv?.show()});
+      // Default Model Format for THIS node's Prompt Edit — ported from Qwen Image 2.1's
+      // pilot. Applied inside attachLLMPanel once its model list actually loads.
+      const llmApi = attachLLMPanel({promptExpandEl,pxTA,getModePrompt,setModePrompt,state,persist,updateCount,getPromptTA:()=>promptTA,openSettings:()=>settingsOv?.show(),defaultModelFormat:"KREA2 (Prompt Enhance)"});
 
       // ── Prompt area ────────────────────────────────────────────────────────
       const promptWrap = el("div",{style:{height:`${PROMPT_H}px`,flexShrink:"0",display:"flex",flexDirection:"column",gap:"4px"}});
@@ -353,11 +355,16 @@ app.registerExtension({
         downloadAgentJob("krea2", job, `Krea2_${m}_${agentStamp()}_${state.seed ?? 0}.json`);
       });
       agentBtn.title = "Download the current settings as a job.json for the krea2-headless Hermes agent";
-      agentBtn.style.cssText += `cursor:pointer;background:${BRAND};border:none;border-radius:4px;font-size:11px;font-weight:700;color:#fff;padding:3px 8px;margin-left:auto;`;
+      agentBtn.style.cssText += `cursor:pointer;background:${BRAND};border:none;border-radius:4px;font-size:11px;font-weight:700;color:#fff;padding:3px 8px;margin-left:8px;`;
       promptHdr.appendChild(agentBtn);
       const syncAgentBtn = ()=>{ agentBtn.style.display = ["t2i","i2i","identity"].includes(state.mode) ? "" : "none"; };
 
-      const expandBtn  = el("button",{type:"button",text:"🔍 Prompt Edit",title:"Expand edit",style:{cursor:"pointer",background:BRAND,border:"none",borderRadius:"4px",fontSize:"11px",fontWeight:"700",color:"#fff",padding:"3px 8px",marginLeft:"4px"},onclick:()=>promptExpandOv.show()});
+      const autoEnhanceChk = el("input",{type:"checkbox",style:{cursor:"pointer",marginLeft:"auto"}});
+      autoEnhanceChk.checked = !!state.autoEnhance;
+      autoEnhanceChk.addEventListener("change",()=>{state.autoEnhance=autoEnhanceChk.checked;persist();});
+      const autoEnhanceLbl = el("label",{title:"Automatically run Prompt Enhance on the current prompt right before Generate, updating the PROMPT field in place.",style:{display:"flex",alignItems:"center",gap:"4px",fontSize:"11px",color:C.muted,cursor:"pointer",marginLeft:"auto"}},[autoEnhanceChk,el("span",{text:"Auto Enhance"})]);
+      promptHdr.appendChild(autoEnhanceLbl);
+      const expandBtn  = el("button",{type:"button",text:"🔍 Prompt Edit",title:"Expand edit",style:{cursor:"pointer",background:BRAND,border:"none",borderRadius:"4px",fontSize:"11px",fontWeight:"700",color:"#fff",padding:"3px 8px",marginLeft:"6px"},onclick:()=>promptExpandOv.show()});
       promptHdr.appendChild(expandBtn);
       const tplBtn = button("📋 Prompt Preset",null,"default");
       tplBtn.title="Load Template"; tplBtn.style.cssText+=`padding:3px 8px;font-size:11px;margin-left:4px;background:${BRAND};border:none;color:#fff;font-weight:700;`;
@@ -423,6 +430,18 @@ app.registerExtension({
 
         if(state.useModelOverride){ state.modelOverride=getOverrideSlot("model_override"); state.clipOverride=getOverrideSlot("clip_override"); state.vaeOverride=getOverrideSlot("vae_override"); }
         else{ state.modelOverride=""; state.clipOverride=""; state.vaeOverride=""; }
+
+        if(state.autoEnhance&&getModePrompt(state.mode).trim()){
+          genBtn.textContent="⏳ Enhancing…";
+          try{
+            pxTA.value=getModePrompt(state.mode);
+            await llmApi.enhance();
+            setModePrompt(state.mode,pxTA.value);promptTA.value=pxTA.value;persist();updateCount();
+          }catch(err){
+            alert(`Auto Enhance failed: ${err.message}`);running=false;genBtn.disabled=false;genBtn.textContent="▶ Generate";loadingOv.style.display="none";if(!modeResults[state.mode])resetPreview();return;
+          }
+          genBtn.textContent="⏳ Queuing…";
+        }
 
         // PromptDB pipe — at generation, pipe fields override the node's settings
         // (node UI is never changed; overrides applied only around getGraph, then restored).

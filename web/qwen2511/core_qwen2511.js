@@ -90,6 +90,10 @@ export function defaultState(saved) {
     width:  saved.width  || 1024,
     height: saved.height || 1024,
 
+    // Runs Prompt Enhance on the current prompt right before Generate, updating the
+    // PROMPT field in place. Ported from Qwen Image 2.1's pilot.
+    autoEnhance: saved.autoEnhance ?? false,
+
     steps:     saved.steps     !== undefined ? saved.steps     : 20,
     cfg:       saved.cfg       !== undefined ? saved.cfg       : 4.0,
     sampler:   saved.sampler   || "euler",

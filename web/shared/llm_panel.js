@@ -420,7 +420,7 @@ export function getLLMSummary() {
 // ══════════════════════════════════════════════════════════════════════════
 // Popup — single merged screen
 // ══════════════════════════════════════════════════════════════════════════
-export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA, openSettings }) {
+export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA, openSettings, defaultModelFormat }) {
   // Grab existing children (header row + textarea) — restructure the interior.
   const [, existingTA] = Array.from(promptExpandEl.children);
   promptExpandEl.removeChild(existingTA);
@@ -590,6 +590,15 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   }
   const vtSel = optSelect("vision_task", llmForOptions.vision_task, "Caption + Format (apply model_format below)");
   const modelFmtSel = optSelect("model_format", llmForOptions.model_format, "Universal Natural Language");
+  // Model Format is saved to a GLOBAL localStorage key shared by every ONE STUDIO tool, so
+  // a value picked in, say, SDXL becomes the "current" value the next time ANY node's
+  // Prompt Edit opens — comparing against the generic "Universal Natural Language" fallback
+  // to decide whether to apply a node's own fixed default silently failed whenever the
+  // global value happened to be some OTHER tool's format instead. Track "did the user touch
+  // it in THIS panel instance" directly so each fresh node always gets its own default,
+  // regardless of what an earlier session/tool left in the shared setting.
+  let modelFormatTouched = false, suppressModelFormatTouch = false;
+  modelFmtSel.addEventListener("change", () => { if (!suppressModelFormatTouch) modelFormatTouched = true; });
   const aestheticSel = optSelect("aesthetic", llmForOptions.aesthetic, "None (no aesthetic injection)");
 
   const settingsBtn = purpleBtn(t("llm_settings_btn"));
@@ -677,6 +686,18 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     fill(vtSel, d.vision_tasks, "vision_task");
     fill(modelFmtSel, d.model_formats, "model_format");
     fill(aestheticSel, d.aesthetics, "aesthetic");
+    // Per-node fixed Model Format default (e.g. "Qwen Image 2.1 (T2I)") — applied here,
+    // right after the real option list lands, instead of the caller guessing when the
+    // async fetch above has resolved. Never overwrites a value the user touched in THIS
+    // panel instance (see modelFormatTouched above for why that's not the same as
+    // comparing against the shared/global current value).
+    if (defaultModelFormat && !modelFormatTouched
+        && [...modelFmtSel.options].some(o => o.value === defaultModelFormat)) {
+      suppressModelFormatTouch = true;
+      modelFmtSel.value = defaultModelFormat;
+      modelFmtSel.dispatchEvent(new Event("change", { bubbles: true }));
+      suppressModelFormatTouch = false;
+    }
   }
   fetchModels().then(fillOptionSelects);
 
@@ -879,4 +900,11 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     setLastDebug("");
   };
   refreshFooter();
+
+  // Exposes the same Prompt Enhance call `btnEnhance` triggers, for callers that want to
+  // run it programmatically (e.g. an "Auto Enhance before Generate" checkbox) instead of
+  // only from inside the expand overlay's own UI. Piloted on Qwen Image 2.1 first, meant
+  // to be reused by every other ONE STUDIO image tool afterwards — additive return value,
+  // existing callers that ignore it are unaffected.
+  return { enhance: doEnhance };
 }

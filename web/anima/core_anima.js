@@ -63,6 +63,10 @@ export function defaultState(saved) {
     vae:          saved.vae          || "",
     turboLora:    saved.turboLora    || "",
 
+    // Runs Prompt Enhance on the current prompt right before Generate, updating the
+    // PROMPT field in place. Ported from Qwen Image 2.1's pilot.
+    autoEnhance: saved.autoEnhance ?? false,
+
     prompt:        saved.prompt        || "",
     promptsByMode: saved.promptsByMode || {},
     negativePrompt: saved.negativePrompt || "",

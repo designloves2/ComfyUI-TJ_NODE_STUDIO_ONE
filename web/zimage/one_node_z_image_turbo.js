@@ -516,18 +516,24 @@ app.registerExtension({
         downloadAgentJob("zimage", job, `Zimage_${state.mode}_${agentStamp()}_${state.seed ?? 0}.json`);
       });
       agentBtn.title="Download the current settings as a job.json for the zimage-headless Hermes agent";
-      agentBtn.style.cssText+=`cursor:pointer;background:${C.lime};border:none;border-radius:4px;font-size:11px;font-weight:700;color:#fff;padding:3px 8px;margin-left:auto;`;
+      agentBtn.style.cssText+=`cursor:pointer;background:${C.lime};border:none;border-radius:4px;font-size:11px;font-weight:700;color:#fff;padding:3px 8px;margin-left:8px;`;
       promptHdr.appendChild(agentBtn);
       const syncAgentBtn=()=>{ agentBtn.style.display=["t2i","i2i"].includes(state.mode)?"":"none"; };
 
+      const autoEnhanceChk=el("input",{type:"checkbox",style:{cursor:"pointer",marginLeft:"auto"}});
+      autoEnhanceChk.checked=!!state.autoEnhance;
+      autoEnhanceChk.addEventListener("change",()=>{state.autoEnhance=autoEnhanceChk.checked;persist();});
+      const autoEnhanceLbl=el("label",{title:"Automatically run Prompt Enhance on the current prompt right before Generate, updating the PROMPT field in place.",style:{display:"flex",alignItems:"center",gap:"4px",fontSize:"11px",color:C.muted,cursor:"pointer",marginLeft:"auto"}},[autoEnhanceChk,el("span",{text:"Auto Enhance"})]);
+      promptHdr.appendChild(autoEnhanceLbl);
+
       const expandBtn=button("🔍 Prompt Edit",null,"default");
-      expandBtn.title="Expand prompt editor";
+      expandBtn.title="Expand edit";
       expandBtn.onclick=()=>promptExpandOv?.show();
-      expandBtn.style.cssText+=`padding:3px 8px;font-size:11px;margin-left:4px;background:${C.lime};border:none;color:#fff;font-weight:700;`;
+      expandBtn.style.cssText+=`padding:3px 8px;font-size:11px;margin-left:6px;background:${C.lime};border:none;color:#fff;font-weight:700;`;
 
       const tplBtn=button("📋 Prompt Preset",null,"default");
       tplBtn.title="Load Template"; tplBtn.onclick=()=>templateOv?.show();
-      tplBtn.style.cssText+=`padding:3px 8px;font-size:11px;margin-left:4px;background:${C.lime};border:none;color:#fff;font-weight:700;`;
+      tplBtn.style.cssText+=`padding:3px 8px;font-size:11px;background:${C.lime};border:none;color:#fff;font-weight:700;`;
 
       promptHdr.appendChild(expandBtn); promptHdr.appendChild(tplBtn);
 
@@ -632,6 +638,19 @@ app.registerExtension({
         if(!cOk){ showPopup(t("err_no_clip")); return; }
         if(!vOk){ showPopup(t("err_no_vae")); return; }
 
+        if(state.autoEnhance && getModePrompt(state.mode).trim()){
+          genBtn.disabled=true; genBtn.textContent="⏳ Enhancing…";
+          try{
+            pxTA.value=getModePrompt(state.mode);
+            await llmApi.enhance();
+            setModePrompt(state.mode,pxTA.value); promptTA.value=pxTA.value; persist(); updateCount();
+          }catch(err){
+            showPopup(`Auto Enhance failed: ${err.message}`);
+            genBtn.disabled=false; genBtn.textContent="▶ Generate";
+            return;
+          }
+        }
+
         genBtn.disabled=true; genBtn.textContent="Generating…";
         previewBox.appendChild(loadingOv);
         loadingOv.style.display="flex";
@@ -720,7 +739,7 @@ app.registerExtension({
         display:"none",flexDirection:"column",padding:"12px",gap:"8px",boxSizing:"border-box",
       }});
       const pxTopRow=el("div",{style:{display:"flex",alignItems:"center",gap:"8px",flexShrink:"0"}});
-      pxTopRow.appendChild(el("div",{text:"📝 Prompt Editor",style:{color:"#fff",fontSize:"14px",fontWeight:"700",flex:"1"}}));
+      pxTopRow.appendChild(el("div",{text:"🔍 Prompt — Full Screen Edit",style:{color:"#fff",fontSize:"14px",fontWeight:"700",flex:"1"}}));
       const pxApply=button("✓ Apply",()=>{
         setModePrompt(state.mode,pxTA.value);
         promptTA.value=pxTA.value; persist(); updateCount();
@@ -744,7 +763,9 @@ app.registerExtension({
         el:promptExpandEl,
         show(){promptExpandEl._tj_llm_onshow?.();promptExpandEl.style.display="flex";setTimeout(()=>pxTA.focus(),50);}
       };
-      attachLLMPanel({promptExpandEl,pxTA,getModePrompt,setModePrompt,state,persist,updateCount,getPromptTA:()=>promptTA,openSettings:()=>settingsOv?.show()});
+      // Default Model Format for THIS node's Prompt Edit — ported from Qwen Image 2.1's
+      // pilot. Applied inside attachLLMPanel once its model list actually loads.
+      const llmApi = attachLLMPanel({promptExpandEl,pxTA,getModePrompt,setModePrompt,state,persist,updateCount,getPromptTA:()=>promptTA,openSettings:()=>settingsOv?.show(),defaultModelFormat:"Z-Image & Lumina-2 (LLM text encoder)"});
 
       // ── Help overlay ─────────────────────────────────────────────────────
       const HELP_SECTIONS = [

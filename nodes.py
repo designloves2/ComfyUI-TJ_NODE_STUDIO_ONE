@@ -24,6 +24,7 @@ FK_CONFIG_PATH  = os.path.join(NODE_DIR, 'config_klein.json')
 ZIT_CONFIG_PATH = os.path.join(NODE_DIR, 'config_zimage.json')
 K2_CONFIG_PATH  = os.path.join(NODE_DIR, 'config_krea2.json')
 QE_CONFIG_PATH  = os.path.join(NODE_DIR, 'config_qwen2511.json')
+Q21_CONFIG_PATH = os.path.join(NODE_DIR, 'config_qwen21.json')
 SDXL_CONFIG_PATH = os.path.join(NODE_DIR, 'config_sdxl_one.json')
 MMH3_CONFIG_PATH = os.path.join(NODE_DIR, 'config_minimax_h3.json')
 ANIMA_CONFIG_PATH = os.path.join(NODE_DIR, 'config_anima.json')
@@ -41,6 +42,7 @@ FK_SUBFOLDER  = "one_flux2-klein"
 ZIT_SUBFOLDER = "one_z-image"
 K2_SUBFOLDER  = "one_krea2"
 QE_SUBFOLDER  = "one_qwen2511"
+Q21_SUBFOLDER = "one_qwen21"
 SDXL_SUBFOLDER = "one_sdxl"
 MMH3_SUBFOLDER = "one_minimax_h3"
 ANIMA_SUBFOLDER = "one_anima"
@@ -1356,11 +1358,7 @@ async def qe_copy_to_input(request):
         return web.json_response({"ok": False, "error": str(e)})
 
 
-@PromptServer.instance.routes.get("/qwen2511_one/lora_triggers")
-async def qe_lora_triggers(request):
-    name = request.rel_url.query.get("name","")
-    triggers = _get_lora_triggers(name)
-    return web.json_response({"ok": bool(triggers), "triggers": triggers})
+PromptServer.instance.routes.get("/qwen2511_one/lora_triggers")(_make_lora_triggers_handler())
 
 
 @PromptServer.instance.routes.get("/qwen2511_one/seedvr2_models")
@@ -1434,6 +1432,189 @@ async def qe_set_last_image(request):
     uid = str(data.get("unique_id", ""))
     if uid:
         _qe_last_images[uid] = data.get("image", {})
+    return web.json_response({"ok": True})
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# Qwen Image 2.1 ONE — routes (mirrors /qwen2511_one/* 1:1 under a new prefix)
+# ════════════════════════════════════════════════════════════════════════════════
+
+PromptServer.instance.routes.get("/qwenimage21_one/gallery")(_make_gallery_handler(Q21_SUBFOLDER, "qwen21"))
+
+
+@PromptServer.instance.routes.post("/qwenimage21_one/save_meta")
+async def q21_save_meta(request):
+    data = await request.json()
+    output_dir = _get_output_dir()
+    try:
+        path = _safe_resolve_output_path(output_dir, data.get("subfolder",""), data.get("filename",""))
+        _write_meta(path, data.get("meta", {}))
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+    return web.json_response({"ok": True})
+
+
+@PromptServer.instance.routes.post("/qwenimage21_one/update_meta")
+async def q21_update_meta(request):
+    data = await request.json()
+    output_dir = _get_output_dir()
+    try:
+        path = _safe_resolve_output_path(output_dir, data.get("subfolder",""), data.get("filename",""))
+        meta = _read_meta(path)
+        meta.update(data.get("patch", {}))
+        _write_meta(path, meta)
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+    return web.json_response({"ok": True})
+
+
+@PromptServer.instance.routes.get("/qwenimage21_one/meta")
+async def q21_meta(request):
+    output_dir = _get_output_dir()
+    filename  = request.rel_url.query.get("filename","")
+    subfolder = request.rel_url.query.get("subfolder","")
+    try:
+        path = _safe_resolve_output_path(output_dir, subfolder, filename)
+        return web.json_response(_read_meta(path))
+    except Exception as e:
+        return web.json_response({"error": str(e)})
+
+
+@PromptServer.instance.routes.post("/qwenimage21_one/open_folder")
+async def q21_open_folder(request):
+    data = await request.json()
+    output_dir = _get_output_dir()
+    try:
+        path = _safe_resolve_output_path(output_dir, data.get("subfolder",""), data.get("filename",""))
+        folder = str(Path(path).parent)
+        if os.name == "nt":
+            _open_in_file_manager(["explorer", folder])
+        elif os.uname().sysname == "Darwin":
+            _open_in_file_manager(["open", folder])
+        else:
+            _open_in_file_manager(["xdg-open", folder])
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+    return web.json_response({"ok": True})
+
+
+@PromptServer.instance.routes.post("/qwenimage21_one/delete")
+async def q21_delete(request):
+    data = await request.json()
+    output_dir = _get_output_dir()
+    try:
+        path = _safe_resolve_output_path(output_dir, data.get("subfolder",""), data.get("filename",""))
+        if os.path.exists(path):
+            os.remove(path)
+        meta = path + ".meta.json"
+        if os.path.exists(meta):
+            os.remove(meta)
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+    return web.json_response({"ok": True})
+
+
+@PromptServer.instance.routes.post("/qwenimage21_one/copy_to_input")
+async def q21_copy_to_input(request):
+    data      = await request.json()
+    filename  = data.get("filename","")
+    subfolder = data.get("subfolder","") or ""
+    img_type  = data.get("type","output")
+    try:
+        if img_type == "output":
+            base = _get_output_dir()
+        elif img_type == "temp":
+            base = folder_paths.get_temp_directory()
+        else:
+            base = folder_paths.get_input_directory()
+        src = _safe_resolve_path(base, subfolder, filename)
+        dst_dir  = folder_paths.get_input_directory()
+        dst_name = f"q21_{int(time.time()*1000)}_{os.path.basename(filename)}"
+        dst_path = os.path.join(dst_dir, dst_name)
+        shutil.copy2(src, dst_path)
+        return web.json_response({"ok": True, "filename": dst_name})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+
+
+PromptServer.instance.routes.get("/qwenimage21_one/lora_triggers")(_make_lora_triggers_handler())
+
+
+@PromptServer.instance.routes.get("/qwenimage21_one/seedvr2_models")
+async def q21_seedvr2_models(request):
+    seedvr2_dir = os.path.join(folder_paths.models_dir, "SEEDVR2")
+    models = _scan_path(seedvr2_dir) if os.path.isdir(seedvr2_dir) else []
+    return web.json_response({"models": models or ["none"]})
+
+
+@PromptServer.instance.routes.get("/qwenimage21_one/config")
+async def q21_get_config(request):
+    try:
+        with open(Q21_CONFIG_PATH, "r", encoding="utf-8") as f:
+            return web.json_response(json.load(f))
+    except Exception:
+        return web.json_response({})
+
+
+@PromptServer.instance.routes.post("/qwenimage21_one/config")
+async def q21_post_config(request):
+    data = await request.json()
+    try:
+        try:
+            with open(Q21_CONFIG_PATH, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+        except Exception:
+            cfg = {}
+        cfg.update(data)
+        with open(Q21_CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+    return web.json_response({"ok": True})
+
+
+@PromptServer.instance.routes.get("/qwenimage21_one/models")
+async def q21_get_models(request):
+    try:
+        diff = _scan("diffusion_models", [".safetensors", ".gguf", ".ckpt", ".pt", ".pth"])
+    except Exception:
+        diff = ["none"]
+    try:
+        gguf_list = _scan("gguf", extensions=[".gguf"])
+    except Exception:
+        gguf_list = []
+    # No filename filtering — user: "파일명 내마음대로 변경할수도 있는건데 이렇게 하면
+    # 선택이 안되잖아." A name-based filter (e.g. only "qwen3vl_*") silently hides any
+    # renamed or differently-named file with no way to pick it. List everything in the
+    # folder; the user picks the right one themselves, same as every other ONE STUDIO tool.
+    try:
+        te = _scan("text_encoders")
+    except Exception:
+        te = ["none"]
+    try:
+        vaes = _scan("vae")
+    except Exception:
+        vaes = ["none"]
+    loras = _scan("loras")
+    all_models = list(dict.fromkeys([m for m in diff + gguf_list if m != "none"])) or ["none"]
+    return web.json_response({
+        "diffusion_models": all_models,
+        "gguf": gguf_list if gguf_list else [],
+        "text_encoders": te,
+        "vaes": vaes,
+        "loras": loras,
+    })
+
+
+_q21_last_images: dict = {}
+
+
+@PromptServer.instance.routes.post("/qwenimage21_one/set_last_image")
+async def q21_set_last_image(request):
+    data = await request.json()
+    uid = str(data.get("unique_id", ""))
+    if uid:
+        _q21_last_images[uid] = data.get("image", {})
     return web.json_response({"ok": True})
 
 
@@ -2549,16 +2730,17 @@ async def mmh3_delete_prompt_set(request):
 
 
 _TJ_SHARED_IMG_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif")
+_TJ_SHARED_VIDEO_EXTS = (".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v")
 
 
-def _tj_shared_scan_images(base, subfolder=""):
-    """Image files directly inside `base/subfolder` — NOT recursive, newest first.
-
-    Shared by both input_gallery and output_gallery below - same scan, different root.
-    A real folder browser, not a "everything under this branch" dump: the picker's own
-    2-level folder dropdown already lists every subfolder (and sub-subfolder) as its own
-    selectable entry, so picking one shows exactly what's in that one folder - go one
-    level deeper by picking the deeper entry instead.
+def _tj_shared_scan_files(base, subfolder, exts):
+    """Files directly inside `base/subfolder` matching `exts` — NOT recursive, newest
+    first. Shared by every input_gallery*/output_gallery* route below (image and video
+    variants alike) - same scan, different root/extension set. A real folder browser,
+    not a "everything under this branch" dump: the picker's own 2-level folder dropdown
+    already lists every subfolder (and sub-subfolder) as its own selectable entry, so
+    picking one shows exactly what's in that one folder - go one level deeper by picking
+    the deeper entry instead.
     """
     try:
         start = _safe_resolve_path(base, subfolder, "") if subfolder else base
@@ -2572,7 +2754,7 @@ def _tj_shared_scan_images(base, subfolder=""):
     except Exception:
         return rows
     for name in names:
-        if not name.lower().endswith(_TJ_SHARED_IMG_EXTS):
+        if not name.lower().endswith(exts):
             continue
         p = os.path.join(start, name)
         if not os.path.isfile(p):
@@ -2582,6 +2764,14 @@ def _tj_shared_scan_images(base, subfolder=""):
             "mtime": os.path.getmtime(p),
         })
     return rows
+
+
+def _tj_shared_scan_images(base, subfolder=""):
+    return _tj_shared_scan_files(base, subfolder, _TJ_SHARED_IMG_EXTS)
+
+
+def _tj_shared_scan_videos(base, subfolder=""):
+    return _tj_shared_scan_files(base, subfolder, _TJ_SHARED_VIDEO_EXTS)
 
 
 def _tj_shared_folder_tree(base, max_depth=2):
@@ -2648,6 +2838,46 @@ async def tj_shared_output_gallery(request):
     base = _get_output_dir()
     try:
         rows = _tj_shared_scan_images(base, subfolder)
+    except Exception as e:
+        return web.json_response({"images": [], "total": 0, "error": str(e)})
+    rows.sort(key=lambda r: r["mtime"], reverse=True)
+    return web.json_response({"images": rows[offset:offset + limit], "total": len(rows)})
+
+
+# Video counterparts of input_gallery/output_gallery above — ITDA STUDIO's own "Video
+# (Gallery)" import picker (web/shared/ui_video_gallery_picker.js) needs Input/Output
+# filtered to VIDEO files, same subfolder-navigation concept as the image picker,
+# ported over rather than reimplemented. User: "갤러리에서 불러오기에는 Input / Ouput /
+# 미니맥스 h3 / ITDA Studio 이렇게 4개가 있어야 됨... 이미지 갤러리에서 불러오기와
+# 같는 원리, 이미지가 아닌 영상만 보이게 필터 그리고 서브 폴더 이동 계념도 그대로 이식."
+@PromptServer.instance.routes.get("/tj_shared/input_gallery_video")
+async def tj_shared_input_gallery_video(request):
+    try:
+        offset = int(request.query.get("offset", 0))
+        limit  = min(200, int(request.query.get("limit", 48)))
+    except Exception:
+        offset, limit = 0, 48
+    subfolder = request.query.get("subfolder", "") or ""
+    base = folder_paths.get_input_directory()
+    try:
+        rows = _tj_shared_scan_videos(base, subfolder)
+    except Exception as e:
+        return web.json_response({"images": [], "total": 0, "error": str(e)})
+    rows.sort(key=lambda r: r["mtime"], reverse=True)
+    return web.json_response({"images": rows[offset:offset + limit], "total": len(rows)})
+
+
+@PromptServer.instance.routes.get("/tj_shared/output_gallery_video")
+async def tj_shared_output_gallery_video(request):
+    try:
+        offset = int(request.query.get("offset", 0))
+        limit  = min(200, int(request.query.get("limit", 48)))
+    except Exception:
+        offset, limit = 0, 48
+    subfolder = request.query.get("subfolder", "") or ""
+    base = _get_output_dir()
+    try:
+        rows = _tj_shared_scan_videos(base, subfolder)
     except Exception as e:
         return web.json_response({"images": [], "total": 0, "error": str(e)})
     rows.sort(key=lambda r: r["mtime"], reverse=True)
@@ -2865,6 +3095,10 @@ MMH3_OPTIONAL_NODES = [
     "TJ_VideoResize",
     # ComfyUI core (comfy_extras/nodes_glsl.py) — used by Postprocess's Add Grain step
     "GLSLShader",
+    # ComfyUI core (comfy_extras/nodes_images.py) — alpha-channel split used by gallery
+    # post-processing; web's MMH3_OPTIONAL_NODES already lists this correctly, this list
+    # was just missing it (caused a false "1 optional node pack not installed" warning)
+    "SplitImageWithAlpha",
     # video/audio save via VHS's nvenc_h264-mp4 format (real GPU encoding) — falls back
     # to core CreateVideo/SaveVideo (CPU) when not installed
     "VHS_VideoCombine",
@@ -3661,6 +3895,52 @@ class QwenImageEdit2511OneTJNode:
                 return (torch.from_numpy(arr)[None,],)
         except Exception as e:
             print(f"[QE2511] output slot error: {e}")
+        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32),)
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return float("nan")
+
+
+class QwenImage21OneTJNode:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {},
+            "optional": {
+                "prompt_override": ("STRING", {
+                    "default": "",
+                    "multiline": True,
+                    "forceInput": True,
+                    "tooltip": "External prompt override appended before the internal prompt.",
+                }),
+                "pipe": ("TJ_PROMPT_PIPE", {
+                    "tooltip": "PromptDB pipe (TJ_NODE). At generation, fields present in the pipe override this node's settings; missing fields keep the node's own values. The node's UI is never changed.",
+                }),
+            },
+            "hidden": {"unique_id": "UNIQUE_ID"},
+        }
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("image",)
+    FUNCTION = "get_output_image"
+    CATEGORY = " ✨ TJ_Node/Generator"
+    OUTPUT_NODE = True
+
+    def get_output_image(self, unique_id=None, prompt_override="", **kwargs):
+        uid = str(unique_id) if unique_id else ""
+        info = _q21_last_images.get(uid, {})
+        try:
+            filename = info.get("filename")
+            if filename:
+                img_type  = info.get("type", "output")
+                subfolder = info.get("subfolder", "") or ""
+                base = folder_paths.get_output_directory() if img_type == "output" else folder_paths.get_input_directory()
+                path = os.path.join(base, subfolder, filename) if subfolder else os.path.join(base, filename)
+                img = Image.open(path).convert("RGB")
+                arr = np.array(img).astype(np.float32) / 255.0
+                return (torch.from_numpy(arr)[None,],)
+        except Exception as e:
+            print(f"[Q21] output slot error: {e}")
         return (torch.zeros((1, 64, 64, 3), dtype=torch.float32),)
 
     @classmethod
@@ -4718,6 +4998,33 @@ async def studio_llm_config(request):
     })
 
 
+_model_format_instructions_cache = None
+
+
+def _model_format_instruction(name):
+    # The Local GGUF/ComfyUI Native backends already get the FULL per-format instruction
+    # via TJ_PromptEnhancer's own build_layered_system_prompt() (MODEL_FORMAT_INSTRUCTIONS,
+    # sourced from model_formats.json). The OpenRouter path below built its own much
+    # thinner system prompt that only ever passed the format's bare NAME through as
+    # "Target phrasing style: X" — for a detailed style guide like the Qwen Image 2.1
+    # entries, a bare name means nothing to the model. Read the same JSON so OpenRouter
+    # gets equal treatment instead of a second-class fallback.
+    global _model_format_instructions_cache
+    if _model_format_instructions_cache is None:
+        _model_format_instructions_cache = {}
+        for folder in ("ComfyUI-TJ_NODE", "ComfyUI-TJ_NODE2", "TJ_NODE"):
+            p = os.path.join(os.path.dirname(NODE_DIR), folder, "nodes", "llm", "data", "model_formats.json")
+            if os.path.isfile(p):
+                try:
+                    with open(p, "r", encoding="utf-8") as fh:
+                        entries = json.load(fh)
+                    _model_format_instructions_cache = {e["name"]: e.get("instruction", "") for e in entries if isinstance(e, dict) and e.get("name")}
+                except Exception as e:
+                    print(f"[studio_enhance] model_formats.json read failed: {e}")
+                break
+    return _model_format_instructions_cache.get(name, "")
+
+
 def _studio_enhance_system(data):
     fmt = data.get("model_format", "Universal Natural Language")
     aes = data.get("aesthetic", "None (no aesthetic injection)")
@@ -4729,7 +5036,13 @@ def _studio_enhance_system(data):
          "- Keep the user's subject and intent; add concrete detail: composition, lighting, "
          "materials, mood, lens and style cues.\n"
          "- Do not invent a different scene; deepen the one given.\n"
-         f"- Target phrasing style: {fmt}.\n")
+         "- Always write the rewritten prompt in English, even if the user's input is in "
+         "another language.\n")
+    full_instruction = _model_format_instruction(fmt)
+    if full_instruction:
+        s += f"- Target phrasing style ({fmt}) — follow this exactly:\n{full_instruction}\n"
+    else:
+        s += f"- Target phrasing style: {fmt}.\n"
     if aes and "None" not in aes:
         s += f"- Aesthetic direction: {aes}.\n"
     if extra:
@@ -4737,13 +5050,29 @@ def _studio_enhance_system(data):
     return s
 
 
+def _fetch_openrouter_models_blocking():
+    import urllib.request
+    with urllib.request.urlopen("https://openrouter.ai/api/v1/models", timeout=20) as resp:
+        d = json.loads(resp.read().decode("utf-8"))
+    return sorted(m.get("id") for m in d.get("data", []) if m.get("id"))
+
+
 @PromptServer.instance.routes.get("/music_one/openrouter_models")
 async def music_openrouter_models(request):
-    import urllib.request
+    # Was a synchronous urllib.request.urlopen(..., timeout=20) called directly inside
+    # this async handler - aiohttp's server is single-threaded (one event loop), so a
+    # slow/unreachable openrouter.ai froze the ENTIRE server (every route, every other
+    # node's requests included) for up to 20 seconds per call, not just this one. Found
+    # live: llm_panel.js's mountLLMSettingsSection calls this on every mount (e.g. opening
+    # ITDA STUDIO's new App Settings modal), and with openrouter.ai timing out repeatedly
+    # from this network, repeated mounts during testing compounded into a total server
+    # hang that even a fresh POST /manager/reboot couldn't recover from (the reboot
+    # request itself needs the same frozen event loop to be processed). Offloaded to a
+    # thread so a slow/dead OpenRouter only blocks THIS request, never the whole server.
+    import asyncio
+    loop = asyncio.get_running_loop()
     try:
-        with urllib.request.urlopen("https://openrouter.ai/api/v1/models", timeout=20) as resp:
-            d = json.loads(resp.read().decode("utf-8"))
-        ids = sorted(m.get("id") for m in d.get("data", []) if m.get("id"))
+        ids = await loop.run_in_executor(None, _fetch_openrouter_models_blocking)
         return web.json_response({"models": ids})
     except Exception as e:
         return web.json_response({"models": [], "error": str(e)})
@@ -4872,7 +5201,7 @@ async def music_set_last_audio(request):
     return web.json_response({"ok": True})
 
 
-# -- ITDA STUDIO (TJ) -- a 3-lane video/audio stitch timeline --------------------
+# -- ITDA ONE STUDIO (TJ) -- a 3-lane video/audio stitch timeline --------------------
 #
 # Absorbed from the standalone ComfyUI-ITDA custom node (Korean "itda" = "to
 # stitch/connect" -- the project's own name, kept on purpose) as REAL COPIED CODE,
@@ -5009,6 +5338,7 @@ NODE_CLASS_MAPPINGS = {
     "ZImageTurboOneNode":          ZImageTurboOneNode,
     "Krea2OneTJNode":              Krea2OneTJNode,
     "QwenImageEdit2511OneTJNode":  QwenImageEdit2511OneTJNode,
+    "QwenImage21OneTJNode":        QwenImage21OneTJNode,
     "SDXLOneTJNode":               SDXLOneTJNode,
     "MiniMaxH3OneTJNode":          MiniMaxH3OneTJNode,
     "MusicMakerOneTJNode":         MusicMakerOneTJNode,
@@ -5021,11 +5351,12 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ZImageTurboOneNode":          "Z-Image ONE STUDIO (TJ)",
     "Krea2OneTJNode":              "Krea 2 ONE STUDIO (TJ)",
     "QwenImageEdit2511OneTJNode":  "Qwen Image Edit 2511 ONE STUDIO (TJ)",
+    "QwenImage21OneTJNode":        "QWEN IMAGE 2.1 ONE STUDIO (TJ)",
     "SDXLOneTJNode":               "SDXL ONE STUDIO (TJ)",
     "MiniMaxH3OneTJNode":          "MiniMax H3 ONE STUDIO (TJ)",
     "MusicMakerOneTJNode":         "MusicMaker ONE STUDIO (TJ)",
     "TJ_RTXDeblur":                "RTX Deblur (TJ)",
     "TJStudioOneTextOutput":       "TJ Studio ONE — Text Output",
     "AnimaOneTJNode":              "Anima ONE STUDIO (TJ)",
-    "ItdaStudioOneTJNode":         "ITDA STUDIO (TJ)",
+    "ItdaStudioOneTJNode":         "ITDA ONE STUDIO (TJ)",
 }
