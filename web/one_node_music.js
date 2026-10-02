@@ -13,6 +13,9 @@ import {
 } from "./music/core_music.js";
 import { downloadAgentJob } from "./shared/agent_job.js";
 import { buildMusicGraph, effectiveDuration } from "./music/graph_builder_music.js";
+import { openPianoRoll } from "./music/ui_piano_roll.js";
+import { melodySeconds } from "./music/melody_core.js";
+import { openImageGalleryPicker } from "./shared/ui_image_gallery_picker.js";
 import { attachSensitiveToggle, mediaKey } from "./shared/ui_sensitive_media.js";
 
 // Match MiniMax H3's outer node size exactly (see one_node_minimax_h3.js NODE_MW/NODE_MH).
@@ -524,7 +527,13 @@ app.registerExtension({
       const favTgl = el("button", { className: "mmm-ib", text: "★", title: "Favorites only" });
       favTgl.onclick = () => { favOnly = !favOnly; favTgl.classList.toggle("act", favOnly); loadPlaylist(); };
       const selBar = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", fontSize: "11.5px", color: C.text, padding: "4px 2px", flexShrink: 0 }});
-      plHead.append(searchIn, favTgl, sortSel);
+      const refreshBtn = el("button", { className: "mmm-ib", text: "↻", title: "Refresh playlist" });
+      refreshBtn.onclick = async () => {
+        refreshBtn.disabled = true; refreshBtn.style.opacity = ".5";
+        try { await loadPlaylist(); statusEl.textContent = "Playlist refreshed"; }
+        finally { refreshBtn.disabled = false; refreshBtn.style.opacity = ""; }
+      };
+      plHead.append(searchIn, favTgl, refreshBtn, sortSel);
       const plBody = el("div", { className: "mmm-lp", style: { flex: "1", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px" }});
       playlistWrap.append(selBar, plHead, plBody);
 
@@ -685,9 +694,22 @@ app.registerExtension({
       }
 
       function moreMenu(t, ev) {
+        const ts = coverTargets(t), sfx = countSuffix(ts), clip = getCoverClip();
+        // paste row shows a thumbnail of what is on the cover clipboard
+        const pasteRow = el("div", { className: "it", style: { opacity: clip?.filename ? "1" : ".45" }});
+        if (clip?.filename) pasteRow.appendChild(el("span", { style: { width: "22px", height: "22px", borderRadius: "4px", flexShrink: "0",
+          backgroundSize: "cover", backgroundPosition: "center", backgroundImage: `url("${coverViewUrl(clip.filename, clip.sub)}")` }}));
+        pasteRow.appendChild(el("span", { text: "🖼  Cover Image Paste" + sfx }));
+        pasteRow.onclick = () => { pasteRow._closeMenu?.(); coverPaste(t); };
         popMenu(ev, [
           { label: "Rename", fn: async () => { const nn = prompt("New title", t.title || ""); if (nn != null) { await jpost("/update_meta", { filename: t.filename, subfolder: SUB(), patch: { title: nn } }); loadPlaylist(); }}},
           { label: "Regenerate cover", fn: () => regenCoverPopup(t) },
+          "-",
+          { label: "Cover Image Copy", icon: "🖼", fn: () => coverCopy(t) },
+          { el: pasteRow },
+          { label: "Cover Image Upload" + sfx, icon: "🖼", fn: () => coverUpload(t) },
+          { label: "Cover Image From Gallery" + sfx, icon: "🖼", fn: () => coverFromGallery(t) },
+          "-",
           { label: "Open folder", fn: () => jpost("/open_folder", { filename: t.filename, subfolder: SUB()}) },
           "-",
           { label: "Delete", danger: true, fn: async () => { if (confirm("Delete this track?")) { await jpost("/delete", { filename: t.filename, subfolder: SUB()}); loadPlaylist(); }}},
@@ -730,7 +752,7 @@ app.registerExtension({
           blk("Parameters", meta.engine === "acestep"
             ? { bpm: meta.bpm, key: meta.keyscale, timesig: meta.timesignature, language: meta.language, cfg_scale: meta.cfgScaleAce, stages: meta.aceStages }
             : meta.engine === "yue2"
-            ? { mode: meta.yue2Mode, auto_abc: meta.yue2AutoAbc, repetition_penalty: meta.yue2RepetitionPenalty, top_k: meta.topK, top_p: meta.topP, temperature: meta.temperature }
+            ? { mode: meta.yue2Mode, auto_abc: meta.yue2AutoAbc, own_melody: !!meta.yue2UseMelody, repetition_penalty: meta.yue2RepetitionPenalty, top_k: meta.topK, top_p: meta.topP, temperature: meta.temperature }
             : { steps: meta.steps, cfg: meta.cfg, cfg_scale: meta.cfgScale, top_k: meta.topK, sampler: meta.sampler });
         }
         ov.appendChild(body);
@@ -752,6 +774,11 @@ app.registerExtension({
           state.title       = m.title || "";
           state.coverBrief  = m.coverBrief || "";
           if (m.seconds != null) state.duration = m.seconds;
+          if (eng === "yue2") {
+            state.yue2UseMelody = !!m.yue2UseMelody;
+            state.yue2MelodyAbc = m.yue2MelodyAbc || "";
+            if (m.yue2Melody && Array.isArray(m.yue2Melody.notes)) state.yue2Melody = m.yue2Melody;
+          }
           state.seedMode = "fixed";
           if (m.seed != null) state.seed = m.seed;
           persist(); renderCompose(); loadPlaylist();
@@ -924,6 +951,51 @@ app.registerExtension({
         popMenu(ev, entries);
       }
 
+      // ── YuE2 Melody Editor (piano roll) ────────────────────────────────────
+      function openMelodyEditor() {
+        const bpmHint = /(\d{2,3})\s*bpm/i.exec(state.caption || "");
+        const base = state.yue2Melody || { notes: [], bpm: bpmHint ? +bpmHint[1] : 100, meter: "4/4", key: "C", bars: 8 };
+        openPianoRoll({
+          root, title: state.title || "", initial: base,
+          onApply: (r) => {
+            state.yue2Melody = { notes: r.notes, bpm: r.bpm, meter: r.meter, key: r.key, bars: r.bars, abcBars: r.abcBars, seconds: r.seconds };
+            state.yue2MelodyAbc = r.abc;
+            state.yue2UseMelody = r.notes.length > 0;   // applying a melody means "use it"; clearing it means "go back to auto"
+            persist(); renderCompose();
+            statusEl.textContent = r.notes.length ? `Melody applied — ${r.abcBars} bars · ${r.seconds.toFixed(1)} s` : "Melody cleared";
+          },
+        });
+      }
+      function melodyBlock() {
+        const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px", marginTop: "2px" }});
+        wrap.appendChild(sectionHead("Melody"));
+        const mel = state.yue2Melody, has = !!(mel && mel.notes.length);
+        const box = el("div", { style: {
+          display: "flex", flexDirection: "column", gap: "7px", padding: "9px 10px",
+          background: C.bg1, border: `1px solid ${state.yue2UseMelody && has ? BRAND : C.border}`, borderRadius: "8px",
+        }});
+        const row = el("div", { style: { display: "flex", alignItems: "center", gap: "8px" }});
+        row.appendChild(checkRow("Use my melody", !!state.yue2UseMelody, (v) => { state.yue2UseMelody = v; persist(); renderCompose(); }));
+        row.appendChild(el("div", { style: { flex: "1" }}));
+        row.appendChild(el("button", { className: "mmm-chip", text: has ? "🎹 Edit Melody…" : "🎹 Open Melody Editor…", style: { background: has ? undefined : BRAND, color: has ? undefined : "#fff", borderColor: has ? undefined : BRAND },
+          title: "Draw notes, or record from a MIDI keyboard", onclick: () => openMelodyEditor() }));
+        box.appendChild(row);
+        const note = (txt, color) => box.appendChild(el("div", { style: { fontSize: "10.5px", color: color || C.muted, lineHeight: "1.5" }, text: txt }));
+        if (has) {
+          const nb = mel.abcBars ?? mel.bars, secs = mel.seconds ?? melodySeconds(nb, mel.meter, mel.bpm);
+          note(`${nb} bar${nb > 1 ? "s" : ""} · ${mel.notes.length} notes · ${secs.toFixed(1)} s · ${mel.key} · ${mel.bpm} BPM · ${mel.meter}`, C.text);
+          const m = /(\d{2,3})\s*bpm/i.exec(state.caption || "");
+          if (state.yue2UseMelody && m && Math.abs(+m[1] - mel.bpm) > 2) note(`Style says ${m[1]} BPM but the melody is ${mel.bpm} BPM — keep them in sync.`, C.warn);
+          if (state.yue2UseMelody) note("YuE2 builds the song around this melody; the Duration setting is only an upper limit.");
+        } else if (state.yue2UseMelody) {
+          note("The Melody Editor is empty — add notes, or turn this off.", C.warn);
+        } else {
+          note("Draw a melody, or record it from a real MIDI keyboard — YuE2 writes the song around it.");
+        }
+        wrap.appendChild(box);
+        return wrap;
+      }
+
       function coverInfoPopup() {
         const ov = el("div", { className: "mmm-pop" });
         const box = el("div", { className: "box" });
@@ -1056,6 +1128,8 @@ app.registerExtension({
           });
           compose.appendChild(modeRow);
 
+          if (state.yue2Mode === "text2music") compose.appendChild(melodyBlock());
+
           if (state.yue2Mode === "cover") {
             compose.appendChild(sectionHead("Source Recording"));
             const coverBox = el("div", { style: {
@@ -1166,6 +1240,7 @@ app.registerExtension({
         basics.appendChild(rangeRow("BPM", 40, 220, 1, Math.round(state.bpm || 120), (v) => { state.bpm = Math.round(v); persist(); }));
         basics.appendChild(rangeRow("Length", DURATION_MIN, DURATION_MAX, 5, state.duration, (v) => { state.duration = v; persist(); }, fmtDur));
         basics.appendChild(checkRow("Auto-generate album cover (Krea2)", state.makeCover, (v) => { state.makeCover = v; persist(); }));
+        basics.appendChild(customCoverRow());
         compose.appendChild(basics);
 
         // ── advanced ──
@@ -1181,8 +1256,13 @@ app.registerExtension({
 
           if (state.engine === "yue2") {
             if (state.yue2Mode === "text2music") {
-              acc.appendChild(checkRow("Auto-sketch a melody plan first (YuE2GenerateABC)", state.yue2AutoAbc !== false,
-                (v) => { state.yue2AutoAbc = v; persist(); }));
+              if (state.yue2UseMelody) {
+                acc.appendChild(el("div", { style: { fontSize: "11px", color: C.muted, lineHeight: "1.5" },
+                  text: "Using your own melody from the Melody Editor — the auto-sketched melody plan is skipped." }));
+              } else {
+                acc.appendChild(checkRow("Auto-sketch a melody plan first (YuE2GenerateABC)", state.yue2AutoAbc !== false,
+                  (v) => { state.yue2AutoAbc = v; persist(); }));
+              }
             }
             const g2 = el("div", { className: "mmm-grid2" });
             g2.append(
@@ -1471,7 +1551,9 @@ app.registerExtension({
 
         // 2) cover first — gives the card a face
         job.stage = "Making cover…"; paintJob(job);
-        if (st.makeCover) {
+        if (st.coverCustom) {
+          meta.coverImage = st.coverCustom; job.cover = st.coverCustom;   // the user's own cover — no generation
+        } else if (st.makeCover) {
           const cfn = await coverImage(meta, { brief: st.coverBrief || "" }).catch(() => null);
           if (cfn) { meta.coverImage = cfn; job.cover = cfn; }
         }
@@ -1605,6 +1687,197 @@ app.registerExtension({
           statusEl.textContent = "Cover done ✓";
         } catch (e) { statusEl.textContent = "Cover error: " + e.message; }
         finally { regenCoverFn = null; loadPlaylist(); }
+      }
+
+      // ── album cover: copy / paste / upload / from gallery ──────────────────
+      // A cover is a plain image file in <save folder>/covers referenced by the track's
+      // meta.coverImage, so "paste" just points another track at the same file, and an
+      // upload / gallery pick is squared off (crop dialog) and saved there as a new file.
+      const COVER_CLIP_KEY = "music_cover_clip";
+      const getCoverClip = () => { try { return JSON.parse(localStorage.getItem(COVER_CLIP_KEY) || "null"); } catch { return null; } };
+      const setCoverClip = (fn) => { try { localStorage.setItem(COVER_CLIP_KEY, JSON.stringify({ filename: fn, sub: SUB() })); } catch {} };
+      const coverViewUrl = (fn, sub) => `/view?filename=${encodeURIComponent(fn)}&subfolder=${encodeURIComponent((sub || SUB()) + "/covers")}&type=output`;
+      // a multi-selection that includes the clicked track applies to every selected track
+      const coverTargets = (t) => (selected.size > 1 && selected.has(t.filename)) ? tracks.filter(x => selected.has(x.filename)) : [t];
+      const countSuffix = (ts) => (ts.length > 1 ? ` (${ts.length} tracks)` : "");
+
+      async function uploadCoverBlob(blob) {
+        const name = `cover_${Date.now().toString(36)}.jpg`;
+        const fd = new FormData();
+        fd.append("image", new File([blob], name, { type: blob.type || "image/jpeg" }));
+        fd.append("subfolder", SUB() + "/covers");
+        fd.append("type", "output");
+        fd.append("overwrite", "false");
+        const r = await api.fetchApi("/upload/image", { method: "POST", body: fd });
+        if (!r.ok) throw new Error(`upload failed (${r.status})`);
+        return (await r.json()).name;
+      }
+
+      // Square crop dialog → resolves a JPEG blob, or null when cancelled.
+      function coverCropDialog(srcUrl) {
+        return new Promise((resolve) => {
+          const STAGE = 320;
+          const ov = el("div", { className: "mmm-pop", style: { zIndex: "10050" }});
+          const box = el("div", { className: "box", style: { alignItems: "center" }});
+          box.appendChild(el("h4", { text: "Crop album cover", style: { alignSelf: "flex-start" }}));
+          box.appendChild(el("p", { text: "Drag to reposition, scroll or use the slider to zoom. Covers are square.", style: { alignSelf: "flex-start" }}));
+          const stage = el("div", { style: { width: STAGE + "px", height: STAGE + "px", overflow: "hidden", position: "relative", background: "#000",
+            borderRadius: "8px", border: `1px solid ${C.border}`, cursor: "grab", touchAction: "none", flexShrink: "0" }});
+          const img = el("img", { style: { position: "absolute", left: "0", top: "0", transformOrigin: "0 0", maxWidth: "none", userSelect: "none", pointerEvents: "none" }});
+          stage.appendChild(img);
+          const zoom = el("input", { type: "range", min: "1", max: "4", step: "0.01", value: "1", style: { width: STAGE + "px", accentColor: BRAND }});
+          const err = el("div", { style: { fontSize: "11px", color: C.err, minHeight: "14px", alignSelf: "flex-start" }});
+          let nat = { w: 1, h: 1 }, z = 1, ox = 0, oy = 0, ready = false;
+          const fit = () => Math.max(STAGE / nat.w, STAGE / nat.h);
+          const scale = () => fit() * z;
+          const clampPos = () => {
+            ox = Math.min(0, Math.max(STAGE - nat.w * scale(), ox));
+            oy = Math.min(0, Math.max(STAGE - nat.h * scale(), oy));
+          };
+          const place = () => { clampPos(); img.style.transform = `translate(${ox}px, ${oy}px) scale(${scale()})`; };
+          const setZoom = (nz, cx = STAGE / 2, cy = STAGE / 2) => {
+            const old = scale(); z = Math.min(4, Math.max(1, nz));
+            const k = scale() / old;
+            ox = cx - (cx - ox) * k; oy = cy - (cy - oy) * k;
+            zoom.value = String(z); place();
+          };
+          zoom.addEventListener("input", () => setZoom(+zoom.value));
+          stage.addEventListener("wheel", (e) => {
+            e.preventDefault(); e.stopPropagation();
+            const r = stage.getBoundingClientRect();
+            setZoom(z * (e.deltaY < 0 ? 1.1 : 1 / 1.1), (e.clientX - r.left) * (STAGE / r.width), (e.clientY - r.top) * (STAGE / r.height));
+          }, { passive: false });
+          let drag = null;
+          stage.addEventListener("pointerdown", (e) => { if (!ready) return; try { stage.setPointerCapture(e.pointerId); } catch {} drag = { x: e.clientX, y: e.clientY, ox, oy, k: STAGE / (stage.getBoundingClientRect().width || STAGE) }; stage.style.cursor = "grabbing"; });
+          stage.addEventListener("pointermove", (e) => { if (!drag) return; ox = drag.ox + (e.clientX - drag.x) * drag.k; oy = drag.oy + (e.clientY - drag.y) * drag.k; place(); });
+          const endDrag = () => { drag = null; stage.style.cursor = "grab"; };
+          stage.addEventListener("pointerup", endDrag); stage.addEventListener("pointercancel", endDrag);
+          const done = (v) => { document.removeEventListener("keydown", onKey, true); ov.remove(); resolve(v); };
+          const apply = () => {
+            if (!ready) return;
+            const sc = scale(), side = STAGE / sc;
+            const out = Math.round(Math.min(1024, Math.max(256, side)));
+            const cv = document.createElement("canvas"); cv.width = cv.height = out;
+            const cx = cv.getContext("2d");
+            cx.fillStyle = "#000"; cx.fillRect(0, 0, out, out);
+            cx.drawImage(img, -ox / sc, -oy / sc, side, side, 0, 0, out, out);
+            cv.toBlob((b) => (b ? done(b) : (err.textContent = "Could not encode the image")), "image/jpeg", 0.92);
+          };
+          const onKey = (e) => {
+            if (e.key === "Escape") { e.stopPropagation(); done(null); }
+            else if (e.key === "Enter") { e.stopPropagation(); apply(); }
+          };
+          document.addEventListener("keydown", onKey, true);
+          const btns = el("div", { className: "btns", style: { alignSelf: "stretch" }});
+          const okBtn = el("button", { className: "mmm-save", style: { padding: "8px 16px", boxShadow: "none" }, text: "Use this crop", onclick: apply });
+          okBtn.disabled = true;
+          btns.append(el("button", { className: "mmm-x", text: "Cancel", onclick: () => done(null) }), okBtn);
+          box.append(stage, zoom, err, btns);
+          ov.appendChild(box);
+          ov.addEventListener("mousedown", (e) => { if (e.target === ov) done(null); });
+          root.appendChild(ov);
+          img.onload = () => { nat = { w: img.naturalWidth || 1, h: img.naturalHeight || 1 }; z = 1; ox = (STAGE - nat.w * fit()) / 2; oy = (STAGE - nat.h * fit()) / 2; ready = true; okBtn.disabled = false; place(); };
+          img.onerror = () => { err.textContent = "Could not read this image."; };
+          img.src = srcUrl;
+        });
+      }
+
+      // source → crop → upload; resolves the new cover filename (or null if cancelled)
+      async function makeCoverFromUrl(srcUrl) {
+        const blob = await coverCropDialog(srcUrl);
+        if (!blob) return null;
+        return uploadCoverBlob(blob);
+      }
+      function pickCoverFromFile() {
+        return new Promise((resolve) => {
+          const inp = el("input", { type: "file", accept: "image/*", style: { display: "none" }});
+          inp.addEventListener("change", async () => {
+            const f = inp.files?.[0]; inp.remove();
+            if (!f) return resolve(null);
+            const url = URL.createObjectURL(f);
+            try { resolve(await makeCoverFromUrl(url)); } catch (e) { statusEl.textContent = "Cover upload failed: " + (e.message || e); resolve(null); }
+            finally { URL.revokeObjectURL(url); }
+          });
+          inp.addEventListener("cancel", () => { inp.remove(); resolve(null); });
+          root.appendChild(inp); inp.click();
+        });
+      }
+      function pickCoverFromGallery() {
+        return new Promise((resolve) => {
+          let picked = false;
+          openImageGalleryPicker(async (inputName) => {
+            picked = true;
+            try { resolve(await makeCoverFromUrl(`/view?filename=${encodeURIComponent(inputName)}&type=input`)); }
+            catch (e) { statusEl.textContent = "Cover from gallery failed: " + (e.message || e); resolve(null); }
+          });
+          // the picker has no cancel callback — resolve null if it closes without a pick
+          const watch = setInterval(() => { if (!document.body.querySelector('div[style*="z-index: 100000"]') && !picked) { clearInterval(watch); resolve(null); } else if (picked) clearInterval(watch); }, 400);
+        });
+      }
+      // the clip may come from another save folder — then re-save its image into this one
+      async function resolveCoverClip() {
+        const clip = getCoverClip();
+        if (!clip?.filename) return null;
+        if (!clip.sub || clip.sub === SUB()) return clip.filename;
+        const r = await fetch(coverViewUrl(clip.filename, clip.sub));
+        if (!r.ok) throw new Error("the copied cover no longer exists");
+        return uploadCoverBlob(await r.blob());
+      }
+
+      async function applyCover(targets, filename) {
+        for (const x of targets) await jpost("/update_meta", { filename: x.filename, subfolder: x.subfolder || SUB(), patch: { coverImage: filename } });
+        statusEl.textContent = `Cover set on ${targets.length} track${targets.length > 1 ? "s" : ""} ✓`;
+        loadPlaylist();
+      }
+      const coverBusy = (msg) => { statusEl.textContent = msg; };
+      async function coverCopy(t) {
+        if (!t.cover) { statusEl.textContent = "This track has no cover to copy"; return; }
+        setCoverClip(t.cover);
+        statusEl.textContent = "Cover copied — use Cover Image Paste on another track";
+      }
+      async function coverPaste(t) {
+        const ts = coverTargets(t);
+        try {
+          coverBusy("Pasting cover…");
+          const fn = await resolveCoverClip();
+          if (!fn) { statusEl.textContent = "No cover copied yet — use Cover Image Copy first"; return; }
+          await applyCover(ts, fn);
+        } catch (e) { statusEl.textContent = "Cover paste failed: " + (e.message || e); }
+      }
+      async function coverUpload(t) {
+        const ts = coverTargets(t);
+        const fn = await pickCoverFromFile();
+        if (fn) await applyCover(ts, fn);
+      }
+      async function coverFromGallery(t) {
+        const ts = coverTargets(t);
+        const fn = await pickCoverFromGallery();
+        if (fn) await applyCover(ts, fn);
+      }
+
+      // "Use my own cover image" for the NEXT generations (a series that shares one album cover)
+      function customCoverRow() {
+        const has = !!state.coverCustom;
+        const row = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", padding: "6px 8px",
+          background: C.bg1, border: `1px solid ${has ? BRAND : C.border}`, borderRadius: "8px" }});
+        const th = el("div", { text: has ? "" : "🖼", style: { width: "44px", height: "44px", borderRadius: "6px", background: C.bg3, backgroundSize: "cover",
+          backgroundPosition: "center", flexShrink: "0", display: "flex", alignItems: "center", justifyContent: "center", color: C.muted, fontSize: "16px" }});
+        if (has) th.style.backgroundImage = coverURL(state.coverCustom);
+        const col = el("div", { style: { flex: "1", minWidth: "0", display: "flex", flexDirection: "column", gap: "5px" }});
+        col.appendChild(el("div", { text: has ? "Using my cover image — Krea2 is skipped" : "Use my own cover image (instead of generating)",
+          style: { fontSize: "11px", color: has ? C.text : C.muted }}));
+        const bar = el("div", { style: { display: "flex", gap: "5px", flexWrap: "wrap" }});
+        const chip = (txt, fn, ttl) => el("button", { className: "mmm-chip", text: txt, title: ttl || "", style: { fontSize: "10.5px", padding: "3px 9px" }, onclick: fn });
+        const take = async (p) => { const fn = await p; if (fn) { state.coverCustom = fn; persist(); renderCompose(); } };
+        bar.append(
+          chip("Upload…", () => take(pickCoverFromFile())),
+          chip("Gallery…", () => take(pickCoverFromGallery())),
+          chip("Paste copied", () => take(resolveCoverClip().then((fn) => { if (!fn) statusEl.textContent = "No cover copied yet"; return fn; }).catch((e) => { statusEl.textContent = "Paste failed: " + (e.message || e); return null; })), "Use the cover you copied from a track"),
+        );
+        if (has) bar.append(chip("Clear", () => { state.coverCustom = ""; persist(); renderCompose(); }));
+        col.appendChild(bar);
+        row.append(th, col);
+        return row;
       }
 
       // Generate one album-cover image via Krea2, return its filename (no meta patch).

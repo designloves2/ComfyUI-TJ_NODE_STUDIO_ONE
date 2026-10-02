@@ -257,6 +257,10 @@ function buildYue2Graph(state, opts) {
   const mode = state.yue2Mode === "cover" ? "cover" : "text2music";
   if (mode === "cover" && !state.yue2CoverAudio)
     throw new Error("Cover Music needs a source recording — upload one first.");
+  // the user's own melody (Melody Editor) — fed to YuE2GenerateMusic as a literal ABC score
+  const melodyAbc = (mode === "text2music" && state.yue2UseMelody) ? String(state.yue2MelodyAbc || "").trim() : "";
+  if (mode === "text2music" && state.yue2UseMelody && !melodyAbc)
+    throw new Error("The Melody Editor is empty — add notes in 🎹 Melody Editor, or turn off “Use my melody”.");
   const r = resolveCommon(state, opts);
   const P = "YUE2";
   const steps = 32; // YuE2's own fixed sampler shape — not a user-facing axis (see reference workflow)
@@ -275,6 +279,8 @@ function buildYue2Graph(state, opts) {
     }};
     abcLink = [`${P}:sheetsage`, 0];
     yueMode = "melody";
+  } else if (melodyAbc) {
+    yueMode = "melody";
   } else if (state.yue2AutoAbc !== false) {
     g[`${P}:abc`] = { class_type: "YuE2GenerateABC", inputs: {
       style: r.caption, lyrics: r.lyrics, seed: r.seed, clip, mode: "full",
@@ -292,6 +298,7 @@ function buildYue2Graph(state, opts) {
     repetition_penalty: state.yue2RepetitionPenalty ?? 1.2,
   };
   if (abcLink) genInputs.abc = abcLink;
+  else if (melodyAbc) genInputs.abc = melodyAbc;
   g[`${P}:gen`] = { class_type: "YuE2GenerateMusic", inputs: genInputs };
 
   g[`${P}:zero`] = { class_type: "ConditioningZeroOut", inputs: { conditioning: [`${P}:gen`, 0] } };
@@ -305,6 +312,7 @@ function buildYue2Graph(state, opts) {
 
   const meta = { ...commonMeta(state, r), yue2Ckpt: ckpt, yue2Mode: mode,
     yue2AutoAbc: state.yue2AutoAbc !== false, yue2CoverAudio: mode === "cover" ? state.yue2CoverAudio : "",
+    yue2UseMelody: !!melodyAbc, yue2MelodyAbc: melodyAbc, yue2Melody: melodyAbc ? state.yue2Melody : null,
     yue2RepetitionPenalty: state.yue2RepetitionPenalty ?? 1.2, topK: Math.round(state.topK ?? 100),
     temperature: state.temperature ?? 1.0, topP: state.topP ?? 0.95 };
   return { graph: g, meta, saveNode: `${P}:save`, seedUsed: r.seed };

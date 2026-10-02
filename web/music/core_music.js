@@ -170,6 +170,10 @@ export function defaultState(saved) {
     yue2AutoAbc:   saved.yue2AutoAbc   ?? true,            // text2music: let YuE2GenerateABC sketch a melody plan first
     yue2CoverAudio: saved.yue2CoverAudio || "",            // cover: the uploaded source recording's filename
     yue2RepetitionPenalty: saved.yue2RepetitionPenalty ?? 1.2,
+    // Melody Editor (piano roll) — the user's own melody replaces the auto-sketched ABC plan
+    yue2UseMelody: saved.yue2UseMelody ?? false,
+    yue2Melody:    (saved.yue2Melody && Array.isArray(saved.yue2Melody.notes)) ? saved.yue2Melody : null,   // { notes, bpm, meter, key, bars }
+    yue2MelodyAbc: saved.yue2MelodyAbc || "",
 
     // compose
     lyricsInput:  saved.lyricsInput  || "",   // free text the user typed (brief / hook / full)
@@ -209,6 +213,7 @@ export function defaultState(saved) {
     // album cover (Krea2 cross-tool)
     makeCover:  saved.makeCover  ?? true,
     coverBrief: saved.coverBrief || "",   // user's plain description; LLM turns it into a Krea2 prompt
+    coverCustom: saved.coverCustom || "", // filename (in <save folder>/covers) of a user-chosen cover — skips Krea2 generation
 
     // LoRA — starts empty; "+ Add LoRA" adds rows. Drop any leftover placeholder ("none") rows.
     loras: (Array.isArray(saved.loras) ? saved.loras : [])

@@ -4017,8 +4017,10 @@ def _music_tag_file(vpath, meta):
 
     cover = ""
     if meta.get("coverImage"):
+        out_dir = _get_output_dir()
+        track_sub = os.path.relpath(os.path.dirname(vpath), out_dir)   # covers live beside the track, whatever save folder is set
         try:
-            c = _safe_resolve_output_path(_get_output_dir(), MUSIC_SUBFOLDER + "/covers", meta["coverImage"])
+            c = _safe_resolve_output_path(out_dir, os.path.join(track_sub, "covers"), meta["coverImage"])
             if os.path.isfile(c):
                 cover = c
         except ValueError:
@@ -4095,7 +4097,8 @@ async def _music_update_meta(request):
         vpath = _safe_resolve_output_path(output_dir, subfolder, filename)
     except ValueError:
         return web.json_response({"ok": False, "error": "invalid path"}, status=400)
-    existing = _read_json_meta(vpath) or {}
+    # a track with no sidecar yet: seed a recognised key, or _read_json_meta would reject a file holding only the patch
+    existing = _read_json_meta(vpath) or {"v": 1}
     existing.update(patch)
     ok = _write_json_meta(vpath, existing)
     if "favorite" in patch:
