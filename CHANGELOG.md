@@ -2,7 +2,189 @@
 
 ---
 
-## v1.29.0 (2026-09-15)
+## v1.31.0 (2026-10-03)
+
+### MusicMaker — YuE2 engine, Melody Editor, album-cover tools
+
+- **YuE2 is the third engine** (next to Ace-Step 1.5 and MiniMax Music 3), with two
+  left-menu modes: Text to Music (optionally auto-sketching a melody plan with
+  `YuE2GenerateABC` first) and Cover Music (SheetSage2 transcribes an uploaded
+  recording's melody and YuE2 renders a new song that follows it). The ✨ Style button
+  uses YuE2's own prompt-writing guidance. Needs the YuE2 checkpoint in
+  `models/checkpoints/`, plus the SheetSage2 audio encoder in `models/audio_encoders/`
+  for Cover Music.
+- **Melody Editor** (YuE2 → Text to Music → Melody → Open Melody Editor): a piano roll
+  you can draw in with a pen, or record into with ● from a real MIDI keyboard (Web MIDI:
+  device search/connect menu, hot-plug, remembered device, activity LED) or from the
+  computer keyboard (Z–M / Q–P, `[` `]` for octave) — with count-in, metronome, loop,
+  notes that grow while the key is held, optional input quantize and output-latency
+  compensation. Keyboard sound is a built-in synth or any audio file you load as a
+  sample instrument (pitch-shifted from its root note, auto-detected, stored in the
+  browser). Standard MIDI file import and export, undo/redo, copy/paste, ABC preview.
+  The melody becomes a single-line ABC score (same shape `YuE2GenerateABC` writes, ending
+  at the last note's bar) fed to `YuE2GenerateMusic` in melody mode instead of the
+  auto-sketched plan, so the song length follows the melody rather than the Duration
+  cap. Checked end to end: a 12-bar melody produced a 34.5 s song and 28 of its 42 notes
+  matched by pitch analysis (chance is about 8%).
+- **Album cover tools** in the track ⋯ menu — Cover Image Copy / Paste / Upload / From
+  Gallery (the same gallery picker the image nodes use, then a square-crop dialog).
+  With several tracks selected the action applies to all of them, so a series can share
+  one cover. Compose can also use your own cover image instead of generating one with
+  Krea2 ("Use my own cover image").
+- **Tags are embedded in the saved file itself** (title, artist, album, style comment,
+  encoder, lyrics, seed, cover art — ffmpeg stream copy, no re-encode) right after
+  generation and again whenever the title, lyrics or cover change. Download now serves
+  that file as it is instead of transcoding a tagged MP3 copy. Tracks made before this
+  can be back-filled by re-saving their metadata. Cover art is not embedded in Opus.
+- **Playlist ↻ Refresh** button — picks up tracks added or deleted elsewhere (another
+  session, the web app) without reloading the node.
+- Fixes: LLM-written lyrics/style no longer snap back to the pre-LLM text; a typed title
+  is no longer overwritten by the auto title; YuE2 tracks are recognised in every
+  playlist/reuse spot; a track with no metadata file can now take a cover or title (the
+  file used to be rejected as invalid); cover art is found beside the track whatever
+  save folder is set.
+
+### MiniMax H3 — Postprocess, Image Generator, Character Sheet
+
+- **Postprocess mode**: Deblur → Denoise → Upscale (FlashVSR / RTX VSR / model) → Skin
+  Retouch → Add Grain (GLSL film grain) → Interpolate → Resize, always in that order,
+  each step optional. Preview range and Preview button, its own Generate / Stop, and the
+  shared Compare viewer. Each mode keeps its own preview result, and Preview no longer
+  saves into the gallery.
+- **Image Generator**: still images with T2I and Reference to Image (multiple reference
+  images, dynamic LoRA slots), a Turbo switch, a 3/4/5-step second-pass sigma choice and
+  a Preview-save toggle. Settings are remembered across reloads.
+- **Character Sheet** mode with its own prompt box.
+- **H3 image gallery**: card layout, multi-select, Reuse Setting, Prompt View and a
+  full-screen viewer with pan / zoom / fit. The video gallery gained a Resize action.
+- Fixes: Add Grain's shader input keys; a chain that broke when Grain fed a later step;
+  the Compare viewer playing the full original against a trimmed preview; a stale first
+  result showing in Preview; settings resetting on every reload.
+
+### ITDA ONE STUDIO (TJ) — new node
+
+- A 3-lane video/audio stitch timeline (split, group, stitch, snap, box-select,
+  copy/paste, waveforms, Auto Stitch, scene/beat detect, versions, pre-render, real ffmpeg
+  export) absorbed from the standalone ITDA node as copied code, so it no longer depends
+  on that pack. The media bin takes local video/audio and imports from the H3 video
+  gallery and the MusicMaker playlist.
+
+### Prompt Edit and LLM (image nodes)
+
+- Prompt Edit is one merged screen on Krea2, Z-Image, Flux.2 Klein, Qwen 2511, SDXL and
+  Anima, with three LLM backends — Local GGUF (TJ_NODE), ComfyUI native TextGenerate and
+  OpenRouter — a footer showing the applied backend/model, and a Seed + seed control.
+  The default vision task now applies the chosen Model Format.
+- The prompt header carries 🔍 Prompt Edit / 📋 Prompt Preset on every tool; the job.json
+  download moved into it (Krea2, Z-Image). Gallery multi-select with bulk delete on all
+  six. Krea2 gained an Enhance toggle (Enhanced KSampler), Anima a LoRA section.
+- LLM output cleanup: leaked rubric preambles, runaway token repetition and near-duplicate
+  paragraphs are stripped.
+
+### Dependencies
+
+- `ComfyUI-sol-attn`'s original repository was deleted, which broke fresh installs. The
+  install scripts and docs now point to a mirror at
+  `github.com/designloves2/ComfyUI-sol-attn`.
+
+---
+
+## v1.30.0 (2026-09-27)
+
+### QWEN IMAGE 2.1 ONE STUDIO (TJ) — new node
+
+- Built from scratch on the Qwen Image 2.1 model family, mirroring Qwen Image Edit
+  2511 ONE STUDIO's own UI/interaction pattern (topbar, mode pills, preview, send-to
+  strip, prompt box, seed/generate, Gallery, Settings, Help) with Faceswap and Angle
+  Change intentionally left out. Modes: T2I, I2I (plain + up to 10-image Ref to
+  Image), Edit (Image 1 + up to 9 extra references), Inpaint/Outpaint, Upscale
+  (SeedVR2), and POSE (see below).
+- Mask-free Inpaint/Edit annotation: drawing directly on an image (pen/line/circle/
+  rect, Shift for perfect circle/square, brush-size cursor ring, right-click eraser,
+  keyboard shortcuts — P/I/O/U for tools, `[`/`]` brush size, `\` undo, Backspace
+  clear, Esc cancel, Enter commit) replaces uploading a separate mask file; the
+  annotated frame REPLACES the source image at its own `<imageN>` slot instead of
+  being inserted as an extra reference (a real bug: annotating Image 1 used to shift
+  every later reference's index by one, so a prompt naming `<image2>` could end up
+  pointing at the wrong picture).
+- Own full-featured gallery (pagination via scroll instead of a Load-more button,
+  lightbox viewer with ‹›-navigation, ♻ Reuse from saved metadata, 📂 Open Folder,
+  🗑 Delete, Send-to, ★ favorites, multi-select delete) — the first pass had shipped
+  with a 20-image cap and no viewer at all.
+- Settings gained a "Reference Image Max Megapixels" cap (Ref to Image + Edit) with
+  a live "≈ WxH px" hint next to the input — a 4K reference times up to 10 images
+  was slow to vision-encode and heavy on VRAM for no quality benefit; 0 keeps the
+  old "send as uploaded" behavior.
+- Fixed a copy-paste bug from 2511's own `/lora_triggers` route (present in both
+  2511 and this new node): it called a function that was never defined
+  (`_get_lora_triggers`), so opening any LoRA's trigger-word lookup 500'd. Both
+  routes now use the same working `_make_lora_triggers_handler()` every other
+  ONE STUDIO tool already had.
+
+### POSE mode — VNCCS PoseStudio LoRA
+
+- New mode: copies the pose from Image 1 onto the character in Image 2 using the
+  VNCCS PoseStudio LoRA. Image 1 must be cropped to the pose subject first (✂ Crop
+  Pose Image) — a yellow box with 8 drag handles, aspect-ratio presets
+  (1:1/2:3/3:4/4:5/9:16/Free) that lock the box to an exact ratio while resizing,
+  and a landscape/portrait switch (⇔/⇕) for the four "paired" presets. Output Size
+  (W/H, 🔒 locked to the crop's own ratio) lives in the left panel below the crop
+  button and re-crops from the original on change; the crop button shows
+  `✂ Edit Crop` with a separate size line below it (`Ratio 4:5    833×955 →
+  2048×2352`), and the pose thumbnail itself is overlaid with the current crop box.
+- Generation is two phases, queued back-to-back: (1) the cropped pose image goes
+  through `SAM3DBody_Loader → _Predict → _Smooth → _Render` (ComfyUI's own core
+  `comfy_extras.nodes_sam3d_body` — not the separate third-party
+  `ComfyUI-SAM3DBody` pack, which needs 4 different model files and isn't used
+  here) to produce a 3D-rendered pose image; (2) that render becomes `<image1>`,
+  the character becomes `<image2>`, and the VNCCS LoRA is loaded on its own — this
+  path has no `ModelSamplingFlux` node, matching the reference workflow exactly.
+  A real bug from the first pass: the Stage-1 render lands in `output/`, but
+  `LoadImage` only validates files under `input/`, so every generation failed
+  prompt validation until the render was copied over first.
+- Settings gained a LoRA + strength picker, a SAM3D Body model-file field, and an
+  editable/resettable system prompt (default: `"replace the pose of <image 2> with
+  the pose of <image 1>. keep the character of <image 2>."`) that's prepended to
+  whatever's typed in the PROMPT field, never shown mixed into it. Help gained the
+  LoRA and SAM3D model download links.
+- Compare view (the same before/after slider Edit mode uses) shows the Stage-1
+  pose render against the final result.
+
+### Auto Enhance + per-node Model Format defaults — rolled out to 6 more tools
+
+- The Qwen 2.1 pilot ("Auto Enhance" checkbox that runs Prompt Enhance on the
+  current prompt right before Generate) shipped to Flux.2 Klein, Anima, SDXL,
+  Z-Image, Krea 2, and Qwen Image Edit 2511. All six also got their own fixed
+  Model Format default for the shared 🔍 Prompt Edit panel (e.g. SDXL → "SDXL
+  (tags + weights)", Z-Image → "Z-Image & Lumina-2 (LLM text encoder)") and a
+  unified `"🔍 Prompt — Full Screen Edit"` overlay title, replacing four different
+  titles across the tools (including one still in Korean).
+- Found and fixed a real bug in the shared prompt panel (`shared/llm_panel.js`,
+  used by all 7 image tools): Model Format is saved to one GLOBAL localStorage key
+  shared by every tool, so a value picked in, say, SDXL became the current value
+  the next time ANY tool's Prompt Edit opened. The per-tool default only applied
+  when that global value still equaled the generic "Universal Natural Language"
+  fallback — which silently failed whenever the global value happened to be some
+  other tool's format instead. Each panel now tracks whether the user touched
+  Model Format in THAT panel instance directly, instead of comparing against the
+  shared value, so a fresh node always gets its own default regardless of what an
+  earlier session left behind.
+- The OpenRouter Enhance backend only ever passed the target format's bare NAME
+  to the model ("Target phrasing style: X"), never the actual instruction text
+  from `model_formats.json` that the Local GGUF/ComfyUI Native backends already
+  used — OpenRouter users were getting a materially weaker prompt-enhance result
+  for the exact same setting. Both backends now read the same instruction text.
+- Enhance output is now forced to English regardless of input language (a
+  `language_instruction` added to the shared system-prompt base used by every
+  backend) — Korean input previously could come back as a Korean "enhanced"
+  prompt, which the model itself can't reliably consume as an English generation
+  prompt.
+
+### Refresh Models coverage
+
+- MiniMax H3's Settings had a working `refreshModels()` but no button to trigger
+  it outside the main H3 Model tab — added to the UpScale and FaceRefine Model
+  tabs too, matching every other ONE STUDIO tool's Settings screen.
 
 ### MiniMax H3 — Llama GGUF (local llama.cpp) backend for Image → Brief
 
