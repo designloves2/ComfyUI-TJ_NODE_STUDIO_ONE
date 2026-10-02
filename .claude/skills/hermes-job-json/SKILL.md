@@ -36,7 +36,7 @@ Ask only for what you can't infer:
 | param | notes |
 |---|---|
 | **tool** | `h3` (video) · `krea2` / `zimage` / `klein` (image) · `music` (audio) |
-| **mode** | h3: `t2va` \| `fl2va` \| `ref2va` \| `l2va`. images: `t2i` \| `i2i` \| (klein also `edit`/`inpaint`/`outpaint`/`faceswap`; krea2 also `identity`). music: engine `acestep` \| `minimax` |
+| **mode** | h3: `t2va` \| `fl2va` \| `ref2va` \| `l2va`. images: `t2i` \| `i2i` \| (klein also `edit`/`inpaint`/`outpaint`/`faceswap`; krea2 also `identity`). music: engine `acestep` \| `minimax` \| `yue2` |
 | **count** | how many job files |
 | **shape** | **batch** (N independent items) or **sequence** (N shots of one story/song) |
 | **theme** | a subject/style, or "free" (→ you invent diverse subjects) |

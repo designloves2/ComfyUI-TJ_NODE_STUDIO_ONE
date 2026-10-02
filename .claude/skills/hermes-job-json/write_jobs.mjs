@@ -42,7 +42,7 @@ const HELP = `write_jobs.mjs — prompt list -> enveloped Hermes job.json files
 
   --tool     h3 | krea2 | zimage | klein | music        (required)
   --mode     h3: t2va|fl2va|ref2va|l2va ; images: t2i|i2i|edit|inpaint|outpaint|faceswap|identity ;
-             music: acestep|minimax                     (required)
+             music: acestep|minimax|yue2                (required)
   --out      output directory                           (required)
   --prompts  path to a JSON array, or "-" for stdin     (required)
   --base     JSON object merged into every job
@@ -57,7 +57,7 @@ async function readStdin() {
 }
 
 function baseJob(tool, mode) {
-  if (tool === "music") return { engine: mode === "minimax" ? "minimax" : "acestep", seed: null };
+  if (tool === "music") return { engine: ["minimax", "yue2"].includes(mode) ? mode : "acestep", seed: null };
   if (tool === "h3") return { mode, preset: null, durationSeconds: 10, seed: null };
   return { mode, width: 1024, height: 1024, steps: 8, cfg: 1, seed: null };
 }

@@ -98,7 +98,7 @@ package. Album cover / queue / tagged-MP3 export are out of scope.
 
 ```json
 {
-  "engine": "acestep",            // acestep (48 kHz, default) | minimax
+  "engine": "acestep",            // acestep (48 kHz, default) | minimax | yue2
   "caption": "warm K-ballad, piano and strings, female vocal, emotional build",   // req
   "lyrics": "[Verse]\n…\n[Chorus]\n…",   // omit for instrumental
   "instrumental": false,
@@ -115,3 +115,15 @@ package. Album cover / queue / tagged-MP3 export are out of scope.
 - Ace-Step reads `bpm`/`keyscale`/`timesignature` as structured inputs; MiniMax folds
   them into the caption text.
 - Model files come from `GET /music_one/config` — omit `dit`/`aceUnet`/etc.
+- **yue2** extra fields (all optional unless noted): `yue2Mode` `"text2music"` (default) | `"cover"`;
+  `yue2Ckpt` (omit → `yue2_ckpt` from `/music_one/config`); `yue2AutoAbc` (default `true`, text2music
+  melody sketch); `yue2CoverAudio` (**required for cover**, absolute local path — the CLI uploads it
+  to `input/`); `yue2RepetitionPenalty` (1.2); `temperature`/`topP`/`topK` (1.0 / 0.95 / 100);
+  `yue2MelodyAbc` (alias `abc`; text2music only) — a finished ABC score used as the melody instead of
+  the auto-sketched one (the graph then skips `YuE2GenerateABC` and runs `YuE2GenerateMusic` in
+  `melody` mode). Shape the Melody Editor writes: `X:1`, `T:`, `M:`, `L:1/16`, `Q:1/4=<bpm>`,
+  `V: Vocal clef=treble name="Vocal Melody" snm="Vocal"`, `K:`, `V: Vocal`, then one melody line
+  in bars ending `|]` — end it at the last note's bar (trailing empty bars read as silence).
+  Sampler is fixed (32 steps, cfg 1, dpm_2, sgm_uniform) — not a job field.
+- The headless CLI calls `POST /music_one/save_meta` right after generation, so the saved file
+  already carries its tags (title, lyrics, caption, cover); the result adds `tagged` / `tagError`.
