@@ -7,6 +7,7 @@ import re
 import json
 import glob
 import asyncio
+import base64
 import hashlib
 import threading
 import time
@@ -2958,23 +2959,51 @@ async def tj_shared_thumb(request):
     once here and stored. /view?preview=webp re-decodes the full PNG on every request and
     blocks the server while doing it, which made a 60-card page crawl through the tunnel.
     """
-    filename = request.query.get("filename", "")
-    root = "input" if request.query.get("root") == "input" else "output"
+    q = request.query
+    status, dst = await _tj_thumb_file(q.get("root"), q.get("subfolder", ""), q.get("filename", ""))
+    if status:
+        return web.Response(status=status)
+    return web.FileResponse(dst, headers={"Content-Type": "image/webp", "Cache-Control": "public, max-age=31536000, immutable"})
+
+
+async def _tj_thumb_file(root, subfolder, filename):
+    """(0, path of the stored thumbnail) after making it if needed, else (http status, None)."""
+    root = "input" if root == "input" else "output"
     base = folder_paths.get_input_directory() if root == "input" else _get_output_dir()
     try:
-        src = _safe_resolve_path(base, request.query.get("subfolder", ""), filename)
+        src = _safe_resolve_path(base, subfolder, filename)
     except ValueError:
-        return web.Response(status=400, text="invalid path")
+        return 400, None
     if not filename.lower().endswith(_TJ_SHARED_IMG_EXTS):
-        return web.Response(status=415, text="not an image")
+        return 415, None
     if not os.path.isfile(src):
-        return web.Response(status=404, text="not found")
+        return 404, None
     dst = _tj_thumb_path(src, root)
     try:
         await asyncio.get_running_loop().run_in_executor(_THUMB_POOL, _tj_ensure_thumb, src, dst)
     except OSError:
-        return web.Response(status=415, text="cannot read image")
-    return web.FileResponse(dst, headers={"Content-Type": "image/webp", "Cache-Control": "public, max-age=31536000, immutable"})
+        return 415, None
+    return 0, dst
+
+
+@PromptServer.instance.routes.post("/tj_shared/thumbs")
+async def tj_shared_thumbs(request):
+    """Up to 100 thumbnails in one round trip, as webp data URIs in request order (null
+    where one can't be made). Through a tunnel every request costs a full round trip, so
+    sixty cards as sixty requests is the bottleneck, not their size.
+    """
+    items = ((await request.json()).get("items") or [])[:100]
+
+    async def one(it):
+        if not isinstance(it, dict):
+            return None
+        status, dst = await _tj_thumb_file(it.get("root"), it.get("subfolder", ""), it.get("filename", ""))
+        if status:
+            return None
+        with open(dst, "rb") as f:
+            return "data:image/webp;base64," + base64.b64encode(f.read()).decode("ascii")
+
+    return web.json_response({"ok": True, "thumbs": await asyncio.gather(*(one(it) for it in items))})
 
 
 _THUMB_JOB = {"running": False, "total": 0, "done": 0, "built": 0, "failed": 0}
