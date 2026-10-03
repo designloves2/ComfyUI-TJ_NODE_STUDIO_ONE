@@ -41,7 +41,7 @@ export function createGalleryOverlay(state, ctx) {
       data.images.forEach(img => {
         const url = `/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder||"")}&type=output`;
         const cell = el("div",{style:{position:"relative",cursor:"pointer",borderRadius:"6px",overflow:"hidden",background:C.bg2}});
-        const im   = el("img",{src:url,title:img.filename,style:{width:"100%",aspectRatio:"1",objectFit:"cover",display:"block",transition:"transform .15s"}});
+        const im   = el("img",{src:url+"&preview=webp;70",loading:"lazy",decoding:"async",title:img.filename,style:{width:"100%",aspectRatio:"1",objectFit:"cover",display:"block",transition:"transform .15s"}});
         const del  = el("button",{type:"button",text:"✕",style:{position:"absolute",top:"3px",left:"3px",background:"rgba(0,0,0,.7)",color:"#fff",border:"none",borderRadius:"3px",width:"18px",height:"18px",cursor:"pointer",fontSize:"10px",padding:"0",display:"none"}});
         const fav  = el("button",{type:"button",text:img.is_fav?"★":"☆",style:{position:"absolute",top:"3px",right:"3px",background:"rgba(0,0,0,.7)",color:img.is_fav?"#fbbf24":"#fff",border:"none",borderRadius:"3px",width:"18px",height:"18px",cursor:"pointer",fontSize:"12px",padding:"0",display:"none"}});
         cell.addEventListener("mouseenter",()=>{im.style.transform="scale(1.04)";del.style.display="block";fav.style.display="block";});

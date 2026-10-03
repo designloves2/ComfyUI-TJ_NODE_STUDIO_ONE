@@ -40,7 +40,7 @@ function aspectRatioLabel(w, h) {
 
 function imageURL(v) {
   return `/view?filename=${encodeURIComponent(v.filename)}`
-    + `&subfolder=${encodeURIComponent(v.subfolder || "")}&type=output&t=${v.mtime || ""}`;
+    + `&subfolder=${encodeURIComponent(v.subfolder || "")}&type=output&t=${v.mtime || ""}&preview=webp;70`;
 }
 // Read-only look at everything Reuse Setting would restore — same idea as the video
 // gallery's own buildInfoLines, scoped to what Image Generator actually saves.

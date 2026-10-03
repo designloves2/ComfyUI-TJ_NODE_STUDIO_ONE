@@ -202,7 +202,7 @@ export function openImageGalleryPicker(onPick, initialToolId) {
     const imgs = data.images || [];
     imgs.forEach(img => {
       const cell = el("div", { style: { position: "relative", borderRadius: "4px", overflow: "hidden", border: `1px solid ${C.border}`, background: C.bg2, cursor: "pointer" } });
-      const im = el("img", { src: viewUrl(img, activeTool), style: { width: "100%", height: "auto", display: "block" } });
+      const im = el("img", { src: viewUrl(img, activeTool) + "&preview=webp;70", loading: "lazy", decoding: "async", style: { width: "100%", height: "auto", display: "block" } });
       cell.appendChild(im);
       // 눈가리기 — same hidden-image set every gallery in the app reads/writes, keyed by
       // subfolder+filename regardless of which tool's gallery this came from.
