@@ -1,5 +1,6 @@
 // ui_gallery.js — Gallery overlay with send-to, reuse, keyboard nav
 import { C, el, clear } from "./core.js";
+import { setThumb } from "../shared/gallery_thumb.js";
 import { button, row } from "./ui_common.js";
 import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, copyOutputToInput } from "./api.js";
 import { SUBFOLDER } from "./core.js";
@@ -215,7 +216,7 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
       border:`1px solid ${C.border}`,background:C.bg2,
       cursor:"pointer",
     }});
-    const im=el("img",{src:url+"&preview=webp;70",loading:"lazy",decoding:"async",style:{width:"100%",height:"auto",display:"block"}});
+    const im=el("img",{style:{width:"100%",height:"auto",display:"block"}}); setThumb(im,img);
     const key = mediaKey(img.filename, img.subfolder || "");
     im.addEventListener("click",()=>{
       if (selectMode) { checkbox.checked = !checkbox.checked; checkbox.dispatchEvent(new Event("change")); return; }

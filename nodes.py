@@ -6,7 +6,11 @@ import sys
 import re
 import json
 import glob
+import asyncio
+import hashlib
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 import subprocess
 import shutil
 from pathlib import Path
@@ -97,6 +101,29 @@ def _meta_dir(image_path):
 def _meta_path(image_path):
     fname = os.path.splitext(os.path.basename(image_path))[0] + ".json"
     return os.path.join(_meta_dir(image_path), fname)
+
+
+_TJ_THUMB_SIZE = 384
+_THUMB_POOL = ThreadPoolExecutor(max_workers=3)
+
+
+def _tj_thumb_path(image_path, root="output"):
+    """Where an image's gallery thumbnail is stored. Output images keep it beside their
+    metadata (keyed by the full filename, since a.png and a.jpg may coexist; delete/rename
+    move it with the sidecar); input/ is
+    scanned by ComfyUI's own loaders, so its thumbnails live in the user folder instead.
+    """
+    if root == "input":
+        key = hashlib.sha1(image_path.encode("utf-8")).hexdigest()
+        return os.path.join(folder_paths.get_user_directory(), "tj_thumbs", key + ".webp")
+    return os.path.join(_meta_dir(image_path), "thumbs", os.path.basename(image_path) + ".webp")
+
+
+def _remove_thumb(image_path):
+    try:
+        os.remove(_tj_thumb_path(image_path))
+    except OSError:
+        pass
 
 
 def _meta_path_legacy(image_path):
@@ -507,6 +534,8 @@ def _make_save_meta_handler(prefix):
             if not os.path.exists(vpath):
                 return web.json_response({"ok": False, "error": f"not found: {vpath}"})
             ok = _write_json_meta(vpath, meta)
+            if filename.lower().endswith(_TJ_SHARED_IMG_EXTS):
+                asyncio.get_running_loop().run_in_executor(_THUMB_POOL, _tj_ensure_thumb, vpath, _tj_thumb_path(vpath))
             return web.json_response({"ok": ok, "filename": filename})
         except Exception as e:
             print(f"[TJ_NODE_ONE/{prefix}] save_meta error: {e}")
@@ -608,6 +637,7 @@ def _make_delete_handler(node_key):
             if not os.path.exists(img_path):
                 return web.json_response({"ok": False, "error": "file not found"}, status=404)
             os.remove(img_path)
+            _remove_thumb(img_path)
             for json_path in (_meta_path(img_path), _meta_path_legacy(img_path)):
                 if os.path.exists(json_path):
                     try:
@@ -644,6 +674,9 @@ def _make_rename_handler(node_key):
             if os.path.exists(new_path):
                 return web.json_response({"ok": False, "error": "target already exists"}, status=409)
             os.rename(old_path, new_path)
+            old_thumb, new_thumb = _tj_thumb_path(old_path), _tj_thumb_path(new_path)
+            if os.path.exists(old_thumb) and not os.path.exists(new_thumb):
+                os.rename(old_thumb, new_thumb)
             for old_json, new_json in ((_meta_path(old_path), _meta_path(new_path)),
                                         (_meta_path_legacy(old_path), _meta_path_legacy(new_path))):
                 if os.path.exists(old_json) and not os.path.exists(new_json):
@@ -1327,6 +1360,7 @@ async def qe_delete(request):
         path = _safe_resolve_output_path(output_dir, data.get("subfolder",""), data.get("filename",""))
         if os.path.exists(path):
             os.remove(path)
+        _remove_thumb(path)
         meta = path + ".meta.json"
         if os.path.exists(meta):
             os.remove(meta)
@@ -1506,6 +1540,7 @@ async def q21_delete(request):
         path = _safe_resolve_output_path(output_dir, data.get("subfolder",""), data.get("filename",""))
         if os.path.exists(path):
             os.remove(path)
+        _remove_thumb(path)
         meta = path + ".meta.json"
         if os.path.exists(meta):
             os.remove(meta)
@@ -2785,7 +2820,7 @@ def _tj_shared_folder_tree(base, max_depth=2):
         except Exception:
             return out
         for name in entries:
-            if name.startswith("."):
+            if name.startswith(".") or name == "metadata":
                 continue
             full = os.path.join(dir_path, name)
             rel = os.path.relpath(full, base).replace("\\", "/")
@@ -2897,6 +2932,101 @@ async def tj_shared_gallery_folders(request):
     except Exception as e:
         return web.json_response({"folders": [], "error": str(e)})
     return web.json_response({"folders": folders})
+
+
+def _tj_thumb_fresh(src, dst):
+    return os.path.isfile(dst) and os.path.getmtime(dst) >= os.path.getmtime(src)
+
+
+def _tj_ensure_thumb(src, dst):
+    """Write a 384px webp of `src` to `dst` unless a fresh one is already there."""
+    if _tj_thumb_fresh(src, dst):
+        return False
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    tmp = f"{dst}.{threading.get_ident()}.tmp"
+    with Image.open(src) as im:
+        im = im.convert("RGBA" if im.mode in ("RGBA", "LA", "P", "PA") else "RGB")
+        im.thumbnail((_TJ_THUMB_SIZE, _TJ_THUMB_SIZE))
+        im.save(tmp, "WEBP", quality=75, method=4)
+    os.replace(tmp, dst)
+    return True
+
+
+@PromptServer.instance.routes.get("/tj_shared/thumb")
+async def tj_shared_thumb(request):
+    """Gallery card thumbnail. Served from the stored one when it is fresh, otherwise made
+    once here and stored. /view?preview=webp re-decodes the full PNG on every request and
+    blocks the server while doing it, which made a 60-card page crawl through the tunnel.
+    """
+    filename = request.query.get("filename", "")
+    root = "input" if request.query.get("root") == "input" else "output"
+    base = folder_paths.get_input_directory() if root == "input" else _get_output_dir()
+    try:
+        src = _safe_resolve_path(base, request.query.get("subfolder", ""), filename)
+    except ValueError:
+        return web.Response(status=400, text="invalid path")
+    if not filename.lower().endswith(_TJ_SHARED_IMG_EXTS):
+        return web.Response(status=415, text="not an image")
+    if not os.path.isfile(src):
+        return web.Response(status=404, text="not found")
+    dst = _tj_thumb_path(src, root)
+    try:
+        await asyncio.get_running_loop().run_in_executor(_THUMB_POOL, _tj_ensure_thumb, src, dst)
+    except OSError:
+        return web.Response(status=415, text="cannot read image")
+    return web.FileResponse(dst, headers={"Content-Type": "image/webp", "Cache-Control": "public, max-age=31536000, immutable"})
+
+
+_THUMB_JOB = {"running": False, "total": 0, "done": 0, "built": 0, "failed": 0}
+
+
+@PromptServer.instance.routes.post("/tj_shared/build_thumbs")
+async def tj_shared_build_thumbs(request):
+    """Build the missing or stale thumbnails of one gallery scope, skipping the fresh ones.
+    {root: "input"|"output", subfolder: "", recursive: false} -> {ok, total, built, skipped, failed}.
+    """
+    if _THUMB_JOB["running"]:
+        return web.json_response({"ok": False, "error": "already running"}, status=409)
+    data = await request.json()
+    root = "input" if data.get("root") == "input" else "output"
+    base = folder_paths.get_input_directory() if root == "input" else _get_output_dir()
+    try:
+        start = _safe_resolve_path(base, data.get("subfolder", "") or "")
+    except ValueError:
+        return web.json_response({"ok": False, "error": "invalid path"}, status=400)
+    if not os.path.isdir(start):
+        return web.json_response({"ok": False, "error": "folder not found"}, status=404)
+
+    files = []
+    for dirpath, dirnames, names in os.walk(start):
+        files += [os.path.join(dirpath, n) for n in names if n.lower().endswith(_TJ_SHARED_IMG_EXTS)]
+        if not data.get("recursive"):
+            break
+        dirnames[:] = [d for d in dirnames if d not in ("metadata", "_thumbs")]
+
+    _THUMB_JOB.update(running=True, total=len(files), done=0, built=0, failed=0)
+    loop = asyncio.get_running_loop()
+
+    async def one(src):
+        try:
+            if await loop.run_in_executor(_THUMB_POOL, _tj_ensure_thumb, src, _tj_thumb_path(src, root)):
+                _THUMB_JOB["built"] += 1
+        except OSError:
+            _THUMB_JOB["failed"] += 1
+        _THUMB_JOB["done"] += 1
+
+    try:
+        await asyncio.gather(*(one(f) for f in files))
+    finally:
+        _THUMB_JOB["running"] = False
+    built, failed = _THUMB_JOB["built"], _THUMB_JOB["failed"]
+    return web.json_response({"ok": True, "total": len(files), "built": built,
+                              "skipped": len(files) - built - failed, "failed": failed})
+
+
+@PromptServer.instance.routes.get("/tj_shared/build_thumbs_status")
+async def tj_shared_build_thumbs_status(request):
+    return web.json_response(_THUMB_JOB)
 
 
 # The new cross-tool "OUTPUT folder" gallery tab isn't tied to one tool, so it needs its own

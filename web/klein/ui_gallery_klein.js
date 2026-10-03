@@ -1,5 +1,6 @@
 // ui_gallery_klein.js — Gallery overlay for flux2 klein One (TJ)
 import { C, el, clear, SUBFOLDER } from "./core_klein.js";
+import { setThumb } from "../shared/gallery_thumb.js";
 import { button, row } from "./ui_common.js";
 import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, copyOutputToInput } from "./api_klein.js";
 import { attachSensitiveToggle, mediaKey, isBlurred, isSensitive, setSensitive } from "../shared/ui_sensitive_media.js";
@@ -209,7 +210,7 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
       border: `1px solid ${C.border}`, background: C.bg2,
       cursor: "pointer",
     }});
-    const im = el("img", { src: url + "&preview=webp;70", loading: "lazy", decoding: "async", style: { width: "100%", height: "auto", display: "block" } });
+    const im = el("img", { style: { width: "100%", height: "auto", display: "block" } }); setThumb(im, img);
     const key = mediaKey(img.filename, img.subfolder || "");
     im.addEventListener("click", () => {
       if (selectMode) { checkbox.checked = !checkbox.checked; checkbox.dispatchEvent(new Event("change")); return; }

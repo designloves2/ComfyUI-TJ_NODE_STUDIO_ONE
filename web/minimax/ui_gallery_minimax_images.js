@@ -12,6 +12,7 @@
 // steps carried over (per instruction) — Interpolate/Resize/Stitch are video-only concepts
 // and dropped entirely, including their filter options.
 import { C, BRAND, el, clear, SUBFOLDER } from "./core_minimax.js";
+import { setThumb } from "../shared/gallery_thumb.js";
 import { button } from "../klein/ui_common.js";
 import { listImages, revealOutputFolder, deleteImage, copyOutputToInput, discardInputCopy,
          saveMeta, queuePrompt } from "./api_minimax.js";
@@ -40,7 +41,7 @@ function aspectRatioLabel(w, h) {
 
 function imageURL(v) {
   return `/view?filename=${encodeURIComponent(v.filename)}`
-    + `&subfolder=${encodeURIComponent(v.subfolder || "")}&type=output&t=${v.mtime || ""}&preview=webp;70`;
+    + `&subfolder=${encodeURIComponent(v.subfolder || "")}&type=output&t=${v.mtime || ""}`;
 }
 // Read-only look at everything Reuse Setting would restore — same idea as the video
 // gallery's own buildInfoLines, scoped to what Image Generator actually saves.
@@ -353,8 +354,9 @@ export function createImageGalleryOverlay(state, ctx) {
     }});
 
     const thumbWrap = el("div", { style: { position: "relative", width: "100%", overflow: "hidden", borderRadius: "7px 7px 0 0" } });
-    const img = el("img", { loading: "lazy", src: imageURL(v),
+    const img = el("img", {
       style: { width: "100%", aspectRatio: "1 / 1", objectFit: "contain", background: "#000", display: "block" } });
+    setThumb(img, v);
     thumbWrap.appendChild(img);
     attachSensitiveToggle?.(thumbWrap, img, key);   // ⊘ eye toggle — bottom-right by default
 

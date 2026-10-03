@@ -1,5 +1,6 @@
 // ui_gallery_anima.js — Gallery overlay for Anima ONE STUDIO (TJ)
 import { C, el, clear, SUBFOLDER, BRAND } from "./core_anima.js";
+import { setThumb } from "../shared/gallery_thumb.js";
 import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, copyOutputToInput } from "./api_anima.js";
 import { attachSensitiveToggle, mediaKey, isBlurred, isSensitive, setSensitive } from "../shared/ui_sensitive_media.js";
 
@@ -224,7 +225,7 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
       position: "relative", borderRadius: "4px", overflow: "hidden",
       border: `1px solid ${C.border}`, background: C.bg2, cursor: "pointer",
     }});
-    const im = el("img", { src: url + "&preview=webp;70", loading: "lazy", decoding: "async", style: { width: "100%", height: "auto", display: "block" } });
+    const im = el("img", { style: { width: "100%", height: "auto", display: "block" } }); setThumb(im, img);
     const key = mediaKey(img.filename, img.subfolder || "");
     im.addEventListener("click", () => {
       if (selectMode) { checkbox.checked = !checkbox.checked; checkbox.dispatchEvent(new Event("change")); return; }

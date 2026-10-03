@@ -5,6 +5,7 @@
 // unique) and hands the filename to the caller — same mechanism each tool's own gallery
 // "Send to" already uses, just exposed as a standalone overlay any tool can open.
 import { el, clear } from "../klein/core_klein.js";
+import { setThumb } from "./gallery_thumb.js";
 import { attachSensitiveToggle, mediaKey, isBlurred } from "./ui_sensitive_media.js";
 
 export const IMAGE_GALLERY_TOOLS = [
@@ -202,7 +203,8 @@ export function openImageGalleryPicker(onPick, initialToolId) {
     const imgs = data.images || [];
     imgs.forEach(img => {
       const cell = el("div", { style: { position: "relative", borderRadius: "4px", overflow: "hidden", border: `1px solid ${C.border}`, background: C.bg2, cursor: "pointer" } });
-      const im = el("img", { src: viewUrl(img, activeTool) + "&preview=webp;70", loading: "lazy", decoding: "async", style: { width: "100%", height: "auto", display: "block" } });
+      const im = el("img", { style: { width: "100%", height: "auto", display: "block" } });
+      setThumb(im, img, activeTool.input ? "input" : "output");
       cell.appendChild(im);
       // 눈가리기 — same hidden-image set every gallery in the app reads/writes, keyed by
       // subfolder+filename regardless of which tool's gallery this came from.

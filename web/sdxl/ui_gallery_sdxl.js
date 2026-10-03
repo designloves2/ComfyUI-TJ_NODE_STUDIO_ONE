@@ -1,5 +1,6 @@
 // ui_gallery_sdxl.js — Gallery overlay for SDXL ONE (TJ)
 import { C, el, clear, SUBFOLDER } from "./core_sdxl.js";
+import { setThumb } from "../shared/gallery_thumb.js";
 import { button, row } from "../klein/ui_common.js";
 import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, copyOutputToInput } from "./api_sdxl.js";
 import { attachSensitiveToggle, mediaKey, isBlurred, isSensitive, setSensitive } from "../shared/ui_sensitive_media.js";
@@ -226,7 +227,7 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
         const idx = loadedImages.length - imgs.length + i;
         const url = `/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder||"")}&type=output&t=${img.mtime||""}`;
         const cell = el("div", { style: { cursor: "pointer", borderRadius: "6px", overflow: "hidden", aspectRatio: "1/1", background: C.bg2, position: "relative" } });
-        const im = el("img", { src: url + "&preview=webp;70", loading: "lazy", decoding: "async", style: { width: "100%", height: "100%", objectFit: "cover" } });
+        const im = el("img", { style: { width: "100%", height: "100%", objectFit: "cover" } }); setThumb(im, img);
         if (img.favorite) {
           const star = el("div", { text: "★", style: { position: "absolute", top: "2px", right: "4px", color: "#ffcc00", fontSize: "12px", textShadow: "0 0 3px #000" } });
           cell.appendChild(star);
