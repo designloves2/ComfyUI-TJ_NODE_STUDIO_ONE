@@ -1,6 +1,6 @@
 // ui_gallery_qe2511.js — Gallery overlay for Qwen Image Edit 2511 ONE (TJ)
 import { C, el, clear, SUBFOLDER, BRAND } from "./core_qwen2511.js";
-import { setThumb } from "../shared/gallery_thumb.js";
+import { setThumb, wireCacheButton } from "../shared/gallery_thumb.js";
 import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, copyOutputToInput } from "./api_qwen2511.js";
 import { attachSensitiveToggle, mediaKey, isBlurred, isSensitive, setSensitive } from "../shared/ui_sensitive_media.js";
 
@@ -85,6 +85,9 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
   topRow.appendChild(bulkDeleteBtn);
   topRow.appendChild(selectBtn);
   topRow.appendChild(favBtn);
+  const cacheBtn = btn("⚡ Cache", () => {});
+  wireCacheButton(cacheBtn, () => ({ root: "output", subfolder: SUBFOLDER, recursive: true }));
+  topRow.appendChild(cacheBtn);
   topRow.appendChild(refreshBtn);
   topRow.appendChild(closeBtn);
   ov.appendChild(topRow);

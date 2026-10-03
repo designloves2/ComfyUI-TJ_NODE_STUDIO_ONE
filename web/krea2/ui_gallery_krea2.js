@@ -1,6 +1,6 @@
 // ui_gallery_krea2.js — Gallery overlay for Krea 2 ONE STUDIO (TJ)
 import { C, el, clear, SUBFOLDER, BRAND } from "./core_krea2.js";
-import { setThumb } from "../shared/gallery_thumb.js";
+import { setThumb, wireCacheButton } from "../shared/gallery_thumb.js";
 import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, copyOutputToInput } from "./api_krea2.js";
 import { attachSensitiveToggle, mediaKey, isBlurred, isSensitive, setSensitive } from "../shared/ui_sensitive_media.js";
 
@@ -80,6 +80,9 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
   topRow.appendChild(bulkDeleteBtn);
   topRow.appendChild(selectBtn);
   topRow.appendChild(favBtn);
+  const cacheBtn = btn("⚡ Cache", () => {});
+  wireCacheButton(cacheBtn, () => ({ root: "output", subfolder: SUBFOLDER, recursive: true }));
+  topRow.appendChild(cacheBtn);
   topRow.appendChild(refreshBtn);
   topRow.appendChild(closeBtn);
   ov.appendChild(topRow);

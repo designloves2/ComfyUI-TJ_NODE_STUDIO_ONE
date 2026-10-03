@@ -1,6 +1,6 @@
 // ui_gallery.js — Gallery overlay with send-to, reuse, keyboard nav
-import { C, el, clear } from "./core.js";
-import { setThumb } from "../shared/gallery_thumb.js";
+import { C, el, clear, SUBFOLDER } from "./core.js";
+import { setThumb, wireCacheButton } from "../shared/gallery_thumb.js";
 import { button, row } from "./ui_common.js";
 import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, copyOutputToInput } from "./api.js";
 import { SUBFOLDER } from "./core.js";
@@ -76,6 +76,9 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
   topRow.appendChild(bulkDeleteBtn);
   topRow.appendChild(selectBtn);
   topRow.appendChild(favBtn);
+  const cacheBtn = button("⚡ Cache", () => {});
+  wireCacheButton(cacheBtn, () => ({ root: "output", subfolder: SUBFOLDER, recursive: true }));
+  topRow.appendChild(cacheBtn);
   topRow.appendChild(refreshBtn);
   topRow.appendChild(closeBtn);
   ov.appendChild(topRow);

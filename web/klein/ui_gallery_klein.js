@@ -1,6 +1,6 @@
 // ui_gallery_klein.js — Gallery overlay for flux2 klein One (TJ)
 import { C, el, clear, SUBFOLDER } from "./core_klein.js";
-import { setThumb } from "../shared/gallery_thumb.js";
+import { setThumb, wireCacheButton } from "../shared/gallery_thumb.js";
 import { button, row } from "./ui_common.js";
 import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, copyOutputToInput } from "./api_klein.js";
 import { attachSensitiveToggle, mediaKey, isBlurred, isSensitive, setSensitive } from "../shared/ui_sensitive_media.js";
@@ -75,6 +75,9 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
   topRow.appendChild(bulkDeleteBtn);
   topRow.appendChild(selectBtn);
   topRow.appendChild(favBtn);
+  const cacheBtn = button("⚡ Cache", () => {});
+  wireCacheButton(cacheBtn, () => ({ root: "output", subfolder: SUBFOLDER, recursive: true }));
+  topRow.appendChild(cacheBtn);
   topRow.appendChild(refreshBtn);
   topRow.appendChild(closeBtn);
   ov.appendChild(topRow);

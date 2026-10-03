@@ -5,7 +5,7 @@
 // unique) and hands the filename to the caller — same mechanism each tool's own gallery
 // "Send to" already uses, just exposed as a standalone overlay any tool can open.
 import { el, clear } from "../klein/core_klein.js";
-import { setThumb } from "./gallery_thumb.js";
+import { setThumb, wireCacheButton } from "./gallery_thumb.js";
 import { attachSensitiveToggle, mediaKey, isBlurred } from "./ui_sensitive_media.js";
 
 export const IMAGE_GALLERY_TOOLS = [
@@ -90,7 +90,13 @@ export function openImageGalleryPicker(onPick, initialToolId) {
   topRow.appendChild(el("div", { text: "🖼 Pick an image from a gallery", style: { color: "#fff", fontSize: "14px", fontWeight: "700", flex: "1" } }));
   const closeBtn = el("button", { type: "button", text: "✕", style: { cursor: "pointer", fontFamily: "inherit", fontSize: "12px", padding: "5px 10px", borderRadius: "6px", border: "none", background: "#c0392b", color: "#fff" } });
   closeBtn.addEventListener("click", () => close());
-  topRow.appendChild(closeBtn);
+  const cacheBtn = el("button", { type: "button", text: "⚡ Cache", style: { cursor: "pointer", fontFamily: "inherit", fontSize: "12px", padding: "5px 10px", borderRadius: "6px", border: `1px solid ${C.border}`, background: C.bg2, color: C.text } });
+  wireCacheButton(cacheBtn, () => ({
+    root: activeTool.input ? "input" : "output",
+    subfolder: activeTool.input || activeTool.output ? activeFolder : activeTool.subfolder,
+    recursive: !activeTool.input && !activeTool.output,
+  }));
+  topRow.append(cacheBtn, closeBtn);
 
   const toolBar = el("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap", flexShrink: "0" } });
   function renderToolBar() {

@@ -12,7 +12,7 @@
 // steps carried over (per instruction) — Interpolate/Resize/Stitch are video-only concepts
 // and dropped entirely, including their filter options.
 import { C, BRAND, el, clear, SUBFOLDER } from "./core_minimax.js";
-import { setThumb } from "../shared/gallery_thumb.js";
+import { setThumb, wireCacheButton } from "../shared/gallery_thumb.js";
 import { button } from "../klein/ui_common.js";
 import { listImages, revealOutputFolder, deleteImage, copyOutputToInput, discardInputCopy,
          saveMeta, queuePrompt } from "./api_minimax.js";
@@ -240,7 +240,9 @@ export function createImageGalleryOverlay(state, ctx) {
   }
   postBtn.addEventListener("click", () => setPostMode(!postMode));
 
-  hdr.append(bulkDeleteBtn, selectBtn, filterSel, postBtn, refreshBtn, folderBtn, button("✕ Close", () => hide(), "danger"));
+  const cacheBtn = button("⚡ Cache", () => {});
+  wireCacheButton(cacheBtn, () => ({ root: "output", subfolder: imgFolder(state), recursive: true }));
+  hdr.append(bulkDeleteBtn, selectBtn, filterSel, postBtn, cacheBtn, refreshBtn, folderBtn, button("✕ Close", () => hide(), "danger"));
 
   const barStyle = {
     display: "none", flexShrink: "0", alignItems: "center", gap: "8px", flexWrap: "wrap",
