@@ -10,7 +10,7 @@ import { listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage, get
          copyOutputToInput, discardInputCopy, getVideoInfo, queuePrompt, waitForHistory, historyEntry,
          getClipLastFrame, getSystemPrompt, analyzeImagesNative, writeBriefNative } from "./api_minimax.js";
 import { buildUpscaleGraph, buildInterpolateGraph, buildResizeGraph, flashvsrUsed } from "./graph_builder_minimax.js";
-import { attachSensitiveToggle, makeSensitiveControl, mediaKey, isBlurred, isSensitive, setSensitive } from "../shared/ui_sensitive_media.js";
+import { attachSensitiveToggle, makeSensitiveControl, mediaKey, isBlurred, isSensitive, setSensitive, wireRevealButton } from "../shared/ui_sensitive_media.js";
 
 const STITCH_MAX = 10;
 
@@ -314,7 +314,9 @@ export function createGalleryOverlay(state, ctx) {
   rifeBtn.addEventListener("click",   () => setMode(postMode === "rife"    ? null : "rife"));
   resizeBtn.addEventListener("click", () => setMode(postMode === "resize"  ? null : "resize"));
 
-  hdr.append(filterSel, stitchBtn, upBtn, rifeBtn, resizeBtn, refreshBtn, folderBtn, button("✕ Close", () => hide(), "danger"));
+  const revealBtn = button("👁 Show", () => {});
+  wireRevealButton(revealBtn);
+  hdr.append(filterSel, stitchBtn, upBtn, rifeBtn, resizeBtn, revealBtn, refreshBtn, folderBtn, button("✕ Close", () => hide(), "danger"));
 
   const stitchBar = el("div", { style: {
     display: "none", flexShrink: "0", alignItems: "center", gap: "8px",

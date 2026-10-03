@@ -5,7 +5,7 @@
 import { C, el, clear, SUBFOLDER, BRAND } from "./core_qwen21.js";
 import { setThumb, wireCacheButton } from "../shared/gallery_thumb.js";
 import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, copyOutputToInput } from "./api_qwen21.js";
-import { attachSensitiveToggle, mediaKey, isBlurred, isSensitive, setSensitive } from "../shared/ui_sensitive_media.js";
+import { attachSensitiveToggle, mediaKey, isBlurred, isSensitive, setSensitive, wireRevealButton } from "../shared/ui_sensitive_media.js";
 
 const SEND_TARGETS = [
   { mode: "i2i",     field: "i2iImage",     label: "→ I2I" },
@@ -89,20 +89,20 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
   const cacheBtn = btn("⚡ Cache", () => {});
   wireCacheButton(cacheBtn, () => ({ root: "output", subfolder: SUBFOLDER, recursive: true }));
   topRow.appendChild(cacheBtn);
+  const revealBtn = btn("👁 Show", () => {});
+  wireRevealButton(revealBtn);
+  topRow.appendChild(revealBtn);
   topRow.appendChild(refreshBtn);
   topRow.appendChild(closeBtn);
   ov.appendChild(topRow);
 
   const grid = el("div", { style: {
-    display: "grid", gridTemplateColumns: "repeat(8,1fr)",
-    gap: "6px", overflowY: "auto", flex: "1", minHeight: "0", alignContent: "start",
+    display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridAutoRows: "min-content",
+    gap: "6px", overflowY: "auto", flex: "1", alignContent: "start",
   }});
   const statusEl = el("div", { style: { color: C.muted, fontSize: "11px", flexShrink: "0" } });
-  // Scrolling the grid itself triggers the next page — user: "Load more를 누르는게
-  // 아니고 그냥 스크롤이 되야함." No button to click; near the bottom, load silently.
-  grid.addEventListener("scroll", () => {
-    if (grid.scrollTop + grid.clientHeight >= grid.scrollHeight - 200) loadMore();
-  });
+  const moreBtn  = btn("Load more", () => loadMore());
+  moreBtn.style.display = "none";
 
   // ── Full-size viewer ────────────────────────────────────────────────────────
   let viewerEl = null, keyHandler = null;
@@ -278,28 +278,26 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
   }
 
   // ── Load ───────────────────────────────────────────────────────────────────
-  let hasMore = true;
   async function loadMore() {
-    if (loading || !hasMore) return;
-    loading = true;
+    if (loading) return;
+    loading = true; moreBtn.textContent = "Loading…";
     try {
       const data = await getGallery({ offset, limit: LIMIT, subfolder: state.saveSubfolder || SUBFOLDER, favonly: favOnly });
       const imgs = data.images || []; total = data.total || 0;
       imgs.forEach((img, i) => grid.appendChild(thumb(img, offset + i)));
       loadedImages = loadedImages.concat(imgs); offset += imgs.length;
-      hasMore = offset < total;
-      statusEl.textContent = loadedImages.length ? `${loadedImages.length} / ${total}` : "No images found.";
-      // A fresh page may not fill/overflow the grid enough to ever trigger a scroll
-      // event — pull in the next page right away until scrolling is actually needed.
-      if (hasMore && grid.scrollHeight <= grid.clientHeight + 200) await loadMore();
+      statusEl.textContent = `${loadedImages.length} / ${total}`;
+      moreBtn.style.display = offset < total ? "block" : "none";
+      if (!loadedImages.length) statusEl.textContent = "No images found.";
     } catch(e) { statusEl.textContent = `Error: ${e.message || e}`; }
-    finally { loading = false; }
+    finally { loading = false; moreBtn.textContent = "Load more"; }
   }
 
-  function reset() { clear(grid); offset = 0; total = 0; hasMore = true; loadedImages = []; cellRefs = []; loadMore(); }
+  function reset() { clear(grid); offset = 0; loadedImages = []; cellRefs = []; loadMore(); }
 
   ov.appendChild(grid);
   ov.appendChild(statusEl);
+  ov.appendChild(moreBtn);
 
   return {
     el: ov,

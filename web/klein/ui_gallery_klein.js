@@ -3,7 +3,7 @@ import { C, el, clear, SUBFOLDER } from "./core_klein.js";
 import { setThumb, wireCacheButton } from "../shared/gallery_thumb.js";
 import { button, row } from "./ui_common.js";
 import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, copyOutputToInput } from "./api_klein.js";
-import { attachSensitiveToggle, mediaKey, isBlurred, isSensitive, setSensitive } from "../shared/ui_sensitive_media.js";
+import { attachSensitiveToggle, mediaKey, isBlurred, isSensitive, setSensitive, wireRevealButton } from "../shared/ui_sensitive_media.js";
 
 const SEND_TARGETS = [
   { mode: "i2i",      field: "i2iImage",       label: "→ I2I" },
@@ -78,12 +78,15 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
   const cacheBtn = button("⚡ Cache", () => {});
   wireCacheButton(cacheBtn, () => ({ root: "output", subfolder: SUBFOLDER, recursive: true }));
   topRow.appendChild(cacheBtn);
+  const revealBtn = button("👁 Show", () => {});
+  wireRevealButton(revealBtn);
+  topRow.appendChild(revealBtn);
   topRow.appendChild(refreshBtn);
   topRow.appendChild(closeBtn);
   ov.appendChild(topRow);
 
   const grid = el("div", { style: {
-    display: "grid", gridTemplateColumns: "repeat(8,1fr)",
+    display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridAutoRows: "min-content",
     gap: "6px", overflowY: "auto", flex: "1", alignContent: "start",
   }});
   const statusEl = el("div", { style: { color: C.muted, fontSize: "11px", flexShrink: "0" } });

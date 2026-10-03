@@ -56,6 +56,17 @@ export function setRevealAll(on) {
   repaintAll();
 }
 
+/** Header button that peeks at every hidden item at once; clicking again re-hides them. */
+export function wireRevealButton(button) {
+  const sync = () => {
+    button.textContent = revealAll ? "🙈 Hide" : "👁 Show";
+    button.title = revealAll ? "Hide the hidden items again" : "Temporarily show every hidden item";
+  };
+  button.addEventListener("click", () => setRevealAll(!revealAll));
+  painters.add(sync);
+  sync();
+}
+
 export function setSensitive(key, on) {
   // optimistic: flip locally + repaint now, then persist; revert on failure
   if (on) cache.add(key); else cache.delete(key);

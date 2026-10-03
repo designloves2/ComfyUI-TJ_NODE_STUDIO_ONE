@@ -6,7 +6,7 @@
 // "Send to" already uses, just exposed as a standalone overlay any tool can open.
 import { el, clear } from "../klein/core_klein.js";
 import { setThumb, wireCacheButton } from "./gallery_thumb.js";
-import { attachSensitiveToggle, mediaKey, isBlurred } from "./ui_sensitive_media.js";
+import { attachSensitiveToggle, mediaKey, isBlurred, wireRevealButton } from "./ui_sensitive_media.js";
 
 export const IMAGE_GALLERY_TOOLS = [
   // INPUT first and default: it is where a picture the user brought themselves already
@@ -21,7 +21,8 @@ export const IMAGE_GALLERY_TOOLS = [
   { id: "zimage",   label: "Z-Image",         api: "/z_image_turbo", subfolder: "one_z-image" },
   { id: "klein",    label: "Flux2 Klein",     api: "/flux_klein",    subfolder: "one_flux2-klein" },
   { id: "qwen2511", label: "Qwen Image 2511", api: "/qwen2511_one",  subfolder: "one_qwen2511" },
-  { id: "sdxl",     label: "SDXL",            api: "/sdxl_one",      subfolder: "one_sdxl" },
+  { id: "qwen21",   label: "Qwen Image 2.1",  api: "/qwenimage21_one", subfolder: "qwen21-one-tj" },
+  { id: "sdxl",     label: "SDXL",           api: "/sdxl_one",      subfolder: "one_sdxl" },
   { id: "anima",    label: "Anima",           api: "/anima_one",     subfolder: "one_anima" },
   // MiniMax H3's Image Generator (T2I/Reference to Image/Character Sheet) stills — same
   // generic PNG /gallery route every other tool above uses, already registered server-side.
@@ -96,7 +97,9 @@ export function openImageGalleryPicker(onPick, initialToolId) {
     subfolder: activeTool.input || activeTool.output ? activeFolder : activeTool.subfolder,
     recursive: !activeTool.input && !activeTool.output,
   }));
-  topRow.append(cacheBtn, closeBtn);
+  const revealBtn = el("button", { type: "button", style: { cursor: "pointer", fontFamily: "inherit", fontSize: "12px", padding: "5px 10px", borderRadius: "6px", border: `1px solid ${C.border}`, background: C.bg2, color: C.text } });
+  wireRevealButton(revealBtn);
+  topRow.append(cacheBtn, revealBtn, closeBtn);
 
   const toolBar = el("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap", flexShrink: "0" } });
   function renderToolBar() {
