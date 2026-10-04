@@ -1557,6 +1557,7 @@ const PPX = {
   denoise:"PPX:denoise",
   rtxCrop:"PPX:rtx_crop",
   rtx:    "PPX:rtx",
+  rtx2:   "PPX:rtx_pass2",
   fvsrPipe:"PPX:flashvsr_pipe",
   fvsr:    "PPX:flashvsr",
   upModel:"PPX:upscale_model",
@@ -1682,7 +1683,10 @@ void main() {
  * @param opts.deblur     { enabled, strength }
  * @param opts.denoise    { enabled, strength }
  * @param opts.upscale    { enabled, method: "rtx"|"flashvsr"|"model", ...method params,
- *                          srcW, srcH }  — same param shape as buildUpscaleGraph's method
+ *                          srcW, srcH, twoPass, pass2 }  — twoPass (flashvsr/model only) adds an
+ *                          RTX VSR (TJ) pass after the first method; pass2 = { rtxSizeMode:
+ *                          scale|short|long|wh, rtxScale, rtxShort, rtxLong, rtxW, rtxH,
+ *                          rtxCropAnchor, rtxQuality } is its own, independent of the rtx* above  — same param shape as buildUpscaleGraph's method
  *                          branches (rtxScale/rtxQuality/rtxSizeMode/.../flashvsr/modelName)
  * @param opts.skinRetouch{ enabled, evenness, smoothing, redness, shine,
  *                          blemishMode: "off"|"subtle"|"strong", preserveMarks,
@@ -1770,7 +1774,37 @@ export function buildPostprocessGraph(opts, avail) {
       images = [PPX.upApply, 0];
       upscaleUsedInfo = { method: "model", model: upscale.modelName };
     }
-    usedSteps.push("upscale");
+    // Two-pass upscale: FlashVSR / Model first, then RTX VSR (TJ) on its result. Only those two
+    // methods offer it — RTX as the first pass would just be RTX twice. The second pass has its
+    // own settings (upscale.pass2), independent of the standalone RTX ones. The first pass's
+    // output size is not known here, so the short / long edge and crop-to-fit sizing is done by
+    // the node itself from the frames it receives (needs a TJ_NODE with those resize_type values).
+    if (upscale.twoPass && upscale.method !== "rtx") {
+      if (!has(avail, "TJ_NODE_RTXVSR")) throw new Error("2-pass Upscale needs RTX VSR (TJ_NODE_RTXVSR), which is not installed.");
+      const p2 = upscale.pass2 || {};
+      const mode2 = p2.rtxSizeMode || "scale";
+      const inputs2 = { images, resize_type: "scale by multiplier", scale: 2.0, width: 1920, height: 1080,
+                        quality: p2.rtxQuality || "ULTRA" };
+      let info2;
+      if (mode2 === "short" || mode2 === "long") {
+        inputs2.resize_type = mode2 === "short" ? "short edge" : "long edge";
+        inputs2.edge = Math.max(8, Math.round(mode2 === "short" ? (p2.rtxShort ?? 1080) : (p2.rtxLong ?? 1920)));
+        info2 = { method: "rtx", [mode2]: inputs2.edge };
+      } else if (mode2 === "wh") {
+        inputs2.resize_type = "target dimensions (crop to fit)";
+        inputs2.width = Math.max(8, Math.round(p2.rtxW ?? 1920));
+        inputs2.height = Math.max(8, Math.round(p2.rtxH ?? 1080));
+        inputs2.crop_anchor = p2.rtxCropAnchor || "center";
+        info2 = { method: "rtx", width: inputs2.width, height: inputs2.height, crop: inputs2.crop_anchor };
+      } else {
+        inputs2.scale = Math.max(1, p2.rtxScale ?? 2.0);
+        info2 = { method: "rtx", scale: inputs2.scale };
+      }
+      g[PPX.rtx2] = { class_type: "TJ_NODE_RTXVSR", inputs: inputs2 };
+      images = [PPX.rtx2, 0];
+      upscaleUsedInfo = { ...upscaleUsedInfo, secondPass: { ...info2, quality: inputs2.quality } };
+    }
+    usedSteps.push(upscale.twoPass && upscale.method !== "rtx" ? "upscale (2-pass)" : "upscale");
   }
 
   // D. Skin Retouch — TJ_SkinRetouch (TJ_NODE), placed right after Upscale per the user's

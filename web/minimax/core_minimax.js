@@ -1357,6 +1357,16 @@ export function defaultState(saved) {
     ppDenoiseOn: saved.ppDenoiseOn ?? false,
     ppDenoiseStrength: saved.ppDenoiseStrength || "MEDIUM",
     ppUpscaleOn: saved.ppUpscaleOn ?? false,
+    ppUpscale2On: saved.ppUpscale2On ?? false,   // 2-pass: FlashVSR / Model -> RTX VSR
+    // The 2nd pass has its own RTX settings — independent of the standalone RTX VSR ones above.
+    pp2RtxSizeMode: saved.pp2RtxSizeMode || "scale",
+    pp2RtxScale:    saved.pp2RtxScale    ?? 2.0,
+    pp2RtxShort:    saved.pp2RtxShort    ?? 1080,
+    pp2RtxLong:     saved.pp2RtxLong     ?? 1920,
+    pp2RtxW:        saved.pp2RtxW        ?? 1920,
+    pp2RtxH:        saved.pp2RtxH        ?? 1080,
+    pp2RtxCropAnchor: saved.pp2RtxCropAnchor || "center",
+    pp2RtxQuality:  saved.pp2RtxQuality  || "ULTRA",
     ppSkinRetouchOn: saved.ppSkinRetouchOn ?? false,
     ppSkinEvenness: saved.ppSkinEvenness ?? 0,
     ppSkinSmoothing: saved.ppSkinSmoothing ?? 0,
