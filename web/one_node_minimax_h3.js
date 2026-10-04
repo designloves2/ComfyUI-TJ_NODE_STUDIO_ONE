@@ -18,7 +18,7 @@ import {
   C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, SUBFOLDER, TEMP_PREVIEW_SUBFOLDER,
   el, clear, loadState, saveState, lastUsedAt, defaultState, randomSeed,
   CLIP_LENGTHS, ASPECTS, UPSCALE_MODES, FLASHVSR_MODELS, FLASHVSR_MODES, SAMPLERS, SCHEDULERS,
-  TURBO_MODES, ATTN_BACKENDS, ATTN_FORWARDS, BLOCK_CACHES, H3_OPTIMIZERS, FBC_MODES, PDD_NFE_CHOICES,
+  TURBO_MODES, ATTN_BACKENDS, ATTN_FORWARDS, BLOCK_CACHES, H3_OPTIMIZERS, FBC_MODES,
   attnBlockedReason, attnForwardBlockedReason, attnForwardOverlapNote, blockCacheBlockedReason,
   h3OptimizerBlockedReason, h3OptimizerOverlapNote,
   effectiveTurbo, effectiveSteps, migrateLegacyAccel,
@@ -4333,7 +4333,8 @@ app.registerExtension({
             return { value: o.key, disabled: !!why, label: why ? `${o.label} — ${why}` : o.label };
           }), value, onChange);
         const loraOpts = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
-        const shortLabel = (s) => String(s || "").replace(/ \(.*\)/, "");
+        // Basic and larryvrh would both shorten to "Turbo LoRA", so Basic keeps its suffix.
+        const shortLabel = (s) => /\(Basic\)/.test(s) ? String(s) : String(s || "").replace(/ \(.*\)/, "");
 
         const turboMode = state.turboMode || "none";
         const turboLabel = (TURBO_MODES.find(t => t.key === turboMode) || {}).label || "None";
@@ -4382,27 +4383,23 @@ app.registerExtension({
               // Core-native PDD (v0.35.0+) loads the Acc file as a plain LoRA, so it comes
               // from the normal loras list — not the pdd_acc folder the old pack registered.
               const pddOpts = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
-              const pddHelp = "The release is per-variant: pair Ref2VA with the reference UNET and "
-                + "FL2VA with the first-last one. A mismatched pair does not error — it just renders "
-                + "badly. Use the ComfyUI-converted file (…_comfy.safetensors); the raw alibaba-pai "
-                + "one applies 0 patches.\n\nCore-native since ComfyUI v0.35.0 — the Acc file loads "
-                + "as a plain model-only LoRA (no separate pack). It expands the output projection "
-                + "into a per-interval head bank and euler runs on a normal schedule; the head for "
-                + "each step is picked from that schedule. nfe is the distilled step count (8 and 4 "
-                + "are official; others fall off the trained envelope). CFG is already 1.0, which is "
-                + "what PDD expects. Strength was trained at 1.0. Needs core ≥ v0.35.0.";
+              const pddHelp = "Loads any turbo LoRA as a plain model-only LoRA (core-native since "
+                + "ComfyUI v0.35.0 — no separate pack). Set steps to what the LoRA was distilled for.\n\n"
+                + "PDD Acc (alibaba-pai) works here too: the release is per-variant, so pair Ref2VA "
+                + "with the reference UNET and FL2VA with the first-last one — a mismatched pair does "
+                + "not error, it just renders badly. Use the ComfyUI-converted file "
+                + "(…_comfy.safetensors); the raw alibaba-pai one applies 0 patches. 8 and 4 steps are "
+                + "its official counts. Strength was trained at 1.0.";
               rows.push(
-                col([labelHelp(`PDD Acc LoRA (First-Last / Text)${isRef ? "" : " ●"}`, pddHelp),
+                col([labelHelp(`Turbo LoRA (First-Last / Text)${isRef ? "" : " ●"}`, pddHelp),
                   loraSelect(pddOpts, state.pddFile || "none",
                     v => { state.pddFile = v; rememberLora({ pdd_file: v }); }).el]),
-                col([label(`PDD Acc LoRA (Reference)${isRef ? " ●" : ""}`),
+                col([label(`Turbo LoRA (Reference)${isRef ? " ●" : ""}`),
                   loraSelect(pddOpts, state.pddFileReference || "none",
                     v => { state.pddFileReference = v; rememberLora({ pdd_file_reference: v }); }).el]),
                 row([
-                  col([label("nfe (steps)"), select(
-                    PDD_NFE_CHOICES.map(x => ({ value: x, label: x })),
-                    String(state.pddNfe ?? "8"),
-                    v => { state.pddNfe = v; persist(); renderLeft(); })]),
+                  col([label("steps"), numberField(Number(state.pddNfe) || 8,
+                    v => { state.pddNfe = String(Math.max(1, Math.round(v))); persist(); renderLeft(); }, 1)]),
                   col([label("lora strength"), numberField(state.pddLoraStrength ?? 1.0,
                     v => { state.pddLoraStrength = v; persist(); }, 0.05)]),
                 ]),
@@ -6394,6 +6391,8 @@ app.registerExtension({
       // ══ MOUNT ═══════════════════════════════════════════════════════════════
       settingsOv = createSettingsOverlay(state, ctx);
       root.appendChild(settingsOv.el);
+      // Prompt Edit's Brief / Vision line opens the LLM pickers in a popup.
+      ctx.openLlmQuickSettings = (onChange) => settingsOv.openLlmQuick(onChange);
 
       promptEditOv = createPromptEditOverlay(state, ctx, () => { refreshPlan(); });
       root.appendChild(promptEditOv.el);

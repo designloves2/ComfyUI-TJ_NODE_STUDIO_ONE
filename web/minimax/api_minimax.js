@@ -754,6 +754,37 @@ export async function writeBriefOpenRouter(systemPrompt, userPrompt, orModel) {
   return d.text;
 }
 
+// "Connect Custom" backend — any OpenAI-style Chat Completions server. role is "brief" or
+// "vision"; the endpoint is { baseUrl, model, context }. The API key only ever travels in
+// connectCustom() (once, to be held in the server's memory) — never stored client-side.
+export async function connectCustom(role, { baseUrl, apiKey, model }) {
+  const r = await api.fetchApi("/minimax_h3_one/custom_llm/connect", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role, base_url: baseUrl, api_key: apiKey || "", model: model || "" }),
+  });
+  return r.json();
+}
+
+export async function analyzeImagesCustom(images, promptText, ep) {
+  const r = await api.fetchApi("/minimax_h3_one/llm/custom_analyze", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ images, prompt: promptText, base_url: ep.baseUrl, model: ep.model, context: ep.context || 0 }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "Custom vision failed");
+  return d.text;
+}
+
+export async function writeBriefCustom(systemPrompt, userPrompt, ep) {
+  const r = await api.fetchApi("/minimax_h3_one/llm/custom_write_brief", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ system: systemPrompt, user: userPrompt, base_url: ep.baseUrl, model: ep.model, context: ep.context || 0 }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "Custom brief failed");
+  return d.text;
+}
+
 /**
  * Local Llama.cpp GGUF vision — describes ONE image. This is the same
  * /tj_studio_one/llm/image_to_prompt route the image nodes' shared Enhance/Image→Prompt

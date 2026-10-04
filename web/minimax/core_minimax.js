@@ -122,15 +122,11 @@ export function effectiveSteps(state, avail) {
   const t = effectiveTurbo(state, avail).mode;
   if (t === "larryvrh") return Math.max(1, Math.round(state.turboSteps ?? 4));
   if (t === "lightx2v") return Math.max(1, Math.round(state.slaTurboSteps ?? 6));
-  // PDD's step count is not a preference — it is how the interval grid was partitioned
-  // during training. Core-native PDD adapts head selection to whatever schedule it is given,
-  // but only the distilled counts stay on the trained envelope, so it is a fixed list.
-  if (t === "pdd") return PDD_NFE_CHOICES.includes(String(state.pddNfe)) ? Number(state.pddNfe) : 8;
+  // Turbo LoRA (Basic): an ordinary step count — any turbo LoRA can be loaded, so there is
+  // no fixed list. pddNfe is the saved key (string) from when this was a dedicated mode.
+  if (t === "pdd") return Math.max(1, Math.round(Number(state.pddNfe) || 8));
   return Math.max(1, Math.round(state.steps ?? 20));
 }
-
-/** The evaluation counts the released PDD checkpoints were partitioned for. */
-export const PDD_NFE_CHOICES = ["8", "4", "6"];
 
 /**
  * The PDD Acc file for the current mode.
@@ -537,9 +533,12 @@ export const FLASHVSR_MODES  = ["tiny", "tiny-long", "full"];
 // ── pipeline axis options ─────────────────────────────────────────────────────
 export const TURBO_MODES = [
   { key: "none",     label: "None" },
+  // Any turbo LoRA loads here as a plain model-only LoRA (core-native since v0.35.0, which
+  // is why PDD Acc needs no node of its own) — hence "Basic". Key stays "pdd" so saved
+  // settings, presets and clip metadata keep working.
+  { key: "pdd",      label: "Turbo LoRA (Basic)",    node: null },
   { key: "larryvrh", label: "Turbo LoRA (larryvrh)", node: "MiniMaxH3TurboLoRA" },
   { key: "lightx2v", label: "SLA Turbo (lightx2v)",  node: "H3SLAAttention" },
-  { key: "pdd",      label: "PDD Acc (alibaba-pai)", node: null },  // core-native since v0.35.0
 ];
 export const ATTN_BACKENDS = [
   { key: "none",          label: "None",                   node: null,                   dense: true },
@@ -1266,7 +1265,15 @@ export function defaultState(saved) {
     h3LlmBackend:     saved.h3LlmBackend     || "native",   // legacy single (migrates to the pair below)
     h3OrModel:        saved.h3OrModel        || "",
     // Brief (writes the prompt) and Vision (reads images) pick their backend + model independently
-    h3BriefBackend:   saved.h3BriefBackend   || saved.h3LlmBackend || "native",   // "native" | "openrouter" | "llamagguf"
+    // "Connect Custom" endpoints (Brief / Vision each): the URL, model id and context are
+    // kept; the API key is deliberately not part of state — it lives in the server's memory.
+    h3CustomBriefBase:   saved.h3CustomBriefBase   || "",
+    h3CustomBriefModel:  saved.h3CustomBriefModel  || "",
+    h3CustomBriefCtx:    saved.h3CustomBriefCtx    ?? 0,
+    h3CustomVisionBase:  saved.h3CustomVisionBase  || "",
+    h3CustomVisionModel: saved.h3CustomVisionModel || "",
+    h3CustomVisionCtx:   saved.h3CustomVisionCtx   ?? 0,
+    h3BriefBackend:   saved.h3BriefBackend   || saved.h3LlmBackend || "native",   // "native" | "openrouter" | "llamagguf" | "custom"
     h3VisionBackend:  saved.h3VisionBackend  || saved.h3LlmBackend || "native",
     h3OrModelBrief:   saved.h3OrModelBrief   || saved.h3OrModel || "",
     h3OrModelVision:  saved.h3OrModelVision  || saved.h3OrModel || "",

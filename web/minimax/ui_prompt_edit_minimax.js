@@ -13,7 +13,7 @@ import { openVideoGalleryPicker } from "./ui_video_picker_minimax.js";
 import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
 import { openAudioGalleryPicker } from "../shared/ui_audio_gallery_picker.js";
 import { ask } from "../shared/ui_ask.js";
-import { getMediaFiles, getSystemPrompt, uploadImage, uploadMedia, analyzeImagesNative, writeBriefNative, analyzeImagesOpenRouter, writeBriefOpenRouter, analyzeImageLlama, writeBriefLlama, listPromptSets, getPromptSet, savePromptSet, deletePromptSet, missingInputFiles } from "./api_minimax.js";
+import { getMediaFiles, getSystemPrompt, uploadImage, uploadMedia, analyzeImagesNative, writeBriefNative, analyzeImagesOpenRouter, writeBriefOpenRouter, analyzeImageLlama, writeBriefLlama, analyzeImagesCustom, writeBriefCustom, listPromptSets, getPromptSet, savePromptSet, deletePromptSet, missingInputFiles } from "./api_minimax.js";
 
 // A prompt entry may still arrive as a plain string (mid-migration data); normalize once.
 function normPrompt(p) {
@@ -1018,15 +1018,14 @@ ${name}`, style: {
     const imgCol = el("div", { style: {
       display: "flex", flexDirection: "column", gap: "5px",
       width: "534px", flex: "0 0 534px" } });
-    // marginTop:auto pushes the model line to the foot of the column, so its baseline
-    // matches the "has audio" line at the foot of the media columns. Left in its own row
-    // underneath, it added height the panel did not have and clipped the buttons below.
-    modelSelWrap.style.marginTop = "auto";
-    modelSelWrap.style.paddingTop = "4px";
-    imgCol.append(grid, note, modelSelWrap);
+    // The Brief / Vision line runs the full width of the panel, under the band: inside the
+    // 534px image column the long model paths wrapped into four short lines.
+    modelSelWrap.style.marginTop = "0";
+    modelSelWrap.style.paddingTop = "0";
+    imgCol.append(grid, note);
     assetBand.append(imgCol);
     if (own) assetBand.append(mediaRow);
-    imgRow.append(head, assetBand);
+    imgRow.append(head, assetBand, modelSelWrap);
   }
 
 
@@ -1070,30 +1069,43 @@ ${name}`, style: {
     const vBackend = state.h3VisionBackend || state.h3LlmBackend;
     const bOR = bBackend === "openrouter", vOR = vBackend === "openrouter";
     const bLlama = bBackend === "llamagguf", vLlama = vBackend === "llamagguf";
-    const shortName = (m) => String(m || "").split("/").pop().split("\\").pop() || m;
+    const bCustom = bBackend === "custom", vCustom = vBackend === "custom";
+    const customName = (base, model) => model ? `Custom:${model}${base ? ` @ ${base}` : ""}` : null;
+    // Full names, nothing cut off: the line wraps instead of ending in an ellipsis.
     // This used to only ever check OpenRouter-vs-native, so picking Llama GGUF in Settings
     // silently kept showing whatever native CLIP was set before (reported: saved Llama GGUF,
     // panel still showed the old "LTX\gemma4_e4b_it_fp8_scaled.safetensors" native model).
-    const brief  = bLlama ? (state.h3LlamaBriefModel ? `Llama:${shortName(state.h3LlamaBriefModel)}` : null)
-      : bOR ? `OR:${shortName(state.h3OrModelBrief || state.h3OrModel) || "default"}`
-      : (state.nativeBriefClip ? shortName(state.nativeBriefClip) : null);
+    const brief  = bCustom ? customName(state.h3CustomBriefBase, state.h3CustomBriefModel)
+      : bLlama ? (state.h3LlamaBriefModel ? `Llama:${state.h3LlamaBriefModel}` : null)
+      : bOR ? `OR:${(state.h3OrModelBrief || state.h3OrModel) || "default"}`
+      : (state.nativeBriefClip || null);
     // Vision has no GGUF model of its own — it reuses Brief's, only the mmproj differs.
-    const vision = vLlama ? (state.h3LlamaVisionModel ? `Llama:${shortName(state.h3LlamaVisionModel)}+${shortName(state.h3LlamaVisionMmproj || "none")}` : null)
-      : vOR ? `OR:${shortName(state.h3OrModelVision || state.h3OrModel) || "default"}`
-      : (state.nativeVisionClip ? shortName(state.nativeVisionClip) : null);
+    const vision = vCustom ? customName(state.h3CustomVisionBase, state.h3CustomVisionModel)
+      : vLlama ? (state.h3LlamaVisionModel ? `Llama:${state.h3LlamaVisionModel}+${state.h3LlamaVisionMmproj || "none"}` : null)
+      : vOR ? `OR:${(state.h3OrModelVision || state.h3OrModel) || "default"}`
+      : (state.nativeVisionClip || null);
+    // Clicking the line opens the LLM Setting popup (the Settings pickers for these two),
+    // so the model can be changed without leaving Prompt Edit.
+    const openQuick = () => ctx.openLlmQuickSettings?.(refreshSourceUI);
+    const lineStyle = { fontSize: "10px", color: C.text, cursor: "pointer", lineHeight: "1.5",
+      whiteSpace: "normal", overflowWrap: "anywhere", textDecoration: "underline dotted", textUnderlineOffset: "2px" };
     if (!brief || (needImage && !vision)) {
       modelSelWrap.appendChild(el("div", {
-        text: !brief ? "Brief: not set — pick a CLIP/GGUF model, or switch backend, in Settings → LLM."
-                     : "Vision: not set — pick a CLIP/GGUF model, or switch backend, in Settings → LLM.",
-        style: { fontSize: "10.5px", color: C.warn },
+        text: !brief ? "Brief: not set — click to pick a CLIP/GGUF model or switch backend."
+                     : "Vision: not set — click to pick a CLIP/GGUF model or switch backend.",
+        title: "Click to open LLM Setting",
+        onclick: openQuick,
+        style: { ...lineStyle, fontSize: "10.5px", color: C.warn },
       }));
       return;
     }
+    // Brief and Vision each get their own line, so a long model path stays on one line.
+    const lines = needImage ? [`Brief: ${brief}`, `Vision: ${vision}`] : [`Brief: ${brief}`];
     modelSelWrap.appendChild(el("div", {
-      text: needImage ? `Brief: ${brief}  ·  Vision: ${vision}` : `Brief: ${brief}`,
-      title: "Change in Settings → LLM Setting",
-      style: { fontSize: "10px", color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
-    }));
+      title: "Click to change the Brief / Vision models",
+      onclick: openQuick,
+      style: { cursor: "pointer" },
+    }, lines.map(t => el("div", { text: t, style: lineStyle }))));
   }
 
   // The header used to hardcode "(native CLIP)" from back when Native was the only
@@ -1101,7 +1113,7 @@ ${name}`, style: {
   // kept saying "native CLIP" even while actually running on OpenRouter or Llama GGUF.
   function refreshSourceUI() {
     const label = (backend) => backend === "openrouter" ? "OpenRouter"
-      : backend === "llamagguf" ? "Llama GGUF" : "native CLIP";
+      : backend === "llamagguf" ? "Llama GGUF" : backend === "custom" ? "Custom endpoint" : "native CLIP";
     const bBackend = state.h3BriefBackend  || state.h3LlmBackend;
     const vBackend = state.h3VisionBackend || state.h3LlmBackend;
     enhTitle.textContent = bBackend === vBackend
@@ -1109,6 +1121,8 @@ ${name}`, style: {
       : `LOCAL ENHANCE (Brief: ${label(bBackend)} · Vision: ${label(vBackend)})`;
     statusTag.textContent = (bBackend === "openrouter" || vBackend === "openrouter")
       ? "OpenRouter calls out to the cloud — everything else stays local"
+      : (bBackend === "custom" || vBackend === "custom")
+      ? "runs on your own Chat Completions endpoint (Connect Custom)"
       : (bBackend === "llamagguf" || vBackend === "llamagguf")
       ? "runs through TJ_NODE's local llama.cpp — no cloud call"
       : "runs through ComfyUI's own model loading - no external server";
@@ -1294,10 +1308,14 @@ ${name}`, style: {
     const visionOR = (state.h3VisionBackend || state.h3LlmBackend) === "openrouter";
     const briefLlama  = (state.h3BriefBackend  || state.h3LlmBackend) === "llamagguf";
     const visionLlama = (state.h3VisionBackend || state.h3LlmBackend) === "llamagguf";
-    if (!briefOR && !briefLlama && !state.nativeBriefClip) { ctx.showPopup?.("No brief CLIP set - pick one in Settings, or switch the Brief backend to OpenRouter/Llama GGUF.", true); return; }
-    if (images.length && !visionOR && !visionLlama && !state.nativeVisionClip) { ctx.showPopup?.("No vision CLIP set - pick one in Settings, or switch the Vision backend to OpenRouter/Llama GGUF.", true); return; }
+    const briefCustom  = (state.h3BriefBackend  || state.h3LlmBackend) === "custom";
+    const visionCustom = (state.h3VisionBackend || state.h3LlmBackend) === "custom";
+    if (!briefOR && !briefLlama && !briefCustom && !state.nativeBriefClip) { ctx.showPopup?.("No brief CLIP set - pick one in Settings, or switch the Brief backend to OpenRouter/Llama GGUF.", true); return; }
+    if (images.length && !visionOR && !visionLlama && !visionCustom && !state.nativeVisionClip) { ctx.showPopup?.("No vision CLIP set - pick one in Settings, or switch the Vision backend to OpenRouter/Llama GGUF.", true); return; }
     if (briefLlama && !state.h3LlamaBriefModel) { ctx.showPopup?.("No Llama GGUF brief model set - pick one in Settings.", true); return; }
     if (images.length && visionLlama && !state.h3LlamaVisionModel) { ctx.showPopup?.("No Llama GGUF vision model set - pick one in Settings.", true); return; }
+    if (briefCustom && !(state.h3CustomBriefBase && state.h3CustomBriefModel)) { ctx.showPopup?.("Connect Custom (Brief) needs an API base URL and a model ID - set them in Settings.", true); return; }
+    if (images.length && visionCustom && !(state.h3CustomVisionBase && state.h3CustomVisionModel)) { ctx.showPopup?.("Connect Custom (Vision) needs an API base URL and a model ID - set them in Settings.", true); return; }
 
     const target = targetSel.value;
     const base = (editor.value || "").trim();
@@ -1330,7 +1348,9 @@ ${name}`, style: {
           // separated in the answer since nothing downstream re-splits them.
           const prompt = `${VISION_SYSTEM_PROMPT} There are ${images.length} images, in order. `
             + `Describe each one separately, each on its own line starting with "Image N: ".`;
-          imageSummary = (visionOR
+          imageSummary = (visionCustom
+            ? await analyzeImagesCustom(images, prompt, { baseUrl: state.h3CustomVisionBase, model: state.h3CustomVisionModel, context: state.h3CustomVisionCtx })
+            : visionOR
             ? await analyzeImagesOpenRouter(images, prompt, state.h3OrModelVision || state.h3OrModel)
             : await analyzeImagesNative(state.nativeVisionClip, images, prompt)).trim();
         }
@@ -1349,7 +1369,9 @@ ${name}`, style: {
       }
 
       progressStage("Writing brief...");
-      const text = (briefLlama
+      const text = (briefCustom
+        ? await writeBriefCustom(systemPrompt, buildUserPrompt(base, imageSummary), { baseUrl: state.h3CustomBriefBase, model: state.h3CustomBriefModel, context: state.h3CustomBriefCtx })
+        : briefLlama
         ? await writeBriefLlama(buildUserPrompt(base, imageSummary), state.h3LlamaBriefModel, state.h3LlamaNCtx, state.h3LlamaMaxTokens)
         : briefOR
         ? await writeBriefOpenRouter(systemPrompt, buildUserPrompt(base, imageSummary), state.h3OrModelBrief || state.h3OrModel)
@@ -1377,8 +1399,10 @@ ${name}`, style: {
     deriveModes();
     const briefOR    = (state.h3BriefBackend || state.h3LlmBackend) === "openrouter";
     const briefLlama = (state.h3BriefBackend || state.h3LlmBackend) === "llamagguf";
-    if (!briefOR && !briefLlama && !state.nativeBriefClip) { ctx.showPopup?.("No brief CLIP set - pick one in Settings, or switch the Brief backend to OpenRouter/Llama GGUF.", true); return; }
+    const briefCustom = (state.h3BriefBackend || state.h3LlmBackend) === "custom";
+    if (!briefOR && !briefLlama && !briefCustom && !state.nativeBriefClip) { ctx.showPopup?.("No brief CLIP set - pick one in Settings, or switch the Brief backend to OpenRouter/Llama GGUF.", true); return; }
     if (briefLlama && !state.h3LlamaBriefModel) { ctx.showPopup?.("No Llama GGUF brief model set - pick one in Settings.", true); return; }
+    if (briefCustom && !(state.h3CustomBriefBase && state.h3CustomBriefModel)) { ctx.showPopup?.("Connect Custom (Brief) needs an API base URL and a model ID - set them in Settings.", true); return; }
 
     const current = (editor.value || "").trim();
     if (!current) { ctx.showPopup?.("Nothing to refine yet — write a prompt first.", true); return; }
@@ -1401,7 +1425,9 @@ ${name}`, style: {
     statusTag.textContent = "refining..."; statusTag.style.color = BRAND;
     try {
       const userPrompt = buildRefineUserPrompt(current, lastRefineInstruction);
-      const text = (briefLlama
+      const text = (briefCustom
+        ? await writeBriefCustom(systemPrompt, userPrompt, { baseUrl: state.h3CustomBriefBase, model: state.h3CustomBriefModel, context: state.h3CustomBriefCtx })
+        : briefLlama
         ? await writeBriefLlama(userPrompt, state.h3LlamaBriefModel, state.h3LlamaNCtx, state.h3LlamaMaxTokens)
         : briefOR
         ? await writeBriefOpenRouter(systemPrompt, userPrompt, state.h3OrModelBrief || state.h3OrModel)

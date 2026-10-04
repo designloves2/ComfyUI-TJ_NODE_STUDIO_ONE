@@ -9,6 +9,11 @@ import glob
 import asyncio
 import base64
 import hashlib
+import ipaddress
+import socket
+import urllib.error
+import urllib.parse
+import urllib.request
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -2499,6 +2504,13 @@ async def mmh3_get_config(request):
         # Ollama was removed; native is the only backend now.
         "vision_source":         "native",
         "native_vision_clip":    cfg.get("native_vision_clip",    "Qwen3\\qwen_3vl_8b_nvfp4.safetensors"),
+        "native_brief_clip":     cfg.get("native_brief_clip",     ""),
+        "h3_custom_brief_base":   cfg.get("h3_custom_brief_base",   ""),
+        "h3_custom_brief_model":  cfg.get("h3_custom_brief_model",  ""),
+        "h3_custom_brief_ctx":    cfg.get("h3_custom_brief_ctx",    0),
+        "h3_custom_vision_base":  cfg.get("h3_custom_vision_base",  ""),
+        "h3_custom_vision_model": cfg.get("h3_custom_vision_model", ""),
+        "h3_custom_vision_ctx":   cfg.get("h3_custom_vision_ctx",   0),
         "h3_llm_backend":        cfg.get("h3_llm_backend",        "native"),   # legacy
         "h3_brief_backend":      cfg.get("h3_brief_backend")  or cfg.get("h3_llm_backend", "native"),
         "h3_vision_backend":     cfg.get("h3_vision_backend") or cfg.get("h3_llm_backend", "native"),
@@ -5043,6 +5055,172 @@ def _openrouter_vision_multi(system_prompt, user_text, image_paths, model, tempe
     if not content:
         raise RuntimeError("OpenRouter returned no text — try google/gemini-2.5-flash.")
     return _strip_thinking(content)
+
+
+# ── MiniMax H3 "Connect Custom" Brief / Vision backend ───────────────────────────
+# Any OpenAI-style Chat Completions server (LM Studio, Ollama, llama.cpp, a gateway, ...).
+# Brief and Vision each have their own URL / model / key. The API key is sent here once,
+# kept in this process's memory only, and never written to disk or sent back to the page.
+_H3_CUSTOM_KEYS = {}
+
+
+def _h3_custom_base(role, base_url):
+    """Normalised API base URL, or raise. Public hosts must use HTTPS; plain HTTP is only
+    for loopback and private-network addresses, so a key never crosses the open internet
+    unencrypted."""
+    if role not in ("brief", "vision"):
+        raise ValueError("role must be brief or vision")
+    url = (base_url or "").strip().rstrip("/")
+    for tail in ("/chat/completions", "/chat"):
+        if url.endswith(tail):
+            url = url[:-len(tail)]
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise ValueError("API base URL must start with http:// or https:// (e.g. http://localhost:3000/v1)")
+    if parts.scheme == "http":
+        try:
+            addrs = {ipaddress.ip_address(ai[4][0].split("%")[0])
+                     for ai in socket.getaddrinfo(parts.hostname, parts.port or 80, proto=socket.IPPROTO_TCP)}
+        except (OSError, ValueError) as e:
+            raise ValueError(f"cannot resolve {parts.hostname}: {e}")
+        if not addrs or not all(a.is_loopback or a.is_private or a.is_link_local for a in addrs):
+            raise ValueError("Public endpoints require HTTPS; loopback and private LAN addresses may use HTTP.")
+    return url
+
+
+def _h3_custom_request(role, base, path, payload=None, timeout=60):
+    key = _H3_CUSTOM_KEYS.get(role, "")
+    headers = {"Content-Type": "application/json"}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    req = urllib.request.Request(base + path, headers=headers,
+                                 data=None if payload is None else json.dumps(payload).encode("utf-8"),
+                                 method="GET" if payload is None else "POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as he:
+        detail = ""
+        try:
+            err = json.loads(he.read().decode("utf-8")).get("error", "")
+            detail = err.get("message", "") if isinstance(err, dict) else str(err)
+        except Exception:
+            pass
+        raise RuntimeError(f"HTTP {he.code}: {detail or he.reason}")
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"cannot reach {base}: {e.reason}")
+
+
+def _h3_custom_chat(role, base_url, model, system_prompt, user_content, context=0, max_tokens=2000, temperature=0.7):
+    base = _h3_custom_base(role, base_url)
+    if not (model or "").strip():
+        raise RuntimeError("No model ID set — press Connect & test and pick one.")
+    mt = int(max_tokens)
+    if int(context or 0) > 0:
+        mt = max(256, min(mt, int(context) // 2))
+    d = _h3_custom_request(role, base, "/chat/completions", {
+        "model": model.strip(),
+        "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}],
+        "temperature": float(temperature), "max_tokens": mt,
+    }, timeout=180)
+    if isinstance(d, dict) and d.get("error"):
+        err = d["error"]
+        raise RuntimeError(err.get("message") if isinstance(err, dict) else str(err))
+    msg = ((d.get("choices") or [{}])[0]).get("message") or {}
+    content = msg.get("content")
+    if isinstance(content, list):
+        content = "".join(p.get("text", "") for p in content if isinstance(p, dict))
+    content = (content or "").strip()
+    if not content:
+        raise RuntimeError("The custom endpoint returned no text.")
+    return _strip_thinking(content)
+
+
+@PromptServer.instance.routes.post("/minimax_h3_one/custom_llm/connect")
+async def mmh3_custom_connect(request):
+    """Remember the key (memory only) and test the endpoint: list its models, or fall back to
+    a tiny chat when it has no /models. Body: {role, base_url, api_key?, model?}."""
+    try:
+        data = await request.json()
+        role = data.get("role")
+        base = _h3_custom_base(role, data.get("base_url"))
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+    key = (data.get("api_key") or "").strip()
+    if key:
+        _H3_CUSTOM_KEYS[role] = key
+    model = (data.get("model") or "").strip()
+
+    def _test():
+        t0 = time.time()
+        try:
+            d = _h3_custom_request(role, base, "/models", None, timeout=15)
+            ids = [m.get("id") for m in (d.get("data") or d.get("models") or []) if isinstance(m, dict) and m.get("id")]
+            return {"ok": True, "models": ids[:200], "modelFound": (model in ids) if model and ids else None,
+                    "ms": int((time.time() - t0) * 1000)}
+        except RuntimeError:
+            if not model:
+                raise
+            # no /models route — a tiny chat proves the URL, key and model id work together
+            d = _h3_custom_request(role, base, "/chat/completions", {
+                "model": model, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 8}, timeout=30)
+            if not d.get("choices"):
+                raise RuntimeError(f"unexpected reply: {str(d)[:120]}")
+            return {"ok": True, "models": [], "modelFound": True, "ms": int((time.time() - t0) * 1000),
+                    "note": "no /models list; the test chat worked"}
+
+    try:
+        res = await asyncio.get_running_loop().run_in_executor(None, _test)
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e), "keyStored": bool(_H3_CUSTOM_KEYS.get(role))})
+    res["keyStored"] = bool(_H3_CUSTOM_KEYS.get(role))
+    return web.json_response(res)
+
+
+@PromptServer.instance.routes.post("/minimax_h3_one/llm/custom_write_brief")
+async def mmh3_custom_write_brief(request):
+    """Text-only brief writing through the custom endpoint. Body: {base_url, model, context, system, user}."""
+    try:
+        data = await request.json()
+        text = await asyncio.get_running_loop().run_in_executor(
+            None, _h3_custom_chat, "brief", data.get("base_url"), data.get("model"),
+            str(data.get("system", "")), str(data.get("user", "")), data.get("context"), int(data.get("max_tokens", 4096)))
+        return web.json_response({"ok": True, "text": text})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+
+
+@PromptServer.instance.routes.post("/minimax_h3_one/llm/custom_analyze")
+async def mmh3_custom_analyze(request):
+    """Image summary through the custom endpoint. Body: {base_url, model, context, prompt, images:[input filenames]}."""
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "bad request"}, status=400)
+
+    def _run():
+        import mimetypes
+        parts = [{"type": "text", "text": str(data.get("prompt") or "Describe these images.")}]
+        in_dir = folder_paths.get_input_directory()
+        for fn in (data.get("images") or [])[:12]:
+            if not isinstance(fn, str) or os.path.basename(fn) != fn:
+                continue
+            p = os.path.join(in_dir, fn)
+            if not os.path.isfile(p):
+                continue
+            mime = mimetypes.guess_type(p)[0] or "image/jpeg"
+            with open(p, "rb") as f:
+                parts.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64," + base64.b64encode(f.read()).decode("ascii")}})
+        if len(parts) == 1:
+            raise RuntimeError("no readable images in the input folder")
+        return _h3_custom_chat("vision", data.get("base_url"), data.get("model"),
+                               "You describe reference images for a video prompt writer.",
+                               parts, data.get("context"), 1600, 0.5)
+    try:
+        text = await asyncio.get_running_loop().run_in_executor(None, _run)
+        return web.json_response({"ok": True, "text": text})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
 
 
 # One shared little store for the image-node LLM panel's OpenRouter model choice

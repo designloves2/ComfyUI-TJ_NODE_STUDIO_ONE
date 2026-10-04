@@ -3,7 +3,7 @@
 // by every clip; per-run choices live in the node's left panel instead.
 import { C, BRAND, el, clear, SUBFOLDER } from "./core_minimax.js";
 import { panel, label, button, select, numberField, row, col } from "../klein/ui_common.js";
-import { getModels, getConfig, saveConfig, getNodeAvailability, listVideos, getTempSize, clearTempFiles } from "./api_minimax.js";
+import { getModels, getConfig, saveConfig, getNodeAvailability, listVideos, getTempSize, clearTempFiles, connectCustom } from "./api_minimax.js";
 import { mountLLMSettingsSection } from "../shared/llm_panel.js";
 
 function searchableSelect(options, value, onChange) {
@@ -305,6 +305,7 @@ export function createSettingsOverlay(state, ctx) {
   // Two model pickers, swapped out by source. Declared at module scope inside
   // the LLM tab so the model pickers can be re-rendered when availability arrives.
   let renderModelPickersInto = null;
+  let quickChanged = null;   // set while the Prompt Edit LLM popup is open
   let _orModels = null;
   async function orModels() {
     if (_orModels) return _orModels;
@@ -334,10 +335,82 @@ export function createSettingsOverlay(state, ctx) {
     }}, opts);
   }
 
-  function renderModelPickers() {
-    const wrap2 = renderModelPickersInto;
+  // "Connect Custom" fields for one role: any OpenAI-style Chat Completions server.
+  // URL / model id / context are kept in state (and the config); the API key is not — it is
+  // sent once on Connect & test, held in the server's memory, and the field is cleared.
+  function customEndpointControls(role, changed) {
+    const K = role === "vision"
+      ? { base: "h3CustomVisionBase", model: "h3CustomVisionModel", ctx: "h3CustomVisionCtx" }
+      : { base: "h3CustomBriefBase",  model: "h3CustomBriefModel",  ctx: "h3CustomBriefCtx" };
+    const field = (type, value, placeholder, onChange) => {
+      const i = el("input", { type, placeholder, autocomplete: "off", style: {
+        width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+        border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px", fontSize: "12px", fontFamily: "inherit",
+      }});
+      i.value = value;
+      i.addEventListener("change", () => onChange(i.value));
+      return i;
+    };
+    const note = (text) => el("div", { text, style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } });
+
+    const baseIn = field("text", state[K.base] || "", "http://localhost:3000/v1",
+      v => { state[K.base] = v.trim(); changed(); });
+    const keyIn = field("password", "", "Paste key for this session", () => {});
+    const modelIn = field("text", state[K.model] || "", "gemini-3.7-flash",
+      v => { state[K.model] = v.trim(); changed(); });
+    const models = el("datalist", { id: `h3-custom-models-${role}` });
+    modelIn.setAttribute("list", models.id);
+    const ctxIn = field("number", state[K.ctx] || "", "32768",
+      v => { state[K.ctx] = Math.max(0, Math.round(Number(v)) || 0); changed(); });
+    const status = el("div", { style: { fontSize: "11px", lineHeight: "1.5", color: C.muted, whiteSpace: "pre-wrap", overflowWrap: "anywhere" } });
+
+    const connect = button("Connect & test", async () => {
+      state[K.base] = baseIn.value.trim();
+      state[K.model] = modelIn.value.trim();
+      state[K.ctx] = Math.max(0, Math.round(Number(ctxIn.value)) || 0);
+      changed();
+      status.style.color = C.muted; status.textContent = "Connecting…";
+      connect.disabled = true;
+      try {
+        const d = await connectCustom(role, { baseUrl: state[K.base], apiKey: keyIn.value, model: state[K.model] });
+        if (!d.ok) { status.style.color = C.err; status.textContent = `✗ ${d.error || "connection failed"}`; return; }
+        if (keyIn.value) { keyIn.value = ""; keyIn.placeholder = "✓ key held in server memory (this session)"; }
+        clear(models);
+        (d.models || []).forEach(m => models.appendChild(el("option", { value: m })));
+        let msg = `✓ Connected in ${d.ms} ms` + (d.models?.length ? ` · ${d.models.length} models listed` : "") + (d.note ? ` · ${d.note}` : "");
+        if (!state[K.model] && d.models?.length) {
+          state[K.model] = d.models[0]; modelIn.value = d.models[0]; changed();
+          msg += `\nModel ID was empty — set to the first listed: ${d.models[0]}`;
+        } else if (state[K.model] && d.modelFound === false) {
+          status.style.color = C.warn; status.textContent = `${msg}\n⚠ "${state[K.model]}" is not in the endpoint's model list.`;
+          return;
+        }
+        status.style.color = C.ok; status.textContent = msg;
+      } catch (e) {
+        status.style.color = C.err; status.textContent = `✗ ${e?.message || e}`;
+      } finally { connect.disabled = false; }
+    }, "primary");
+
+    return col([
+      note("One shared Chat Completions backend."),
+      col([label("API base URL"), baseIn,
+        note("Public endpoints require HTTPS; loopback and private LAN addresses may use HTTP.")]),
+      col([label("API key (optional)"), keyIn,
+        note("The key is sent once to the local H3 backend, kept only in memory, and never saved in localStorage.")]),
+      col([label("Model ID (optional before connect)"), modelIn, models]),
+      col([label("Known context (optional)"), ctxIn]),
+      connect, status,
+    ]);
+  }
+
+  // h3Only renders just the Brief and Vision rows (what the Prompt Edit popup needs).
+  function renderModelPickers(target = renderModelPickersInto, h3Only = false) {
+    const wrap2 = target;
     if (!wrap2) return;
     clear(wrap2);
+    // Every pick persists the state; in the popup it also saves to the config and lets the
+    // Prompt Edit panel behind it refresh its Brief / Vision line.
+    const changed = () => { ctx.persist(); if (h3Only) quickChanged?.(); };
 
     // Brief (writes the prompt) and Vision (reads reference images) are chosen fully
     // independently — backend + model for each. e.g. brief on OpenRouter, vision on a
@@ -359,15 +432,18 @@ export function createSettingsOverlay(state, ctx) {
       if (!state[orModelKey] && !isLtx) state[orModelKey] = state.h3OrModel || "";
       const isOR = state[backendKey] === "openrouter";
       const isLlama = state[backendKey] === "llamagguf";
+      // Connect Custom is for H3's Brief / Vision only — the LTX row has no route for it.
+      const isCustom = !isLtx && state[backendKey] === "custom";
       if (isOR) anyOR = true;
 
       const beSel = _selEl([
-        el("option", { value: "native",     text: "Native (ComfyUI CLIP)", ...((!isOR && !isLlama) ? { selected: "selected" } : {}) }),
+        el("option", { value: "native",     text: "Native (ComfyUI CLIP)", ...((!isOR && !isLlama && !isCustom) ? { selected: "selected" } : {}) }),
         el("option", { value: "openrouter", text: "OpenRouter (cloud)",     ...(isOR ? { selected: "selected" } : {}) }),
         el("option", { value: "llamagguf",  text: "Llama GGUF (local llama.cpp)", ...(isLlama ? { selected: "selected" } : {}) }),
+        ...(isLtx ? [] : [el("option", { value: "custom", text: "Connect Custom", ...(isCustom ? { selected: "selected" } : {}) })]),
       ]);
       beSel.addEventListener("change", () => {
-        state[backendKey] = beSel.value; ctx.persist(); renderModelPickers();
+        state[backendKey] = beSel.value; changed(); renderModelPickers(wrap2, h3Only);
       });
 
       let control;
@@ -400,16 +476,16 @@ export function createSettingsOverlay(state, ctx) {
           const isMmprojName = (n) => /mmproj/i.test(String(n || ""));
           const ggufList = (d.gguf || []).filter(n => !isMmprojName(n));
           if (!ggufList.length) ggufList.push("(none found)");
-          if (!state[modelKey] && ggufList[0] && ggufList[0] !== "(none found)") { state[modelKey] = ggufList[0]; ctx.persist(); }
+          if (!state[modelKey] && ggufList[0] && ggufList[0] !== "(none found)") { state[modelKey] = ggufList[0]; changed(); }
           const ggufPick = searchableSelect(ggufList, state[modelKey] || ggufList[0],
-            v => { state[modelKey] = v; ctx.persist(); });
+            v => { state[modelKey] = v; changed(); });
           holder.appendChild(col([label("GGUF model"), ggufPick.el]));
 
           if (needsMmproj) {
             const mmList = ["none", ...(d.mmproj || []).filter(n => n !== "none" && isMmprojName(n))];
-            if (!state[mmprojKey]) { state[mmprojKey] = "none"; ctx.persist(); }
+            if (!state[mmprojKey]) { state[mmprojKey] = "none"; changed(); }
             const mmPick = searchableSelect(mmList, state[mmprojKey] || "none",
-              v => { state[mmprojKey] = v; ctx.persist(); });
+              v => { state[mmprojKey] = v; changed(); });
             holder.appendChild(col([label("mmproj model"), mmPick.el]));
           }
           // Shared by both roles — one context window size for whichever GGUF loads.
@@ -419,17 +495,19 @@ export function createSettingsOverlay(state, ctx) {
           // error — the request simply had no room left to answer in).
           {
             const nCtxField = numberField(state.h3LlamaNCtx ?? 16384,
-              v => { state.h3LlamaNCtx = Math.max(512, Math.round(v)); ctx.persist(); }, 512);
+              v => { state.h3LlamaNCtx = Math.max(512, Math.round(v)); changed(); }, 512);
             holder.appendChild(col([label("Context length (n_ctx)"), nCtxField]));
             // A truncated brief is exactly as unusable as an empty one — this needs real
             // headroom (a full multi-shot brief measured well over 2000 tokens), not just
             // enough to dodge an error.
             const maxTokField = numberField(state.h3LlamaMaxTokens ?? 4096,
-              v => { state.h3LlamaMaxTokens = Math.max(256, Math.round(v)); ctx.persist(); }, 256);
+              v => { state.h3LlamaMaxTokens = Math.max(256, Math.round(v)); changed(); }, 256);
             holder.appendChild(col([label("Max output tokens"), maxTokField]));
           }
         });
         control = holder;
+      } else if (isCustom) {
+        control = customEndpointControls(backendKey === "h3VisionBackend" ? "vision" : "brief", changed);
       } else if (isOR) {
         // full OpenRouter model list, searchable — no vision-capability filter, the
         // user picks (qwen-vl flash, gemini, whatever). Default is a soft pre-select only.
@@ -437,14 +515,14 @@ export function createSettingsOverlay(state, ctx) {
           : orModelKey === "ltxVisionOrModel" ? "ltx_vision_or_model"
           : "h3_or_model_brief";
         const saveOr = (v) => {
-          state[orModelKey] = v; ctx.persist();
+          state[orModelKey] = v; changed();
           fetch("/minimax_h3_one/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [cfgKey]: v }) }).catch(() => {});
         };
         const holder = el("div");
         holder.appendChild(_selEl([el("option", { value: state[orModelKey] || "", text: state[orModelKey] || "loading models…" })]));
         orModels().then(ms => {
           if (!ms.length) return;
-          if (!state[orModelKey]) { state[orModelKey] = (ms.find(m => /gemini-2\.5-flash/.test(m)) || ms[0]); ctx.persist(); }
+          if (!state[orModelKey]) { state[orModelKey] = (ms.find(m => /gemini-2\.5-flash/.test(m)) || ms[0]); changed(); }
           clear(holder);
           holder.appendChild(searchableSelect(ms, state[orModelKey], saveOr).el);
         });
@@ -453,7 +531,7 @@ export function createSettingsOverlay(state, ctx) {
         control = el("div", { text: `⚠ Native needs: ${nativeMissing.join(", ")} (TJ_NODE / update ComfyUI)`,
           style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } });
       } else {
-        const pick = searchableSelect(clipList, state[clipKey] || "none", v => { state[clipKey] = v === "none" ? "" : v; ctx.persist(); });
+        const pick = searchableSelect(clipList, state[clipKey] || "none", v => { state[clipKey] = v === "none" ? "" : v; changed(); });
         control = col([label("CLIP checkpoint"), pick.el]);
       }
       return col([
@@ -470,6 +548,7 @@ export function createSettingsOverlay(state, ctx) {
     );
 
     // ── LTX Upscale LLM — its own backend + model (not shared with H3) ──
+    if (!h3Only) {
     const mkTA = (val, on) => {
       const t = el("textarea", { value: val || "", style: {
         width: "100%", minHeight: "90px", boxSizing: "border-box", background: C.bg2, color: C.text,
@@ -487,6 +566,7 @@ export function createSettingsOverlay(state, ctx) {
       el("div", { text: "Both instructions ship ready to use — you don't have to write them. The ✨ path needs a vision-capable model; H3→LTX is text-only. Saved with Save All.",
         style: { fontSize: "10px", color: C.muted, lineHeight: "1.55" } }),
     ]));
+    }
 
     if (anyOR) {
       const keyIn = el("input", { type: "password", placeholder: "sk-or-… (stored in .env, shared)", style: {
@@ -839,6 +919,13 @@ export function createSettingsOverlay(state, ctx) {
       sol_sag_dense_blocks: state.solSagDenseBlocks  || "",
       vision_source:         "native",   // the Ollama backend was removed
       native_vision_clip:    state.nativeVisionClip  || "",
+      native_brief_clip:     state.nativeBriefClip   || "",
+      h3_custom_brief_base:   state.h3CustomBriefBase   || "",
+      h3_custom_brief_model:  state.h3CustomBriefModel  || "",
+      h3_custom_brief_ctx:    state.h3CustomBriefCtx    ?? 0,
+      h3_custom_vision_base:  state.h3CustomVisionBase  || "",
+      h3_custom_vision_model: state.h3CustomVisionModel || "",
+      h3_custom_vision_ctx:   state.h3CustomVisionCtx   ?? 0,
       h3_brief_backend:      state.h3BriefBackend    || state.h3LlmBackend || "native",
       h3_vision_backend:     state.h3VisionBackend   || state.h3LlmBackend || "native",
       h3_or_model_brief:     state.h3OrModelBrief    || state.h3OrModel || "",
@@ -984,6 +1071,13 @@ export function createSettingsOverlay(state, ctx) {
     if (cfg.sol_sag_sink_cond)            state.solSagSinkCond    = cfg.sol_sag_sink_cond;
     if (cfg.sol_sag_dense_blocks)         state.solSagDenseBlocks = cfg.sol_sag_dense_blocks;
     if (cfg.native_vision_clip)       state.nativeVisionClip = cfg.native_vision_clip;
+    if (cfg.native_brief_clip)        state.nativeBriefClip  = cfg.native_brief_clip;
+    if (cfg.h3_custom_brief_base)     state.h3CustomBriefBase   = cfg.h3_custom_brief_base;
+    if (cfg.h3_custom_brief_model)    state.h3CustomBriefModel  = cfg.h3_custom_brief_model;
+    if (cfg.h3_custom_brief_ctx != null)  state.h3CustomBriefCtx = cfg.h3_custom_brief_ctx;
+    if (cfg.h3_custom_vision_base)    state.h3CustomVisionBase  = cfg.h3_custom_vision_base;
+    if (cfg.h3_custom_vision_model)   state.h3CustomVisionModel = cfg.h3_custom_vision_model;
+    if (cfg.h3_custom_vision_ctx != null) state.h3CustomVisionCtx = cfg.h3_custom_vision_ctx;
     if (cfg.h3_llm_backend)           state.h3LlmBackend     = cfg.h3_llm_backend;   // legacy
     if (cfg.h3_or_model)              state.h3OrModel        = cfg.h3_or_model;      // legacy
     if (cfg.h3_brief_backend)         state.h3BriefBackend   = cfg.h3_brief_backend;
@@ -1016,10 +1110,63 @@ export function createSettingsOverlay(state, ctx) {
 
   renderTabs(); renderBody();
 
+  // The Brief / Vision part of Save All, written on its own — the Prompt Edit popup saves
+  // each pick right away instead of waiting for Save All.
+  function saveLlmConfig() {
+    saveConfig({
+      native_vision_clip:     state.nativeVisionClip  || "",
+      native_brief_clip:      state.nativeBriefClip   || "",
+      h3_custom_brief_base:   state.h3CustomBriefBase   || "",
+      h3_custom_brief_model:  state.h3CustomBriefModel  || "",
+      h3_custom_brief_ctx:    state.h3CustomBriefCtx    ?? 0,
+      h3_custom_vision_base:  state.h3CustomVisionBase  || "",
+      h3_custom_vision_model: state.h3CustomVisionModel || "",
+      h3_custom_vision_ctx:   state.h3CustomVisionCtx   ?? 0,
+      h3_brief_backend:       state.h3BriefBackend    || state.h3LlmBackend || "native",
+      h3_vision_backend:      state.h3VisionBackend   || state.h3LlmBackend || "native",
+      h3_or_model_brief:      state.h3OrModelBrief    || state.h3OrModel || "",
+      h3_or_model_vision:     state.h3OrModelVision   || state.h3OrModel || "",
+      h3_llama_vision_model:  state.h3LlamaVisionModel  || "",
+      h3_llama_vision_mmproj: state.h3LlamaVisionMmproj || "",
+      h3_llama_brief_model:   state.h3LlamaBriefModel   || "",
+      h3_llama_n_ctx:         state.h3LlamaNCtx         ?? 16384,
+      h3_llama_max_tokens:    state.h3LlamaMaxTokens    ?? 4096,
+    }).catch(() => {});
+  }
+
+  // Popup with the same Brief / Vision pickers as Settings -> LLM Setting. `onChange` runs
+  // after every pick and on close, so the caller can refresh what it shows.
+  function openLlmQuick(onChange) {
+    const dlg = el("div", { style: {
+      position: "fixed", inset: "0", zIndex: "100000", background: "rgba(0,0,0,0.75)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+    }});
+    const box = el("div", { style: {
+      background: C.bg1, border: `1px solid ${C.border}`, borderRadius: "10px", padding: "14px",
+      width: "min(640px, 94vw)", maxHeight: "88vh", overflowY: "auto", boxSizing: "border-box",
+      display: "flex", flexDirection: "column", gap: "10px", boxShadow: "0 10px 40px rgba(0,0,0,0.6)",
+    }});
+    const close = () => { quickChanged = null; dlg.remove(); onChange?.(); };
+    const head = el("div", { style: { display: "flex", alignItems: "center", gap: "8px" } });
+    head.appendChild(el("div", { text: "LLM Setting — Brief / Vision", style: { color: "#fff", fontSize: "14px", fontWeight: "700", flex: "1" } }));
+    head.appendChild(button("✕", close, "danger"));
+    const body = el("div", { style: { display: "flex", flexDirection: "column", gap: "10px" } });
+    box.append(head, body, el("div", {
+      text: "Same settings as Settings → LLM Setting. Each change applies to Prompt Edit right away and is saved.",
+      style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
+    dlg.appendChild(box);
+    dlg.addEventListener("mousedown", e => { if (e.target === dlg) close(); });
+    document.body.appendChild(dlg);
+    quickChanged = () => { saveLlmConfig(); onChange?.(); };
+    // The option lists are only loaded once Settings has been opened.
+    refreshModels().finally(() => renderModelPickers(body, true));
+  }
+
   return {
     el: ov,
     show() { ov.style.display = "flex"; refreshModels(); },
     hide() { ov.style.display = "none"; },
     refreshModels,
+    openLlmQuick,
   };
 }
