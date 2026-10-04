@@ -1031,7 +1031,7 @@ app.registerExtension({
 
       import("./klein/ui_prompt_templates.js").then(mod=>{
         if(!mod.createTemplateOverlay)return;
-        const tOv=mod.createTemplateOverlay(state,ctx,txt=>{setModePrompt(state.mode,txt);promptTA.value=txt;persist();updateCount();},"nl");
+        const tOv=mod.createTemplateOverlay(state,ctx,txt=>{setModePrompt(state.mode,txt);promptTA.value=txt;persist();updateCount();},"qwen21");
         root.appendChild(tOv.el);
         tplBtn.onclick=()=>tOv.show();
       }).catch(()=>{});

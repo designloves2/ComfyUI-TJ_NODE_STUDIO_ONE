@@ -7,7 +7,7 @@
 //   "tag"            — SDXL
 import { C, el, clear } from "./core_klein.js";
 import { panel, label, button, row } from "./ui_common.js";
-import { getTemplates, saveTemplates } from "../shared/api_templates.js";
+import { getTemplates, saveTemplates, getCategories, saveCategories } from "../shared/api_templates.js";
 
 // ── Built-in templates keyed by mode ─────────────────────────────────────────
 const BUILT_IN = {
@@ -121,29 +121,74 @@ export function createTemplateOverlay(state, ctx, onApply, pool = "nl") {
   topRow.appendChild(closeBtn);
   ov.appendChild(topRow);
 
-  // ── Built-in section ──────────────────────────────────────────────────────
+  // ── Tag presets: categorized chips, editable per mode ─────────────────────
+  // userCats[mode] is the user's own list for that mode; a mode without one shows the
+  // built-in defaults, and the first edit copies them over so they can be changed too.
   const builtInEl = el("div", { style: { display: "flex", flexDirection: "column", gap: "10px" } });
   ov.appendChild(builtInEl);
 
+  let userCats = {};
+  let catsLoaded = false;
+  let manage = false;
+  const manageBtn = button("✎ Edit tags", () => {
+    if (!catsLoaded) { alert("Tag presets could not be loaded, so they can't be edited right now. Close and reopen this panel to retry."); return; }
+    manage = !manage;
+    manageBtn.textContent = manage ? "✓ Done" : "✎ Edit tags";
+    renderBuiltIn();
+  });
+  topRow.insertBefore(manageBtn, closeBtn);
+
+  const curMode = () => state.mode || "t2i";
+  const modeCats = () => userCats[curMode()] || JSON.parse(JSON.stringify((BUILT_IN[curMode()] || { categories: [] }).categories));
+  function commitCats(next) {
+    userCats[curMode()] = next;
+    saveCategories(pool, curMode(), next).catch(() => {});
+    renderBuiltIn();
+  }
+  function askText(msg, def = "") {
+    const v = prompt(msg, def);
+    return v === null ? null : v.trim() || null;
+  }
+  function editTag(ci, ii) {
+    const cats = modeCats();
+    const cur = ii === null ? null : cats[ci].items[ii];
+    const labelText = askText("Tag name:", cur ? cur.label : "");
+    if (!labelText) return;
+    const promptText = askText("Prompt:", cur ? cur.prompt : "");
+    if (!promptText) return;
+    const item = { ...(cur || {}), label: labelText, prompt: promptText };
+    if (cur) cats[ci].items[ii] = item; else cats[ci].items.push(item);
+    commitCats(cats);
+  }
+
   function renderBuiltIn() {
     clear(builtInEl);
-    const mode = state.mode || "t2i";
-    const data  = BUILT_IN[mode];
-    if (!data || !data.categories.length) return;
+    const cats = modeCats();
+    cats.forEach((cat, ci) => {
+      if (!cat.items.length && !manage) return;
 
-    data.categories.forEach(cat => {
-      if (!cat.items.length) return;
-
-      const catLabel = el("div", { text: cat.cat, style: {
+      const head = el("div", { style: { display: "flex", alignItems: "center", gap: "6px", marginTop: "4px" } });
+      head.appendChild(el("div", { text: cat.cat, style: {
         color: C.muted, fontSize: "10px", fontWeight: "700", letterSpacing: "0.08em",
-        textTransform: "uppercase", marginTop: "4px",
-      }});
-      builtInEl.appendChild(catLabel);
+        textTransform: "uppercase",
+      }}));
+      if (manage) {
+        head.appendChild(button("✎", () => {
+          const n = askText("Category name:", cat.cat);
+          if (n) { const c = modeCats(); c[ci].cat = n; commitCats(c); }
+        }));
+        head.appendChild(button("+ Tag", () => editTag(ci, null)));
+        head.appendChild(button("✕", () => {
+          if (!confirm(`Delete category "${cat.cat}" and its ${cat.items.length} tags?`)) return;
+          const c = modeCats(); c.splice(ci, 1); commitCats(c);
+        }, "danger"));
+      }
+      builtInEl.appendChild(head);
 
       const grid = el("div", { style: {
         display: "flex", flexWrap: "wrap", gap: "5px",
       }});
-      cat.items.forEach(item => {
+      cat.items.forEach((item, ii) => {
         const btn = el("button", { type: "button", text: item.label, style: {
           cursor: "pointer", fontFamily: "inherit", fontSize: "11px",
           padding: "4px 10px", borderRadius: "14px",
@@ -152,11 +197,41 @@ export function createTemplateOverlay(state, ctx, onApply, pool = "nl") {
         }});
         btn.onmouseenter = () => { btn.style.background = C.bg3; btn.style.borderColor = C.lime; btn.style.color = "#ffffff"; };
         btn.onmouseleave = () => { btn.style.background = C.bg2; btn.style.borderColor = C.border; btn.style.color = C.text; };
-        btn.onclick = () => { onApply(item.prompt); ov.style.display = "none"; };
-        grid.appendChild(btn);
+        if (manage) {
+          btn.title = "Click to edit";
+          btn.onclick = () => editTag(ci, ii);
+          const wrap = el("span", { style: { display: "inline-flex", alignItems: "center", gap: "2px" } }, [btn]);
+          const del = el("button", { type: "button", text: "×", title: "Delete this tag", style: {
+            cursor: "pointer", fontFamily: "inherit", fontSize: "12px", lineHeight: "1", padding: "2px 6px",
+            borderRadius: "10px", background: "transparent", color: C.err || "#e55", border: "none",
+          }});
+          del.onclick = () => { const c = modeCats(); c[ci].items.splice(ii, 1); commitCats(c); };
+          wrap.appendChild(del);
+          grid.appendChild(wrap);
+        } else {
+          btn.onclick = () => { onApply(item.prompt); ov.style.display = "none"; };
+          grid.appendChild(btn);
+        }
       });
       builtInEl.appendChild(grid);
     });
+
+    if (manage) {
+      const foot = el("div", { style: { display: "flex", gap: "6px", marginTop: "4px" } });
+      foot.appendChild(button("+ Category", () => {
+        const n = askText("New category name:");
+        if (n) { const c = modeCats(); c.push({ cat: n, items: [] }); commitCats(c); }
+      }));
+      if (userCats[curMode()]) {
+        foot.appendChild(button("↺ Reset to defaults", () => {
+          if (!confirm("Discard your changes to this mode's tags and restore the defaults?")) return;
+          delete userCats[curMode()];
+          saveCategories(pool, curMode(), null).catch(() => {});
+          renderBuiltIn();
+        }));
+      }
+      builtInEl.appendChild(foot);
+    }
   }
 
   // ── Divider ───────────────────────────────────────────────────────────────
@@ -232,22 +307,36 @@ export function createTemplateOverlay(state, ctx, onApply, pool = "nl") {
     editForm.style.display = "flex";
   }
 
+  // Saving writes the whole list, so it must never run on a list that failed to load —
+  // that would replace the stored templates with an empty one plus the new entry.
+  let loaded = false;
   function saveCustom() {
+    if (!loaded) return;
     saveTemplates(pool, customTemplates).catch(() => {});
   }
 
-  let loaded = false;
+  let loading = false;
   return {
     el: ov,
     show() {
       ov.style.display = "flex";
       renderBuiltIn();
-      if (!loaded) {
-        loaded = true;
+      if (!loaded && !loading) {
+        loading = true;
         getTemplates(pool).then(d => {
-          customTemplates = Array.isArray(d.templates) ? d.templates : [];
+          if (!Array.isArray(d.templates)) throw new Error("bad response");
+          customTemplates = d.templates;
+          loaded = true;
           renderCustom();
-        }).catch(() => renderCustom());
+        }).catch(() => renderCustom()).finally(() => { loading = false; });
+      }
+      if (!catsLoaded) {
+        getCategories(pool).then(d => {
+          if (!d || typeof d.categories !== "object") throw new Error("bad response");
+          userCats = d.categories;
+          catsLoaded = true;
+          renderBuiltIn();
+        }).catch(() => {});
       }
     },
     hide() { ov.style.display = "none"; },

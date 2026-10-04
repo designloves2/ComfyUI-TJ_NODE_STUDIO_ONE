@@ -57,6 +57,9 @@ export const MMH3_OPTIONAL_NODES = [
   "TJ_SkinRetouch",
   // Image Generator (T2I/Ref2I) — 2nd-pass latent upscale (preview-res -> final-res)
   "MinimaxH3LatentUpscaler3D",
+  // Image Generator's "Use Fizgig Latent" option — shootthesound/ComfyUI-Fizgig-H3-Still
+  // (true one-frame H3 latent + a decode that doesn't band a lone frame)
+  "FizgigH3StillLatent", "FizgigH3StillDecode",
   // Character Sheet's grid-assembly step
   "BatchImagesNode", "ImageGrid", "ImageScaleToMaxDimension",
   // FlashVSR VSR (lihaoyun6/ComfyUI-FlashVSR-Ultra-Fast, GPL-3.0) — tiled diffusion video

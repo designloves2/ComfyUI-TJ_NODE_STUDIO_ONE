@@ -1314,6 +1314,7 @@ export function defaultState(saved) {
     imgPreviewSaveToGallery: saved.imgPreviewSaveToGallery ?? false,
     imgSteps: saved.imgSteps ?? 20,
     imgSecondPassSteps: saved.imgSecondPassSteps ?? 3,
+    imgLatentMode: saved.imgLatentMode === "fizgig" ? "fizgig" : "basic",
     imgTurboOn: saved.imgTurboOn ?? false,
     imgTurboLoraT2i: saved.imgTurboLoraT2i || "none",
     imgTurboLoraRef2i: saved.imgTurboLoraRef2i || "none",

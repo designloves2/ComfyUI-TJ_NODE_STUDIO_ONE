@@ -42,6 +42,11 @@ PROMPT_TEMPLATE_POOLS = {
     "nl":  os.path.join(NODE_DIR, 'templates_prompt_nl.json'),
     "tag": os.path.join(NODE_DIR, 'templates_prompt_tag.json'),
 }
+# One pool per tool, so each tool's custom templates stay its own. "nl"/"tag" above are
+# the old shared pools: still served for older clients, and the source each per-tool
+# pool is seeded from the first time it is read.
+for _tool in ("klein", "zimage", "krea2", "qwen2511", "qwen21", "anima", "sdxl", "minimax_h3"):
+    PROMPT_TEMPLATE_POOLS[_tool] = os.path.join(NODE_DIR, f'templates_prompt_{_tool}.json')
 
 FK_SUBFOLDER  = "one_flux2-klein"
 ZIT_SUBFOLDER = "one_z-image"
@@ -3141,6 +3146,8 @@ MMH3_OPTIONAL_NODES = [
     # Image Generator (T2I/Ref2I) — 2nd-pass latent upscale between the cheap preview-res
     # first pass and the final-res decode.
     "MinimaxH3LatentUpscaler3D",
+    # Image Generator's "Use Fizgig Latent" option (shootthesound/ComfyUI-Fizgig-H3-Still)
+    "FizgigH3StillLatent", "FizgigH3StillDecode",
     # Character Sheet's grid-assembly step (buildCharacterSheetGridGraph) — batches the
     # reference photo + 8 picked frames, lays them into a 3-column grid, caps the result
     # at a max dimension.
@@ -3750,14 +3757,33 @@ def _seed_nl_pool_from_legacy():
     return merged
 
 
+def _seed_prompt_pool(pool):
+    """First content of a pool that has no file yet. Klein and Z-Image keep their own old
+    tool-local lists, SDXL starts from the old tag pool, Qwen 2.1 takes over what is in the
+    old shared pool now (only its own templates were saved there last), and the other nl
+    tools get the original shared seed.
+    """
+    if pool == "klein":
+        return _load_config(FK_CONFIG_PATH).get("t2i_templates", []) or []
+    if pool == "zimage":
+        return _load_config(ZIT_CONFIG_PATH).get("t2i_templates", []) or []
+    if pool == "qwen21":
+        return _load_config(PROMPT_TEMPLATE_POOLS["nl"]).get("templates", [])
+    if pool == "sdxl":
+        return _load_config(PROMPT_TEMPLATE_POOLS["tag"]).get("templates", [])
+    if pool in ("nl", "krea2", "qwen2511", "anima"):
+        return _seed_nl_pool_from_legacy()
+    return []
+
+
 @PromptServer.instance.routes.get("/shared/prompt_templates")
 async def shared_get_prompt_templates(request):
     pool = request.query.get("pool", "nl")
     path = PROMPT_TEMPLATE_POOLS.get(pool)
     if not path:
         return web.json_response({"ok": False, "error": f"unknown pool '{pool}'"}, status=400)
-    if not os.path.exists(path) and pool == "nl":
-        _save_config(path, {"templates": _seed_nl_pool_from_legacy()})
+    if not os.path.exists(path):
+        _save_config(path, {"templates": _seed_prompt_pool(pool)})
     cfg = _load_config(path)
     return web.json_response({"templates": cfg.get("templates", [])})
 
@@ -3773,10 +3799,41 @@ async def shared_save_prompt_templates(request):
         templates = data.get("templates", [])
         if not isinstance(templates, list):
             return web.json_response({"ok": False, "error": "templates must be a list"}, status=400)
-        _save_config(path, {"templates": templates})
+        _save_config(path, {**_load_config(path), "templates": templates})
         return web.json_response({"ok": True})
     except Exception as e:
         return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+
+# Per-mode tag presets (the categorized chips above "MY TEMPLATES") live in the same
+# per-tool pool file under "categories": {mode: [{cat, items: [{label, prompt}]}]}.
+# A mode with no entry has never been customised and shows the built-in defaults.
+
+@PromptServer.instance.routes.get("/shared/prompt_categories")
+async def shared_get_prompt_categories(request):
+    path = PROMPT_TEMPLATE_POOLS.get(request.query.get("pool", "nl"))
+    if not path:
+        return web.json_response({"ok": False, "error": "unknown pool"}, status=400)
+    return web.json_response({"categories": _load_config(path).get("categories", {})})
+
+
+@PromptServer.instance.routes.post("/shared/prompt_categories")
+async def shared_save_prompt_categories(request):
+    path = PROMPT_TEMPLATE_POOLS.get(request.query.get("pool", "nl"))
+    if not path:
+        return web.json_response({"ok": False, "error": "unknown pool"}, status=400)
+    data = await request.json()
+    mode, cats = data.get("mode"), data.get("categories")
+    if not isinstance(mode, str) or not (cats is None or isinstance(cats, list)):
+        return web.json_response({"ok": False, "error": "mode and categories required"}, status=400)
+    cfg = _load_config(path)
+    categories = cfg.get("categories", {})
+    if cats is None:
+        categories.pop(mode, None)
+    else:
+        categories[mode] = cats
+    _save_config(path, {**cfg, "categories": categories})
+    return web.json_response({"ok": True})
 
 
 # ════════════════════════════════════════════════════════════════════════════════

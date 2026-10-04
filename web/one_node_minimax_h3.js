@@ -49,6 +49,7 @@ import { createSettingsOverlay } from "./minimax/ui_app_settings_minimax.js";
 import { mountImagePanel, imageSlot } from "./minimax/ui_images_minimax.js";
 import { attachLLMPanel } from "./shared/llm_panel.js";
 import { createPromptEditOverlay } from "./minimax/ui_prompt_edit_minimax.js";
+import { createTemplateOverlay } from "./klein/ui_prompt_templates.js";
 import { createCommonPromptOverlay } from "./minimax/ui_common_prompt_minimax.js";
 import { createGalleryOverlay } from "./minimax/ui_gallery_minimax.js";
 import { createImageGalleryOverlay } from "./minimax/ui_gallery_minimax_images.js";
@@ -1141,6 +1142,17 @@ app.registerExtension({
       });
       promptHdr.appendChild(editBtn);
 
+      // Image Generator's prompt templates (T2I / Ref2I) — the same 📋 panel the other
+      // image nodes have, with this node's own pool; opened by templateOv (mounted below).
+      const tplBtn = el("button", { type: "button", text: "📋 Templates", title: "Prompt templates and tag presets", style: {
+        cursor: "pointer", fontFamily: "inherit", fontSize: "10px", display: "none",
+        padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text,
+        border: `1px solid ${BRAND}`, fontWeight: "600",
+      }});
+      tplBtn.addEventListener("click", () => imgTemplateOv?.show());
+      promptHdr.appendChild(tplBtn);
+      let imgTemplateOv = null;
+
       // Character Sheet's own pair, same slot/size as writeBtn/editBtn above — occupies
       // that spot instead of a separate row under the textarea (user: "기존 ✨ Prompt
       // Write 📝 Prompt Edit가 있던 자리와 사이즈 동일하게").
@@ -1356,6 +1368,7 @@ app.registerExtension({
         // imagegen branch) — only truly hidden for Character Sheet, which uses
         // sysPromptSaveBtn/ResetBtn in this same slot instead.
         editBtn.style.display = isCharSheetHdr ? "none" : "";
+        tplBtn.style.display = isImageGen && !isCharSheetHdr ? "" : "none";
         sysPromptSaveBtn.style.display  = isCharSheetHdr ? "" : "none";
         sysPromptResetBtn.style.display = isCharSheetHdr ? "" : "none";
         promptTitle.textContent = isLtx ? "UPSCALE PROMPT" : isFaceRefine ? "FACE REFINE PROMPT"
@@ -3701,6 +3714,26 @@ app.registerExtension({
         leftPanel.appendChild(accordion("imgLora", "LoRA", imgLoraOn ? `${imgLoraOn} active` : "None",
           () => [mountImgLoraPanel()]));
 
+        // ── Latent — T2I/Ref2I only. Basic = the 8-frame clip latent read back as a
+        // still (preview pass, then latent upscale + 2nd pass). Fizgig = the true
+        // one-frame latent + its own decode (ComfyUI-Fizgig-H3-Still), one pass at the
+        // resolution being rendered.
+        if (subMode === "t2i" || subMode === "ref2i") {
+          const fizgigOn = state.imgLatentMode === "fizgig";
+          leftPanel.appendChild(accordion("imgLatent", "Latent", fizgigOn ? "Fizgig" : "Basic",
+            () => [
+              row([col([label("Latent"), select(
+                [{ value: "basic", label: "Use Basic Latent" }, { value: "fizgig", label: "Use Fizgig Latent" }],
+                fizgigOn ? "fizgig" : "basic",
+                v => { state.imgLatentMode = v === "fizgig" ? "fizgig" : "basic"; persist(); renderLeft(); })])]),
+              el("div", {
+                text: fizgigOn
+                  ? "Fizgig: a true single-frame latent and a decode that avoids the banding of the stock VAE Decode. One pass at the resolution being rendered — Preview renders at the Preview MP size, Generate at Final MP (no latent upscale or 2nd pass, so 2nd Pass Steps is ignored). Sharpest from about 3 MP up. Needs the ComfyUI-Fizgig-H3-Still pack."
+                  : "Basic: the 8-frame clip latent read back as a still — a cheap preview pass, then a latent upscale and a 2nd pass at the final resolution.",
+                style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+            ]));
+        }
+
         // ── Turbo — T2I/Ref2I only (Character Sheet's render shares the main pipeline's
         // own turbo stack via effectiveTurbo, unrelated to this). Off by default: with no
         // turbo LoRA this pipeline runs as a plain, non-accelerated render at the chosen
@@ -3861,6 +3894,7 @@ app.registerExtension({
             steps: state.imgSteps ?? 20, secondPassSteps: state.imgSecondPassSteps ?? 3,
             turboOn: !!state.imgTurboOn, turboLora: state[turboKey], turboLoraStrength: state.imgTurboLoraStrength ?? 1.0,
             savePreview: !!state.imgPreviewSaveToGallery,
+            latentMode: state.imgLatentMode,
           });
           const res = await queuePrompt(built.graph, {
             onProgress: (v, m) => setStatus(`Image Generator — ${Math.round((v / (m || 1)) * 100)}%`),
@@ -3886,6 +3920,7 @@ app.registerExtension({
               refImages: subMode === "ref2i" ? (state.imgRefImages || []) : [],
               refImageSize: state.imgRefImageSize || "max", seed,
               imgSteps: state.imgSteps ?? 20, imgSecondPassSteps: state.imgSecondPassSteps ?? 3,
+              imgLatentMode: state.imgLatentMode === "fizgig" ? "fizgig" : "basic",
               imgTurboOn: !!state.imgTurboOn,
               imgTurboLora: state.imgTurboOn ? (state[turboKey] || null) : null,
               imgTurboLoraStrength: state.imgTurboLoraStrength ?? 1.0,
@@ -6514,6 +6549,7 @@ app.registerExtension({
         if (meta.seed != null) { state.seed = meta.seed; state.seedMode = "fixed"; seedInput.value = meta.seed; seedModeDD.value = "fixed"; }
         if (meta.imgSteps != null) state.imgSteps = meta.imgSteps;
         if (meta.imgSecondPassSteps != null) state.imgSecondPassSteps = meta.imgSecondPassSteps;
+        state.imgLatentMode = meta.imgLatentMode === "fizgig" ? "fizgig" : "basic";
         if (meta.imgTurboOn != null) state.imgTurboOn = !!meta.imgTurboOn;
         if (meta.imgTurboLora) {
           const turboKey = subMode === "ref2i" ? "imgTurboLoraRef2i" : "imgTurboLoraT2i";
@@ -6587,6 +6623,13 @@ app.registerExtension({
       imageGalleryOv = createImageGalleryOverlay(state, ctx);
       root.appendChild(imageGalleryOv.el);
       root.appendChild(imgPromptExpandEl);
+      // Templates read only `state.mode`; T2I and Ref2I each keep their own tag presets.
+      imgTemplateOv = createTemplateOverlay({ get mode() { return state.imageGenMode === "ref2i" ? "ref2i" : "t2i"; } }, ctx, txt => {
+        state.imgPrompt = txt;
+        if (imgInlineTA) imgInlineTA.value = txt;
+        persist();
+      }, "minimax_h3");
+      root.appendChild(imgTemplateOv.el);
       // Any reference-video picker (left panel media slots, Prompt Edit's per-clip slots)
       // opens this same gallery instead of a separate, badge-less grid of its own.
       ctx.pickVideoFromGallery = (onPick, opts) => galleryOv.showPicker(onPick, opts);

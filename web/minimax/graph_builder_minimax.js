@@ -1890,7 +1890,7 @@ const IMG = {
   turboLora: "IMG:turbo_lora",
   clip: "IMG:clip", vaeV: "IMG:vae_video",
   ref: (i) => `IMG:ref_image_${i}`,
-  cond: "IMG:cond",
+  cond: "IMG:cond", fizLatent: "IMG:fizgig_latent",
   noise: "IMG:noise", sampSel1: "IMG:sampler_sel1", sched: "IMG:scheduler",
   guider1: "IMG:guider1", sampler1: "IMG:sampler1",
   sepAV: "IMG:sep_av", latentUp: "IMG:latent_up", concatAV: "IMG:concat_av",
@@ -1949,10 +1949,19 @@ function buildImageLoraChain(g, state, modelLink) {
  * @param opts.savePreview  false (default) = a !final run's still goes to PreviewImage
  *                          (ComfyUI's temp/ folder, not the output gallery) instead of
  *                          SaveImage; ignored when opts.final is true (always saved)
+ * @param opts.latentMode   "basic" (default) = the 8-frame clip latent read back as a still,
+ *                          preview pass then latent-upscale + 2nd pass; "fizgig" =
+ *                          shootthesound/ComfyUI-Fizgig-H3-Still's true one-frame latent and
+ *                          its own decode, one single pass at the resolution being rendered
+ *                          (preview res for a preview, final res for a real run — no 2nd pass)
  */
 export function buildImageGenGraph(state, avail, opts) {
   const { subMode, final, refImages, refImageSize, prompt, seed, previewRes, finalRes, filenamePrefix,
           steps, secondPassSteps, turboOn, turboLora, turboLoraStrength, savePreview } = opts;
+  const fizgig = opts.latentMode === "fizgig";
+  if (fizgig && !(has(avail, "FizgigH3StillLatent") && has(avail, "FizgigH3StillDecode")))
+    throw new Error("Use Fizgig Latent needs ComfyUI-Fizgig-H3-Still (github.com/shootthesound/ComfyUI-Fizgig-H3-Still) — install it and restart ComfyUI, or switch to Use Basic Latent.");
+  const renderRes = fizgig && final ? finalRes : previewRes;
   const refList = (refImages || []).filter(Boolean).slice(0, 9);
   if (subMode === "ref2i" && !refList.length) throw new Error("Reference to Image needs at least one reference image.");
   const g = {};
@@ -1987,7 +1996,7 @@ export function buildImageGenGraph(state, avail, opts) {
 
   const condInputs = {
     clip: [IMG.clip, 0], vae: [IMG.vaeV, 0],
-    prompt, width: previewRes.width, height: previewRes.height, length: IMG_LENGTH,
+    prompt, width: renderRes.width, height: renderRes.height, length: IMG_LENGTH,
   };
   if (subMode === "ref2i") {
     condInputs.ref_image_size = refImageSize || "max";
@@ -2000,6 +2009,16 @@ export function buildImageGenGraph(state, avail, opts) {
     g[IMG.cond] = { class_type: "MiniMaxH3ImageToVideo", inputs: condInputs };
   }
 
+  // The conditioning node's own LATENT output stays unconnected in Fizgig mode — only its
+  // conditioning is used; the one-frame latent comes from the Fizgig node at the same size.
+  let startLatent = [IMG.cond, 1];
+  if (fizgig) {
+    g[IMG.fizLatent] = { class_type: "FizgigH3StillLatent", inputs: {
+      width: renderRes.width, height: renderRes.height, batch_size: 1,
+    }};
+    startLatent = [IMG.fizLatent, 0];
+  }
+
   const stepCount = Math.max(1, Math.round(steps ?? 20));
   g[IMG.noise] = { class_type: "RandomNoise", inputs: { noise_seed: seed ?? 0 } };
   g[IMG.sampSel1] = { class_type: "KSamplerSelect", inputs: { sampler_name: "euler" } };
@@ -2007,11 +2026,11 @@ export function buildImageGenGraph(state, avail, opts) {
   g[IMG.guider1] = { class_type: "BasicGuider", inputs: { model, conditioning: [IMG.cond, 0] } };
   g[IMG.sampler1] = { class_type: "SamplerCustomAdvanced", inputs: {
     noise: [IMG.noise, 0], guider: [IMG.guider1, 0], sampler: [IMG.sampSel1, 0],
-    sigmas: [IMG.sched, 0], latent_image: [IMG.cond, 1],
+    sigmas: [IMG.sched, 0], latent_image: startLatent,
   }};
 
   let decodeSamples;
-  if (!final) {
+  if (fizgig || !final) {
     // Preview: decode the cheap first pass directly, at the preview resolution.
     decodeSamples = [IMG.sampler1, 0];
   } else {
@@ -2043,14 +2062,22 @@ export function buildImageGenGraph(state, avail, opts) {
     decodeSamples = [IMG.sampler2, 0];
   }
 
-  g[IMG.decode] = { class_type: "VAEDecode", inputs: { samples: decodeSamples, vae: [IMG.vaeV, 0] } };
-  g[IMG.frame] = { class_type: "ImageFromBatch", inputs: { batch_index: IMG_LENGTH, length: 1, image: [IMG.decode, 0] } };
+  // A Fizgig still is already one frame — nothing to pick out of a clip.
+  let stillImage;
+  if (fizgig) {
+    g[IMG.decode] = { class_type: "FizgigH3StillDecode", inputs: { samples: decodeSamples, vae: [IMG.vaeV, 0] } };
+    stillImage = [IMG.decode, 0];
+  } else {
+    g[IMG.decode] = { class_type: "VAEDecode", inputs: { samples: decodeSamples, vae: [IMG.vaeV, 0] } };
+    g[IMG.frame] = { class_type: "ImageFromBatch", inputs: { batch_index: IMG_LENGTH, length: 1, image: [IMG.decode, 0] } };
+    stillImage = [IMG.frame, 0];
+  }
   // A preview the user hasn't opted to keep goes to PreviewImage (ComfyUI's own temp/
   // folder) instead of SaveImage, so it never lands in the output folder the H3 image
   // gallery scans — nothing to clean up afterward. A real (final) run always saves.
   g[IMG.save] = (final || savePreview)
-    ? { class_type: "SaveImage", inputs: { filename_prefix: filenamePrefix, images: [IMG.frame, 0] } }
-    : { class_type: "PreviewImage", inputs: { images: [IMG.frame, 0] } };
+    ? { class_type: "SaveImage", inputs: { filename_prefix: filenamePrefix, images: stillImage } }
+    : { class_type: "PreviewImage", inputs: { images: stillImage } };
 
   return { graph: g, saveNode: IMG.save };
 }

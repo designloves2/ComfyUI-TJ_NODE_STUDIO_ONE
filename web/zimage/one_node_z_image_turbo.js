@@ -730,7 +730,7 @@ app.registerExtension({
 
       templateOv=createTemplateOverlay(state,ctx,(prompt)=>{
         setModePrompt(state.mode,prompt); promptTA.value=prompt; persist(); updateCount();
-      },"nl");
+      },"zimage");
 
       // Prompt expand overlay
       const promptExpandEl=el("div",{style:{
