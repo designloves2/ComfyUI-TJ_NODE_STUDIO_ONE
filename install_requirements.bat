@@ -159,8 +159,11 @@ rem script - download the whole "FlashVSR" folder from
 rem https://huggingface.co/JunhaoZhuang/FlashVSR into ComfyUI/models/ (the node's own
 rem description names this path).
 set REPOS[24]=https://github.com/lihaoyun6/ComfyUI-FlashVSR_Ultra_Fast
+rem Fizgig H3 Still - MiniMax H3 Image Generator's "Use Fizgig Latent" option (a true
+rem one-frame latent + a decode that does not band a lone frame). No extra dependencies.
+set REPOS[25]=https://github.com/shootthesound/ComfyUI-Fizgig-H3-Still
 
-set COUNT=25
+set COUNT=26
 set /a LAST=COUNT-1
 
 :: ComfyUI Manager names a folder after the pack's pyproject "name", not the repo name.
@@ -289,6 +292,14 @@ if not exist "%F%\.git\" (
     exit /b 0
 )
 echo [UPDATE] %F%
+rem Saganaki22/ComfyUI-sol-attn was deleted from GitHub. Existing checkouts still point
+rem at it, so their pull fails - repoint them at the mirror before pulling.
+set "ORIGIN="
+for /f "delims=" %%U in ('git -C "%F%" remote get-url origin 2^>nul') do set "ORIGIN=%%U"
+echo !ORIGIN! | findstr /i "Saganaki22/ComfyUI-sol-attn" >nul && (
+    echo [FIX] origin was the deleted Saganaki22 repo - now https://github.com/designloves2/ComfyUI-sol-attn
+    git -C "%F%" remote set-url origin https://github.com/designloves2/ComfyUI-sol-attn
+)
 set "BEFORE=?"
 set "AFTER=?"
 for /f "delims=" %%H in ('git -C "%F%" rev-parse --short HEAD 2^>nul') do set "BEFORE=%%H"

@@ -235,6 +235,7 @@ chmod +x install_requirements.sh
 | [ComfyUI-VideoHelperSuite](https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite) 🧪 | 레퍼런스 **비디오** 입력<br><sub>reference video inputs</sub>| MiniMax H3 Reference 모드<br><sub>Reference mode</sub>|
 | [Nvidia RTX Nodes](https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI) 🧪 | RTX Video Super Resolution | MiniMax H3 Upscale=RTX VSR |
 | [ComfyUI-FlashVSR_Ultra_Fast](https://github.com/lihaoyun6/ComfyUI-FlashVSR_Ultra_Fast) 🧪 | 타일 기반 디퓨전 VSR<br><sub>tiled diffusion video super-resolution</sub>| MiniMax H3 Upscale=FlashVSR VSR (좌측 패널 · 갤러리)<br><sub>left panel + gallery</sub>|
+| [ComfyUI-Fizgig-H3-Still](https://github.com/shootthesound/ComfyUI-Fizgig-H3-Still) 🧪 | 진짜 1프레임 H3 latent · 줄무늬 없는 디코드<br><sub>true single-frame H3 latent + banding-free decode</sub>| MiniMax H3 Image Generator Latent=Use Fizgig Latent<br><sub>(선택 · optional)</sub>|
 | [JK-AceStep-Nodes](https://github.com/jeankassio/JK-AceStep-Nodes) 🧪 | JKASS 품질 샘플러 (`jkass_quality`)<br><sub>JKASS quality sampler</sub>| MusicMaker Ace-Step 엔진<br><sub>MusicMaker Ace-Step engine</sub>|
 | [ComfyUI-Openrouter_node](https://github.com/gabe-init/ComfyUI-Openrouter_node) | OpenRouter LLM 키 저장소<br><sub>OpenRouter LLM key store</sub>| MusicMaker · 이미지 노드 · H3 의 OpenRouter LLM 백엔드 (선택)<br><sub>optional — OpenRouter LLM backend for MusicMaker / image nodes / H3</sub>|
 
@@ -1672,6 +1673,7 @@ Several nodes were heavily reworked and integrated into the TJ wireless workflow
 - [Kosinkadink/ComfyUI-VideoHelperSuite](https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite) — 레퍼런스 비디오 입력 / reference video inputs
 - [Comfy-Org/Nvidia_RTX_Nodes_ComfyUI](https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI) — RTX Video Super Resolution
 - [lihaoyun6/ComfyUI-FlashVSR_Ultra_Fast](https://github.com/lihaoyun6/ComfyUI-FlashVSR_Ultra_Fast) — 타일 기반 디퓨전 VSR / tiled diffusion video super-resolution
+- [shootthesound/ComfyUI-Fizgig-H3-Still](https://github.com/shootthesound/ComfyUI-Fizgig-H3-Still) — 진짜 1프레임 H3 latent + 디코드 / true single-frame H3 latent + decode
 
 ### Krea2 ControlNet
 

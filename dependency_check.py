@@ -46,6 +46,7 @@ _OPTIONAL = [
     ("comfyui-krea2-controlnet",          ("comfyui-krea2-controlnet",)),
     ("comfyui-krea2edit",                 ("comfyui-krea2edit",)),
     ("ComfyUI-NK2E",                      ("comfyui-nk2e",)),
+    ("ComfyUI-Fizgig-H3-Still",           ("comfyui-fizgig-h3-still",)),
 ]
 
 _LINE = "=" * 74

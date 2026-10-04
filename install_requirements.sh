@@ -164,6 +164,9 @@ REPOS=(
     # ship with ComfyUI core; JK-AceStep-Nodes adds the JKASS quality sampler that the
     # Ace-Step engine's KSamplerSelect defaults to (sampler_name "jkass_quality").
     "https://github.com/jeankassio/JK-AceStep-Nodes"
+    # Fizgig H3 Still - MiniMax H3 Image Generator's "Use Fizgig Latent" option (a true
+    # one-frame latent + a decode that does not band a lone frame). No extra dependencies.
+    "https://github.com/shootthesound/ComfyUI-Fizgig-H3-Still"
 )
 
 # ComfyUI Manager names a folder after the pack's pyproject `name`, which is often not
@@ -251,6 +254,12 @@ for URL in "${REPOS[@]}"; do
         # -- update ------------------------------------------------------------
         if [ -d "$EXISTING/.git" ]; then
             echo "[UPDATE] $EXISTING"
+            # Saganaki22/ComfyUI-sol-attn was deleted from GitHub. Existing checkouts still
+            # point at it, so their pull fails - repoint them at the mirror first.
+            if git -C "$EXISTING" remote get-url origin 2>/dev/null | grep -qi 'Saganaki22/ComfyUI-sol-attn'; then
+                echo "[FIX] origin was the deleted Saganaki22 repo - now https://github.com/designloves2/ComfyUI-sol-attn"
+                git -C "$EXISTING" remote set-url origin https://github.com/designloves2/ComfyUI-sol-attn
+            fi
             BEFORE="$(git -C "$EXISTING" rev-parse --short HEAD 2>/dev/null || echo '?')"
             if git -C "$EXISTING" pull --ff-only 2>&1 | sed 's/^/         /'; then
                 AFTER="$(git -C "$EXISTING" rev-parse --short HEAD 2>/dev/null || echo '?')"
