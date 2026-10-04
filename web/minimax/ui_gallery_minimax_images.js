@@ -25,15 +25,24 @@ const NAMED_RATIOS = [
   ["1:1", 1], ["16:9", 16 / 9], ["9:16", 9 / 16], ["4:3", 4 / 3], ["3:4", 3 / 4],
   ["21:9", 21 / 9], ["3:2", 3 / 2], ["2:3", 2 / 3], ["5:4", 5 / 4], ["4:5", 4 / 5],
 ];
-function aspectRatioLabel(w, h) {
+function aspectRatioLabel(w, h, chosen) {
   if (!w || !h) return "";
   const r = w / h;
+  // The aspect picked when it was rendered wins. Sizes are snapped to multiples of 32, so the
+  // pixel ratio only approximates it (736x1344 is 23:42, not the 9:16 that was asked for).
+  const m = /^(\d+):(\d+)/.exec(chosen || "");
+  if (m) {
+    const v = m[1] / m[2];
+    if (Math.abs(r - v) / v <= 0.1) return `${m[1]}:${m[2]}`;
+  }
   let best = null, bestErr = Infinity;
   for (const [label, val] of NAMED_RATIOS) {
     const err = Math.abs(r - val) / val;
     if (err < bestErr) { bestErr = err; best = label; }
   }
-  if (best && bestErr <= 0.015) return best;
+  // Snapping to 32 moves a small render's ratio by up to ~7% (the named ones are at least
+  // 6.7% apart, so the nearest still wins), hence the loose bound.
+  if (best && bestErr <= 0.08) return best;
   const gcd = (a, b) => (b ? gcd(b, a % b) : a);
   const g = gcd(w, h) || 1;
   return `${w / g}:${h / g}`;
@@ -439,7 +448,7 @@ export function createImageGalleryOverlay(state, ctx) {
     const meta = el("div", { style: { padding: "5px 7px", display: "flex", flexDirection: "column", gap: "1px" } });
     if (v.meta?.w && v.meta?.h) {
       const mp = ((v.meta.w * v.meta.h) / 1_000_000).toFixed(1);
-      const ratio = aspectRatioLabel(v.meta.w, v.meta.h);
+      const ratio = aspectRatioLabel(v.meta.w, v.meta.h, v.meta.imgAspect);
       meta.appendChild(el("div", { text: `[${v.meta.w}x${v.meta.h}px / ${mp}MP${ratio ? `    ${ratio}` : ""}]`,
         style: { fontSize: "9px", color: "#fff", fontWeight: "600" } }));
     }
