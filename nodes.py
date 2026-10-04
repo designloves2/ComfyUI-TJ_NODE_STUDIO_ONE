@@ -1297,42 +1297,9 @@ async def sdxl_set_last_image(request):
 PromptServer.instance.routes.get("/qwen2511_one/gallery")(_make_gallery_handler(QE_SUBFOLDER, "qwen2511"))
 
 
-@PromptServer.instance.routes.post("/qwen2511_one/save_meta")
-async def qe_save_meta(request):
-    data = await request.json()
-    output_dir = _get_output_dir()
-    try:
-        path = _safe_resolve_output_path(output_dir, data.get("subfolder",""), data.get("filename",""))
-        _write_meta(path, data.get("meta", {}))
-    except Exception as e:
-        return web.json_response({"ok": False, "error": str(e)})
-    return web.json_response({"ok": True})
-
-
-@PromptServer.instance.routes.post("/qwen2511_one/update_meta")
-async def qe_update_meta(request):
-    data = await request.json()
-    output_dir = _get_output_dir()
-    try:
-        path = _safe_resolve_output_path(output_dir, data.get("subfolder",""), data.get("filename",""))
-        meta = _read_meta(path)
-        meta.update(data.get("patch", {}))
-        _write_meta(path, meta)
-    except Exception as e:
-        return web.json_response({"ok": False, "error": str(e)})
-    return web.json_response({"ok": True})
-
-
-@PromptServer.instance.routes.get("/qwen2511_one/meta")
-async def qe_meta(request):
-    output_dir = _get_output_dir()
-    filename  = request.rel_url.query.get("filename","")
-    subfolder = request.rel_url.query.get("subfolder","")
-    try:
-        path = _safe_resolve_output_path(output_dir, subfolder, filename)
-        return web.json_response(_read_meta(path))
-    except Exception as e:
-        return web.json_response({"error": str(e)})
+PromptServer.instance.routes.post("/qwen2511_one/save_meta")(_make_save_meta_handler("qwen2511"))
+PromptServer.instance.routes.post("/qwen2511_one/update_meta")(_make_update_meta_handler("qwen2511"))
+PromptServer.instance.routes.get("/qwen2511_one/meta")(_make_meta_get_handler())
 
 
 @PromptServer.instance.routes.post("/qwen2511_one/open_folder")
@@ -1353,21 +1320,7 @@ async def qe_open_folder(request):
     return web.json_response({"ok": True})
 
 
-@PromptServer.instance.routes.post("/qwen2511_one/delete")
-async def qe_delete(request):
-    data = await request.json()
-    output_dir = _get_output_dir()
-    try:
-        path = _safe_resolve_output_path(output_dir, data.get("subfolder",""), data.get("filename",""))
-        if os.path.exists(path):
-            os.remove(path)
-        _remove_thumb(path)
-        meta = path + ".meta.json"
-        if os.path.exists(meta):
-            os.remove(meta)
-    except Exception as e:
-        return web.json_response({"ok": False, "error": str(e)})
-    return web.json_response({"ok": True})
+PromptServer.instance.routes.post("/qwen2511_one/delete")(_make_delete_handler("qwen2511"))
 
 
 @PromptServer.instance.routes.post("/qwen2511_one/copy_to_input")
@@ -1477,42 +1430,9 @@ async def qe_set_last_image(request):
 PromptServer.instance.routes.get("/qwenimage21_one/gallery")(_make_gallery_handler(Q21_SUBFOLDER, "qwen21"))
 
 
-@PromptServer.instance.routes.post("/qwenimage21_one/save_meta")
-async def q21_save_meta(request):
-    data = await request.json()
-    output_dir = _get_output_dir()
-    try:
-        path = _safe_resolve_output_path(output_dir, data.get("subfolder",""), data.get("filename",""))
-        _write_meta(path, data.get("meta", {}))
-    except Exception as e:
-        return web.json_response({"ok": False, "error": str(e)})
-    return web.json_response({"ok": True})
-
-
-@PromptServer.instance.routes.post("/qwenimage21_one/update_meta")
-async def q21_update_meta(request):
-    data = await request.json()
-    output_dir = _get_output_dir()
-    try:
-        path = _safe_resolve_output_path(output_dir, data.get("subfolder",""), data.get("filename",""))
-        meta = _read_meta(path)
-        meta.update(data.get("patch", {}))
-        _write_meta(path, meta)
-    except Exception as e:
-        return web.json_response({"ok": False, "error": str(e)})
-    return web.json_response({"ok": True})
-
-
-@PromptServer.instance.routes.get("/qwenimage21_one/meta")
-async def q21_meta(request):
-    output_dir = _get_output_dir()
-    filename  = request.rel_url.query.get("filename","")
-    subfolder = request.rel_url.query.get("subfolder","")
-    try:
-        path = _safe_resolve_output_path(output_dir, subfolder, filename)
-        return web.json_response(_read_meta(path))
-    except Exception as e:
-        return web.json_response({"error": str(e)})
+PromptServer.instance.routes.post("/qwenimage21_one/save_meta")(_make_save_meta_handler("qwen21"))
+PromptServer.instance.routes.post("/qwenimage21_one/update_meta")(_make_update_meta_handler("qwen21"))
+PromptServer.instance.routes.get("/qwenimage21_one/meta")(_make_meta_get_handler())
 
 
 @PromptServer.instance.routes.post("/qwenimage21_one/open_folder")
@@ -1533,21 +1453,7 @@ async def q21_open_folder(request):
     return web.json_response({"ok": True})
 
 
-@PromptServer.instance.routes.post("/qwenimage21_one/delete")
-async def q21_delete(request):
-    data = await request.json()
-    output_dir = _get_output_dir()
-    try:
-        path = _safe_resolve_output_path(output_dir, data.get("subfolder",""), data.get("filename",""))
-        if os.path.exists(path):
-            os.remove(path)
-        _remove_thumb(path)
-        meta = path + ".meta.json"
-        if os.path.exists(meta):
-            os.remove(meta)
-    except Exception as e:
-        return web.json_response({"ok": False, "error": str(e)})
-    return web.json_response({"ok": True})
+PromptServer.instance.routes.post("/qwenimage21_one/delete")(_make_delete_handler("qwen21"))
 
 
 @PromptServer.instance.routes.post("/qwenimage21_one/copy_to_input")
