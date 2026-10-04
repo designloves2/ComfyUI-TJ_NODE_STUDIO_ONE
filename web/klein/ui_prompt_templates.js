@@ -145,6 +145,16 @@ export function createTemplateOverlay(state, ctx, onApply, pool = "nl") {
     saveCategories(pool, curMode(), next).catch(() => {});
     renderBuiltIn();
   }
+  let dragSrc = null;   // {ci, ii} of the tag being dragged
+  // Move a tag to position `to` of category `ci`; `to` counts positions before the move.
+  function moveTag(src, ci, to) {
+    const c = modeCats();
+    const [item] = c[src.ci].items.splice(src.ii, 1);
+    if (src.ci === ci && src.ii < to) to--;
+    c[ci].items.splice(to, 0, item);
+    dragSrc = null;
+    commitCats(c);
+  }
   function askText(msg, def = "") {
     const v = prompt(msg, def);
     return v === null ? null : v.trim() || null;
@@ -173,6 +183,16 @@ export function createTemplateOverlay(state, ctx, onApply, pool = "nl") {
         textTransform: "uppercase",
       }}));
       if (manage) {
+        const move = (d) => () => {
+          const c = modeCats(); const j = ci + d;
+          if (j < 0 || j >= c.length) return;
+          [c[ci], c[j]] = [c[j], c[ci]]; commitCats(c);
+        };
+        const up = button("▲", move(-1)), down = button("▼", move(1));
+        up.title = "Move category up"; down.title = "Move category down";
+        up.disabled = ci === 0; down.disabled = ci === cats.length - 1;
+        up.style.opacity = up.disabled ? "0.35" : ""; down.style.opacity = down.disabled ? "0.35" : "";
+        head.append(up, down);
         head.appendChild(button("✎", () => {
           const n = askText("Category name:", cat.cat);
           if (n) { const c = modeCats(); c[ci].cat = n; commitCats(c); }
@@ -200,19 +220,47 @@ export function createTemplateOverlay(state, ctx, onApply, pool = "nl") {
         if (manage) {
           btn.title = "Click to edit";
           btn.onclick = () => editTag(ci, ii);
-          const wrap = el("span", { style: { display: "inline-flex", alignItems: "center", gap: "2px" } }, [btn]);
+          // Drag a tag onto another one to drop it before/after it (any category), or onto
+          // a category's empty space to append it there.
+          const wrap = el("span", { draggable: "true", style: { display: "inline-flex", alignItems: "center", gap: "2px", cursor: "grab" } });
+          wrap.title = "Drag to reorder";
           const del = el("button", { type: "button", text: "×", title: "Delete this tag", style: {
             cursor: "pointer", fontFamily: "inherit", fontSize: "12px", lineHeight: "1", padding: "2px 6px",
             borderRadius: "10px", background: "transparent", color: C.err || "#e55", border: "none",
           }});
           del.onclick = () => { const c = modeCats(); c[ci].items.splice(ii, 1); commitCats(c); };
-          wrap.appendChild(del);
+          wrap.addEventListener("dragstart", e => {
+            dragSrc = { ci, ii };
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", item.label);
+            setTimeout(() => { wrap.style.opacity = "0.4"; }, 0);
+          });
+          wrap.addEventListener("dragend", () => { dragSrc = null; wrap.style.opacity = ""; renderBuiltIn(); });
+          const after = e => { const r = wrap.getBoundingClientRect(); return e.clientX > r.left + r.width / 2; };
+          wrap.addEventListener("dragover", e => {
+            if (!dragSrc) return;
+            e.preventDefault(); e.stopPropagation();
+            const side = after(e) ? "right" : "left";
+            wrap.style.boxShadow = side === "right" ? `inset -2px 0 0 ${C.lime}` : `inset 2px 0 0 ${C.lime}`;
+          });
+          wrap.addEventListener("dragleave", () => { wrap.style.boxShadow = ""; });
+          wrap.addEventListener("drop", e => {
+            if (!dragSrc) return;
+            e.preventDefault(); e.stopPropagation();
+            moveTag(dragSrc, ci, after(e) ? ii + 1 : ii);
+          });
+          wrap.append(btn, del);
           grid.appendChild(wrap);
         } else {
           btn.onclick = () => { onApply(item.prompt); ov.style.display = "none"; };
           grid.appendChild(btn);
         }
       });
+      if (manage) {
+        grid.style.minHeight = "26px";
+        grid.addEventListener("dragover", e => { if (dragSrc) e.preventDefault(); });
+        grid.addEventListener("drop", e => { if (dragSrc) { e.preventDefault(); moveTag(dragSrc, ci, cat.items.length); } });
+      }
       builtInEl.appendChild(grid);
     });
 
