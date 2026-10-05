@@ -4,10 +4,10 @@
 // the output folder beats hunting for the file on disk and re-uploading a copy of it.
 // The chosen clip is copied into ComfyUI's input folder, because that is the only place
 // the loader nodes can read from.
-import { C, BRAND, el, API } from "./core_minimax.js";
+import { C, BRAND, el, API, loadState } from "./core_minimax.js";
 import { api } from "../../../scripts/api.js";
 import { getClipLastFrame } from "./api_minimax.js";
-import { fetchAllPages } from "../shared/fetch_all_pages.js";
+import { galleryPageSize, fetchFirst, mergeUnique, loadMoreButton } from "../shared/gallery_more.js";
 
 /**
  * Open the picker. `onPick(inputFilename, clipItem)` receives the name of the copy in
@@ -55,21 +55,26 @@ export function openVideoGalleryPicker(onPick, opts = {}) {
   document.body.appendChild(ov);
 
   (async () => {
-    let items = [];
+    let items = [], total = 0;
+    const sf = opts.subfolder != null ? `&subfolder=${encodeURIComponent(opts.subfolder)}` : "";
+    const fetchPage = async (offset, limit) => {
+      const r = await api.fetchApi(`${API}/videos?offset=${offset}&limit=${limit}${sf}`);
+      return r.json();
+    };
+    const pageSize = galleryPageSize(loadState());
     try {
-      const sf = opts.subfolder != null ? `&subfolder=${encodeURIComponent(opts.subfolder)}` : "";
-      items = (await fetchAllPages(async (offset, limit) => {
-        const r = await api.fetchApi(`${API}/videos?offset=${offset}&limit=${limit}${sf}`);
-        return r.json();
-      }, "videos")).videos || [];
+      ({ rows: items, total } = await fetchFirst(fetchPage, "videos", pageSize));
     } catch (e) {
       status.textContent = `Could not read the gallery: ${e?.message || e}`;
       return;
     }
     if (!items.length) { status.textContent = "No rendered clips yet."; return; }
-    status.textContent = `${items.length} clips · hover to preview`;
+    const setStatus = () => {
+      status.textContent = `${items.length} clips${items.length < total ? ` · ${items.length} / ${total} loaded` : ""} · hover to preview`;
+    };
+    setStatus();
 
-    items.forEach(it => {
+    const addCell = (it) => {
       const url = `/view?filename=${encodeURIComponent(it.filename)}` +
                   `&subfolder=${encodeURIComponent(it.subfolder || "")}&type=output`;
       const cell = el("div", { style: {
@@ -143,6 +148,24 @@ export function openVideoGalleryPicker(onPick, opts = {}) {
         }
       });
       grid.appendChild(cell);
-    });
+    };
+
+    // The button sits after the last cell; it is removed and re-added after every page.
+    let moreBtn = null;
+    const updateMore = () => {
+      moreBtn?.remove(); moreBtn = null;
+      if (items.length >= total) return;
+      moreBtn = loadMoreButton(async () => {
+        const d = await fetchPage(items.length, pageSize);
+        const fresh = mergeUnique(items, d.videos || []).slice(items.length);
+        items = items.concat(fresh);
+        total = (d.videos || []).length ? Number(d.total) || items.length : items.length;
+        fresh.forEach(addCell);
+        setStatus(); updateMore();
+      });
+      grid.appendChild(moreBtn);
+    };
+    items.forEach(addCell);
+    updateMore();
   })();
 }

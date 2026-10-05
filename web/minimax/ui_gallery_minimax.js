@@ -6,7 +6,7 @@
 import { composeStitchedPrompt, C, BRAND, el, clear, SUBFOLDER, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES,
          UPSCALE_MODES, FLASHVSR_MODELS, FLASHVSR_MODES, FPS, computeRtxTarget } from "./core_minimax.js";
 import { button, select, numberField } from "../klein/ui_common.js";
-import { fetchAllPages } from "../shared/fetch_all_pages.js";
+import { galleryPageSize, fetchFirst, mergeUnique, loadMoreButton } from "../shared/gallery_more.js";
 import { listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage, getMediaFiles,
          copyOutputToInput, discardInputCopy, getVideoInfo, queuePrompt, waitForHistory, historyEntry,
          getClipLastFrame, getSystemPrompt, analyzeImagesNative, writeBriefNative } from "./api_minimax.js";
@@ -114,6 +114,7 @@ export function createGalleryOverlay(state, ctx) {
   }});
 
   let videos = [];
+  let videoTotal = 0;      // what the folder holds; `videos` is only the part loaded so far
   // "all" | "stitched" | "ltxupscale" | "facerefine" | "deblur" | "rtxvsr" — replaces the
   // old binary "★ stitched only" toggle with a proper filter (user: "필터 범위를 늘려서
   // 드롭다운 방식으로 All(기본값)/스티치드/LTX Upscale/Face Refine/RTX Deblur/RTX VSR").
@@ -1441,7 +1442,9 @@ export function createGalleryOverlay(state, ctx) {
     const list = shown();
     const filterLabel = GALLERY_FILTERS.find(f => f.value === galleryFilter)?.label || "All";
     countTag.textContent = `${list.length} clip${list.length === 1 ? "" : "s"}`
-      + (galleryFilter !== "all" ? ` (${filterLabel})` : "") + ` · ${state.saveSubfolder || SUBFOLDER}`;
+      + (galleryFilter !== "all" ? ` (${filterLabel})` : "")
+      + (videos.length < videoTotal ? ` · ${videos.length} / ${videoTotal} loaded` : "")
+      + ` · ${state.saveSubfolder || SUBFOLDER}`;
     if (!list.length) {
       grid.appendChild(el("div", {
         text: galleryFilter !== "all" ? `No ${filterLabel} videos yet.` : "No clips yet — generate something first.",
@@ -1666,17 +1669,29 @@ export function createGalleryOverlay(state, ctx) {
       card.append(thumbWrap, meta);
       grid.appendChild(card);
     });
+    if (videos.length < videoTotal) grid.appendChild(loadMoreButton(loadMore));
     if (stitchMode) refreshStitchBar();
     if (postMode) refreshPostBars();
   }
 
+  const fetchVideoPage = (offset, limit) => listVideos(state.saveSubfolder || SUBFOLDER, { offset, limit });
+
+  // A refresh (or a delete) re-fetches at least as many clips as were showing, so the
+  // grid does not snap back to the first page.
   async function refresh() {
     refreshUpModels();
     countTag.textContent = "loading…";
     try {
-      const d = await fetchAllPages((offset, limit) => listVideos(state.saveSubfolder || SUBFOLDER, { offset, limit }), "videos");
-      videos = d.videos || [];
-    } catch { videos = []; }
+      const d = await fetchFirst(fetchVideoPage, "videos", Math.max(galleryPageSize(state), videos.length));
+      videos = d.rows; videoTotal = d.total;
+    } catch { videos = []; videoTotal = 0; }
+    renderGrid();
+  }
+
+  async function loadMore() {
+    const d = await fetchVideoPage(videos.length, galleryPageSize(state));
+    videos = mergeUnique(videos, d.videos || []);
+    videoTotal = (d.videos || []).length ? Number(d.total) || videos.length : videos.length;
     renderGrid();
   }
 

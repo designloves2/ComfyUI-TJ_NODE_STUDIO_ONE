@@ -14,7 +14,7 @@
 import { C, BRAND, el, clear, SUBFOLDER } from "./core_minimax.js";
 import { setThumb, wireCacheButton } from "../shared/gallery_thumb.js";
 import { button } from "../klein/ui_common.js";
-import { fetchAllPages } from "../shared/fetch_all_pages.js";
+import { galleryPageSize, fetchFirst, mergeUnique, loadMoreButton } from "../shared/gallery_more.js";
 import { listImages, revealOutputFolder, deleteImage, copyOutputToInput, discardInputCopy,
          saveMeta, queuePrompt } from "./api_minimax.js";
 import { buildImageUpscaleGraph } from "./graph_builder_minimax.js";
@@ -89,6 +89,7 @@ export function createImageGalleryOverlay(state, ctx) {
   }});
 
   let images = [];
+  let imageTotal = 0;      // what the folder holds; `images` is only the part loaded so far
   let galleryFilter = "all";
   const GALLERY_FILTERS = [
     { value: "all", label: "All" },
@@ -501,9 +502,11 @@ export function createImageGalleryOverlay(state, ctx) {
     clear(grid);
     cellRefs = [];
     filtered = images.filter(matchesFilter);
-    countTag.textContent = `${filtered.length} image${filtered.length === 1 ? "" : "s"}`;
+    countTag.textContent = `${filtered.length} image${filtered.length === 1 ? "" : "s"}`
+      + (images.length < imageTotal ? ` · ${images.length} / ${imageTotal} loaded` : "");
     hint.style.display = filtered.length ? "none" : "block";
     filtered.forEach((v, idx) => grid.appendChild(thumb(v, idx)));
+    if (images.length < imageTotal) grid.appendChild(loadMoreButton(loadMore));
     refreshPostBar();
   }
 
@@ -703,14 +706,25 @@ export function createImageGalleryOverlay(state, ctx) {
     document.body.appendChild(pop);
   }
 
+  const fetchImagePage = (offset, limit) => listImages(imgFolder(state), { offset, limit });
+
+  // A refresh (or a delete) re-fetches at least as many images as were showing, so the
+  // grid does not snap back to the first page.
   async function refresh() {
     try {
-      const d = await fetchAllPages((offset, limit) => listImages(imgFolder(state), { offset, limit }), "images");
-      images = d.images || [];
+      const d = await fetchFirst(fetchImagePage, "images", Math.max(galleryPageSize(state), images.length));
+      images = d.rows; imageTotal = d.total;
     } catch (e) {
-      images = [];
+      images = []; imageTotal = 0;
       ctx.showPopup?.(`Could not load images: ${e.message || e}`, true);
     }
+    renderGrid();
+  }
+
+  async function loadMore() {
+    const d = await fetchImagePage(images.length, galleryPageSize(state));
+    images = mergeUnique(images, d.images || []);
+    imageTotal = (d.images || []).length ? Number(d.total) || images.length : images.length;
     renderGrid();
   }
 

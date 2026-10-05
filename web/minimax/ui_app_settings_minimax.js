@@ -672,6 +672,10 @@ export function createSettingsOverlay(state, ctx) {
     prefixIn.addEventListener("input", () => { state.filenamePrefix = prefixIn.value.trim(); ctx.persist(); });
 
     wrap.appendChild(panel([
+      label("Gallery — items per load"),
+      numField(state.galleryPageSize ?? 50, v => { state.galleryPageSize = Math.min(300, Math.max(10, Math.round(v))); ctx.persist(); }, { step: "10", min: 10, max: 300 }),
+      el("div", { text: "How many clips/images the H3 galleries and the reference-video picker load first, and again with each \"Load more\" click. 10–300; smaller opens faster.",
+        style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
       label("Save Folder (inside ComfyUI output/)"), pathIn,
       label("Filename Prefix"), prefixIn,
       el("div", { text: "Every clip is always written to disk as its own video; the stitched file is written alongside them.", style: { fontSize: "10px", color: C.muted } }),

@@ -862,6 +862,7 @@ export function defaultState(saved) {
     // length still comes from the prompts it produces.
     targetLength: saved.targetLength || "",
     refineIncludeImages: !!saved.refineIncludeImages,
+    galleryPageSize: saved.galleryPageSize ?? 50,   // rows per "Load more" in the H3 galleries and the video picker
 
     // Audio Lock — pin the soundtrack instead of letting the model regenerate it
     audioLock:         saved.audioLock         ?? false,
