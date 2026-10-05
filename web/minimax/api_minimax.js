@@ -754,21 +754,14 @@ export async function writeBriefOpenRouter(systemPrompt, userPrompt, orModel) {
   return d.text;
 }
 
-// "Connect Custom" backend — any OpenAI-style Chat Completions server. role is "brief" or
-// "vision"; the endpoint is { baseUrl, model, context }. The API key only ever travels in
-// connectCustom() (once, to be held in the server's memory) — never stored client-side.
-export async function connectCustom(role, { baseUrl, apiKey, model }) {
-  const r = await api.fetchApi("/minimax_h3_one/custom_llm/connect", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ role, base_url: baseUrl, api_key: apiKey || "", model: model || "" }),
-  });
-  return r.json();
-}
-
+// "Connect Custom" backend — any OpenAI-style Chat Completions server. The endpoint is
+// { baseUrl, model, context, role? }; role picks which stored API key the server uses
+// ("vision" / "brief" by default, "ltx" for LTX Upscale). The key itself is only ever sent
+// by customLLMControls' Connect & test (shared/custom_llm_controls.js).
 export async function analyzeImagesCustom(images, promptText, ep) {
   const r = await api.fetchApi("/minimax_h3_one/llm/custom_analyze", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ images, prompt: promptText, base_url: ep.baseUrl, model: ep.model, context: ep.context || 0 }),
+    body: JSON.stringify({ images, prompt: promptText, base_url: ep.baseUrl, model: ep.model, context: ep.context || 0, role: ep.role }),
   });
   const d = await r.json();
   if (!d.ok) throw new Error(d.error || "Custom vision failed");
@@ -778,7 +771,7 @@ export async function analyzeImagesCustom(images, promptText, ep) {
 export async function writeBriefCustom(systemPrompt, userPrompt, ep) {
   const r = await api.fetchApi("/minimax_h3_one/llm/custom_write_brief", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ system: systemPrompt, user: userPrompt, base_url: ep.baseUrl, model: ep.model, context: ep.context || 0 }),
+    body: JSON.stringify({ system: systemPrompt, user: userPrompt, base_url: ep.baseUrl, model: ep.model, context: ep.context || 0, role: ep.role }),
   });
   const d = await r.json();
   if (!d.ok) throw new Error(d.error || "Custom brief failed");

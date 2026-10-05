@@ -1275,6 +1275,9 @@ export function defaultState(saved) {
     h3CustomVisionBase:  saved.h3CustomVisionBase  || "",
     h3CustomVisionModel: saved.h3CustomVisionModel || "",
     h3CustomVisionCtx:   saved.h3CustomVisionCtx   ?? 0,
+    ltxCustomBase:       saved.ltxCustomBase       || "",   // LTX Upscale's own Connect Custom endpoint
+    ltxCustomModel:      saved.ltxCustomModel      || "",
+    ltxCustomCtx:        saved.ltxCustomCtx        ?? 0,
     h3BriefBackend:   saved.h3BriefBackend   || saved.h3LlmBackend || "native",   // "native" | "openrouter" | "llamagguf" | "custom"
     h3VisionBackend:  saved.h3VisionBackend  || saved.h3LlmBackend || "native",
     h3OrModelBrief:   saved.h3OrModelBrief   || saved.h3OrModel || "",

@@ -14,8 +14,12 @@
  */
 import { t } from "./i18n.js";
 import { openImageGalleryPicker } from "./ui_image_gallery_picker.js";
+import { customLLMControls } from "./custom_llm_controls.js";
 
 const LS_KEY = "tj_studio_one_llm_settings";
+
+const CUSTOM_THEME = { bg: "#1a1a1a", text: "#ddd", border: "#444", muted: "#888", ok: "#7eff7e", warn: "#f0b429", err: "#ff6b6b", brand: "#7612DA" };
+const backendName = (b) => b === "openrouter" ? "OpenRouter" : b === "comfy" ? "ComfyUI Native" : b === "custom" ? "Connect Custom" : "Local GGUF";
 
 function loadLLMSettings() {
   try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}"); } catch { return {}; }
@@ -170,6 +174,14 @@ export function mountLLMSettingsSection(ov, ctx) {
     backend_vision:     cfg.backend_vision      || cfg.backend || "local",
     or_model_text:      cfg.or_model_text       || cfg.or_model || "",
     or_model_vision:    cfg.or_model_vision     || cfg.or_model || "",
+    // "Connect Custom" endpoints, one per role (the API key is never kept here — it lives in
+    // the server's memory).
+    custom_base_text:   cfg.custom_base_text    || "",
+    custom_model_text:  cfg.custom_model_text   || "",
+    custom_ctx_text:    cfg.custom_ctx_text     ?? 0,
+    custom_base_vision: cfg.custom_base_vision  || "",
+    custom_model_vision: cfg.custom_model_vision || "",
+    custom_ctx_vision:  cfg.custom_ctx_vision   ?? 0,
     gguf_model:         cfg.gguf_model          || "",
     mmproj_file:        cfg.mmproj_file         || "none",
     text_encoder_name:  cfg.text_encoder_name   || "",
@@ -224,10 +236,10 @@ export function mountLLMSettingsSection(ov, ctx) {
     Object.assign(hdr.style, { color: "#ddd", fontSize: "11px", fontWeight: "700" });
     box.appendChild(hdr);
 
-    const BACKEND_LABELS = ["Local GGUF", "ComfyUI Native", "OpenRouter"];
-    function backendLabel() { return llm[bkey] === "openrouter" ? "OpenRouter" : llm[bkey] === "comfy" ? "ComfyUI Native" : "Local GGUF"; }
+    const BACKEND_LABELS = ["Local GGUF", "ComfyUI Native", "OpenRouter", "Connect Custom"];
+    function backendLabel() { return backendName(llm[bkey]); }
     const beSel = makeSelect(BACKEND_LABELS, backendLabel(),
-      (v) => { llm[bkey] = v === "OpenRouter" ? "openrouter" : v === "ComfyUI Native" ? "comfy" : "local"; saveLLM(); syncBackendBlocks(); });
+      (v) => { llm[bkey] = v === "OpenRouter" ? "openrouter" : v === "ComfyUI Native" ? "comfy" : v === "Connect Custom" ? "custom" : "local"; saveLLM(); syncBackendBlocks(); });
     box.appendChild(labelRow("Backend", beSel));
 
     const localGroup = document.createElement("div");
@@ -285,6 +297,25 @@ export function mountLLMSettingsSection(ov, ctx) {
     orGroup.appendChild(labelRow("OpenRouter API key", keyInp));
     box.appendChild(orGroup);
 
+    // Connect Custom — any OpenAI-style Chat Completions server, its own URL / model / key
+    // for this role (Prompt Enhance and Image → Prompt Write do not share one).
+    const ck = role === "vision"
+      ? { base: "custom_base_vision", model: "custom_model_vision", ctx: "custom_ctx_vision" }
+      : { base: "custom_base_text",   model: "custom_model_text",   ctx: "custom_ctx_text" };
+    const customGroup = customLLMControls({
+      role: role === "vision" ? "img_i2p" : "img_enhance",
+      values: { base: llm[ck.base], model: llm[ck.model], ctx: llm[ck.ctx] },
+      onChange: (p) => {
+        if ("base" in p) llm[ck.base] = p.base;
+        if ("model" in p) llm[ck.model] = p.model;
+        if ("ctx" in p) llm[ck.ctx] = p.ctx;
+        saveLLM();
+      },
+      theme: CUSTOM_THEME,
+      noteKeyWhere: "the local ONE STUDIO backend",
+    });
+    box.appendChild(customGroup);
+
     box._syncFromState = () => {
       beSel.value = backendLabel();
       orSel.value = llm[mkey];
@@ -292,8 +323,9 @@ export function mountLLMSettingsSection(ov, ctx) {
       clipTypeSel.value = llm.clip_loader_type;
       const b = llm[bkey];
       orGroup.style.display = b === "openrouter" ? "flex" : "none";
-      localGroup.style.display = b === "comfy" ? "none" : b === "openrouter" ? "none" : "flex";
+      localGroup.style.display = (b === "comfy" || b === "openrouter" || b === "custom") ? "none" : "flex";
       comfyGroup.style.display = b === "comfy" ? "flex" : "none";
+      customGroup.style.display = b === "custom" ? "flex" : "none";
     };
     box._fill = (orModels, keyHint) => {
       if (orModels && orModels.length) {
@@ -406,14 +438,16 @@ export function mountLLMSettingsSection(ov, ctx) {
 // the popup so it doesn't need to duplicate the Settings UI.
 export function getLLMSummary() {
   const llm = loadLLMSettings();
-  const line = (backend, orModel) => backend === "openrouter"
+  const line = (backend, orModel, customModel) => backend === "openrouter"
     ? `OpenRouter · ${orModel || "(model not set)"}`
     : backend === "comfy"
     ? `ComfyUI Native · ${basename(llm.text_encoder_name) || "(model not set)"}`
+    : backend === "custom"
+    ? `Connect Custom · ${customModel || "(model not set)"}`
     : `Local GGUF · ${basename(llm.gguf_model) || "(model not set)"}`;
   return {
-    write: line(llm.backend_vision || llm.backend || "local", llm.or_model_vision || llm.or_model),
-    enhance: line(llm.backend_text || llm.backend || "local", llm.or_model_text || llm.or_model),
+    write: line(llm.backend_vision || llm.backend || "local", llm.or_model_vision || llm.or_model, llm.custom_model_vision),
+    enhance: line(llm.backend_text || llm.backend || "local", llm.or_model_text || llm.or_model, llm.custom_model_text),
   };
 }
 
@@ -764,7 +798,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
 
   function refreshFooter() {
     const l = loadLLMSettings();
-    const backendLabel = (b) => b === "openrouter" ? "OpenRouter" : b === "comfy" ? "ComfyUI Native" : "Local GGUF";
+    const backendLabel = backendName;
     const s = getLLMSummary();
     footerBackend.textContent = "적용 방식 — " + t("llm_tab_i2p") + ": " + backendLabel(l.backend_vision || l.backend || "local")
       + " · " + t("llm_lbl_enhance_backend") + ": " + backendLabel(l.backend_text || l.backend || "local");
@@ -826,6 +860,9 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
           image_b64: _imageB64,
           backend: llm.backend_vision || llm.backend || "local",
           or_model: llm.or_model_vision || llm.or_model,
+          custom_base: llm.custom_base_vision,
+          custom_model: llm.custom_model_vision,
+          custom_ctx: llm.custom_ctx_vision,
           gguf_model: llm.gguf_model,
           mmproj_file: llm.mmproj_file,
           text_encoder_name: llm.text_encoder_name,
@@ -865,6 +902,9 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
           prompt,
           backend: llm.backend_text || llm.backend || "local",
           or_model: llm.or_model_text || llm.or_model,
+          custom_base: llm.custom_base_text,
+          custom_model: llm.custom_model_text,
+          custom_ctx: llm.custom_ctx_text,
           gguf_model: llm.gguf_model,
           text_encoder_name: llm.text_encoder_name,
           clip_loader_type: llm.clip_loader_type,

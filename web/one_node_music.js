@@ -13,6 +13,7 @@ import {
 } from "./music/core_music.js";
 import { downloadAgentJob } from "./shared/agent_job.js";
 import { fetchAllPages } from "./shared/fetch_all_pages.js";
+import { customLLMControls } from "./shared/custom_llm_controls.js";
 import { buildMusicGraph, effectiveDuration } from "./music/graph_builder_music.js";
 import { openPianoRoll } from "./music/ui_piano_roll.js";
 import { melodySeconds } from "./music/melody_core.js";
@@ -751,7 +752,7 @@ app.registerExtension({
         if (meta?.seconds) line("Length", fmtDur(meta.seconds));
         if (meta?.seed != null) line("Seed", String(meta.seed));
         if (meta?.llmBackend) {
-          const bk = { local: "Local GGUF", openrouter: "OpenRouter", comfy: "ComfyUI TextGenerate" }[meta.llmBackend] || meta.llmBackend;
+          const bk = { local: "Local GGUF", openrouter: "OpenRouter", comfy: "ComfyUI TextGenerate", custom: "Connect Custom" }[meta.llmBackend] || meta.llmBackend;
           line("LLM", meta.llmModel ? `${bk} · ${meta.llmModel}` : bk);
         }
         top.append(big, metaCol);
@@ -893,8 +894,10 @@ app.registerExtension({
           if (state.llmBackend === "comfy") {
             text = stripThinking(await comfyTextGen(role, input, context));
           } else {
-            const model = state.llmBackend === "openrouter" ? state.llmOrModel : state.llmModel;
-            const d = await jpost("/llm/run", { role, input, context, backend: state.llmBackend, model });
+            const custom = state.llmBackend === "custom";
+            const model = state.llmBackend === "openrouter" ? state.llmOrModel : custom ? state.llmCustomModel : state.llmModel;
+            const d = await jpost("/llm/run", { role, input, context, backend: state.llmBackend, model,
+              ...(custom ? { custom_base: state.llmCustomBase, custom_ctx: state.llmCustomCtx } : {}) });
             if (!d.ok) throw new Error(d.error || "empty response");
             text = stripThinking(d.text);
           }
@@ -1394,8 +1397,8 @@ app.registerExtension({
           compose.appendChild(el("div", { className: "mmm-hint",
             text: (() => {
               const b = state.llmBackend;
-              const label = b === "openrouter" ? "OpenRouter" : b === "comfy" ? "ComfyUI TextGenerate" : "Local GGUF";
-              const mdl = b === "openrouter" ? state.llmOrModel : b === "comfy" ? state.llmClip : state.llmModel;
+              const label = b === "openrouter" ? "OpenRouter" : b === "comfy" ? "ComfyUI TextGenerate" : b === "custom" ? "Connect Custom" : "Local GGUF";
+              const mdl = b === "openrouter" ? state.llmOrModel : b === "comfy" ? state.llmClip : b === "custom" ? state.llmCustomModel : state.llmModel;
               return `LLM · ${label}${mdl ? " · " + String(mdl).split(/[\\/]/).pop() : ""} — change in Settings`;
             })(),
           }));
@@ -1958,7 +1961,7 @@ app.registerExtension({
         if (!pending || !Object.keys(pending).length) return true;
         try {
           await jpost("/config", pending);
-          const map = { dit: "dit", clip: "clip", dav: "dav", ace_unet: "aceUnet", ace_clip1: "aceClip1", ace_clip2: "aceClip2", ace_vae: "aceVae", ace_sampler_name: "aceSamplerName", ace_scheduler: "aceScheduler", ace_shift: "aceShift", yue2_ckpt: "yue2Ckpt", llm_backend: "llmBackend", llm_model: "llmModel", llm_or_model: "llmOrModel", llm_clip: "llmClip", llm_clip_type: "llmClipType", save_subfolder: "saveSubfolder" };
+          const map = { dit: "dit", clip: "clip", dav: "dav", ace_unet: "aceUnet", ace_clip1: "aceClip1", ace_clip2: "aceClip2", ace_vae: "aceVae", ace_sampler_name: "aceSamplerName", ace_scheduler: "aceScheduler", ace_shift: "aceShift", yue2_ckpt: "yue2Ckpt", llm_backend: "llmBackend", llm_model: "llmModel", llm_or_model: "llmOrModel", llm_clip: "llmClip", llm_clip_type: "llmClipType", llm_custom_base: "llmCustomBase", llm_custom_model: "llmCustomModel", llm_custom_ctx: "llmCustomCtx", save_subfolder: "saveSubfolder" };
           const folderChanged = ("save_subfolder" in pending) && (pending.save_subfolder || "") !== (state.saveSubfolder || "");
           for (const k in pending) if (map[k]) state[map[k]] = pending[k];
           persist(); pending = {}; renderCompose();
@@ -2062,6 +2065,20 @@ app.registerExtension({
             };
             b.appendChild(fieldCol("OpenRouter API key", keyInput));
             b.appendChild(el("div", { text: cfg.openrouter_key_set ? "✓ key stored in .env — click the field to replace it" : "⚠ API key required — openrouter.ai/keys", style: { fontSize: "10.5px", color: cfg.openrouter_key_set ? "#7eff7e" : C.warn }}));
+          } else if (backend === "custom") {
+            // Any OpenAI-style Chat Completions server. URL / model / context are saved with
+            // the other settings (Save All); the API key is sent once on Connect & test.
+            b.appendChild(customLLMControls({
+              role: "music",
+              values: { base: pending.llm_custom_base ?? cfg.llm_custom_base, model: pending.llm_custom_model ?? cfg.llm_custom_model, ctx: pending.llm_custom_ctx ?? cfg.llm_custom_ctx },
+              onChange: (p) => {
+                if ("base" in p) pending.llm_custom_base = p.base;
+                if ("model" in p) pending.llm_custom_model = p.model;
+                if ("ctx" in p) pending.llm_custom_ctx = p.ctx;
+              },
+              theme: { bg: C.bg2, text: C.text, border: C.border, muted: C.muted, ok: "#7eff7e", warn: C.warn, err: C.err, brand: BRAND },
+              noteKeyWhere: "the local ONE STUDIO backend",
+            }));
           } else if (backend === "comfy") {
             b.appendChild(setNote("Runs ComfyUI's native TextGenerate node — a GGUF/safetensors LLM loaded through a CLIP loader. No extra packages."));
             const clipOpts = [...(m.text_encoders || []), ...(ctx.llmModels || [])];
@@ -2098,6 +2115,9 @@ app.registerExtension({
         if (d.llm_or_model != null) state.llmOrModel = d.llm_or_model;
         if (d.llm_clip != null)     state.llmClip    = d.llm_clip;
         if (d.llm_clip_type)  state.llmClipType = d.llm_clip_type;
+        if (d.llm_custom_base)        state.llmCustomBase  = d.llm_custom_base;
+        if (d.llm_custom_model)       state.llmCustomModel = d.llm_custom_model;
+        if (d.llm_custom_ctx != null) state.llmCustomCtx   = d.llm_custom_ctx;
         persist(); renderCompose();
       }).catch(() => {});
       renderCompose();

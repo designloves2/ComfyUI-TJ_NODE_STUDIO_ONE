@@ -39,6 +39,7 @@ import {
   getMediaFiles, uploadMedia, getVramStats, listVideos,
   saveConfig, analyzeImagesNative, analyzeImagesOpenRouter, writeBriefNative, writeBriefOpenRouter, getMediaInfo,
   listPromptSets, getPromptSet, getClipLastFrame, analyzeImageLlama, writeBriefLlama,
+  analyzeImagesCustom, writeBriefCustom,
 } from "./minimax/api_minimax.js";
 import { buildClipGraph, buildLtxUpscaleGraph, buildFaceRefineGraph, buildPostprocessGraph, buildImageGenGraph,
   buildCharacterSheetVideoGraph, buildCharacterSheetGridGraph, CHARSHEET_DEFAULT_FRAME_INDICES, CHARSHEET_FRAMES,
@@ -1490,8 +1491,12 @@ app.registerExtension({
           return `OpenRouter · ${(state.ltxVisionOrModel || "(model not set)").split("/").pop()}`;
         if (backend === "llamagguf")
           return `Llama GGUF · ${(state.ltxLlamaModel || "(model not set)").split(/[\\/]/).pop()}`;
+        if (backend === "custom")
+          return `Custom · ${state.ltxCustomModel || "(model not set)"}`;
         return `native CLIP · ${(state.ltxVisionClip || "(clip not set)").split(/[\\/]/).pop()}`;
       }
+      const ltxCustomEp = () => ({ baseUrl: state.ltxCustomBase, model: state.ltxCustomModel, context: state.ltxCustomCtx, role: "ltx" });
+      const ltxCustomMissing = () => !(state.ltxCustomBase && state.ltxCustomModel);
       // Same megapixel cap the Prompt Edit panel's Llama GGUF vision path uses, client-side
       // since there's no server hop for this call to do it in.
       async function ltxFilenameToB64(filename) {
@@ -1517,6 +1522,9 @@ app.registerExtension({
         if (backend === "llamagguf" && !(state.ltxLlamaModel || "").trim()) {
           showPopup("Set the Llama GGUF model in ⚙ Settings → LLM Setting → LTX Upscale.", true); return;
         }
+        if (backend === "custom" && ltxCustomMissing()) {
+          showPopup("Connect Custom (LTX Upscale) needs an API base URL and a model ID - set them in ⚙ Settings → LLM Setting → LTX Upscale.", true); return;
+        }
         if (backend === "native" && !(state.ltxVisionClip || "").trim()) {
           showPopup("Set the native vision CLIP in ⚙ Settings → Models → LTX Upscale (or switch that backend to OpenRouter).", true); return;
         }
@@ -1527,6 +1535,7 @@ app.registerExtension({
             || "Describe this video frame as one text-to-image prompt matching exactly what is shown.";
           let text;
           if (backend === "openrouter") text = await analyzeImagesOpenRouter(frames, instr, state.ltxVisionOrModel);
+          else if (backend === "custom") text = await analyzeImagesCustom(frames, instr, ltxCustomEp());
           else if (backend === "llamagguf") {
             // The shared /tj_studio_one/llm/image_to_prompt route takes one image per call —
             // same loop the Prompt Edit panel's own Llama GGUF vision path uses.
@@ -1558,6 +1567,9 @@ app.registerExtension({
         if (backend === "llamagguf" && !(state.ltxLlamaModel || "").trim()) {
           showPopup("Set the Llama GGUF model in ⚙ Settings → LLM Setting → LTX Upscale.", true); return;
         }
+        if (backend === "custom" && ltxCustomMissing()) {
+          showPopup("Connect Custom (LTX Upscale) needs an API base URL and a model ID - set them in ⚙ Settings → LLM Setting → LTX Upscale.", true); return;
+        }
         if (backend === "native" && !(state.ltxVisionClip || "").trim()) {
           showPopup("Set the native LLM CLIP in ⚙ Settings → LLM Setting → LTX Upscale.", true); return;
         }
@@ -1566,6 +1578,7 @@ app.registerExtension({
           const sys = (state.ltxConvertPrompt || "").trim() || "Rewrite this MiniMax-H3 brief as one LTX-2.5 prompt paragraph.";
           let text;
           if (backend === "openrouter") text = await writeBriefOpenRouter(sys, src, state.ltxVisionOrModel);
+          else if (backend === "custom") text = await writeBriefCustom(sys, src, ltxCustomEp());
           else if (backend === "llamagguf")
             text = await writeBriefLlama(`${sys}\n\n${src}`, state.ltxLlamaModel, state.h3LlamaNCtx, state.h3LlamaMaxTokens);
           else text = await writeBriefNative(state.ltxVisionClip, sys, src, "ltxv");
@@ -1815,15 +1828,26 @@ app.registerExtension({
           ltx_vision_backend: state.ltxVisionBackend || "native",
           ltx_vision_clip:    state.ltxVisionClip    || "",
           ltx_vision_or_model: state.ltxVisionOrModel || "",
+          ltx_custom_base:    state.ltxCustomBase    || "",
+          ltx_custom_model:   state.ltxCustomModel   || "",
+          ltx_custom_ctx:     state.ltxCustomCtx     ?? 0,
         }).catch(() => {});
         function renderLlmPicker() {
           clear(llmWrap);
           const backend = state.ltxVisionBackend || "native";
           const bSel = select(
-            [{ value: "native", label: "Native CLIP (local)" }, { value: "openrouter", label: "OpenRouter (cloud)" }],
+            [{ value: "native", label: "Native CLIP (local)" }, { value: "openrouter", label: "OpenRouter (cloud)" },
+             { value: "custom", label: "Connect Custom" }],
             backend, v => { state.ltxVisionBackend = v; persist(); syncLlmCfg(); renderLlmPicker(); llmLabel.textContent = `LLM: ${ltxVisionLabel()}`; });
           let mSel;
-          if (backend === "openrouter") {
+          if (backend === "custom") {
+            // The URL / key / context live in ⚙ Settings → LLM Setting → LTX Upscale; only the
+            // model id is quick to change here.
+            mSel = el("input", { type: "text", value: state.ltxCustomModel || "", placeholder: "model id (URL + key: Settings → LLM Setting)",
+              style: { width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
+                border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px", fontSize: "12px", fontFamily: "inherit", outline: "none" } });
+            mSel.addEventListener("change", () => { state.ltxCustomModel = mSel.value.trim(); persist(); syncLlmCfg(); llmLabel.textContent = `LLM: ${ltxVisionLabel()}`; });
+          } else if (backend === "openrouter") {
             mSel = el("select", { style: { width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
               border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px", fontSize: "12px", fontFamily: "inherit", outline: "none" } },
               [el("option", { value: state.ltxVisionOrModel || "", text: state.ltxVisionOrModel || "loading models…" })]);
@@ -1841,7 +1865,7 @@ app.registerExtension({
           }
           llmWrap.append(row([
             col([label("LLM backend"), bSel]),
-            col([label(backend === "openrouter" ? "OpenRouter model" : "Vision CLIP"), mSel]),
+            col([label(backend === "openrouter" ? "OpenRouter model" : backend === "custom" ? "Model ID" : "Vision CLIP"), mSel]),
           ]));
         }
 

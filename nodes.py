@@ -1902,6 +1902,16 @@ async def studio_llm_enhance(request):
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)})
 
+    if (data.get("backend") or "").lower() == "custom":
+        try:
+            text = await asyncio.get_event_loop().run_in_executor(
+                None, _h3_custom_chat, "img_enhance", data.get("custom_base"), data.get("custom_model"),
+                _studio_enhance_system(data), str(data.get("prompt", "")), data.get("custom_ctx"),
+                int(data.get("max_tokens", 1000)), float(data.get("temperature", 0.7)))
+            return web.json_response({"ok": True, "result": text})
+        except Exception as e:
+            return web.json_response({"ok": False, "error": str(e)})
+
     TJ_PromptEnhancer, _, _ = _try_import_tj_llm()
     if TJ_PromptEnhancer is None:
         return web.json_response({"ok": False, "error": "TJ_NODE2 not installed"})
@@ -1970,6 +1980,25 @@ async def studio_llm_image_to_prompt(request):
             text = await loop.run_in_executor(
                 None, _openrouter_vision, sys_p, "Describe this image.", img_b64, model,
                 float(data.get("temperature", 0.7)), int(data.get("max_tokens", 1000)))
+            return web.json_response({"ok": True, "result": text})
+        except Exception as e:
+            return web.json_response({"ok": False, "error": str(e)})
+
+    if (data.get("backend") or "").lower() == "custom":
+        img_b64 = data.get("image_b64", "")
+        if not img_b64:
+            return web.json_response({"ok": False, "error": "No image data"})
+        vt = data.get("vision_task", "Caption (plain description)")
+        ci = (data.get("custom_instruction", "") or "").strip()
+        sys_p = ("You look at an image and produce a text-to-image prompt describing it.\n"
+                 "- Output ONLY the description — no preamble, no quotes, no markdown.\n"
+                 f"- Style of description: {vt}.\n" + (f"- {ci}\n" if ci else ""))
+        url = img_b64 if img_b64.startswith("data:") else "data:image/jpeg;base64," + img_b64
+        try:
+            text = await asyncio.get_event_loop().run_in_executor(
+                None, _h3_custom_chat, "img_i2p", data.get("custom_base"), data.get("custom_model"), sys_p,
+                [{"type": "text", "text": "Describe this image."}, {"type": "image_url", "image_url": {"url": url}}],
+                data.get("custom_ctx"), int(data.get("max_tokens", 1000)), float(data.get("temperature", 0.7)))
             return web.json_response({"ok": True, "result": text})
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)})
@@ -2521,6 +2550,9 @@ async def mmh3_get_config(request):
         "h3_custom_vision_base":  cfg.get("h3_custom_vision_base",  ""),
         "h3_custom_vision_model": cfg.get("h3_custom_vision_model", ""),
         "h3_custom_vision_ctx":   cfg.get("h3_custom_vision_ctx",   0),
+        "ltx_custom_base":        cfg.get("ltx_custom_base",        ""),
+        "ltx_custom_model":       cfg.get("ltx_custom_model",       ""),
+        "ltx_custom_ctx":         cfg.get("ltx_custom_ctx",         0),
         "h3_llm_backend":        cfg.get("h3_llm_backend",        "native"),   # legacy
         "h3_brief_backend":      cfg.get("h3_brief_backend")  or cfg.get("h3_llm_backend", "native"),
         "h3_vision_backend":     cfg.get("h3_vision_backend") or cfg.get("h3_llm_backend", "native"),
@@ -4666,6 +4698,9 @@ async def music_get_config(request):
         "llm_or_model": cfg.get("llm_or_model", ""),
         "llm_clip":    cfg.get("llm_clip", ""),
         "llm_clip_type": cfg.get("llm_clip_type", "qwen_image"),
+        "llm_custom_base":  cfg.get("llm_custom_base",  ""),
+        "llm_custom_model": cfg.get("llm_custom_model", ""),
+        "llm_custom_ctx":   cfg.get("llm_custom_ctx",   0),
         # never return the key itself — just whether one is set + a masked hint
         # (first 2 + last 4 chars, rest asterisks) so the UI can show "a key exists"
         "openrouter_key_set": bool(_openrouter_api_key()),
@@ -5083,14 +5118,17 @@ def _openrouter_vision_multi(system_prompt, user_text, image_paths, model, tempe
 # Brief and Vision each have their own URL / model / key. The API key is sent here once,
 # kept in this process's memory only, and never written to disk or sent back to the page.
 _H3_CUSTOM_KEYS = {}
+# Each place that offers Connect Custom has its own role (and so its own key): H3 Brief /
+# Vision / LTX Upscale, the image nodes' Prompt Enhance / Image → Prompt Write, and MusicMaker.
+_CUSTOM_LLM_ROLES = ("brief", "vision", "ltx", "img_enhance", "img_i2p", "music")
 
 
 def _h3_custom_base(role, base_url):
     """Normalised API base URL, or raise. Public hosts must use HTTPS; plain HTTP is only
     for loopback and private-network addresses, so a key never crosses the open internet
     unencrypted."""
-    if role not in ("brief", "vision"):
-        raise ValueError("role must be brief or vision")
+    if role not in _CUSTOM_LLM_ROLES:
+        raise ValueError("unknown custom LLM role: " + str(role))
     url = (base_url or "").strip().rstrip("/")
     for tail in ("/chat/completions", "/chat"):
         if url.endswith(tail):
@@ -5157,6 +5195,7 @@ def _h3_custom_chat(role, base_url, model, system_prompt, user_content, context=
     return _strip_thinking(content)
 
 
+@PromptServer.instance.routes.post("/tj_shared/custom_llm/connect")
 @PromptServer.instance.routes.post("/minimax_h3_one/custom_llm/connect")
 async def mmh3_custom_connect(request):
     """Remember the key (memory only) and test the endpoint: list its models, or fall back to
@@ -5200,11 +5239,11 @@ async def mmh3_custom_connect(request):
 
 @PromptServer.instance.routes.post("/minimax_h3_one/llm/custom_write_brief")
 async def mmh3_custom_write_brief(request):
-    """Text-only brief writing through the custom endpoint. Body: {base_url, model, context, system, user}."""
+    """Text-only brief writing through the custom endpoint. Body: {base_url, model, context, system, user, role?}."""
     try:
         data = await request.json()
         text = await asyncio.get_running_loop().run_in_executor(
-            None, _h3_custom_chat, "brief", data.get("base_url"), data.get("model"),
+            None, _h3_custom_chat, data.get("role") or "brief", data.get("base_url"), data.get("model"),
             str(data.get("system", "")), str(data.get("user", "")), data.get("context"), int(data.get("max_tokens", 4096)))
         return web.json_response({"ok": True, "text": text})
     except Exception as e:
@@ -5213,7 +5252,7 @@ async def mmh3_custom_write_brief(request):
 
 @PromptServer.instance.routes.post("/minimax_h3_one/llm/custom_analyze")
 async def mmh3_custom_analyze(request):
-    """Image summary through the custom endpoint. Body: {base_url, model, context, prompt, images:[input filenames]}."""
+    """Image summary through the custom endpoint. Body: {base_url, model, context, prompt, images:[input filenames], role?}."""
     try:
         data = await request.json()
     except Exception:
@@ -5234,7 +5273,7 @@ async def mmh3_custom_analyze(request):
                 parts.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64," + base64.b64encode(f.read()).decode("ascii")}})
         if len(parts) == 1:
             raise RuntimeError("no readable images in the input folder")
-        return _h3_custom_chat("vision", data.get("base_url"), data.get("model"),
+        return _h3_custom_chat(data.get("role") or "vision", data.get("base_url"), data.get("model"),
                                "You describe reference images for a video prompt writer.",
                                parts, data.get("context"), 1600, 0.5)
     try:
@@ -5413,6 +5452,8 @@ async def music_llm_run(request):
         backend = data.get("backend") or _cfg.get("llm_backend", "local")
         if backend == "openrouter":
             model = data.get("model") or _cfg.get("llm_or_model", "") or "google/gemini-2.5-flash"
+        elif backend == "custom":
+            model = data.get("model") or _cfg.get("llm_custom_model", "")
         else:
             model = data.get("model") or _cfg.get("llm_model", "")
         sys_path = os.path.join(MUSIC_LLM_PROMPT_DIR, f"{role}.md")
@@ -5430,6 +5471,12 @@ async def music_llm_run(request):
             text = await _aio.get_event_loop().run_in_executor(
                 None, _openrouter_chat, system_prompt, composed, model, temp, max_toks)
             return web.json_response({"ok": True, "text": _strip_thinking(text), "role": role, "backend": "openrouter"})
+
+        if backend == "custom":
+            text = await asyncio.get_running_loop().run_in_executor(
+                None, _h3_custom_chat, "music", data.get("custom_base") or _cfg.get("llm_custom_base", ""), model,
+                system_prompt, composed, data.get("custom_ctx", _cfg.get("llm_custom_ctx", 0)), max_toks, temp)
+            return web.json_response({"ok": True, "text": text, "role": role, "backend": "custom"})
 
         if backend == "comfy":
             clip_name = (data.get("clip") or _load_config(MUSIC_CONFIG_PATH).get("llm_clip", "")).strip()

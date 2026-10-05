@@ -93,6 +93,7 @@ export const LLM_BACKENDS = [
   { key: "local",      label: "Local (TJ_NODE GGUF)" },
   { key: "openrouter", label: "OpenRouter" },
   { key: "comfy",      label: "ComfyUI TextGenerate" },
+  { key: "custom",     label: "Connect Custom" },
 ];
 // CLIP-loader types that carry a usable LLM for TextGenerate (ComfyUI native `type` list).
 export const LLM_CLIP_TYPES = ["qwen_image", "lumina2", "ltxv", "pixart", "hidream", "wan", "hunyuan_image", "flux2", "sd3", "stable_diffusion"];
@@ -227,6 +228,9 @@ export function defaultState(saved) {
     llmOrModel:   saved.llmOrModel   || "",     // openrouter backend: model id
     llmClip:      saved.llmClip      || "",     // comfy backend: CLIP/GGUF file for TextGenerate
     llmClipType:  saved.llmClipType  || "qwen_image",
+    llmCustomBase:  saved.llmCustomBase  || "",   // custom backend: OpenAI-style endpoint (key stays in server memory)
+    llmCustomModel: saved.llmCustomModel || "",
+    llmCustomCtx:   saved.llmCustomCtx   ?? 0,
 
     // per-engine snapshots (the other engine's fields live here while it's not active)
     engineStash: (saved.engineStash && typeof saved.engineStash === "object") ? saved.engineStash : {},
