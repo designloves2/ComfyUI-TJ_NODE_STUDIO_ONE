@@ -7,6 +7,7 @@
 import { C, BRAND, el, API } from "./core_minimax.js";
 import { api } from "../../../scripts/api.js";
 import { getClipLastFrame } from "./api_minimax.js";
+import { fetchAllPages } from "../shared/fetch_all_pages.js";
 
 /**
  * Open the picker. `onPick(inputFilename, clipItem)` receives the name of the copy in
@@ -57,8 +58,10 @@ export function openVideoGalleryPicker(onPick, opts = {}) {
     let items = [];
     try {
       const sf = opts.subfolder != null ? `&subfolder=${encodeURIComponent(opts.subfolder)}` : "";
-      const r = await api.fetchApi(`${API}/videos?limit=200${sf}`);
-      items = (await r.json()).videos || [];
+      items = (await fetchAllPages(async (offset, limit) => {
+        const r = await api.fetchApi(`${API}/videos?offset=${offset}&limit=${limit}${sf}`);
+        return r.json();
+      }, "videos")).videos || [];
     } catch (e) {
       status.textContent = `Could not read the gallery: ${e?.message || e}`;
       return;

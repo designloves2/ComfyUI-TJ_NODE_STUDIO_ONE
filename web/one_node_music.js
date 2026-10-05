@@ -12,6 +12,7 @@ import {
   VOCAL_GENDER, VOCAL_STYLE, VOICE_TONE, buildAgentJob,
 } from "./music/core_music.js";
 import { downloadAgentJob } from "./shared/agent_job.js";
+import { fetchAllPages } from "./shared/fetch_all_pages.js";
 import { buildMusicGraph, effectiveDuration } from "./music/graph_builder_music.js";
 import { openPianoRoll } from "./music/ui_piano_roll.js";
 import { melodySeconds } from "./music/melody_core.js";
@@ -698,7 +699,7 @@ app.registerExtension({
       async function loadPlaylist() {
         try {
           const playingFn = curIdx >= 0 ? tracks[curIdx]?.filename : null;
-          const d = await jget(`/playlist?limit=200&sort=${sortSel.value}${favOnly ? "&favonly=1" : ""}&subfolder=${encodeURIComponent(SUB())}`);
+          const d = await fetchAllPages((offset, limit) => jget(`/playlist?offset=${offset}&limit=${limit}&sort=${sortSel.value}${favOnly ? "&favonly=1" : ""}&subfolder=${encodeURIComponent(SUB())}`), "tracks");
           tracks = d.tracks || [];
           curIdx = playingFn ? tracks.findIndex(t => t.filename === playingFn) : -1;
           renderPlaylist();

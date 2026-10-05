@@ -14,6 +14,7 @@
 import { C, BRAND, el, clear, SUBFOLDER } from "./core_minimax.js";
 import { setThumb, wireCacheButton } from "../shared/gallery_thumb.js";
 import { button } from "../klein/ui_common.js";
+import { fetchAllPages } from "../shared/fetch_all_pages.js";
 import { listImages, revealOutputFolder, deleteImage, copyOutputToInput, discardInputCopy,
          saveMeta, queuePrompt } from "./api_minimax.js";
 import { buildImageUpscaleGraph } from "./graph_builder_minimax.js";
@@ -704,7 +705,7 @@ export function createImageGalleryOverlay(state, ctx) {
 
   async function refresh() {
     try {
-      const d = await listImages(imgFolder(state), { limit: 300 });
+      const d = await fetchAllPages((offset, limit) => listImages(imgFolder(state), { offset, limit }), "images");
       images = d.images || [];
     } catch (e) {
       images = [];

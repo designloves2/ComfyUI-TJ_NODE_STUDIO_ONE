@@ -6,6 +6,7 @@
 import { composeStitchedPrompt, C, BRAND, el, clear, SUBFOLDER, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES,
          UPSCALE_MODES, FLASHVSR_MODELS, FLASHVSR_MODES, FPS, computeRtxTarget } from "./core_minimax.js";
 import { button, select, numberField } from "../klein/ui_common.js";
+import { fetchAllPages } from "../shared/fetch_all_pages.js";
 import { listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage, getMediaFiles,
          copyOutputToInput, discardInputCopy, getVideoInfo, queuePrompt, waitForHistory, historyEntry,
          getClipLastFrame, getSystemPrompt, analyzeImagesNative, writeBriefNative } from "./api_minimax.js";
@@ -1673,7 +1674,7 @@ export function createGalleryOverlay(state, ctx) {
     refreshUpModels();
     countTag.textContent = "loading…";
     try {
-      const d = await listVideos(state.saveSubfolder || SUBFOLDER);
+      const d = await fetchAllPages((offset, limit) => listVideos(state.saveSubfolder || SUBFOLDER, { offset, limit }), "videos");
       videos = d.videos || [];
     } catch { videos = []; }
     renderGrid();

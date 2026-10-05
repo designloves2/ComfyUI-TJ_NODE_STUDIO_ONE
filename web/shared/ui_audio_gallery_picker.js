@@ -7,6 +7,7 @@
 // copy_to_input route — the same mechanism the image picker uses — then hands back the
 // unique input-folder filename.
 import { el, clear } from "../klein/core_klein.js";
+import { fetchAllPages } from "./fetch_all_pages.js";
 
 const BRAND = "#7612DA";
 const C = { bg1: "#111111", bg2: "#181818", border: "#2a2a2a", text: "#dedede", muted: "#565656" };
@@ -138,7 +139,7 @@ export function openAudioGalleryPicker(onPick, copyApi = "/minimax_h3_one") {
     try {
       const cfg = await fetch("/music_one/config").then((r) => r.json()).catch(() => ({}));
       saveSub = (cfg.save_subfolder || "one_music").trim() || "one_music";
-      const d = await fetch(`/music_one/playlist?limit=300&sort=newest&subfolder=${encodeURIComponent(saveSub)}`).then((r) => r.json());
+      const d = await fetchAllPages((offset, limit) => fetch(`/music_one/playlist?offset=${offset}&limit=${limit}&sort=newest&subfolder=${encodeURIComponent(saveSub)}`).then((r) => r.json()), "tracks");
       const tracks = d.tracks || [];
       clear(list);
       tracks.forEach((t) => list.appendChild(rowFor(t)));
