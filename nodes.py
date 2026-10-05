@@ -568,6 +568,8 @@ def _make_update_meta_handler(node_key):
                 vpath = _safe_resolve_output_path(output_dir, subfolder, filename)
             except ValueError:
                 return web.json_response({"ok": False, "error": "invalid path"}, status=400)
+            if not os.path.exists(vpath):
+                return web.json_response({"ok": False, "error": "image not found"})
             existing = _read_json_meta(vpath) or {}
             existing.update(patch)
             ok = _write_json_meta(vpath, existing)
@@ -1212,6 +1214,14 @@ async def sdxl_get_config(request):
     cfg = _load_config(SDXL_CONFIG_PATH)
     return web.json_response({
         "model_loader_mode":    cfg.get("model_loader_mode",    "checkpoint"),
+        # Save All writes selected_* — returning only the old unprefixed keys meant the saved
+        # model was never restored into a fresh node, so Generate had no model to run.
+        "selected_checkpoint":  cfg.get("selected_checkpoint",  ""),
+        "selected_refiner":     cfg.get("selected_refiner",     ""),
+        "selected_unet":        cfg.get("selected_unet",        ""),
+        "selected_clip_l":      cfg.get("selected_clip_l",      ""),
+        "selected_clip_g":      cfg.get("selected_clip_g",      ""),
+        "selected_vae":         cfg.get("selected_vae",         ""),
         "checkpoint":           cfg.get("checkpoint",           "none"),
         "refiner_checkpoint":   cfg.get("refiner_checkpoint",   "none"),
         "use_refiner":          cfg.get("use_refiner",          False),
@@ -4406,7 +4416,16 @@ async def _music_delete(request):
                 continue
             for p in (vpath, _meta_path(vpath)):
                 if os.path.isfile(p):
-                    os.remove(p)
+                    # On Windows a track the browser was just playing stays open for a moment
+                    # after the player lets go of it, so wait that out instead of failing.
+                    for attempt in range(10):
+                        try:
+                            os.remove(p)
+                            break
+                        except PermissionError:
+                            if attempt == 9:
+                                raise
+                            await asyncio.sleep(0.3)
                     if p == vpath:
                         removed += 1
             _favorites_remove("music", fname)
@@ -4511,6 +4530,8 @@ async def _music_update_meta(request):
         vpath = _safe_resolve_output_path(output_dir, subfolder, filename)
     except ValueError:
         return web.json_response({"ok": False, "error": "invalid path"}, status=400)
+    if not os.path.exists(vpath):
+        return web.json_response({"ok": False, "error": "file not found"})
     # a track with no sidecar yet: seed a recognised key, or _read_json_meta would reject a file holding only the patch
     existing = _read_json_meta(vpath) or {"v": 1}
     existing.update(patch)

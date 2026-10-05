@@ -479,6 +479,12 @@ app.registerExtension({
       // ── bottom player bar ──────────────────────────────────────────────────
       const audioEl = new Audio(); audioEl.preload = "metadata";
       self._mmmStop = () => { try { audioEl.pause(); audioEl.removeAttribute("src"); audioEl.load(); } catch {} };
+      // Windows will not delete a file the <audio> element still has open (the delete came
+      // back 500 and the track stayed), so let go of it before asking the server to delete.
+      const releaseAudioFor = (names) => {
+        const cur = decodeURIComponent(audioEl.currentSrc || audioEl.src || "");
+        if (names.some(n => cur.includes(n))) self._mmmStop();
+      };
       const bar = el("div", { className: "mmm-bar", style: { height: `${PLAYER_H}px` }});
       const miniCover = el("div", { style: { width: "40px", height: "40px", borderRadius: "8px", background: C.bg3, flexShrink: 0, backgroundSize: "cover", backgroundPosition: "center", boxShadow: "0 1px 6px rgba(0,0,0,.4)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "800", fontSize: "12px", letterSpacing: ".5px", color: C.muted }});
       const nowWrap = el("div", { style: { width: "150px", flexShrink: 0, overflow: "hidden" }});
@@ -544,6 +550,7 @@ app.registerExtension({
         const delBtn = el("button", { className: "mmm-x", text: "Delete", style: n ? { borderColor: C.err, color: C.err } : { opacity: ".4", cursor: "default" }, onclick: async () => {
           if (!n) return;
           if (!confirm(`Delete ${n} track(s)?`)) return;
+          releaseAudioFor([...selected]);
           await jpost("/delete", { filenames: [...selected], subfolder: SUB()});
           selected.clear(); loadPlaylist();
         }});
@@ -717,7 +724,7 @@ app.registerExtension({
           "-",
           { label: "Open folder", fn: () => jpost("/open_folder", { filename: t.filename, subfolder: SUB()}) },
           "-",
-          { label: "Delete", danger: true, fn: async () => { if (confirm("Delete this track?")) { await jpost("/delete", { filename: t.filename, subfolder: SUB()}); loadPlaylist(); }}},
+          { label: "Delete", danger: true, fn: async () => { if (confirm("Delete this track?")) { releaseAudioFor([t.filename]); await jpost("/delete", { filename: t.filename, subfolder: SUB()}); loadPlaylist(); }}},
         ]);
       }
 
