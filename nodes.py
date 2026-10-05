@@ -5331,6 +5331,45 @@ def _studio_llm_save(patch):
         print(f"[TJ_NODE_ONE] studio_llm save error: {e}")
 
 
+# The image nodes' LLM panel settings (backend, models, Connect Custom URL/model/context,
+# Vision Task, Model Format, ...) live here, not in the browser, so every browser — and the
+# web twin on another origin — sees the same settings. Per-machine runtime state: gitignored.
+# Never holds an API key (those stay in this process's memory).
+_STUDIO_LLM_SETTINGS_PATH = os.path.join(NODE_DIR, "studio_llm_settings.json")
+
+
+@PromptServer.instance.routes.get("/tj_shared/llm_settings")
+async def studio_llm_settings_get(request):
+    try:
+        with open(_STUDIO_LLM_SETTINGS_PATH, "r", encoding="utf-8") as f:
+            d = json.load(f)
+    except Exception:
+        d = {}
+    return web.json_response({"ok": True, "settings": d if isinstance(d, dict) else {}})
+
+
+@PromptServer.instance.routes.post("/tj_shared/llm_settings")
+async def studio_llm_settings_set(request):
+    """Merge `settings` (a flat dict of strings / numbers / bools) into the stored copy."""
+    try:
+        patch = (await request.json()).get("settings")
+        if not isinstance(patch, dict):
+            raise ValueError("settings must be an object")
+        patch = {str(k): v for k, v in patch.items() if isinstance(v, (str, int, float, bool))}
+        try:
+            with open(_STUDIO_LLM_SETTINGS_PATH, "r", encoding="utf-8") as f:
+                cur = json.load(f)
+        except Exception:
+            cur = {}
+        cur = cur if isinstance(cur, dict) else {}
+        cur.update(patch)
+        with open(_STUDIO_LLM_SETTINGS_PATH, "w", encoding="utf-8") as f:
+            json.dump(cur, f, ensure_ascii=False, indent=2)
+        return web.json_response({"ok": True})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=400)
+
+
 @PromptServer.instance.routes.post("/tj_studio_one/llm/config")
 async def studio_llm_config(request):
     try:

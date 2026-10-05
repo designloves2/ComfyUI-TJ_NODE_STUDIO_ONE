@@ -21,14 +21,42 @@ const LS_KEY = "tj_studio_one_llm_settings";
 const CUSTOM_THEME = { bg: "#1a1a1a", text: "#ddd", border: "#444", muted: "#888", ok: "#7eff7e", warn: "#f0b429", err: "#ff6b6b", brand: "#7612DA" };
 const backendName = (b) => b === "openrouter" ? "OpenRouter" : b === "comfy" ? "ComfyUI Native" : b === "custom" ? "Connect Custom" : "Local GGUF";
 
+// The settings live on the server (/tj_shared/llm_settings), so a different browser — or the
+// web twin on another origin — sees the same ones. localStorage is only a synchronous read
+// cache of that copy: it is refreshed from the server before any panel is built (the await
+// below), and every save is pushed back.
 function loadLLMSettings() {
   try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}"); } catch { return {}; }
+}
+let _pushTimer = null;
+function pushLLMSettings(s) {
+  clearTimeout(_pushTimer);
+  _pushTimer = setTimeout(() => {
+    fetch("/tj_shared/llm_settings", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: s }),
+    }).catch(() => {});
+  }, 300);
 }
 function saveLLMSettings(patch) {
   const s = loadLLMSettings();
   Object.assign(s, patch);
   localStorage.setItem(LS_KEY, JSON.stringify(s));
+  pushLLMSettings(s);
 }
+async function syncLLMSettingsFromServer() {
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 3000);
+    const d = await (await fetch("/tj_shared/llm_settings", { signal: ctl.signal })).json();
+    clearTimeout(timer);
+    const server = d.settings || {};
+    const local = loadLLMSettings();
+    if (Object.keys(server).length) localStorage.setItem(LS_KEY, JSON.stringify({ ...local, ...server }));
+    else if (Object.keys(local).length) pushLLMSettings(local);   // first run: adopt what this browser had
+  } catch { /* server unreachable: keep the local copy */ }
+}
+await syncLLMSettingsFromServer();
 
 const TJ_NODE_GITHUB = "https://github.com/designloves2/ComfyUI-TJ_NODE";
 
