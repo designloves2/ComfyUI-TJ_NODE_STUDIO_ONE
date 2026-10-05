@@ -1446,9 +1446,13 @@ export function createGalleryOverlay(state, ctx) {
       + (videos.length < videoTotal ? ` · ${videos.length} / ${videoTotal} loaded` : "")
       + ` · ${state.saveSubfolder || SUBFOLDER}`;
     if (!list.length) {
+      const more = videos.length < videoTotal;
       grid.appendChild(el("div", {
-        text: galleryFilter !== "all" ? `No ${filterLabel} videos yet.` : "No clips yet — generate something first.",
+        text: galleryFilter !== "all"
+          ? (more ? `No ${filterLabel} videos among the ${videos.length} loaded — Load more to look further.` : `No ${filterLabel} videos yet.`)
+          : "No clips yet — generate something first.",
         style: { color: C.muted, fontSize: "12px", gridColumn: "1 / -1", textAlign: "center", padding: "30px 0" } }));
+      if (more) grid.appendChild(loadMoreButton(loadMore));
       return;
     }
     list.forEach((v, i) => {
