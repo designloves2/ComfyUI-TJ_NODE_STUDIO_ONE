@@ -1532,8 +1532,14 @@ ${name}`, style: {
     if (selected >= state.prompts.length) selected = 0;
     if (!systemPrompt) loadSystemPrompt();
     loadSelected();
+    runTransient(action);
+  }
+  // After `action` settles with no review card showing, a popup that only exists to host
+  // it closes again — and stops being "transient", so a later normal use of the popup
+  // is never closed by a stale flag.
+  function runTransient(action) {
     action().finally(() => {
-      if (transientMode && reviewOv.style.display === "none") ov.style.display = "none";
+      if (transientMode && reviewOv.style.display === "none") { ov.style.display = "none"; transientMode = false; }
     });
   }
   // How the result gets applied — chosen AFTER the model answers, on this screen:
@@ -1728,7 +1734,7 @@ ${name}`, style: {
   });
   rvAgain.addEventListener("click", () => {
     reviewOv.style.display = "none";
-    if (reviewKind === "refine") doRefine(); else enhBtn.click();
+    runTransient(reviewKind === "refine" ? doRefine : doWrite);
   });
 
   // ── split dialog ───────────────────────────────────────────────────────────
@@ -1904,11 +1910,12 @@ ${name}`, style: {
     renderList(); loadSelected(); refreshPlanTag(); refreshUndo();
   }
 
-  function hide() { ov.style.display = "none"; onApply?.(); }
+  function hide() { ov.style.display = "none"; transientMode = false; onApply?.(); }
 
   return {
     el: ov,
     show() {
+      transientMode = false;
       ov.style.display = "flex";
       if (!state.prompts || !state.prompts.length) state.prompts = [{ text: "", firstFrame: "", enabled: true }];
       if (selected >= state.prompts.length) selected = 0;
