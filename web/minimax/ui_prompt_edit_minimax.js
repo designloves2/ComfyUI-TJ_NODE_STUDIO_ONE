@@ -697,6 +697,7 @@ This cannot be undone.`,
   function deriveModes() {
     const gm = state.generationMode || "t2v";
     enhMode = gm === "t2v" ? "text" : "image";
+    refineImgWrap.style.display = enhMode === "image" ? "inline-flex" : "none";
     state.briefImageMode = gm === "firstlast" ? "fl" : "ref";
     modeTag.textContent = gm === "t2v" ? "✨ Text → Brief"
       : gm === "firstlast" ? "🖼 Image → Brief (First/Last, from the main screen)"
@@ -729,7 +730,8 @@ This cannot be undone.`,
 
   // Refine — revises an ALREADY-WRITTEN prompt from a typed instruction, instead of
   // writing a fresh one from scratch. Modeled on ComfyUI-MiniMaxH3-Prompt-Writer's
-  // assemble_refinement(): text-only (no re-attached images), current prompt + the
+  // assemble_refinement(): text-only unless "Include Images" is ticked (then the attached
+  // images get the same vision pass as Prompt Write), current prompt + the
   // instruction go to the same brief model, and the result goes through the exact same
   // review overlay as Prompt Write (one / split / manual / apply / discard / again).
   const refineBtn = el("button", { type: "button", style: {
@@ -742,6 +744,16 @@ This cannot be undone.`,
   }});
   const refineBtnLabel = el("span", { text: "🔧 Prompt Refine" });
   refineBtn.append(refineSpin, refineBtnLabel);
+
+  // Re-send the currently attached images with the refine request, for when the pictures
+  // were swapped after the prompt was written. Only meaningful when the mode has images.
+  const refineImgChk = el("input", { type: "checkbox", style: { margin: "0", cursor: "pointer" } });
+  refineImgChk.checked = !!state.refineIncludeImages;
+  refineImgChk.addEventListener("change", () => { state.refineIncludeImages = refineImgChk.checked; ctx.persist(); });
+  const refineImgWrap = el("label", {
+    title: "Analyze the images currently attached (main screen / this clip) and refine the prompt to match them",
+    style: { display: "none", alignItems: "center", gap: "5px", fontSize: "11px", color: C.muted, cursor: "pointer", whiteSpace: "nowrap", flexShrink: "0" },
+  }, [refineImgChk, el("span", { text: "Include Images" })]);
 
   // How long the finished piece should be. Only the LLM briefing uses it: it decides how
   // many shots to ask for. The run's real length still comes from the prompts that come
@@ -1035,7 +1047,7 @@ ${name}`, style: {
   enhBtn.style.flexShrink = "0";
   enhBottom.append(targetSel,
     el("div", { text: "Length", style: { fontSize: "11px", color: C.muted, flexShrink: "0" } }),
-    lenIn, lenTag, enhBtn, refineBtn);
+    lenIn, lenTag, enhBtn, refineImgWrap, refineBtn);
   enhWrap.append(enhTop, imgRow, enhBottom);
 
   // ── collapse ───────────────────────────────────────────────────────────────
@@ -1217,7 +1229,7 @@ ${name}`, style: {
   // images re-attached, exactly like their version ("media is intentionally not
   // attached"). The OUTPUT stays our own shot-separated brief format throughout; only
   // the prompt-construction technique is borrowed.
-  function buildRefineUserPrompt(currentPrompt, instruction) {
+  function buildRefineUserPrompt(currentPrompt, instruction, imageSummary) {
     const lines = [
       "Rewrite the current H3 brief according to the revision instruction. "
       + "Return only the complete revised brief. Do not discuss the changes.",
@@ -1225,6 +1237,22 @@ ${name}`, style: {
       "Current prompt:",
       currentPrompt || "(empty)",
       "",
+    ];
+    if (imageSummary) {
+      lines.push(
+        state.briefImageMode === "fl"
+          ? "The images currently attached were analyzed in order: image 1 is the STARTING frame, "
+            + "the last one is the ENDING frame. They may differ from what the current prompt "
+            + "describes — update the prompt so it matches these images."
+          : "The images currently attached were analyzed in order and are the <Picture 1>…"
+            + `<Picture ${imageSummary.split("\n").length}> references. They may differ from what the `
+            + "current prompt describes — update the prompt so it matches these images.",
+        "",
+        imageSummary,
+        "",
+      );
+    }
+    lines.push(
       "Revision instruction:",
       instruction,
       "",
@@ -1233,11 +1261,12 @@ ${name}`, style: {
       + "when the instruction's meaning actually calls for it.",
       "",
       "Final grounding check: keep everything from the current prompt that the instruction "
-      + "doesn't ask you to change. Apply only what the instruction actually asks for — do not "
+      + (imageSummary ? "or the attached images don't call for changing. " : "doesn't ask you to change. ")
+      + "Apply only what the instruction actually asks for — do not "
       + "invent unrelated actions, props, on-screen text, dialogue, locations, music or ambient "
       + "sound beyond what it asks for or clearly implies. Return only the complete revised "
       + "prompt, no commentary outside it.",
-    ];
+    );
     return lines.join("\n");
   }
 
@@ -1292,16 +1321,66 @@ ${name}`, style: {
     return dataUrl.split(",")[1] || "";
   }
 
+  // The pictures this clip will actually be made from — the override set when it has
+  // one, or the main screen's own first/last frame pair in First/Last mode.
+  function attachedImages() {
+    if (enhMode !== "image") return [];
+    const a = clipAssets(state, selected);
+    return state.briefImageMode === "fl" ? [a.firstFrame, a.lastFrame].filter(Boolean)
+      : a.refImages.slice(0, imageBriefMax(state.briefImageMode));
+  }
+
+  // Vision pass shared by Prompt Write and Prompt Refine: returns the "Image N: ..." text.
+  async function describeImages(images, onStage = progressStage) {
+    if (!images.length) return "";
+    const visionOR = (state.h3VisionBackend || state.h3LlmBackend) === "openrouter";
+    const visionLlama = (state.h3VisionBackend || state.h3LlmBackend) === "llamagguf";
+    const visionCustom = (state.h3VisionBackend || state.h3LlmBackend) === "custom";
+    onStage(`Analyzing ${images.length} image${images.length > 1 ? "s" : ""}...`);
+    let imageSummary;
+    if (visionLlama) {
+      // The shared /tj_studio_one/llm/image_to_prompt route (same one the image
+      // nodes' Enhance panel uses) takes one image per call - no true multi-image
+      // batching like the native TextGenerate path has - so loop client-side.
+      const lines = [];
+      for (let i = 0; i < images.length; i++) {
+        onStage(`Analyzing image ${i + 1}/${images.length}...`);
+        const b64 = await imageToB64(images[i]);
+        const desc = await analyzeImageLlama(b64, state.h3LlamaVisionModel, state.h3LlamaVisionMmproj, VISION_SYSTEM_PROMPT, state.h3LlamaNCtx, state.h3LlamaMaxTokens);
+        lines.push(String(desc || "").trim());
+      }
+      imageSummary = lines.join("\n");
+    } else {
+      // One call, whole batch - this path attends to every image at once (verified:
+      // SPEC_MINIMAX_H3_NEXT_ROUND.md C5). The instruction asks for them to stay
+      // separated in the answer since nothing downstream re-splits them.
+      const prompt = `${VISION_SYSTEM_PROMPT} There are ${images.length} images, in order. `
+        + `Describe each one separately, each on its own line starting with "Image N: ".`;
+      imageSummary = (visionCustom
+        ? await analyzeImagesCustom(images, prompt, { baseUrl: state.h3CustomVisionBase, model: state.h3CustomVisionModel, context: state.h3CustomVisionCtx })
+        : visionOR
+        ? await analyzeImagesOpenRouter(images, prompt, state.h3OrModelVision || state.h3OrModel)
+        : await analyzeImagesNative(state.nativeVisionClip, images, prompt)).trim();
+    }
+    // The vision model is only asked to number its own lines "Image N: ..." — it does
+    // not reliably count correctly (reported: 4 images came back labelled Image
+    // 1/4/5/6). The brief model is told these lines are <Picture 1>...<Picture N>
+    // strictly BY POSITION, but if the text still carries the vision model's own wrong
+    // numbers right there in the line, the brief model has seen the wrong one attach to
+    // the wrong picture in the observed cases. Force every line's label to match its
+    // actual position instead of trusting whatever number the vision model wrote.
+    return imageSummary.split("\n")
+      .filter(line => line.trim())
+      .map((line, i) => line.replace(/^\s*(?:Image|Picture)\s*\d+\s*:/i, `Image ${i + 1}:`))
+      .join("\n");
+  }
+
   async function doWrite() {
     if (busy) return;
     deriveModes(); renderImageRow(); renderModelSel();
     // Same resolver the render loop uses, so Prompt Write always looks at the pictures
-    // this clip will actually be made from — the override set when it has one, or the
-    // main screen's own first/last frame pair in First/Last mode.
-    const a = clipAssets(state, selected);
-    const images = enhMode !== "image" ? []
-      : state.briefImageMode === "fl" ? [a.firstFrame, a.lastFrame].filter(Boolean)
-      : a.refImages.slice(0, imageBriefMax(state.briefImageMode));
+    // this clip will actually be made from.
+    const images = attachedImages();
     // Brief and Vision each choose their own backend (native CLIP vs OpenRouter vs the
     // local Llama GGUF backend the image nodes' shared Enhance panel already has).
     const briefOR  = (state.h3BriefBackend  || state.h3LlmBackend) === "openrouter";
@@ -1327,46 +1406,7 @@ ${name}`, style: {
     setEditorBusy(true, "✨ Writing the prompt…");
     progressStart();
     try {
-      let imageSummary = "";
-      if (images.length) {
-        progressStage(`Analyzing ${images.length} image${images.length > 1 ? "s" : ""}...`);
-        if (visionLlama) {
-          // The shared /tj_studio_one/llm/image_to_prompt route (same one the image
-          // nodes' Enhance panel uses) takes one image per call - no true multi-image
-          // batching like the native TextGenerate path has - so loop client-side.
-          const lines = [];
-          for (let i = 0; i < images.length; i++) {
-            progressStage(`Analyzing image ${i + 1}/${images.length}...`);
-            const b64 = await imageToB64(images[i]);
-            const desc = await analyzeImageLlama(b64, state.h3LlamaVisionModel, state.h3LlamaVisionMmproj, VISION_SYSTEM_PROMPT, state.h3LlamaNCtx, state.h3LlamaMaxTokens);
-            lines.push(String(desc || "").trim());
-          }
-          imageSummary = lines.join("\n");
-        } else {
-          // One call, whole batch - this path attends to every image at once (verified:
-          // SPEC_MINIMAX_H3_NEXT_ROUND.md C5). The instruction asks for them to stay
-          // separated in the answer since nothing downstream re-splits them.
-          const prompt = `${VISION_SYSTEM_PROMPT} There are ${images.length} images, in order. `
-            + `Describe each one separately, each on its own line starting with "Image N: ".`;
-          imageSummary = (visionCustom
-            ? await analyzeImagesCustom(images, prompt, { baseUrl: state.h3CustomVisionBase, model: state.h3CustomVisionModel, context: state.h3CustomVisionCtx })
-            : visionOR
-            ? await analyzeImagesOpenRouter(images, prompt, state.h3OrModelVision || state.h3OrModel)
-            : await analyzeImagesNative(state.nativeVisionClip, images, prompt)).trim();
-        }
-        // The vision model is only asked to number its own lines "Image N: ..." — it does
-        // not reliably count correctly (reported: 4 images came back labelled Image
-        // 1/4/5/6). buildUserPrompt() below tells the brief model these lines are
-        // <Picture 1>...<Picture N> strictly BY POSITION, but if the text still carries
-        // the vision model's own wrong numbers right there in the line, the brief model
-        // has seen the wrong one attach to the wrong picture in the observed cases. Force
-        // every line's label to match its actual position instead of trusting whatever
-        // number the vision model wrote.
-        imageSummary = imageSummary.split("\n")
-          .filter(line => line.trim())
-          .map((line, i) => line.replace(/^\s*(?:Image|Picture)\s*\d+\s*:/i, `Image ${i + 1}:`))
-          .join("\n");
-      }
+      const imageSummary = await describeImages(images);
 
       progressStage("Writing brief...");
       const text = (briefCustom
@@ -1404,6 +1444,15 @@ ${name}`, style: {
     if (briefLlama && !state.h3LlamaBriefModel) { ctx.showPopup?.("No Llama GGUF brief model set - pick one in Settings.", true); return; }
     if (briefCustom && !(state.h3CustomBriefBase && state.h3CustomBriefModel)) { ctx.showPopup?.("Connect Custom (Brief) needs an API base URL and a model ID - set them in Settings.", true); return; }
 
+    const images = refineImgChk.checked ? attachedImages() : [];
+    if (refineImgChk.checked && enhMode === "image" && !images.length) { ctx.showPopup?.("Include Images is on, but no image is attached.", true); return; }
+    const visionBackend = state.h3VisionBackend || state.h3LlmBackend;
+    if (images.length) {
+      if (visionBackend === "llamagguf" && !state.h3LlamaVisionModel) { ctx.showPopup?.("No Llama GGUF vision model set - pick one in Settings.", true); return; }
+      if (visionBackend === "custom" && !(state.h3CustomVisionBase && state.h3CustomVisionModel)) { ctx.showPopup?.("Connect Custom (Vision) needs an API base URL and a model ID - set them in Settings.", true); return; }
+      if (!["openrouter", "llamagguf", "custom"].includes(visionBackend) && !state.nativeVisionClip) { ctx.showPopup?.("No vision CLIP set - pick one in Settings, or switch the Vision backend to OpenRouter/Llama GGUF.", true); return; }
+    }
+
     const current = (editor.value || "").trim();
     if (!current) { ctx.showPopup?.("Nothing to refine yet — write a prompt first.", true); return; }
 
@@ -1424,7 +1473,9 @@ ${name}`, style: {
     setEditorBusy(true, "🔧 Refining the prompt…");
     statusTag.textContent = "refining..."; statusTag.style.color = BRAND;
     try {
-      const userPrompt = buildRefineUserPrompt(current, lastRefineInstruction);
+      const imageSummary = await describeImages(images, (t) => { refineBtnLabel.textContent = t; statusTag.textContent = t; });
+      refineBtnLabel.textContent = "Refining...";
+      const userPrompt = buildRefineUserPrompt(current, lastRefineInstruction, imageSummary);
       const text = (briefCustom
         ? await writeBriefCustom(systemPrompt, userPrompt, { baseUrl: state.h3CustomBriefBase, model: state.h3CustomBriefModel, context: state.h3CustomBriefCtx })
         : briefLlama

@@ -861,6 +861,7 @@ export function defaultState(saved) {
     // however many prompts happen to be in the editor. Briefing only — the run's real
     // length still comes from the prompts it produces.
     targetLength: saved.targetLength || "",
+    refineIncludeImages: !!saved.refineIncludeImages,
 
     // Audio Lock — pin the soundtrack instead of letting the model regenerate it
     audioLock:         saved.audioLock         ?? false,
