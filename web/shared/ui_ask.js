@@ -14,9 +14,11 @@ import { C, BRAND, el } from "../minimax/core_minimax.js";
  *
  * @param parent  element to mount into — normally the node's root, so the dialog is
  *                clipped to the node rather than floating over the whole canvas
+ * @param extra   optional element shown between the input and the buttons (its own state
+ *                is the caller's business — ask() only returns the text)
  * @returns the trimmed string, `null` if cancelled; `true`/`false` for confirm
  */
-export function ask(parent, { title, message, initial = "", kind = "text", okLabel = "OK", danger = false, tags = null }) {
+export function ask(parent, { title, message, initial = "", kind = "text", okLabel = "OK", danger = false, tags = null, extra = null }) {
   return new Promise((resolve) => {
     const isTextarea = kind === "textarea";
     const input = (kind === "text" || isTextarea) ? el(isTextarea ? "textarea" : "input", {
@@ -83,6 +85,7 @@ export function ask(parent, { title, message, initial = "", kind = "text", okLab
         fontSize: "11.5px", color: C.muted, lineHeight: "1.6", whiteSpace: "pre-line" } })] : []),
       ...(input ? [input] : []),
       ...(tagRow ? [tagRow] : []),
+      ...(extra ? [extra] : []),
       el("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end" } }, [
         btn("Cancel", () => done(cancelValue)),
         btn(okLabel, () => done(kind === "confirm" ? true : (input.value.trim() || null)),
