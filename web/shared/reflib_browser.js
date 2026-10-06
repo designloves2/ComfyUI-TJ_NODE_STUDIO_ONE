@@ -211,7 +211,7 @@ export function mountAssetBrowser({ height }) {
     cardCols = 5 - Number(sizeSlider.value);
     sizeLabel.textContent = `${cardCols} per row`;
     try { localStorage.setItem(CARD_KEY, String(cardCols)); } catch { /* storage blocked */ }
-    drawList();
+    if (S.tab === "assets") drawList(); else drawLibrary();
   });
   const sizeBar = el("div", { style: {
     display: "flex", alignItems: "center", gap: "8px", padding: "6px 9px", borderTop: `1px solid ${C.border}`, color: C.muted } },
@@ -332,13 +332,11 @@ export function mountAssetBrowser({ height }) {
     const projects = tab === "projects";
     Object.assign(tabAssets.style, { ...tabStyle(!projects), ...tabFill }); Object.assign(tabProjects.style, { ...tabStyle(projects), ...tabFill });
     cats.head.textContent = projects ? "Projects" : "Categories";
-    list.head.textContent = projects ? "Project contents (alias / order)" : "Assets";
-    view.head.textContent = projects ? "Library — click to add" : "Viewer";
+    list.head.textContent = projects ? "Library — click to add" : "Assets";
+    view.head.textContent = projects ? "Project contents (alias / order)" : "Viewer";
     btnReplace.textContent = projects ? "New project" : "Replace";
     search.placeholder = projects ? "Search the library" : "Search name / tag / ID";
-    sizeBar.style.display = projects ? "none" : "flex";
     registerMenu.style.display = projects ? "none" : "block";
-    cols.style.gridTemplateColumns = projects ? `${LEFT_W}px 1.2fr 1fr` : `${LEFT_W}px 1fr 1.2fr`;
     say("");
     if (!projects) { S.stopPlay?.(); drawCats(); drawList(); drawView(); return; }
     S.stopPlay?.(); S.stopPlay = null;
@@ -376,14 +374,14 @@ export function mountAssetBrowser({ height }) {
 
   function newProject() {
     S.draft = { id: null, name: "", note: "", items: [] };
-    say("Type a name, click assets in the library on the right to add them, then Save.");
+    say("Type a name, click assets in the library to add them, then Save.");
     drawProjectList(); drawDraft(); drawLibrary();
   }
 
   function drawDraft() {
-    list.body.replaceChildren();
+    view.body.replaceChildren();
     const d = S.draft;
-    if (!d) { list.body.append(el("div", { text: "Pick a project on the left, or press “New project”.", style: { color: C.muted, padding: "6px" } })); return; }
+    if (!d) { view.body.append(el("div", { text: "Pick a project on the left, or press “New project”.", style: { color: C.muted, padding: "6px" } })); return; }
     const name = el("input", { type: "text", value: d.name, placeholder: "Project name", style: fieldStyle });
     name.addEventListener("input", () => { d.name = name.value; });
     const note = el("input", { type: "text", value: d.note, placeholder: "Note", style: fieldStyle });
@@ -409,14 +407,14 @@ export function mountAssetBrowser({ height }) {
             btn("▲", () => move(i, -1), small), btn("▼", () => move(i, 1), small),
             btn("✕", () => { d.items.splice(i, 1); drawDraft(); drawLibrary(); }, small))));
     });
-    list.body.append(el("div", { style: { display: "flex", flexDirection: "column", gap: "4px", marginBottom: "6px" } }, name, note),
+    view.body.append(el("div", { style: { display: "flex", flexDirection: "column", gap: "4px", marginBottom: "6px" } }, name, note),
       el("div", { style: { display: "flex", flexDirection: "column", gap: "4px" } }, ...rows),
-      rows.length ? "" : el("div", { text: "Click assets in the library on the right to add them.", style: { color: C.muted, padding: "6px" } }));
+      rows.length ? "" : el("div", { text: "Click assets in the library to add them.", style: { color: C.muted, padding: "6px" } }));
   }
 
   function drawLibrary() {
-    view.body.replaceChildren();
-    const grid = el("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(110px,1fr))", gap: "8px" } });
+    list.body.replaceChildren();
+    const grid = el("div", { style: { display: "grid", gridTemplateColumns: `repeat(${cardCols}, 1fr)`, gap: "8px" } });
     for (const a of S.assets) {
       if (S.query && !`${a.name} ${(a.tags || []).join(" ")} ${a.id}`.toLowerCase().includes(S.query)) continue;
       const inside = draftItems().some(i => i.asset_id === a.id);
@@ -434,7 +432,7 @@ export function mountAssetBrowser({ height }) {
       card.addEventListener("click", () => addToDraft(a));
       grid.append(card);
     }
-    view.body.append(grid);
+    list.body.append(grid);
   }
 
   function addToDraft(a) {
