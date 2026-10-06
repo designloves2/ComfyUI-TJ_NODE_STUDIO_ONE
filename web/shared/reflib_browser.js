@@ -161,6 +161,7 @@ function column(title) {
 }
 
 export function mountAssetBrowser({ height }) {
+  const LEFT_W = 190;                          // left column, same on both tabs; the two tab buttons together are as wide
   const CARD_KEY = "tj_reflib_card_cols";      // cards per row: 4 (small) / 3 / 2 (large)
   let cardCols = 4;
   try { const n = Number(localStorage.getItem(CARD_KEY)); if (n >= 2 && n <= 4) cardCols = Math.round(n); } catch { /* storage blocked */ }
@@ -218,16 +219,18 @@ export function mountAssetBrowser({ height }) {
   list.box.appendChild(sizeBar);
 
   const tabStyle = (on) => ({ background: on ? C.lime : C.bg2, color: on ? "#fff" : C.text, border: `1px solid ${on ? C.lime : C.border}`, fontWeight: on ? "700" : "400" });
-  const tabAssets = btn("Assets", () => { if (S.tab !== "assets") setTab("assets"); }, tabStyle(true));
-  const tabProjects = btn("Projects", () => { if (S.tab !== "projects") setTab("projects"); }, tabStyle(false));
+  const tabFill = { flex: "1", minWidth: "0", padding: "6px 4px" };
+  const tabAssets = btn("Assets", () => { if (S.tab !== "assets") setTab("assets"); }, { ...tabStyle(true), ...tabFill });
+  const tabProjects = btn("Projects", () => { if (S.tab !== "projects") setTab("projects"); }, { ...tabStyle(false), ...tabFill });
 
   const cols = el("div", { style: {
-    display: "grid", gridTemplateColumns: "150px 1fr 1.2fr", gap: "8px", flex: "1", minHeight: "0" } },
+    display: "grid", gridTemplateColumns: `${LEFT_W}px 1fr 1.2fr`, gap: "8px", flex: "1", minHeight: "0" } },
     cats.box, list.box, view.box);
   const root = el("div", { style: {
     display: "flex", flexDirection: "column", gap: "8px", width: "100%", height: `${height}px`, flexShrink: "0",
     boxSizing: "border-box", color: C.text, fontSize: "12px" } },
-    el("div", { style: { display: "flex", gap: "6px", alignItems: "center" } }, tabAssets, tabProjects, search,
+    el("div", { style: { display: "flex", gap: "6px", alignItems: "center" } },
+      el("div", { style: { display: "flex", gap: "6px", width: `${LEFT_W}px`, flexShrink: "0", marginRight: "2px" } }, tabAssets, tabProjects), search,
       registerMenu, btn("Refresh", () => reload()), fileAdd, fileRep),
     cols, msg);
 
@@ -327,8 +330,7 @@ export function mountAssetBrowser({ height }) {
   function setTab(tab) {
     S.tab = tab; S.armed = null; resetDelete();
     const projects = tab === "projects";
-    tabAssets.style.cssText = ""; tabProjects.style.cssText = "";
-    Object.assign(tabAssets.style, tabStyle(!projects)); Object.assign(tabProjects.style, tabStyle(projects));
+    Object.assign(tabAssets.style, { ...tabStyle(!projects), ...tabFill }); Object.assign(tabProjects.style, { ...tabStyle(projects), ...tabFill });
     cats.head.textContent = projects ? "Projects" : "Categories";
     list.head.textContent = projects ? "Project contents (alias / order)" : "Assets";
     view.head.textContent = projects ? "Library — click to add" : "Viewer";
@@ -336,7 +338,7 @@ export function mountAssetBrowser({ height }) {
     search.placeholder = projects ? "Search the library" : "Search name / tag / ID";
     sizeBar.style.display = projects ? "none" : "flex";
     registerMenu.style.display = projects ? "none" : "block";
-    cols.style.gridTemplateColumns = projects ? "190px 1.2fr 1fr" : "150px 1fr 1.2fr";
+    cols.style.gridTemplateColumns = projects ? `${LEFT_W}px 1.2fr 1fr` : `${LEFT_W}px 1fr 1.2fr`;
     say("");
     if (!projects) { S.stopPlay?.(); drawCats(); drawList(); drawView(); return; }
     S.stopPlay?.(); S.stopPlay = null;
