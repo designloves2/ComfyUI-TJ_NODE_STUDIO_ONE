@@ -31,6 +31,7 @@ export async function libraryContext(ref) {
   const items = (rep.attached || []).map(a => {
     const m = meta.get(a.id) || {};
     return { token: a.alias ? `@${a.alias}` : `@${a.id}`, id: a.id, kind: a.kind, name: a.name, label: a.label,
+      thumb: reflib.thumbUrl({ id: a.id, updated: m.updated }),
       category: a.category, tags: m.tags || [], note: m.note || "" };
   });
   if (!items.length) return { error: "The library references are empty." };

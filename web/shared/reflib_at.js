@@ -28,8 +28,10 @@ export function attachAtComplete(textarea, getItems) {
     }
     place();
     menu.replaceChildren(...items.map((it, i) => {
-      const row = el("div", { style: { padding: "5px 10px", cursor: "pointer", display: "flex", gap: "8px", alignItems: "baseline",
+      const row = el("div", { style: { padding: "4px 10px", cursor: "pointer", display: "flex", gap: "8px", alignItems: "center",
         background: i === index ? C.lime : "transparent", color: i === index ? "#fff" : C.text } },
+        it.thumb ? el("img", { src: it.thumb, style: { width: "30px", height: "30px", objectFit: "contain", background: "#000",
+          borderRadius: "4px", flexShrink: "0" } }) : null,
         el("b", { text: it.token }),
         el("span", { text: `${it.name} · ${it.kind}`, style: { opacity: "0.75", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }));
       row.addEventListener("mousedown", (e) => { e.preventDefault(); choose(i); });
