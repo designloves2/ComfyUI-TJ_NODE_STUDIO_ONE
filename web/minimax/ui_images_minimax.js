@@ -4,7 +4,7 @@
 // images are picked from files that already exist (upload or drag-drop from disk, or
 // handed over from another ONE STUDIO node's gallery).
 import { C, BRAND, el, clear, normalizeAssetRef } from "./core_minimax.js";
-import { mountLibraryRefs, emptyAssetRef } from "../shared/reflib_refpanel.js";
+import { mountLibraryRefs, emptyAssetRef, sourceToggle } from "../shared/reflib_refpanel.js";
 import { buildClipMediaSlots } from "./ui_clip_media_slots.js";
 import { openVideoGalleryPicker } from "./ui_video_picker_minimax.js";
 import { panel, label, select, numberField, row, col } from "../klein/ui_common.js";
@@ -304,14 +304,20 @@ export function mountImagePanel(state, ctx) {
     }
 
     // ── reference mode: images (9) + videos (3) + audios (3), opt-in per kind ──
-    const types = state.refTypes || { images: true };
+    const useLib = state.refSource === "library";
+    // Library source: only the library block - the file slots are not shown (and not used).
+    const types = useLib ? {} : (state.refTypes || { images: true });
     const picker = refTypeDropdown(state, ctx, render);
     const kids = [
       label("Reference"),
       el("div", { html: "Uses the <b>Ref2VA</b> model.",
         style: { fontSize: "10px", color: C.muted, lineHeight: "1.55" } }),
-      picker.el,
-      libraryBlock("reference", "Assets or a project from the Asset tab. When set, the file slots below are not used."),
+      sourceToggle(useLib ? "library" : "files", (src) => {
+        state.refSource = src;
+        if (src === "files") state.assetRef = null;
+        ctx.persist(); render(); ctx.refreshModes?.();
+      }),
+      useLib ? libraryBlock("reference", "Assets or a project from the Asset tab; their order is the <Picture i> / <Video k> / <Audio j> order.") : picker.el,
     ];
 
     if (types.images) {

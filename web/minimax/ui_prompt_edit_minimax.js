@@ -13,7 +13,7 @@ import { openVideoGalleryPicker } from "./ui_video_picker_minimax.js";
 import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
 import { openAudioGalleryPicker } from "../shared/ui_audio_gallery_picker.js";
 import { ask } from "../shared/ui_ask.js";
-import { mountLibraryRefs, emptyAssetRef } from "../shared/reflib_refpanel.js";
+import { mountLibraryRefs, emptyAssetRef, sourceToggle } from "../shared/reflib_refpanel.js";
 import { getMediaFiles, getSystemPrompt, uploadImage, uploadMedia, analyzeImagesNative, writeBriefNative, analyzeImagesOpenRouter, writeBriefOpenRouter, analyzeImageLlama, writeBriefLlama, analyzeImagesCustom, writeBriefCustom, listPromptSets, getPromptSet, savePromptSet, deletePromptSet, missingInputFiles } from "./api_minimax.js";
 
 // A prompt entry may still arrive as a plain string (mid-migration data); normalize once.
@@ -835,6 +835,10 @@ This cannot be undone.`,
         p.refImages = (state.refImages || []).slice();
         p.refImagesMp = (state.refImagesMp || []).slice();
       }
+      if (chk.checked && !p.assetRef) {
+        p.refSource = state.refSource || "files";
+        p.assetRef = state.assetRef ? { ...state.assetRef, ids: [...(state.assetRef.ids || [])] } : null;
+      }
       // The header and the sound/music tail describe the scene the images establish, so
       // they follow the override too — seeded from the common pair the first time, which
       // gives the user something to edit rather than two empty boxes.
@@ -1036,9 +1040,18 @@ ${name}`, style: {
         ctx.persist(); ctx.refreshModes?.();
       },
     });
-    imgCol.append(libBlock.el, grid, note);
+    // One source at a time: the file slots (images, video, audio) or the library. Switching to
+    // Files drops the library choice so nothing stays active out of sight.
+    const useLib = (own ? p.refSource : state.refSource) === "library";
+    const srcToggle = sourceToggle(useLib ? "library" : "files", (src) => {
+      if (own) { p.refSource = src; if (src === "files") p.assetRef = null; }
+      else { state.refSource = src; if (src === "files") state.assetRef = null; }
+      ctx.persist(); renderImageRow(); ctx.refreshModes?.();
+    });
+    if (useLib) imgCol.append(srcToggle, libBlock.el);
+    else imgCol.append(srcToggle, grid, note);
     assetBand.append(imgCol);
-    if (own) assetBand.append(mediaRow);
+    if (own && !useLib) assetBand.append(mediaRow);
     imgRow.append(head, assetBand, modelSelWrap);
   }
 

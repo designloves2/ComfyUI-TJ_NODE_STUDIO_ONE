@@ -33,6 +33,24 @@ function libraryIndex() {
 const small = { padding: "3px 8px", fontSize: "11px" };
 
 /**
+ * "Source: Files | Library" switch above a reference area. Exactly one of the two is shown, so
+ * the file slots and the library block never sit on top of each other.
+ * @param source   "files" | "library"
+ * @param onChange (source) => void
+ */
+export function sourceToggle(source, onChange) {
+  const pill = (key, text) => {
+    const on = source === key;
+    return btn(text, () => { if (!on) onChange(key); }, { ...small, borderRadius: "14px",
+      background: on ? C.lime : C.bg2, color: on ? "#fff" : C.text, border: `1px solid ${on ? C.lime : C.border}`,
+      fontWeight: on ? "700" : "400" });
+  };
+  return el("div", { style: { display: "flex", alignItems: "center", gap: "6px" } },
+    el("span", { text: "Source", style: { fontSize: "10.5px", color: C.muted } }),
+    pill("files", "Files"), pill("library", "Library"));
+}
+
+/**
  * @param mode     "reference" | "firstlast"
  * @param getRef   () => assetRef object (the caller's own, created if missing)
  * @param onChange (ref) => void   persist + refresh whatever depends on it

@@ -1053,7 +1053,7 @@ export function defaultState(saved) {
       .map(p => (typeof p === "string"
         ? { text: p, firstFrame: "", enabled: true, override: false,
             refImages: [], refImagesMp: [], lastFrame: "", refVideos: [], refAudios: [],
-            assetRef: null, header: "", footer: "" }
+            assetRef: null, refSource: "files", header: "", footer: "" }
         : { text: p?.text || "", firstFrame: p?.firstFrame || "", enabled: p?.enabled !== false,
             override: !!p?.override,
             refImages:   Array.isArray(p?.refImages) ? p.refImages.slice(0, 9) : [],
@@ -1063,6 +1063,7 @@ export function defaultState(saved) {
             refAudios:   Array.isArray(p?.refAudios) ? p.refAudios.map(a => ({ ...a })) : [],
             // the clip's own library assets / project (override on only) - see clipAssets()
             assetRef:    normalizeAssetRef(p?.assetRef),
+            refSource:   p?.refSource === "library" ? "library" : "files",
             // header/tail follow the override too - see clipFraming()
             header:      p?.header || "",
             footer:      p?.footer || "" })),
@@ -1084,6 +1085,7 @@ export function defaultState(saved) {
     // Library assets / project the whole node uses (Asset tab). When set for the current mode
     // they replace the file slots; empty = the file slots work as before.
     assetRef: normalizeAssetRef(saved.assetRef),
+    refSource: saved.refSource === "library" ? "library" : "files",
     // Reference videos / audios (REF2VA). The model takes up to 3 of each; videos are
     // fed as 24fps frames plus, optionally, their own soundtrack. start/end are seconds
     // — the trained window for a reference video is ~2-15s, so clipping matters.
