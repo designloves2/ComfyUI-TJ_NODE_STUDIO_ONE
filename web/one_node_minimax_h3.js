@@ -49,6 +49,7 @@ import { createPresetDialogs } from "./minimax/ui_presets_minimax.js";
 import { createSettingsOverlay } from "./minimax/ui_app_settings_minimax.js";
 import { mountImagePanel, imageSlot } from "./minimax/ui_images_minimax.js";
 import { attachLLMPanel } from "./shared/llm_panel.js";
+import { mountAssetBrowser } from "./shared/reflib_browser.js";
 import { createPromptEditOverlay } from "./minimax/ui_prompt_edit_minimax.js";
 import { createTemplateOverlay } from "./klein/ui_prompt_templates.js";
 import { createCommonPromptOverlay } from "./minimax/ui_common_prompt_minimax.js";
@@ -188,6 +189,7 @@ app.registerExtension({
       }});
       warnTag.addEventListener("click", () => settingsOv?.show());
 
+      let assetView = false;        // Asset tab showing instead of the generation screen
       function renderPills() {
         clear(pillsWrap);
         const modes = generationModesFor(state);
@@ -196,7 +198,12 @@ app.registerExtension({
           const first = modes.find(m => m.enabled);
           if (first) { state.generationMode = first.key; persist(); }
         }
-        pillsWrap.appendChild(modeBar(modes, state.generationMode, key => {
+        // The Asset tab is a view, not a generation mode: state.generationMode keeps the mode
+        // the node will run, so leaving the tab returns to it unchanged.
+        const assetTab = { key: "assets", label: "Asset", enabled: true, hint: "Reference asset library" };
+        pillsWrap.appendChild(modeBar([assetTab, ...modes], assetView ? "assets" : state.generationMode, key => {
+          if (key === "assets") { setAssetView(true); renderPills(); return; }
+          setAssetView(false);
           state.generationMode = key;
           // Turbo isn't offered in Reference mode, so don't leave it selected there.
           persist(); renderPills(); renderLeft(); renderPrompts();
@@ -2023,6 +2030,17 @@ app.registerExtension({
       rightPanel.append(previewBox, statusWrap, promptWrap);
       mainRow.append(leftOuter, rightPanel);
       root.appendChild(mainRow);
+
+      // Asset tab: the reference asset library, same height as the generation screen.
+      const assetBrowser = mountAssetBrowser({ height: RIGHT_H });
+      const assetRow = el("div", { style: { display: "none" } }, [assetBrowser.el]);
+      root.appendChild(assetRow);
+      function setAssetView(on) {
+        assetView = on;
+        mainRow.style.display = on ? "none" : "flex";
+        assetRow.style.display = on ? "block" : "none";
+        if (on) assetBrowser.reload(); else assetBrowser.stop();
+      }
 
       // ══ LEFT PANEL ══════════════════════════════════════════════════════════
       function currentPlan() { return clipPlan(state); }
