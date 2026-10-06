@@ -82,6 +82,8 @@ export const MMH3_OPTIONAL_NODES = [
   "VHS_LoadVideo", "LoadAudio", "TrimAudioDuration",
   // Audio Lock — pins the real soundtrack into the AV latent (ships with TJ_NODE)
   "TJ_H3_AudioLock",
+  // Reference Asset Library nodes (ship with TJ_NODE) — a clip that uses library assets / a project
+  "TJ_H3Reference", "TJ_H3ImageToVideo",
   // One-Take — latent-level continuation (Continuity: One-Take)
   "TJ_H3_LatentContinuation", "TJ_H3_SaveLatentCheckpoint", "TJ_H3_LoadLatentCheckpoint",
   // Native Image -> Brief vision pipeline (no Ollama needed)

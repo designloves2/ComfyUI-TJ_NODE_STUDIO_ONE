@@ -1053,7 +1053,7 @@ export function defaultState(saved) {
       .map(p => (typeof p === "string"
         ? { text: p, firstFrame: "", enabled: true, override: false,
             refImages: [], refImagesMp: [], lastFrame: "", refVideos: [], refAudios: [],
-            header: "", footer: "" }
+            assetRef: null, header: "", footer: "" }
         : { text: p?.text || "", firstFrame: p?.firstFrame || "", enabled: p?.enabled !== false,
             override: !!p?.override,
             refImages:   Array.isArray(p?.refImages) ? p.refImages.slice(0, 9) : [],
@@ -1061,6 +1061,8 @@ export function defaultState(saved) {
             lastFrame:   p?.lastFrame || "",
             refVideos:   Array.isArray(p?.refVideos) ? p.refVideos.map(v => ({ ...v })) : [],
             refAudios:   Array.isArray(p?.refAudios) ? p.refAudios.map(a => ({ ...a })) : [],
+            // the clip's own library assets / project (override on only) - see clipAssets()
+            assetRef:    normalizeAssetRef(p?.assetRef),
             // header/tail follow the override too - see clipFraming()
             header:      p?.header || "",
             footer:      p?.footer || "" })),
@@ -1079,6 +1081,9 @@ export function defaultState(saved) {
     refImages: Array.isArray(saved.refImages) ? saved.refImages.slice(0, 9) : [],
     refImagesMp: Array.isArray(saved.refImagesMp) ? saved.refImagesMp.slice(0, 9) : [],
     refImageSize: saved.refImageSize || "match",
+    // Library assets / project the whole node uses (Asset tab). When set for the current mode
+    // they replace the file slots; empty = the file slots work as before.
+    assetRef: normalizeAssetRef(saved.assetRef),
     // Reference videos / audios (REF2VA). The model takes up to 3 of each; videos are
     // fed as 24fps frames plus, optionally, their own soundtrack. start/end are seconds
     // — the trained window for a reference video is ~2-15s, so clipping matters.
@@ -1500,6 +1505,22 @@ export function evenBreaks(count, groups) {
   return b;
 }
 
+/**
+ * A saved asset reference, cleaned: { project, ids, first, last } with real numbers, or null when it
+ * points at nothing. Reference mode uses project OR ids, First/Last mode uses first / last.
+ */
+export function normalizeAssetRef(r) {
+  if (!r || typeof r !== "object") return null;
+  const id = (v) => (Number.isInteger(Number(v)) && Number(v) > 0 ? Number(v) : null);
+  const out = {
+    project: id(r.project),
+    ids: Array.isArray(r.ids) ? r.ids.map(id).filter(Boolean).slice(0, 15) : [],
+    first: id(r.first),
+    last: id(r.last),
+  };
+  return out.project || out.ids.length || out.first || out.last ? out : null;
+}
+
 /** Text of a prompt entry — entries may still be plain strings (pre-migration data in flight). */
 export const promptText = (p) => (typeof p === "string" ? p : (p?.text || ""));
 /** Per-clip first-frame override of a prompt entry, or "" if none set. */
@@ -1522,6 +1543,7 @@ export function clipAssets(state, i) {
   if (promptOverrides(p)) {
     return {
       own: true,
+      assetRef:    p.assetRef || null,
       refImages:   (p.refImages || []).filter(Boolean),
       refImagesMp: p.refImagesMp || [],
       firstFrame:  p.firstFrame || "",
@@ -1532,6 +1554,7 @@ export function clipAssets(state, i) {
   }
   return {
     own: false,
+    assetRef:    state.assetRef || null,
     refImages:   (state.refImages || []).filter(Boolean),
     refImagesMp: state.refImagesMp || [],
     firstFrame:  promptFirstFrame(p) || state.firstFrameImage || "",

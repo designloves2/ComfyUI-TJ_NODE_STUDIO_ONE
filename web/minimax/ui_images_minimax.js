@@ -3,7 +3,8 @@
 // Per SPEC §2-1 this node never generates images: first/last keyframes and reference
 // images are picked from files that already exist (upload or drag-drop from disk, or
 // handed over from another ONE STUDIO node's gallery).
-import { C, BRAND, el, clear } from "./core_minimax.js";
+import { C, BRAND, el, clear, normalizeAssetRef } from "./core_minimax.js";
+import { mountLibraryRefs, emptyAssetRef } from "../shared/reflib_refpanel.js";
 import { buildClipMediaSlots } from "./ui_clip_media_slots.js";
 import { openVideoGalleryPicker } from "./ui_video_picker_minimax.js";
 import { panel, label, select, numberField, row, col } from "../klein/ui_common.js";
@@ -256,6 +257,12 @@ function mediaRow(kind, entry, idx, files, ctx, state, onRefresh, ownList) {
 /** Mode-specific image inputs. Returns { el } and writes straight into `state`. */
 export function mountImagePanel(state, ctx) {
   const wrap = el("div");
+  // The node-wide library assets / project (Asset tab); a clip's own override lives in Prompt Edit.
+  const libraryBlock = (libMode, note) => mountLibraryRefs({
+    mode: libMode, note,
+    getRef: () => state.assetRef || emptyAssetRef(),
+    onChange: (ref) => { state.assetRef = normalizeAssetRef(ref); ctx.persist(); ctx.refreshModes?.(); },
+  }).el;
   let mediaFiles = { videos: [], audios: [] };
   let mediaLoaded = false;
 
@@ -288,6 +295,7 @@ export function mountImagePanel(state, ctx) {
           [mpCol(first.el, firstMp), mpCol(last.el, lastMp)]),
         el("div", { text: "MP = megapixels sent to the model for that image (0 = send as uploaded, no resize).",
           style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+        libraryBlock("firstlast", "A library frame replaces that file slot."),
         el("div", { html: "Both are optional. With neither, this is the same as Text only. In a relay run the "
           + "<b>Last Frame Chain</b> continuity mode overwrites ① for every clip after the first.",
           style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
@@ -303,6 +311,7 @@ export function mountImagePanel(state, ctx) {
       el("div", { html: "Uses the <b>Ref2VA</b> model.",
         style: { fontSize: "10px", color: C.muted, lineHeight: "1.55" } }),
       picker.el,
+      libraryBlock("reference", "Assets or a project from the Asset tab. When set, the file slots below are not used."),
     ];
 
     if (types.images) {

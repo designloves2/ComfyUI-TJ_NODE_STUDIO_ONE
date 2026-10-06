@@ -50,6 +50,7 @@ import { createSettingsOverlay } from "./minimax/ui_app_settings_minimax.js";
 import { mountImagePanel, imageSlot } from "./minimax/ui_images_minimax.js";
 import { attachLLMPanel } from "./shared/llm_panel.js";
 import { mountAssetBrowser } from "./shared/reflib_browser.js";
+import { assetRefActive } from "./shared/reflib_refpanel.js";
 import { createPromptEditOverlay } from "./minimax/ui_prompt_edit_minimax.js";
 import { createTemplateOverlay } from "./klein/ui_prompt_templates.js";
 import { createCommonPromptOverlay } from "./minimax/ui_common_prompt_minimax.js";
@@ -4399,8 +4400,9 @@ app.registerExtension({
         const imgCount = state.generationMode === "reference"
           ? (state.refImages || []).filter(Boolean).length
           : [state.firstFrameImage, state.lastFrameImage].filter(Boolean).length;
+        const libOn = assetRefActive(state.assetRef, state.generationMode);
         leftPanel.appendChild(accordion("images", "Images",
-          state.generationMode === "t2v" ? "Text only" : (imgCount ? `${imgCount} set` : "None"),
+          state.generationMode === "t2v" ? "Text only" : (libOn ? "Library" : imgCount ? `${imgCount} set` : "None"),
           () => [imgPanel.el]));
 
         const loraOn = (state.loras || []).filter(l => l && l.enabled !== false && l.name && l.name !== "none").length;
@@ -6129,6 +6131,12 @@ app.registerExtension({
             const modeForClip = (continued || overridden) ? "firstlast" : rs.generationMode;
 
             const clipState = { ...rs, generationMode: modeForClip };
+            // Library assets / project of this clip (its own when overriding, else the node's). A
+            // chained clip starts from the previous clip's last frame, so a library First frame
+            // does not apply to it.
+            clipState.assetRef = assets.assetRef
+              ? { ...assets.assetRef, first: continued ? null : assets.assetRef.first }
+              : null;
             if (assets.own) {
               clipState.refImages      = assets.refImages;
               clipState.refImagesMp    = assets.refImagesMp;

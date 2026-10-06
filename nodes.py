@@ -3234,6 +3234,8 @@ MMH3_OPTIONAL_NODES = [
     "TrimAudioDuration",
     # Audio Lock — pins the real soundtrack into the AV latent (ships with TJ_NODE)
     "TJ_H3_AudioLock",
+    # Reference Asset Library nodes (ship with TJ_NODE) - a clip that uses library assets / a project
+    "TJ_H3Reference", "TJ_H3ImageToVideo",
     # One-Take — latent-level continuation between clips (Continuity: One-Take).
     # Checkpoint save/load carries the sampled latent across the relay's per-clip
     # queue submissions, since ComfyUI keeps no tensor state between them.

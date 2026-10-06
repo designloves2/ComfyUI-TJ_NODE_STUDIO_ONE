@@ -6,13 +6,14 @@
 //
 // The brief-writing instruction is the same "Minimax H3 (Video)" system prompt TJ_NODE
 // ships, fetched from the backend (with a built-in fallback when TJ_NODE isn't present).
-import { C, BRAND, el, clear, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt, imageBriefMax, promptText, promptFirstFrame, promptEnabled, clipAssets, clipFraming, promptOverrides } from "./core_minimax.js";
+import { C, BRAND, el, clear, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt, imageBriefMax, promptText, promptFirstFrame, promptEnabled, clipAssets, clipFraming, promptOverrides, normalizeAssetRef } from "./core_minimax.js";
 import { panel, label, button, select, row, col } from "../klein/ui_common.js";
 import { buildClipMediaSlots } from "./ui_clip_media_slots.js";
 import { openVideoGalleryPicker } from "./ui_video_picker_minimax.js";
 import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
 import { openAudioGalleryPicker } from "../shared/ui_audio_gallery_picker.js";
 import { ask } from "../shared/ui_ask.js";
+import { mountLibraryRefs, emptyAssetRef } from "../shared/reflib_refpanel.js";
 import { getMediaFiles, getSystemPrompt, uploadImage, uploadMedia, analyzeImagesNative, writeBriefNative, analyzeImagesOpenRouter, writeBriefOpenRouter, analyzeImageLlama, writeBriefLlama, analyzeImagesCustom, writeBriefCustom, listPromptSets, getPromptSet, savePromptSet, deletePromptSet, missingInputFiles } from "./api_minimax.js";
 
 // A prompt entry may still arrive as a plain string (mid-migration data); normalize once.
@@ -1023,7 +1024,19 @@ ${name}`, style: {
     // 534px image column the long model paths wrapped into four short lines.
     modelSelWrap.style.marginTop = "0";
     modelSelWrap.style.paddingTop = "0";
-    imgCol.append(grid, note);
+    // Library assets / project for whoever owns this attach area (this clip when overriding,
+    // else the node's common set) - when set they replace the file slots below.
+    const libBlock = mountLibraryRefs({
+      mode: "reference",
+      note: own ? "This clip only: assets or a project from the Asset tab." : "Common: assets or a project from the Asset tab.",
+      getRef: () => (own ? p.assetRef : state.assetRef) || emptyAssetRef(),
+      onChange: (ref) => {
+        const n = normalizeAssetRef(ref);
+        if (own) p.assetRef = n; else state.assetRef = n;
+        ctx.persist(); ctx.refreshModes?.();
+      },
+    });
+    imgCol.append(libBlock.el, grid, note);
     assetBand.append(imgCol);
     if (own) assetBand.append(mediaRow);
     imgRow.append(head, assetBand, modelSelWrap);
