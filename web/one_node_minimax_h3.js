@@ -4402,7 +4402,7 @@ app.registerExtension({
           : [state.firstFrameImage, state.lastFrameImage].filter(Boolean).length;
         const libOn = assetRefActive(state.assetRef, state.generationMode);
         leftPanel.appendChild(accordion("images", "Images",
-          state.generationMode === "t2v" ? "Text only" : (libOn ? "Library" : imgCount ? `${imgCount} set` : "None"),
+          state.generationMode === "t2v" ? "Text only" : (libOn ? "Asset Library" : imgCount ? `${imgCount} set` : "None"),
           () => [imgPanel.el]));
 
         const loraOn = (state.loras || []).filter(l => l && l.enabled !== false && l.name && l.name !== "none").length;

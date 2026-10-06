@@ -28,6 +28,7 @@ export const reflib = {
   project: (id) => call(`/projects/${id}`),
   saveProject: (body) => post("/projects", body),
   deleteProject: (id) => post(`/projects/${id}/delete`),
+  resolve: (body) => post("/resolve", body),
   waveform: (id, bins = 600) => call(`/waveform/${id}?bins=${bins}`),
   update: (id, body) => post(`/assets/${id}/update`, body),
   remove: (id, force) => post(`/assets/${id}/delete`, { force: !!force }),

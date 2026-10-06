@@ -14,6 +14,8 @@ import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
 import { openAudioGalleryPicker } from "../shared/ui_audio_gallery_picker.js";
 import { ask } from "../shared/ui_ask.js";
 import { mountLibraryRefs, emptyAssetRef, sourceToggle } from "../shared/reflib_refpanel.js";
+import { libraryRefFor, libraryContext } from "../shared/reflib_llm.js";
+import { attachAtComplete } from "../shared/reflib_at.js";
 import { getMediaFiles, getSystemPrompt, uploadImage, uploadMedia, analyzeImagesNative, writeBriefNative, analyzeImagesOpenRouter, writeBriefOpenRouter, analyzeImageLlama, writeBriefLlama, analyzeImagesCustom, writeBriefCustom, listPromptSets, getPromptSet, savePromptSet, deletePromptSet, missingInputFiles } from "./api_minimax.js";
 
 // A prompt entry may still arrive as a plain string (mid-migration data); normalize once.
@@ -1174,7 +1176,7 @@ ${name}`, style: {
   // Give the model the run's actual shape so the brief fits the clips we'll render.
   // `imageSummary` is the merged vision-analysis text for Image → Brief (§C2's pipeline);
   // it's just another paragraph of context by the time the brief model sees it.
-  function buildUserPrompt(baseText, imageSummary) {
+  function buildUserPrompt(baseText, imageSummary, lib = null) {
     const t = targetPlan();
     // Labeled key:value header block, same shape as ComfyUI-MiniMaxH3-Prompt-Writer's
     // assemble_request() user_content ("Mode: ...\nDuration: ...\nAspect ratio: ...\n\n
@@ -1191,11 +1193,14 @@ ${name}`, style: {
     if (t.shots > 1) {
       lines.push(`Write exactly ${t.shots} shots, separated by a line containing only ---, one shot per clip.`);
     }
-    const refCount = state.generationMode === "reference" ? (state.refImages || []).length : 0;
+    // Library references are named by @token (the library node turns them into the model's tags),
+    // so the numbered-tag manifest is replaced by the token list.
+    const refCount = lib ? 0 : state.generationMode === "reference" ? (state.refImages || []).length : 0;
     lines.push(
       "",
       "Reference manifest:",
-      refCount
+      lib ? lib.text
+        : refCount
         ? `${refCount} reference image(s) supplied; refer to them as <Picture 1>…<Picture ${refCount}>.`
         : "None",
     );
@@ -1244,7 +1249,7 @@ ${name}`, style: {
   // images re-attached, exactly like their version ("media is intentionally not
   // attached"). The OUTPUT stays our own shot-separated brief format throughout; only
   // the prompt-construction technique is borrowed.
-  function buildRefineUserPrompt(currentPrompt, instruction, imageSummary) {
+  function buildRefineUserPrompt(currentPrompt, instruction, imageSummary, lib = null) {
     const lines = [
       "Rewrite the current H3 brief according to the revision instruction. "
       + "Return only the complete revised brief. Do not discuss the changes.",
@@ -1267,13 +1272,18 @@ ${name}`, style: {
         "",
       );
     }
+    if (lib) lines.push(lib.text, "");
     lines.push(
       "Revision instruction:",
       instruction,
       "",
-      "Reference revision rule: preserve each existing <Picture N> tag that the revision "
-      + "instruction does not ask to change. Only add, remove, or renumber a <Picture N> tag "
-      + "when the instruction's meaning actually calls for it.",
+      lib
+        ? "Reference revision rule: preserve each existing @token that the revision instruction does "
+          + "not ask to change. Only add or remove an @token when the instruction's meaning actually "
+          + "calls for it, and use only the tokens listed above."
+        : "Reference revision rule: preserve each existing <Picture N> tag that the revision "
+          + "instruction does not ask to change. Only add, remove, or renumber a <Picture N> tag "
+          + "when the instruction's meaning actually calls for it.",
       "",
       "Final grounding check: keep everything from the current prompt that the instruction "
       + (imageSummary ? "or the attached images don't call for changing. " : "doesn't ask you to change. ")
@@ -1341,9 +1351,25 @@ ${name}`, style: {
   function attachedImages() {
     if (enhMode !== "image") return [];
     const a = clipAssets(state, selected);
+    // Library assets are described from their library record instead (see libraryContext).
+    if (libraryRefFor(a, state.generationMode)) return [];
     return state.briefImageMode === "fl" ? [a.firstFrame, a.lastFrame].filter(Boolean)
       : a.refImages.slice(0, imageBriefMax(state.briefImageMode));
   }
+
+  // The library references of the clip being edited, described for the LLM (null for a file clip).
+  // Cached for a few seconds: typing "@" asks for it on every keystroke.
+  let libMemo = { key: "", at: 0, value: null };
+  async function libraryContextForClip() {
+    const ref = libraryRefFor(clipAssets(state, selected), state.generationMode);
+    if (!ref) return null;
+    const key = JSON.stringify(ref);
+    if (libMemo.key === key && Date.now() - libMemo.at < 4000) return libMemo.value;
+    const value = await libraryContext(ref);
+    libMemo = { key, at: Date.now(), value };
+    return value;
+  }
+  attachAtComplete(editor, async () => (await libraryContextForClip())?.items || []);
 
   // Vision pass shared by Prompt Write and Prompt Refine: returns the "Image N: ..." text.
   async function describeImages(images, onStage = progressStage) {
@@ -1396,6 +1422,8 @@ ${name}`, style: {
     // Same resolver the render loop uses, so Prompt Write always looks at the pictures
     // this clip will actually be made from.
     const images = attachedImages();
+    const lib = await libraryContextForClip();
+    if (lib?.error) { ctx.showPopup?.(`Library references: ${lib.error}`, true); return; }
     // Brief and Vision each choose their own backend (native CLIP vs OpenRouter vs the
     // local Llama GGUF backend the image nodes' shared Enhance panel already has).
     const briefOR  = (state.h3BriefBackend  || state.h3LlmBackend) === "openrouter";
@@ -1413,7 +1441,7 @@ ${name}`, style: {
 
     const target = targetSel.value;
     const base = (editor.value || "").trim();
-    if (!base && !images.length) {
+    if (!base && !images.length && !lib) {
       ctx.showPopup?.("Write something first (or add an image).", true); return;
     }
     busy = true;
@@ -1425,12 +1453,12 @@ ${name}`, style: {
 
       progressStage("Writing brief...");
       const text = (briefCustom
-        ? await writeBriefCustom(systemPrompt, buildUserPrompt(base, imageSummary), { baseUrl: state.h3CustomBriefBase, model: state.h3CustomBriefModel, context: state.h3CustomBriefCtx })
+        ? await writeBriefCustom(systemPrompt, buildUserPrompt(base, imageSummary, lib), { baseUrl: state.h3CustomBriefBase, model: state.h3CustomBriefModel, context: state.h3CustomBriefCtx })
         : briefLlama
-        ? await writeBriefLlama(buildUserPrompt(base, imageSummary), state.h3LlamaBriefModel, state.h3LlamaNCtx, state.h3LlamaMaxTokens)
+        ? await writeBriefLlama(buildUserPrompt(base, imageSummary, lib), state.h3LlamaBriefModel, state.h3LlamaNCtx, state.h3LlamaMaxTokens)
         : briefOR
-        ? await writeBriefOpenRouter(systemPrompt, buildUserPrompt(base, imageSummary), state.h3OrModelBrief || state.h3OrModel)
-        : await writeBriefNative(state.nativeBriefClip, systemPrompt, buildUserPrompt(base, imageSummary))).trim();
+        ? await writeBriefOpenRouter(systemPrompt, buildUserPrompt(base, imageSummary, lib), state.h3OrModelBrief || state.h3OrModel)
+        : await writeBriefNative(state.nativeBriefClip, systemPrompt, buildUserPrompt(base, imageSummary, lib))).trim();
       if (!text) throw new Error("empty response");
       // Never write straight in - show what came back and let the user decide.
       openReview(text, target);
@@ -1490,7 +1518,9 @@ ${name}`, style: {
     lastRefineInstruction = instruction.trim();
 
     const images = includeImagesChk?.checked ? attachedImages() : [];
-    if (includeImagesChk?.checked && !images.length) { ctx.showPopup?.("Include Images is on, but no image is attached.", true); return; }
+    const lib = await libraryContextForClip();
+    if (lib?.error) { ctx.showPopup?.(`Library references: ${lib.error}`, true); return; }
+    if (includeImagesChk?.checked && !images.length && !lib) { ctx.showPopup?.("Include Images is on, but no image is attached.", true); return; }
     const visionBackend = state.h3VisionBackend || state.h3LlmBackend;
     if (images.length) {
       if (visionBackend === "llamagguf" && !state.h3LlamaVisionModel) { ctx.showPopup?.("No Llama GGUF vision model set - pick one in Settings.", true); return; }
@@ -1506,7 +1536,7 @@ ${name}`, style: {
     try {
       const imageSummary = await describeImages(images, (t) => { refineBtnLabel.textContent = t; statusTag.textContent = t; });
       refineBtnLabel.textContent = "Refining...";
-      const userPrompt = buildRefineUserPrompt(current, lastRefineInstruction, imageSummary);
+      const userPrompt = buildRefineUserPrompt(current, lastRefineInstruction, imageSummary, lib);
       const text = (briefCustom
         ? await writeBriefCustom(systemPrompt, userPrompt, { baseUrl: state.h3CustomBriefBase, model: state.h3CustomBriefModel, context: state.h3CustomBriefCtx })
         : briefLlama

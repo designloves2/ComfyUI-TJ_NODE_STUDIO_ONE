@@ -45,9 +45,9 @@ export function sourceToggle(source, onChange) {
       background: on ? C.lime : C.bg2, color: on ? "#fff" : C.text, border: `1px solid ${on ? C.lime : C.border}`,
       fontWeight: on ? "700" : "400" });
   };
-  return el("div", { style: { display: "flex", alignItems: "center", gap: "6px" } },
+  return el("div", { style: { display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" } },
     el("span", { text: "Source", style: { fontSize: "10.5px", color: C.muted } }),
-    pill("files", "Files"), pill("library", "Library"));
+    pill("files", "Files / Gallery"), pill("library", "Asset Library"));
 }
 
 /**
@@ -66,7 +66,7 @@ export function mountLibraryRefs({ mode, getRef, onChange, note = "" }) {
     const ref = getRef();
     const index = await libraryIndex();
     root.replaceChildren();
-    root.append(el("div", { text: "Library (assets / project)", style: { fontWeight: "700", fontSize: "11px", color: C.text } }));
+    root.append(el("div", { text: "Asset Library (assets / project)", style: { fontWeight: "700", fontSize: "11px", color: C.text } }));
     if (note) root.append(el("div", { text: note, style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
 
     const apply = (patch) => { Object.assign(ref, patch); onChange(ref); render(); };
