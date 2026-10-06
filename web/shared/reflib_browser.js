@@ -157,14 +157,15 @@ function column(title) {
   const box = el("div", { style: {
     display: "flex", flexDirection: "column", minHeight: "0", border: `1px solid ${C.border}`,
     borderRadius: "8px", background: C.bg1, overflow: "hidden" } }, head, body);
-  return { box, body };
+  return { box, body, head };
 }
 
 export function mountAssetBrowser({ height }) {
   const CARD_KEY = "tj_reflib_card_cols";      // cards per row: 4 (small) / 3 / 2 (large)
   let cardCols = 4;
   try { const n = Number(localStorage.getItem(CARD_KEY)); if (n >= 2 && n <= 4) cardCols = Math.round(n); } catch { /* storage blocked */ }
-  const S = { assets: [], category: "all", query: "", id: null, detail: null, form: null, armed: null };
+  const S = { assets: [], category: "all", query: "", id: null, detail: null, form: null, armed: null,
+    tab: "assets", projects: [], draft: null };
 
   const search = el("input", { type: "text", placeholder: "Search name / tag / ID", style: { ...fieldStyle, flex: "1" } });
   const fileAdd = el("input", { type: "file", multiple: true, style: { display: "none" } });
@@ -193,9 +194,9 @@ export function mountAssetBrowser({ height }) {
   const cats = column("Categories");
   const list = column("Assets");
   const view = column("Viewer");
-  const btnReplace = btn("Replace", () => fileRep.click());
-  const btnSave = btn("Save", () => save());
-  const btnDelete = btn("Delete", () => remove(), { color: C.err, borderColor: C.err });
+  const btnReplace = btn("Replace", () => (S.tab === "assets" ? fileRep.click() : newProject()));
+  const btnSave = btn("Save", () => (S.tab === "assets" ? save() : saveProject()));
+  const btnDelete = btn("Delete", () => (S.tab === "assets" ? remove() : removeProject()), { color: C.err, borderColor: C.err });
   const actions = el("div", { style: {
     display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px", padding: "6px", borderTop: `1px solid ${C.border}` } },
     btnReplace, btnSave, btnDelete);
@@ -211,9 +212,14 @@ export function mountAssetBrowser({ height }) {
     try { localStorage.setItem(CARD_KEY, String(cardCols)); } catch { /* storage blocked */ }
     drawList();
   });
-  list.box.appendChild(el("div", { style: {
+  const sizeBar = el("div", { style: {
     display: "flex", alignItems: "center", gap: "8px", padding: "6px 9px", borderTop: `1px solid ${C.border}`, color: C.muted } },
-    el("span", { text: "Card size" }), sizeSlider, sizeLabel));
+    el("span", { text: "Card size" }), sizeSlider, sizeLabel);
+  list.box.appendChild(sizeBar);
+
+  const tabStyle = (on) => ({ background: on ? C.lime : C.bg2, color: on ? "#fff" : C.text, border: `1px solid ${on ? C.lime : C.border}`, fontWeight: on ? "700" : "400" });
+  const tabAssets = btn("Assets", () => { if (S.tab !== "assets") setTab("assets"); }, tabStyle(true));
+  const tabProjects = btn("Projects", () => { if (S.tab !== "projects") setTab("projects"); }, tabStyle(false));
 
   const cols = el("div", { style: {
     display: "grid", gridTemplateColumns: "150px 1fr 1.2fr", gap: "8px", flex: "1", minHeight: "0" } },
@@ -221,7 +227,7 @@ export function mountAssetBrowser({ height }) {
   const root = el("div", { style: {
     display: "flex", flexDirection: "column", gap: "8px", width: "100%", height: `${height}px`, flexShrink: "0",
     boxSizing: "border-box", color: C.text, fontSize: "12px" } },
-    el("div", { style: { display: "flex", gap: "6px" } }, search,
+    el("div", { style: { display: "flex", gap: "6px", alignItems: "center" } }, tabAssets, tabProjects, search,
       registerMenu, btn("Refresh", () => reload()), fileAdd, fileRep),
     cols, msg);
 
@@ -313,6 +319,157 @@ export function mountAssetBrowser({ height }) {
       el("div", { text: used, style: { color: C.muted, fontSize: "11px" } })));
   }
 
+
+  // ── Projects tab: projects | the project's assets (alias, order) | library to add from ───────────
+  const draftItems = () => S.draft?.items || [];
+  const assetById = (id) => S.assets.find(a => a.id === id);
+
+  function setTab(tab) {
+    S.tab = tab; S.armed = null; resetDelete();
+    const projects = tab === "projects";
+    tabAssets.style.cssText = ""; tabProjects.style.cssText = "";
+    Object.assign(tabAssets.style, tabStyle(!projects)); Object.assign(tabProjects.style, tabStyle(projects));
+    cats.head.textContent = projects ? "Projects" : "Categories";
+    list.head.textContent = projects ? "Project contents (alias / order)" : "Assets";
+    view.head.textContent = projects ? "Library — click to add" : "Viewer";
+    btnReplace.textContent = projects ? "New project" : "Replace";
+    search.placeholder = projects ? "Search the library" : "Search name / tag / ID";
+    sizeBar.style.display = projects ? "none" : "flex";
+    registerMenu.style.display = projects ? "none" : "block";
+    cols.style.gridTemplateColumns = projects ? "190px 1.2fr 1fr" : "150px 1fr 1.2fr";
+    say("");
+    if (!projects) { S.stopPlay?.(); drawCats(); drawList(); drawView(); return; }
+    S.stopPlay?.(); S.stopPlay = null;
+    loadProjects().then(() => { drawProjectList(); drawDraft(); drawLibrary(); });
+  }
+
+  async function loadProjects() {
+    const r = await reflib.projects();
+    S.projects = r.projects || [];
+    return S.projects;
+  }
+
+  function drawProjectList() {
+    cats.body.replaceChildren(...S.projects.map(p => {
+      const on = S.draft?.id === p.id;
+      const row = el("div", { title: p.note || p.name, style: {
+        padding: "6px 9px", borderRadius: "6px", cursor: "pointer", display: "flex", justifyContent: "space-between", gap: "6px",
+        background: on ? C.lime : "transparent", color: on ? "#fff" : C.text } },
+        el("span", { text: p.name, style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }),
+        el("span", { text: String(p.item_count) }));
+      row.addEventListener("click", () => openProject(p.id));
+      return row;
+    }));
+    if (!S.projects.length) cats.body.append(el("div", { text: "No projects yet. Press “New project”.", style: { color: C.muted, padding: "6px" } }));
+  }
+
+  async function openProject(id) {
+    const r = await reflib.project(id);
+    if (!r.ok) { say(reflibError(r), true); return; }
+    S.draft = { id: r.project.id, name: r.project.name, note: r.project.note || "",
+      items: r.project.items.map(i => ({ asset_id: i.asset_id, alias: i.alias || "" })) };
+    S.armed = null; resetDelete();
+    say(""); drawProjectList(); drawDraft(); drawLibrary();
+  }
+
+  function newProject() {
+    S.draft = { id: null, name: "", note: "", items: [] };
+    say("Type a name, click assets in the library on the right to add them, then Save.");
+    drawProjectList(); drawDraft(); drawLibrary();
+  }
+
+  function drawDraft() {
+    list.body.replaceChildren();
+    const d = S.draft;
+    if (!d) { list.body.append(el("div", { text: "Pick a project on the left, or press “New project”.", style: { color: C.muted, padding: "6px" } })); return; }
+    const name = el("input", { type: "text", value: d.name, placeholder: "Project name", style: fieldStyle });
+    name.addEventListener("input", () => { d.name = name.value; });
+    const note = el("input", { type: "text", value: d.note, placeholder: "Note", style: fieldStyle });
+    note.addEventListener("input", () => { d.note = note.value; });
+    const move = (i, by) => {
+      const j = i + by;
+      if (j < 0 || j >= d.items.length) return;
+      [d.items[i], d.items[j]] = [d.items[j], d.items[i]];
+      drawDraft();
+    };
+    const small = { padding: "3px 8px" };
+    const rows = d.items.map((it, i) => {
+      const a = assetById(it.asset_id);
+      const alias = el("input", { type: "text", value: it.alias, placeholder: "alias (@alias)", style: { ...fieldStyle, flex: "1" } });
+      alias.addEventListener("input", () => { it.alias = alias.value.trim(); });
+      return el("div", { style: { display: "flex", gap: "8px", alignItems: "center", padding: "5px", background: C.bg2,
+        border: `1px solid ${C.border}`, borderRadius: "6px" } },
+        el("img", { src: a ? reflib.thumbUrl(a) : "", style: { width: "52px", height: "52px", objectFit: "contain", background: "#000", borderRadius: "4px", flexShrink: "0" } }),
+        el("div", { style: { flex: "1", minWidth: "0", display: "flex", flexDirection: "column", gap: "4px" } },
+          el("div", { text: a ? `#${a.id} ${a.name}  ·  ${a.kind}` : `#${it.asset_id} (missing asset)`, title: a?.rel_path || "",
+            style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }),
+          el("div", { style: { display: "flex", gap: "4px" } }, alias,
+            btn("▲", () => move(i, -1), small), btn("▼", () => move(i, 1), small),
+            btn("✕", () => { d.items.splice(i, 1); drawDraft(); drawLibrary(); }, small))));
+    });
+    list.body.append(el("div", { style: { display: "flex", flexDirection: "column", gap: "4px", marginBottom: "6px" } }, name, note),
+      el("div", { style: { display: "flex", flexDirection: "column", gap: "4px" } }, ...rows),
+      rows.length ? "" : el("div", { text: "Click assets in the library on the right to add them.", style: { color: C.muted, padding: "6px" } }));
+  }
+
+  function drawLibrary() {
+    view.body.replaceChildren();
+    const grid = el("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(110px,1fr))", gap: "8px" } });
+    for (const a of S.assets) {
+      if (S.query && !`${a.name} ${(a.tags || []).join(" ")} ${a.id}`.toLowerCase().includes(S.query)) continue;
+      const inside = draftItems().some(i => i.asset_id === a.id);
+      const card = el("div", { title: `#${a.id} ${a.name}`, style: {
+        position: "relative", cursor: "pointer", borderRadius: "8px", overflow: "hidden", background: C.bg2,
+        border: `1px solid ${inside ? C.ok : C.border}`, boxShadow: inside ? `0 0 0 1px ${C.ok}` : "none" } },
+        el("img", { src: reflib.thumbUrl(a), loading: "lazy", style: {
+          width: "100%", aspectRatio: "1 / 1", objectFit: "contain", display: "block", background: "#000" } }),
+        el("div", { text: a.kind, style: { position: "absolute", top: "3px", left: "3px", background: "rgba(0,0,0,0.65)", color: "#fff",
+          borderRadius: "4px", padding: "0 5px", fontSize: "10px" } }),
+        inside ? el("div", { text: "✓", style: { position: "absolute", top: "3px", right: "3px", background: C.ok, color: "#000",
+          borderRadius: "50%", width: "16px", height: "16px", textAlign: "center", fontSize: "11px", lineHeight: "16px", fontWeight: "700" } }) : null,
+        el("div", { text: `#${a.id} ${a.name}`, style: { padding: "3px 6px", whiteSpace: "nowrap", overflow: "hidden",
+          textOverflow: "ellipsis", fontSize: "11px" } }));
+      card.addEventListener("click", () => addToDraft(a));
+      grid.append(card);
+    }
+    view.body.append(grid);
+  }
+
+  function addToDraft(a) {
+    if (!S.draft) newProject();
+    if (draftItems().some(i => i.asset_id === a.id)) { say(`#${a.id} is already in the project`, true); return; }
+    S.draft.items.push({ asset_id: a.id, alias: "" });
+    say(""); drawDraft(); drawLibrary();
+  }
+
+  async function saveProject() {
+    const d = S.draft;
+    if (!d) { say("No project to save", true); return; }
+    if (!d.name.trim()) { say("Enter a project name", true); return; }
+    const r = await reflib.saveProject({ id: d.id ?? undefined, name: d.name.trim(), note: d.note,
+      items: d.items.map(i => ({ asset_id: i.asset_id, alias: i.alias || null })) });
+    if (!r.ok) { say(reflibError(r), true); return; }
+    await loadProjects();
+    await openProject(r.project.id);
+    say(`'${r.project.name}' saved (project #${r.project.id}, ${r.project.items.length} assets)`);
+  }
+
+  async function removeProject() {
+    const d = S.draft;
+    if (!d || d.id == null) { say("Pick a project to delete", true); return; }
+    if (!S.armed) {
+      S.armed = "project";
+      btnDelete.style.background = C.err; btnDelete.style.color = "#fff";
+      btnDelete.textContent = `Delete '${d.name}'? Click again`;
+      armTimer = setTimeout(resetDelete, 5000);
+      return;
+    }
+    resetDelete();
+    const r = await reflib.deleteProject(d.id);
+    say(r.ok ? `'${d.name}' deleted` : reflibError(r), !r.ok);
+    if (r.ok) { S.draft = null; await loadProjects(); drawProjectList(); drawDraft(); drawLibrary(); }
+  }
+
   async function reload() {
     const r = await reflib.list();
     if (!r.ok) {
@@ -322,6 +479,7 @@ export function mountAssetBrowser({ height }) {
       S.assets = r.assets || [];
     }
     if (S.id != null && !S.assets.some(a => a.id === S.id)) { S.id = null; S.detail = null; }
+    if (S.tab === "projects") { drawProjectList(); drawDraft(); drawLibrary(); return; }
     drawCats(); drawList(); drawView();
   }
 
@@ -397,7 +555,7 @@ export function mountAssetBrowser({ height }) {
     if (r.ok) { S.id = null; S.detail = null; await reload(); }
   }
 
-  search.addEventListener("input", () => { S.query = search.value.toLowerCase(); drawList(); });
+  search.addEventListener("input", () => { S.query = search.value.toLowerCase(); if (S.tab === "assets") drawList(); else drawLibrary(); });
   fileAdd.addEventListener("change", () => upload(Array.from(fileAdd.files)));
   fileRep.addEventListener("change", () => replaceFile(fileRep.files[0]));
 
