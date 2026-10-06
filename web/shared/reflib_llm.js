@@ -30,7 +30,8 @@ export async function libraryContext(ref) {
   const meta = new Map((listing.assets || []).map(a => [a.id, a]));
   const items = (rep.attached || []).map(a => {
     const m = meta.get(a.id) || {};
-    return { token: a.alias ? `@${a.alias}` : `@${a.id}`, id: a.id, kind: a.kind, name: a.name, label: a.label,
+    // `mention` is the token the library accepts for this asset (alias, else a usable unique name, else null = use the id)
+    return { token: `@${a.mention || a.alias || a.id}`, id: a.id, kind: a.kind, name: a.name, label: a.label,
       thumb: reflib.thumbUrl({ id: a.id, updated: m.updated }),
       category: a.category, tags: m.tags || [], note: m.note || "" };
   });
