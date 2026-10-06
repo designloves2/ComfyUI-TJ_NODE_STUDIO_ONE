@@ -1036,6 +1036,7 @@ ${name}`, style: {
       mode: "reference",
       note: own ? "This clip only: assets or a project from the Asset tab." : "Common: assets or a project from the Asset tab.",
       getRef: () => (own ? p.assetRef : state.assetRef) || emptyAssetRef(),
+      getPrompt: () => editor.value || "",
       onChange: (ref) => {
         const n = normalizeAssetRef(ref);
         if (own) p.assetRef = n; else state.assetRef = n;

@@ -32,6 +32,27 @@ function libraryIndex() {
 
 const small = { padding: "3px 8px", fontSize: "11px" };
 
+/** The same text the TJ_H3Reference node's Load button shows: what is attached, limits, match check. */
+export function formatReport(r) {
+  if (!r || r.ok === undefined) return r?.detail ? `${r.code}: ${r.detail}` : "(no data)";
+  const out = [r.project ? `Project #${r.project.id}  ${r.project.name}` : `Mode: ${r.mode}`, ""];
+  for (const a of r.attached || []) {
+    const label = a.audio_label ? `${a.audio_label} ${a.label}` : a.label;
+    out.push(`${label.padEnd(24)} #${String(a.id).padEnd(4)} ${a.kind.padEnd(6)} ${a.alias ? "@" + a.alias : "-"}  ${a.name} [${a.category}]`);
+  }
+  if (!(r.attached || []).length) out.push("(nothing attached)");
+  const l = r.limits || {};
+  if (l.image) {
+    out.push("", `image ${l.image.used}/${l.image.max}   video ${l.video.used}/${l.video.max}   `
+      + `video-audio ${l.video_audio.used}/${l.video_audio.max}   audio ${l.audio.used}/${l.audio.max}`);
+  }
+  for (const e of r.errors || []) out.push(`ERROR   ${e.code}: ${e.message}`);
+  for (const w of r.warnings || []) out.push(`warning ${w.code}: ${w.message}`);
+  if (r.ok && !(r.warnings || []).length) out.push("OK - prompt and references match");
+  out.push("", "Resolved prompt:", r.resolved_prompt);
+  return out.join("\n");
+}
+
 /**
  * "Source: Files | Library" switch above a reference area. Exactly one of the two is shown, so
  * the file slots and the library block never sit on top of each other.
@@ -55,7 +76,8 @@ export function sourceToggle(source, onChange) {
  * @param getRef   () => assetRef object (the caller's own, created if missing)
  * @param onChange (ref) => void   persist + refresh whatever depends on it
  */
-export function mountLibraryRefs({ mode, getRef, onChange, note = "" }) {
+export function mountLibraryRefs({ mode, getRef, onChange, note = "", getPrompt = null }) {
+  let lastReport = "(press Load to check the prompt against these references)";
   const root = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px", padding: "6px",
     border: `1px solid ${C.border}`, borderRadius: "8px", background: C.bg2 } });
 
@@ -125,6 +147,24 @@ export function mountLibraryRefs({ mode, getRef, onChange, note = "" }) {
         multi: true, initial: ref.project ? [] : ref.ids || [], onPick: ids => apply({ ids, project: null }) }), small),
       btn("Project…", () => openProjectPicker({ onPick: (id) => apply({ project: id, ids: [] }) }), small),
       shown.length ? btn("Clear", () => apply({ project: null, ids: [] }), small) : null));
+
+    // Prompt check, as on the TJ_H3Reference node: Load resolves the clip's prompt against these
+    // references and lists what is attached, the limits, unknown @tokens and unused assets.
+    if (getPrompt && shown.length) {
+      const info = el("textarea", { readOnly: true, spellcheck: false, style: { width: "100%", height: "130px", boxSizing: "border-box",
+        resize: "vertical", font: "11px/1.45 Consolas,monospace", background: "#1b1b1b", color: "#ddd", border: "1px solid #333",
+        borderRadius: "4px", padding: "6px", whiteSpace: "pre", overflow: "auto" } });
+      info.value = lastReport;
+      root.append(el("div", { style: { display: "flex", alignItems: "center", gap: "6px" } },
+        btn("Load", async () => {
+          info.value = "…";
+          const body = ref.project ? { mode: "project", project: ref.project, prompt: getPrompt() }
+            : { mode: "assets", assets: ref.ids, prompt: getPrompt() };
+          lastReport = formatReport(await reflib.resolve(body));
+          info.value = lastReport;
+        }, small),
+        el("span", { text: "match check: prompt @tokens vs these references", style: { fontSize: "10px", color: C.muted } })), info);
+    }
   }
 
   render();

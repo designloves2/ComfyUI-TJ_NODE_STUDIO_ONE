@@ -1,78 +1,82 @@
 // reflib_at.js — type "@" in a prompt box and pick one of the clip's library references.
-// The list is the tokens the clip's assets / project provide (@alias, else @<id>); choosing one
-// writes the token at the caret. Nothing opens for a clip that has no library references.
-import { C } from "../minimax/core_minimax.js";
+// Same list as ComfyUI-TJ_NODE's TJ_H3Reference prompt box: the tokens the clip's assets / project
+// provide (@alias, else @<id>), each with a small thumbnail, "#id name · kind · category", filtered
+// as you type. Up / Down move, Enter or Tab inserts, Esc closes. Nothing opens for a clip that has
+// no library references.
 import { el } from "./reflib_dom.js";
 
 /**
  * @param textarea  the prompt box
- * @param getItems  async () => [{ token, name, kind, label }] for the clip being edited ([] = none)
+ * @param getItems  async () => [{ token: "@alias" | "@<id>", id, name, kind, category, thumb }] ([] = none)
  */
 export function attachAtComplete(textarea, getItems) {
-  let menu = null, items = [], index = 0, anchor = -1, loading = 0;
+  let box = null, items = [], index = 0, start = -1, seq = 0;
 
-  const close = () => { menu?.remove(); menu = null; items = []; anchor = -1; };
+  const hide = () => { if (box) box.style.display = "none"; items = []; };
 
-  function place() {
-    const r = textarea.getBoundingClientRect();
-    Object.assign(menu.style, { left: `${r.left + 12}px`, top: `${Math.min(r.bottom - 4, window.innerHeight - 220)}px` });
+  function ensureBox() {
+    if (box) return box;
+    box = el("div", { style: { position: "fixed", zIndex: "100001", display: "none", minWidth: "240px", maxHeight: "260px",
+      overflow: "auto", background: "#1d1d1d", border: "1px solid #4a6a8a", borderRadius: "6px",
+      boxShadow: "0 4px 14px #000a", font: "12px sans-serif", color: "#ddd" } });
+    document.body.append(box);
+    return box;
   }
 
   function draw() {
-    if (!items.length) { close(); return; }
-    if (!menu) {
-      menu = el("div", { style: { position: "fixed", zIndex: "100001", minWidth: "260px", maxWidth: "420px", maxHeight: "210px",
-        overflowY: "auto", background: C.bg2, border: `1px solid ${C.border}`, borderRadius: "8px",
-        boxShadow: "0 8px 24px rgba(0,0,0,0.6)", fontSize: "12px", color: C.text } });
-      document.body.append(menu);
-    }
-    place();
-    menu.replaceChildren(...items.map((it, i) => {
-      const row = el("div", { style: { padding: "4px 10px", cursor: "pointer", display: "flex", gap: "8px", alignItems: "center",
-        background: i === index ? C.lime : "transparent", color: i === index ? "#fff" : C.text } },
-        it.thumb ? el("img", { src: it.thumb, style: { width: "30px", height: "30px", objectFit: "contain", background: "#000",
-          borderRadius: "4px", flexShrink: "0" } }) : null,
-        el("b", { text: it.token }),
-        el("span", { text: `${it.name} · ${it.kind}`, style: { opacity: "0.75", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }));
-      row.addEventListener("mousedown", (e) => { e.preventDefault(); choose(i); });
+    const b = ensureBox();
+    b.replaceChildren(...items.map((c, i) => {
+      const row = el("div", { style: { display: "flex", gap: "8px", alignItems: "center", padding: "3px 8px", cursor: "pointer",
+        background: i === index ? "#2f4a66" : "" } },
+        el("img", { src: c.thumb, style: { width: "28px", height: "28px", objectFit: "cover", borderRadius: "3px", background: "#000" } }),
+        el("div", { text: `${c.token}   #${c.id} ${c.name} · ${c.kind} · ${c.category}` }));
+      row.addEventListener("mousedown", (e) => { e.preventDefault(); insert(i); });
       return row;
     }));
-    menu.children[index]?.scrollIntoView({ block: "nearest" });
+    b.children[index]?.scrollIntoView({ block: "nearest" });
   }
 
-  function choose(i) {
-    const it = items[i];
-    if (!it || anchor < 0) { close(); return; }
-    const caret = textarea.selectionStart;
-    textarea.setRangeText(`${it.token} `, anchor, caret, "end");
+  function insert(i) {
+    const c = items[i];
+    if (!c || start < 0) return;
+    const end = textarea.selectionStart;
+    textarea.value = textarea.value.slice(0, start) + `${c.token} ` + textarea.value.slice(end);
+    textarea.selectionStart = textarea.selectionEnd = start + c.token.length + 1;
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
-    close();
+    hide();
   }
 
-  async function refresh() {
-    const caret = textarea.selectionStart;
-    const before = textarea.value.slice(0, caret);
-    const m = /(^|[\s(\[,.;:!?"'])@([\w\-]*)$/.exec(before);
-    if (!m) { close(); return; }
-    const typed = m[2].toLowerCase();
-    const ticket = ++loading;
-    const all = await getItems();
-    if (ticket !== loading) return;                 // a newer keystroke is already being handled
-    anchor = caret - typed.length - 1;
-    items = (all || []).filter(it => it.token.slice(1).toLowerCase().startsWith(typed) || String(it.name).toLowerCase().startsWith(typed));
+  async function update() {
+    const before = textarea.value.slice(0, textarea.selectionStart);
+    const m = /(?:^|[^\p{L}\p{N}_@])@([\p{L}\p{N}_]*)$/u.exec(before);
+    if (!m) { hide(); return; }
+    const mine = ++seq;
+    const query = m[1].toLowerCase();
+    const all = await getItems().catch(() => []);
+    if (mine !== seq) return;
+    items = (all || []).filter(c => !query || c.token.slice(1).toLowerCase().startsWith(query)
+      || String(c.name).toLowerCase().includes(query) || String(c.id).startsWith(query));
+    start = textarea.selectionStart - m[1].length - 1;
     index = 0;
+    if (!items.length) { hide(); return; }
+    const r = textarea.getBoundingClientRect();
+    const b = ensureBox();
+    b.style.left = `${Math.max(4, r.left)}px`;
+    b.style.top = `${r.bottom + 2}px`;
+    b.style.display = "block";
     draw();
   }
 
-  textarea.addEventListener("input", refresh);
-  textarea.addEventListener("click", () => { if (menu) refresh(); });
-  textarea.addEventListener("blur", () => setTimeout(close, 120));
+  textarea.addEventListener("input", update);
+  textarea.addEventListener("click", update);
+  textarea.addEventListener("blur", () => setTimeout(hide, 120));
   textarea.addEventListener("keydown", (e) => {
-    if (!menu) return;
-    if (e.key === "ArrowDown") { index = (index + 1) % items.length; draw(); e.preventDefault(); }
-    else if (e.key === "ArrowUp") { index = (index - 1 + items.length) % items.length; draw(); e.preventDefault(); }
-    else if (e.key === "Enter" || e.key === "Tab") { choose(index); e.preventDefault(); }
-    else if (e.key === "Escape") { close(); e.stopPropagation(); e.preventDefault(); }
-  });
-  return { close };
+    if (!box || box.style.display === "none" || !items.length) return;
+    const stop = () => { e.preventDefault(); e.stopPropagation(); };
+    if (e.key === "ArrowDown") { stop(); index = (index + 1) % items.length; draw(); }
+    else if (e.key === "ArrowUp") { stop(); index = (index - 1 + items.length) % items.length; draw(); }
+    else if (e.key === "Enter" || e.key === "Tab") { stop(); insert(index); }
+    else if (e.key === "Escape") { stop(); hide(); }
+  }, true);
+  return { close: hide };
 }
