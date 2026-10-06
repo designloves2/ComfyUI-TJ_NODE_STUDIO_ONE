@@ -27,7 +27,7 @@ import {
   CHARSHEET_PROMPT_TEMPLATE,
   clipPlan, formatDuration, formatClock, framesToSeconds, alignFrameCount, FPS, ONE_TAKE_OVERLAP_FRAMES, resolveResolution,
   parseBrief, groupShots, composeClipPrompt, composeStitchedPrompt,
-  turboLoraForMode, pddFileForMode, clipAssets, explainGenerationError,
+  turboLoraForMode, pddFileForMode, clipAssets, normalizeAssetRef, explainGenerationError,
   promptText, promptFirstFrame, promptEnabled, activePrompts, buildAgentJob,
 } from "./minimax/core_minimax.js";
 import { downloadAgentJob, agentStamp } from "./shared/agent_job.js";
@@ -5526,6 +5526,8 @@ app.registerExtension({
           lastFrameImage:  st.lastFrameImage  || null,
           refVideos: Array.isArray(st.refVideos) ? st.refVideos.map(v => ({ ...v })) : [],
           refAudios: Array.isArray(st.refAudios) ? st.refAudios.map(a => ({ ...a })) : [],
+          // Library assets / project the clip used (Asset tab). null = the clip used the file slots.
+          assetRef: st.assetRef ? { ...st.assetRef, ids: [...(st.assetRef.ids || [])] } : null,
           seed: st.seed,
           node: "minimax_h3",
           created: Date.now(),
@@ -6551,6 +6553,10 @@ app.registerExtension({
         if (meta.lastFrameImage  !== undefined) state.lastFrameImage  = meta.lastFrameImage  || null;
         if (Array.isArray(meta.refVideos)) state.refVideos = meta.refVideos.map(v => ({ ...v }));
         if (Array.isArray(meta.refAudios)) state.refAudios = meta.refAudios.map(a => ({ ...a }));
+        // The library choice comes back with the clip; a clip saved without one (or before the
+        // library existed) restores to the file slots, so a leftover library set cannot win over them.
+        state.assetRef = normalizeAssetRef(meta.assetRef);
+        state.refSource = state.assetRef ? "library" : "files";
         // A restored set is worth showing — leaving its panel collapsed hides the fact
         // that anything came back.
         if (state.refImages?.length || state.refVideos?.length || state.refAudios?.length) {
