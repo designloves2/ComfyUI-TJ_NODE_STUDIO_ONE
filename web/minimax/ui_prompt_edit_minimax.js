@@ -1048,11 +1048,8 @@ ${name}`, style: {
       else { state.refSource = src; if (src === "files") state.assetRef = null; }
       ctx.persist(); renderImageRow(); ctx.refreshModes?.();
     });
-    // The switch belongs to the override only; unticked, the common set is shown the way the
-    // main screen has it, with no choice offered here.
-    const head2 = own ? [srcToggle] : [];
-    if (useLib) imgCol.append(...head2, libBlock.el);
-    else imgCol.append(...head2, grid, note);
+    if (useLib) imgCol.append(srcToggle, libBlock.el);
+    else imgCol.append(srcToggle, grid, note);
     assetBand.append(imgCol);
     if (own && !useLib) assetBand.append(mediaRow);
     imgRow.append(head, assetBand, modelSelWrap);
