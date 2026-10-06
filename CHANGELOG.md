@@ -2,6 +2,71 @@
 
 ---
 
+## v1.32.0 (2026-10-06)
+
+### Connect Custom LLM backend everywhere
+- **Connect Custom** — any OpenAI-style Chat Completions server (LM Studio, Ollama,
+  llama.cpp, your own gateway) — is now a backend choice in every LLM picker: MiniMax H3
+  Brief, Vision and **LTX Upscale**, the image nodes' **Prompt Enhance** and **Image →
+  Prompt Write** (also H3's Image LLM tab), and **MusicMaker**. Each place keeps its own
+  URL / model ID / context size. Public endpoints need HTTPS; loopback and private-LAN
+  addresses may use plain HTTP. The optional API key is sent once on *Connect & test* and
+  held only in the server's memory (per role) — it is never written to disk or
+  localStorage, so after a ComfyUI restart press *Connect & test* again if your endpoint
+  needs a key.
+- **The image nodes' LLM settings are stored on the server**, not in each browser, so
+  every browser — and the web app on another address — shows the same backend, models and
+  Connect Custom fields (`studio_llm_settings.json`, not tracked by git).
+
+### MiniMax H3
+- **Prompt Refine → Include Images.** Tick it in the Refine dialog (First/Last and
+  Reference modes) and the images attached right now are analysed again by the vision LLM
+  and sent with your instruction, so a prompt can be rewritten to match pictures you
+  swapped after writing it. Off = text only, as before.
+- **Image Generator: Use Basic Latent / Use Fizgig Latent** (Fizgig H3 Still nodes), and
+  Fizgig H3 Still is now installed by the installer scripts.
+- **Postprocess: 2-pass upscale** (FlashVSR or Model first, then RTX VSR) and full RTX VSR
+  sizing — scale, long edge, short edge or exact width × height — for both the single and
+  the second pass, each with its own settings.
+- **Prompt Edit LLM popup** (click the Brief / Vision line to jump to the backend
+  settings), full-width Brief / Vision lines, and **Turbo LoRA (Basic)** wording with a
+  plain steps field.
+- Gallery cards show the **aspect you chose** (16:9, 9:16, 2:3 …) instead of a reduced
+  pixel ratio such as 42:23.
+
+### Galleries
+- **Thumbnails are cached on the server** (384 px webp, made when the image is saved,
+  removed or renamed with it) and loaded through one batch request — the image galleries
+  and pickers open fast over a tunnel. A **Cache** button builds thumbnails for older
+  images.
+- **Show / Hide all** for hidden items in every gallery and picker; the Qwen 2.1 tab in the
+  image picker; the Qwen 2.1 gallery now scrolls with *Load more* and no longer squashes
+  its cards.
+- **H3 galleries and the reference-video picker load in pages** with a *Load more*
+  button. The page size is yours: Settings → Output → *Gallery — items per load*
+  (default 50, 10–300). Refresh and delete keep what was already loaded, and a filter that
+  matches none of the loaded clips still offers *Load more*. MusicMaker playlists load
+  everything.
+
+### Prompt presets
+- Per-tool prompt presets (each image node keeps its own), and the category tag presets
+  above the editor can be added, edited, deleted and **re-ordered** (▲▼ for categories,
+  drag and drop for tags) per tool and per mode.
+
+### Fixes
+- **Qwen Image 2511 / 2.1 metadata was never saved** — Reuse and the gallery info now work.
+- **SDXL** forgot its saved checkpoint / UNET / CLIP / VAE in a fresh node or another
+  browser, so ▶ Generate silently did nothing.
+- Updating the metadata of a file that does not exist no longer creates stray folders.
+- **MusicMaker:** deleting a track you had just played failed on Windows (the player kept
+  the file open); the playlist's hide-cover eye icon no longer disappears with the cover.
+- Prompt Edit window: after a main-screen Refine / Prompt Write the window now closes
+  again, and a stale flag no longer closes it while you are working inside it.
+- The `ComfyUI-sol-attn` entry points at the maintained fork; old checkouts are repointed
+  by the installer.
+
+---
+
 ## v1.31.0 (2026-10-03)
 
 ### MusicMaker — YuE2 engine, Melody Editor, album-cover tools
