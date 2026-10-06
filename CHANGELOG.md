@@ -2,6 +2,35 @@
 
 ---
 
+## v1.33.0 (2026-10-07)
+
+### MiniMax H3: Asset Library
+Uses the **Reference Asset Library** that ships with ComfyUI-TJ_NODE (update it too): register
+images, videos, audio and image sets once, give them names / categories / tags, group them into
+**projects** with @aliases, and use them in any clip instead of picking files each time.
+
+- **New "Asset" tab**, first in the mode row. Categories | cards (4 / 3 / 2 per row slider) |
+  viewer, with Replace / Save / Delete, search, and an in-out **trim with waveform** for audio.
+  **+ Register** either uploads files or imports from a gallery (INPUT / OUTPUT folders, every
+  image tool, H3 videos, the MusicMaker playlist, with cover art and length). A **Projects** sub-tab
+  edits projects: assets in order, @alias per asset, add from the library.
+- **Files / Gallery  |  Asset Library** switch for the references of the whole node (Images
+  panel) and for a clip's override (Prompt Edit). Asset Library offers *From Asset…* (several
+  assets in click order = `<Picture i>` / `<Video k>` / `<Audio j>` order) and *Project…*; First/Last
+  takes a library asset per frame. A clip uses one source at a time.
+- **@tokens in the prompt box**: typing `@` lists the clip's references with thumbnails (same list
+  as the TJ_H3Reference node); a **Load** check shows what is attached, the limits, unknown
+  @tokens and unused assets, and the resolved prompt.
+- **Prompt Write / Refine understand the library**: they get the @token list with each asset's
+  name / category / tags / note and write only those tokens. (No vision pass for library assets.)
+- The graph builder emits `TJ_H3Reference` (Reference) or `TJ_H3ImageToVideo` (First/Last) for
+  such a clip; clips without library references are built exactly as before.
+- **Reuse Setting restores the library choice** saved with a clip.
+- Requires ComfyUI-TJ_NODE with the Reference Asset Library (`TJ_H3Reference`,
+  `TJ_H3ImageToVideo`, REST `/tj_node/reflib`). The Asset tab says so when it is missing.
+
+---
+
 ## v1.32.0 (2026-10-06)
 
 ### Connect Custom LLM backend everywhere
