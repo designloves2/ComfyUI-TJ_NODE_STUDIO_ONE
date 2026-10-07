@@ -303,6 +303,17 @@ Stages (each ends with a node-side check and a commit; web mirror after stage 5)
   (tab menu location to be located in `one_node_minimax_h3.js`): categories | thumbnails (hover play,
   Load more with `galleryPageSize`) | viewer; then manage (register/edit/replace/delete/sets/projects)
   mirroring TJ_NODE's Asset Browser. Reuse `gallery_more.js`.
+  **Register menu (the "+ Add ▾" button in the Asset tab, same five entries as TJ_NODE's Asset Browser):**
+  1. *Single Image* — one image file (`.png,.jpg,.jpeg,.webp,.bmp,.gif,.tif,.tiff`);
+  2. *Images as a set (2-10)* — 2..10 images registered one by one, then one set via `POST /tj_node/reflib/sets`
+     `{name:"<first file>_set", category, image_ids:[…]}`; fewer than 2 or more than 10 registers nothing
+     (`A set needs 2-10 images (N selected)`), and if any image fails no set is made;
+  3. *Video* — `.mp4,.webm,.mov,.mkv,.avi,.m4v`; 4. *Audio* — `.wav,.mp3,.flac,.ogg,.m4a,.aac,.opus`;
+  5. *From Gallery* — `openGalleryImport(onDone, { maxImages: 10, singleVideoAudio: true })`
+     (`web/shared/reflib_gallery_import.js`: the image / video / audio gallery pickers' own features — per-tile hide
+     toggle, 👁 Show, ⚡ Cache, INPUT/OUTPUT video tabs, audio ▶ preview, folder refresh — and *Register as set*).
+  A file with the wrong extension is refused (`x.png: not a video file`). TJ_NODE's Asset Browser calls the same
+  `openGalleryImport` through `/extensions/ComfyUI-TJ_NODE_STUDIO_ONE/shared/reflib_gallery_import.js`.
 - **S3 pick-from-asset**: shared picker `reflib_picker.js` (single/multi, kind filter) opened from the
   FL2VA first/last slots and REF2VA image/video/audio slots (`ui_clip_media_slots.js`, `ui_images_minimax.js`)
   via a new "From Asset" button next to the existing file/gallery pickers; project picker sets

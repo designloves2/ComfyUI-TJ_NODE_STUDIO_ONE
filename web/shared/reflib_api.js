@@ -40,6 +40,7 @@ export const reflib = {
     form.append("name", name || file.name.replace(/\.[^.]+$/, ""));
     return call("/assets", { method: "POST", body: form });
   },
+  createSet: (body) => post("/sets", body),
   replace(id, file) {
     const form = new FormData();
     form.append("file", file);

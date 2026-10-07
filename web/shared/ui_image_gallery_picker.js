@@ -26,7 +26,7 @@ export const IMAGE_GALLERY_TOOLS = [
   { id: "anima",    label: "Anima",           api: "/anima_one",     subfolder: "one_anima" },
   // MiniMax H3's Image Generator (T2I/Reference to Image/Character Sheet) stills — same
   // generic PNG /gallery route every other tool above uses, already registered server-side.
-  { id: "minimaxh3", label: "MinimaxH3",      api: "/minimax_h3_one", subfolder: "one_minimax_h3" },
+  { id: "minimaxh3", label: "H3 Image",       api: "/minimax_h3_one", subfolder: "one_minimax_h3" },
 ];
 
 const BRAND = "#7612DA";

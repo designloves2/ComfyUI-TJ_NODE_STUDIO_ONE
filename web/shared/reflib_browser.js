@@ -170,12 +170,25 @@ export function mountAssetBrowser({ height }) {
     tab: "assets", projects: [], draft: null };
 
   const search = el("input", { type: "text", placeholder: "Search name / tag / ID", style: { ...fieldStyle, flex: "1" } });
-  const fileAdd = el("input", { type: "file", multiple: true, style: { display: "none" } });
+  // The "+ Add" menu is the same five entries as ComfyUI-TJ_NODE's Asset Browser.
+  const MAX_SET = 10;                          // a set takes 2..10 images (the server enforces it too)
+  const ACCEPT = {
+    image: ".png,.jpg,.jpeg,.webp,.bmp,.gif,.tif,.tiff",
+    video: ".mp4,.webm,.mov,.mkv,.avi,.m4v",
+    audio: ".wav,.mp3,.flac,.ogg,.m4a,.aac,.opus",
+  };
+  ACCEPT.set = ACCEPT.image;
+  const picker = (mode, multiple) => {
+    const inp = el("input", { type: "file", accept: ACCEPT[mode], multiple, style: { display: "none" } });
+    inp.addEventListener("change", () => { const f = Array.from(inp.files); inp.value = ""; upload(f, mode); });
+    return inp;
+  };
+  const pickers = { image: picker("image", false), set: picker("set", true), video: picker("video", true), audio: picker("audio", true) };
   const fileRep = el("input", { type: "file", style: { display: "none" } });
   const msg = el("div", { style: { minHeight: "16px", fontSize: "11px", color: C.muted } });
   const say = (text, err = false) => { msg.textContent = text || ""; msg.style.color = err ? C.err : C.ok; };
 
-  // "+ Register" opens a two-way menu: upload from disk, or pick from this pack's galleries.
+  // "+ Add" opens a drop-down under the button: Single Image / Images as a set / Video / Audio / From Gallery.
   const menuItem = (text, onClick) => {
     const i = el("div", { text, style: { padding: "7px 14px", cursor: "pointer", whiteSpace: "nowrap" } });
     i.addEventListener("mouseenter", () => { i.style.background = C.bg3; });
@@ -186,9 +199,13 @@ export function mountAssetBrowser({ height }) {
   const menuBox = el("div", { style: {
     display: "none", position: "absolute", top: "100%", left: "0", marginTop: "4px", zIndex: "20", background: C.bg2,
     border: `1px solid ${C.border}`, borderRadius: "6px", boxShadow: "0 6px 20px rgba(0,0,0,0.5)", overflow: "hidden" } },
-    menuItem("Upload files…", () => fileAdd.click()),
-    menuItem("Image from Gallery…", () => openGalleryImport(async (last) => { await reload(); if (last != null) select(last); })));
-  const registerMenu = el("div", { style: { position: "relative" } }, btn("+ Register ▾", () => {
+    menuItem("Single Image", () => pickers.image.click()),
+    menuItem(`Images as a set (2-${MAX_SET})`, () => pickers.set.click()),
+    menuItem("Video", () => pickers.video.click()),
+    menuItem("Audio", () => pickers.audio.click()),
+    menuItem("From Gallery", () => openGalleryImport(async (last) => { await reload(); if (last != null) select(last); },
+      { maxImages: MAX_SET, singleVideoAudio: true })));
+  const registerMenu = el("div", { style: { position: "relative" } }, btn("+ Add ▾", () => {
     menuBox.style.display = menuBox.style.display === "none" ? "block" : "none";
   }), menuBox);
   document.addEventListener("mousedown", (e) => { if (!registerMenu.contains(e.target)) menuBox.style.display = "none"; });
@@ -232,7 +249,7 @@ export function mountAssetBrowser({ height }) {
     boxSizing: "border-box", color: C.text, fontSize: "12px" } },
     el("div", { style: { display: "flex", gap: "6px", alignItems: "center" } },
       el("div", { style: { display: "flex", gap: "6px", width: `${LEFT_W}px`, flexShrink: "0", marginRight: "2px" } }, tabAssets, tabProjects), search,
-      registerMenu, btn("Refresh", () => reload()), fileAdd, fileRep),
+      registerMenu, btn("Refresh", () => reload()), ...Object.values(pickers), fileRep),
     cols, msg);
 
   function drawCats() {
@@ -274,7 +291,7 @@ export function mountAssetBrowser({ height }) {
       grid.appendChild(card);
     }
     list.body.appendChild(grid.children.length ? grid
-      : el("div", { text: "No assets here. Use “+ Register” to add files.", style: { color: C.muted, padding: "6px" } }));
+      : el("div", { text: "No assets here. Use “+ Add” to register files.", style: { color: C.muted, padding: "6px" } }));
   }
 
   function drawView() {
@@ -495,16 +512,36 @@ export function mountAssetBrowser({ height }) {
     drawList(); drawView();
   }
 
-  async function upload(files) {
+  const baseName = (n) => n.replace(/\.[^.]+$/, "");
+
+  // mode: image | set | video | audio — a wrong extension or a set outside 2..10 images registers nothing.
+  async function upload(files, mode = "image") {
     const category = S.category === "all" ? "etc" : S.category;
+    const wanted = ACCEPT[mode].split(",");
+    const bad = files.find(f => !wanted.includes("." + f.name.split(".").pop().toLowerCase()));
+    if (bad) { say(`${bad.name}: not a${mode === "set" ? "n image" : mode === "audio" ? "n audio" : ` ${mode}`} file`, true); return; }
+    if (mode === "set" && (files.length < 2 || files.length > MAX_SET)) {
+      say(`A set needs 2-${MAX_SET} images (${files.length} selected)`, true);
+      return;
+    }
     let ok = 0, dup = 0, last = null;
+    const ids = [];
     for (const file of files) {
       const r = await reflib.upload(file, { category });
       if (!r.ok) { say(`${file.name}: ${reflibError(r)}`, true); continue; }
-      r.duplicate ? dup++ : ok++; last = r.asset.id;
+      r.duplicate ? dup++ : ok++; last = r.asset.id; ids.push(r.asset.id);
     }
-    fileAdd.value = "";
-    if (ok || dup) say(`Registered ${ok}${dup ? `, already there ${dup}` : ""} (${category})`);
+    let setMsg = "";
+    if (mode === "set") {
+      if (ids.length !== files.length) setMsg = "Set not created: some files could not be registered";
+      else {
+        const r = await reflib.createSet({ name: `${baseName(files[0].name)}_set`, category, image_ids: ids });
+        if (r.ok) { last = r.asset.id; setMsg = `${r.duplicate ? "Set already present" : "Set created"}: ${r.asset.name} (${ids.length} images)`; }
+        else setMsg = reflibError(r);
+      }
+    }
+    if (setMsg) say(setMsg, !/^Set (created|already)/.test(setMsg));
+    else if (ok || dup) say(`Added ${ok}${dup ? `, already present ${dup}` : ""} (${category})`);
     await reload();
     if (last != null) select(last);
   }
@@ -560,7 +597,6 @@ export function mountAssetBrowser({ height }) {
   }
 
   search.addEventListener("input", () => { S.query = search.value.toLowerCase(); if (S.tab === "assets") drawList(); else drawLibrary(); });
-  fileAdd.addEventListener("change", () => upload(Array.from(fileAdd.files)));
   fileRep.addEventListener("change", () => replaceFile(fileRep.files[0]));
 
   drawCats(); drawList(); drawView();
