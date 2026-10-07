@@ -165,8 +165,7 @@ Package `nodes/reflib` in ComfyUI-TJ_NODE (library.py SQLite, resolve.py, routes
    `projects`; GET `projects/{id}`; POST `projects/{id}/delete`; POST `resolve`; GET `check`. Local
    guard = same as PromptDB (loopback + same-origin) — **not verified behind the Cloudflare
    tunnel**; STUDIO_ONE's web twin must be tested through it (see 3.6).
-8. **Library root default:** `ComfyUI/user/tj_reflib` (override with env `TJ_REFLIB_ROOT` or POST
-   `settings`) — **not confirmed by the user**.
+8. **Library root:** superseded, see 2.9 item 4 (`ComfyUI-TJ_NODE/assetDB`).
 
 ### 2.8 Final phase-1 status (TJ_NODE, 2026-10-06; VERIFIED on the live server with real H3 models, uncommitted)
 Verified: register image/audio/video via nodes → project → `TJ_H3Reference` (project + assets mode;
@@ -198,8 +197,7 @@ real canvas. Examples in the user's Workflows panel: `TJ_RefLib_01_Register_asse
    local), same as PromptDB; the user decides whether write/delete routes need more.
    **Web twin consequence:** if the web app calls the API cross-origin it needs that allow-list
    entry; same-origin through the tunnel works.
-6. This install: input `C:\AI\input`, output `C:\AI\output`, user `C:\AI\user` → default root
-   `C:\AI\user\tj_reflib` (still unconfirmed by the user).
+6. (superseded) default library root: see 2.9 item 4.
 Nothing for STUDIO_ONE to code until the user sends the UI design.
 
 ### 2.9 Later changes (TJ_NODE, 2026-10-07) — supersede §2.4 combo values and 2.8 item 6
@@ -214,8 +212,10 @@ Nothing for STUDIO_ONE to code until the user sends the UI design.
 3. `TJ_H3Reference` new switches: `compress_refs` (default off; halves width/height of image/video
    reference latents = 1/4 tokens; 241 s → 131 s at 512x320, length 73) and `encode_cache` (default on).
    Report adds `ref_tokens:{before,after}` when compress is on.
-4. **Library root moved** to `custom_nodes/ComfyUI-TJ_NODE_STUDIO_ONE/assetDB` (own `.gitignore` `*`),
-   per the user — the library-root open decision is resolved.
+4. **Library root: `custom_nodes/ComfyUI-TJ_NODE/assetDB`** (fixed by TJ_NODE 2bb638b; user decision: STUDIO_ONE is
+   installed by `git clone`, so it must not hold an `assetDB` folder, and it cannot run without TJ_NODE). STUDIO_ONE never
+   reads or writes the library on disk, only through `/tj_node/reflib/*`; if a path is ever needed, use `root` from
+   `GET /tj_node/reflib/info`.
 5. JS widgets "category filter" (not serialized) and Load/Refresh buttons exist only for the plain-widget
    front end.
 
@@ -398,7 +398,7 @@ UI design and are separate from these phases.
 
 ## 6. Open decisions / test plan
 
-Open (user): (library root RESOLVED in 2.9: ./assetDB); sharing the library with the image nodes' reference pickers; v1
+Open (user): (library root RESOLVED in 2.9: ComfyUI-TJ_NODE/assetDB); sharing the library with the image nodes' reference pickers; v1
 scope beyond Reference mode; STUDIO_ONE implementation go-ahead; whether per-slot settings are
 needed on the canvas; whether this file is committed. Open (between sessions): none for the node
 contract right now (overrides semantics, report [3] format and the resolve REST are settled in 2.6).
