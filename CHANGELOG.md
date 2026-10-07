@@ -2,6 +2,22 @@
 
 ---
 
+## v1.35.0 (2026-10-07)
+
+### Asset Library: "+ Add" menu and a fuller gallery import
+- The Asset tab's register button is now **+ Add ▾** with the same five entries as ComfyUI-TJ_NODE's Asset Browser:
+  **Single Image**, **Images as a set (2-10)** (each image is registered, then one set is made in the order you picked;
+  fewer than 2 or more than 10 registers nothing), **Video**, **Audio** and **From Gallery**. A file with the wrong
+  extension is refused (`x.png: not a video file`).
+- **From Gallery** (`openGalleryImport`) now has what the image, video and audio gallery pickers have: a per-tile **hide**
+  toggle and **Show** button, **Cache**, **INPUT Video / OUTPUT Video** tabs, **▶ preview** for MusicMaker tracks and a
+  folder list that refreshes while the dialog is open. Tabs renamed **H3 Image** and **H3 Video**.
+- It takes options for callers with their own limits: `maxImages`, `singleVideoAudio` and a **Register as set** button.
+  TJ_NODE's Asset Browser opens this same dialog (needs this pack installed).
+- Wrong-extension message grammar fixed (`not an image file`, `not an audio file`).
+
+---
+
 ## v1.34.0 (2026-10-07)
 
 ### MiniMax H3: 7+1 hi-res finish
