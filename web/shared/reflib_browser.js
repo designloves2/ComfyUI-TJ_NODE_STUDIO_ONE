@@ -5,6 +5,7 @@ import { C } from "../minimax/core_minimax.js";
 import { reflib, reflibError, CATEGORIES } from "./reflib_api.js";
 import { el, btn, fieldStyle } from "./reflib_dom.js";
 import { openGalleryImport } from "./reflib_gallery_import.js";
+import { loadLimits, limitWarning } from "./reflib_limits.js";
 
 
 // In / out trim of an audio asset (seconds). The numbers are the asset's library default
@@ -438,6 +439,8 @@ export function mountAssetBrowser({ height }) {
   function addToDraft(a) {
     if (!S.draft) newProject();
     if (draftItems().some(i => i.asset_id === a.id)) { say(`#${a.id} is already in the project`, true); return; }
+    const warn = limitWarning(draftItems().map(i => assetById(i.asset_id)).filter(Boolean), a);
+    if (warn) { say(warn, true); return; }
     S.draft.items.push({ asset_id: a.id, alias: "" });
     say(""); drawDraft(); drawLibrary();
   }
@@ -471,6 +474,7 @@ export function mountAssetBrowser({ height }) {
   }
 
   async function reload() {
+    loadLimits();
     const r = await reflib.list();
     if (!r.ok) {
       S.assets = [];

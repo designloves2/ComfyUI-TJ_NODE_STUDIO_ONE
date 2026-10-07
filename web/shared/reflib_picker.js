@@ -4,6 +4,7 @@
 import { C } from "../minimax/core_minimax.js";
 import { reflib, reflibError, CATEGORIES } from "./reflib_api.js";
 import { el, btn, fieldStyle } from "./reflib_dom.js";
+import { loadLimits, limitWarning } from "./reflib_limits.js";
 
 function overlay(title, width) {
   const ov = el("div", { style: { position: "fixed", inset: "0", background: "rgba(0,0,0,0.75)", zIndex: "100000",
@@ -52,6 +53,9 @@ export function openAssetPicker({ title = "Pick from the asset library", kinds =
   box.append(el("div", { style: { display: "flex", gap: "6px", flexShrink: "0" } }, search), chips, grid, footer);
 
   const allowed = (a) => !kinds || kinds.includes(a.kind);
+  // Reference clips take at most 9 images / 3 videos / 3 audio files (the same rule as the library node)
+  const limited = multi && !!kinds && kinds.includes("video");
+  loadLimits();
 
   function drawChips() {
     const cats = ["all", ...CATEGORIES];
@@ -80,12 +84,17 @@ export function openAssetPicker({ title = "Pick from the asset library", kinds =
         el("div", { text: `#${a.id} ${a.name}`, style: { padding: "3px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: "11px" } }));
       card.addEventListener("click", () => {
         if (!multi) { onPick([a.id]); close(); return; }
+        if (!on && limited) {
+          const warn = limitWarning(S.picked.map(id => S.assets.find(x => x.id === id)).filter(Boolean), a);
+          if (warn) { draw(); status.textContent = warn; status.style.color = C.err; return; }
+        }
         S.picked = on ? S.picked.filter(id => id !== a.id) : [...S.picked, a.id];
         draw();
       });
       grid.append(card);
     }
     if (!grid.children.length) grid.append(el("div", { text: "Nothing here. Register files in the Asset tab first.", style: { color: C.muted, padding: "6px" } }));
+    status.style.color = C.muted;
     status.textContent = multi ? (S.picked.length ? `${S.picked.length} selected — the order you click is the <Picture i> / <Video k> / <Audio j> order` : "Click cards to select") : "Click a card to use it";
     useBtn.disabled = !S.picked.length; useBtn.style.opacity = S.picked.length ? "1" : "0.5";
   }
