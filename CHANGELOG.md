@@ -2,6 +2,36 @@
 
 ---
 
+## v1.34.0 (2026-10-07)
+
+### MiniMax H3: 7+1 hi-res finish
+A speed/size mode for **Turbo LoRA (Basic)**: 7 of the 8 steps run at a small size, the video latent is
+scaled up, and the last step runs at the final size.
+
+- **Turbo section → 7+1 hi-res finish** checkbox (only with Turbo LoRA (Basic)). Steps are fixed at 8 (7 + 1),
+  **Canvas MP is locked**, and two fields appear: **Start MP** (default 0.5) and **Final MP** (the canvas size when
+  switched on); the panel shows the resulting sizes. Both snap to multiples of 32.
+- Stage 1 is the normal pipeline at Start MP for steps 1-7. The video latent goes through the latent upscaler
+  (`MinimaxH3LatentUpscaler3D`, target dimensions = Final MP, audio untouched). Stage 2 runs the last step on a
+  rebuilt model chain: same UNET, LoRAs and turbo LoRA, SigmaShift 12/3, then **H3 Memory Optimization** and
+  **Sol-Attn block-sparse attention** with fixed values. It needs `BlockSparseAttention` (now in the availability list).
+- Works with Text, First/Last and Reference (files and library): the keyframe / reference tokens are encoded at the
+  canvas size, so stage 2 gets its own conditioning at the final size. Audio Lock is locked again after the upscale;
+  One-Take continues from the stage-1 result; Last Frame Chain, FlashVSR / RTX / model upscale and Deblur work on the
+  final-size frames. With 7+1 off the graph is unchanged.
+- Saved presets and **Reuse Setting** carry the checkbox and both sizes (not a matching axis). Clip metadata records
+  the real final size and `hires`; **gallery cards of 7+1 clips have a light-pink border**; during the last step the
+  live preview shows "Upscaling & refining detail…".
+- Tested with real renders (text, First/Last with both frames, Reference with two characters, a two-clip One-Take).
+
+### Asset Library follow-ups
+- The **@ token list now also opens in the main clip prompt boxes**, not only in Prompt Edit (same list; nothing opens
+  for a clip without library references). Both share one lookup with a 4 s memo.
+- **Fix:** a clip with its own library assets recorded the node-wide set in its metadata, so Reuse Setting restored the
+  wrong set; it now records the set the clip rendered with.
+
+---
+
 ## v1.33.0 (2026-10-07)
 
 ### MiniMax H3: Asset Library
