@@ -51,6 +51,8 @@ import { mountImagePanel, imageSlot } from "./minimax/ui_images_minimax.js";
 import { attachLLMPanel } from "./shared/llm_panel.js";
 import { mountAssetBrowser } from "./shared/reflib_browser.js";
 import { assetRefActive } from "./shared/reflib_refpanel.js";
+import { libraryRefFor, libraryContextCached } from "./shared/reflib_llm.js";
+import { attachAtComplete } from "./shared/reflib_at.js";
 import { createPromptEditOverlay } from "./minimax/ui_prompt_edit_minimax.js";
 import { createTemplateOverlay } from "./klein/ui_prompt_templates.js";
 import { createCommonPromptOverlay } from "./minimax/ui_common_prompt_minimax.js";
@@ -1448,6 +1450,8 @@ app.registerExtension({
             persist();
           });
           ta.dataset.clipIndex = String(i);
+          // Same "@" list as Prompt Edit: this clip's library references (nothing for a file clip).
+          attachAtComplete(ta, async () => (await libraryContextCached(libraryRefFor(clipAssets(state, i), state.generationMode)))?.items || []);
           ta.addEventListener("focus", () => { ta.style.borderColor = BRAND; lastFocusedPromptTA = ta; });
           ta.addEventListener("blur",  () => ta.style.borderColor = C.border);
 
@@ -6309,6 +6313,9 @@ app.registerExtension({
                   triggerWord: l.triggerWord || "", enabled: l.enabled !== false,
                 })),
               }, rs);
+              // The library set this clip actually rendered with (its own when overriding), not
+              // the node's common one metaForVideo() reads from `rs`.
+              clipMeta.assetRef = clipState.assetRef ? { ...clipState.assetRef, ids: [...(clipState.assetRef.ids || [])] } : null;
               // An inline upscale changes the frame size metaForVideo() can't predict, so
               // re-probe the file. Deblur alone never resizes — skip the round trip for it.
               if (ran?.upscale || ran?.hires) await reconcileGeometry(clipMeta, vid);

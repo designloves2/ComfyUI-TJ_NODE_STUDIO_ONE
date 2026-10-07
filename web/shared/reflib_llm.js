@@ -14,6 +14,18 @@ export function libraryRefFor(assets, generationMode) {
   return generationMode === "reference" && assetRefActive(ref, "reference") ? ref : null;
 }
 
+// Typing "@" asks for the context on every keystroke, so one answer is kept for a few seconds per
+// reference set. Shared by the main prompt boxes and Prompt Edit.
+let memo = { key: "", at: 0, value: null };
+export async function libraryContextCached(ref) {
+  if (!ref) return null;
+  const key = JSON.stringify(ref);
+  if (memo.key === key && Date.now() - memo.at < 4000) return memo.value;
+  const value = await libraryContext(ref);
+  memo = { key, at: Date.now(), value };
+  return value;
+}
+
 /**
  * @returns null (not a library clip), { error }, or { items, text } where
  *   items = [{ token, id, kind, name, label }]  (token is "@alias" or "@<id>")

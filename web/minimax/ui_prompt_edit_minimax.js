@@ -14,7 +14,7 @@ import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
 import { openAudioGalleryPicker } from "../shared/ui_audio_gallery_picker.js";
 import { ask } from "../shared/ui_ask.js";
 import { mountLibraryRefs, emptyAssetRef, sourceToggle } from "../shared/reflib_refpanel.js";
-import { libraryRefFor, libraryContext } from "../shared/reflib_llm.js";
+import { libraryRefFor, libraryContextCached } from "../shared/reflib_llm.js";
 import { attachAtComplete } from "../shared/reflib_at.js";
 import { getMediaFiles, getSystemPrompt, uploadImage, uploadMedia, analyzeImagesNative, writeBriefNative, analyzeImagesOpenRouter, writeBriefOpenRouter, analyzeImageLlama, writeBriefLlama, analyzeImagesCustom, writeBriefCustom, listPromptSets, getPromptSet, savePromptSet, deletePromptSet, missingInputFiles } from "./api_minimax.js";
 
@@ -1359,17 +1359,8 @@ ${name}`, style: {
   }
 
   // The library references of the clip being edited, described for the LLM (null for a file clip).
-  // Cached for a few seconds: typing "@" asks for it on every keystroke.
-  let libMemo = { key: "", at: 0, value: null };
-  async function libraryContextForClip() {
-    const ref = libraryRefFor(clipAssets(state, selected), state.generationMode);
-    if (!ref) return null;
-    const key = JSON.stringify(ref);
-    if (libMemo.key === key && Date.now() - libMemo.at < 4000) return libMemo.value;
-    const value = await libraryContext(ref);
-    libMemo = { key, at: Date.now(), value };
-    return value;
-  }
+  // Cached for a few seconds (libraryContextCached): typing "@" asks for it on every keystroke.
+  const libraryContextForClip = () => libraryContextCached(libraryRefFor(clipAssets(state, selected), state.generationMode));
   attachAtComplete(editor, async () => (await libraryContextForClip())?.items || []);
 
   // Vision pass shared by Prompt Write and Prompt Refine: returns the "Image N: ..." text.
