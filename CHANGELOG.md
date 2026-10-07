@@ -2,6 +2,35 @@
 
 ---
 
+## v1.36.0 (2026-10-07)
+
+### Reference videos: MP and range settings
+A reference video went to the model at its own size (every frame becomes tokens), so a large clip
+— say 10 s of 1080p — could sit for 10+ minutes before the first step, and spill out of VRAM.
+
+- **File-slot reference videos** have an **mp** field on the tile (under in / out): the video is
+  downscaled to that many megapixels **when the clip is queued** (0 = as it is). A video that is
+  already smaller is never upscaled (the tile probes the source size and shows it). The file is not
+  changed. The same field is on a clip's own override tiles in Prompt Edit.
+- **Asset tab, video assets** get the audio asset's treatment: **in / out range** (number fields,
+  *Whole*, *▶ Range* on the player), **mp (downscale)** and **Video sound**; trimmed cards show the
+  range bar and `✂ in–out`. Saved as the asset's settings; the original file is untouched and
+  TJ_NODE's reference node applies them when the clip is queued.
+- A saved common reference video keeps its `mp` after a reload (it was dropped).
+
+### Face Refine Turbo = the main Turbo section
+- The Face Refine **Turbo** checkbox + saved-preset dropdown is replaced by the main Turbo section's
+  own choices: **None / Turbo LoRA (Basic) / Turbo LoRA (larryvrh) / SLA Turbo (lightx2v)**, each with
+  its LoRA, strength and steps (Basic lets you pick the turbo LoRA). These are stored apart, so the main
+  render's Turbo is never touched. The Steps field is read-only while a mode is on. A workflow saved
+  with the old Face Refine Turbo on opens with Turbo = None.
+
+### 7+1
+- New **Activation chunk rows** field under Start MP / Final MP: the stage-2 H3 Memory Optimization
+  chunk size (default 2048, was fixed). Saved in presets, clip metadata and Reuse Setting.
+
+---
+
 ## v1.35.0 (2026-10-07)
 
 ### Asset Library: "+ Add" menu and a fuller gallery import
