@@ -33,7 +33,7 @@ function buildRtxNode(g, ids, images, state, srcW, srcH) {
     : { method: "rtx", width: t.width, height: t.height, quality: state.rtxQuality || "ULTRA" };
   return { images: [ids.rtx, 0], upscaleUsed };
 }
-import { matchPreset, allPresets, applyPreset } from "./presets_minimax.js";
+import { matchPreset } from "./presets_minimax.js";
 
 const N = {
   unet:   "MM:unet",
@@ -89,6 +89,7 @@ const N = {
   loadFirstResize: "MM:load_first_resize",
   loadLastResize:  "MM:load_last_resize",
   refVid:   (i) => `MM:refvid_${i}`,
+  refVidResize: (i) => `MM:refvid_resize_${i}`,
   refAud:   (i) => `MM:refaud_${i}`,
   refAudTrim: (i) => `MM:refaud_trim_${i}`,
   audioLock:  "MM:audio_lock",
@@ -335,7 +336,7 @@ function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio)
   g[N.hrMem] = { class_type: "H3MemoryOptimization", inputs: {
     model: [N.hrShift, 0],
     fused_qkv: "auto", preserve_precision: true, embedding_memory_mode: "Auto",
-    mlp_memory: "auto", chunk_rows: 2048, precision_mode: "Preserve native",
+    mlp_memory: "auto", chunk_rows: Math.round(state.hiresChunkRows ?? 2048), precision_mode: "Preserve native",
     qkv_streaming_mode: "Forced", kitchen_v_memory_mode: "Lower VRAM (slower)",
   }};
   g[N.hrSparse] = { class_type: "BlockSparseAttention", inputs: {
@@ -737,7 +738,11 @@ function buildConditioning(g, state, promptText, width, height, frames, opts, av
           skip_first_frames: skip,
           select_every_nth: 1,
         }};
-        inputs[`ref_videos.ref_video_${i}`] = [N.refVid(i), 0];
+        // Downscale to v.mp megapixels (never upscale: skipped when the probed source is already
+        // smaller). Without this the video keeps its own size and every frame becomes tokens.
+        const tooBig = !v.srcW || !v.srcH || v.srcW * v.srcH > v.mp * 1e6;
+        inputs[`ref_videos.ref_video_${i}`] = v.mp > 0 && tooBig
+          ? resizeToMp(g, N.refVidResize(i), [N.refVid(i), 0], v.mp) : [N.refVid(i), 0];
         if (v.withAudio !== false) {
           inputs[`ref_video_audios.ref_video_audio_${i}`] = [N.refVid(i), 2];
         }
@@ -1343,18 +1348,21 @@ export function buildFaceRefineGraph(state, avail, opts = {}) {
   if (useCustomModel && (!clipFile || clipFile === "none"))
     throw new Error("Face Refine: set its own text encoder in ⚙ Settings → FaceRefine Model (or turn off 'use a separate model').");
   const refState = { ...state, generationMode: "reference", unetReference: unetFile };
-  // Face Refine's OWN turbo switch (§18) — independent of the main render's turboMode.
-  // OFF: force "none" here regardless of what the main generation modes have set, so no
-  // turbo LoRA leaks in by accident. ON: apply the chosen saved preset's full accel
-  // recipe onto refState (a shallow copy — the real `state`/main render is untouched).
-  if (state.frTurboOn) {
-    const entries = allPresets(Array.isArray(state.userPresets) ? state.userPresets : []);
-    const preset = entries.find(p => p.id === state.frTurboPreset) || entries.find(p => p.turbo && p.turbo !== "none");
-    if (preset) applyPreset(refState, preset);
-    else refState.turboMode = "none";
-  } else {
-    refState.turboMode = "none";
-  }
+  // Face Refine's OWN turbo settings — the same choices as the main Turbo section (None / Turbo LoRA
+  // (Basic) / larryvrh / SLA), independent of the main render's. refState is a shallow copy, so the
+  // real `state` is untouched; Face Refine always runs Reference-style, hence the Reference LoRA slots.
+  refState.turboMode = state.frTurboMode || "none";
+  refState.pddFileReference = state.frPddFile;
+  refState.pddNfe = state.frPddNfe;
+  refState.pddLoraStrength = state.frPddLoraStrength;
+  refState.turboLoraReference = state.frTurboLora;
+  refState.turboLoraStrength = state.frTurboLoraStrength;
+  refState.turboSteps = state.frTurboSteps;
+  refState.turboLoraLowVram = state.frTurboLoraLowVram;
+  refState.slaTurboLora = state.frSlaTurboLora;
+  refState.slaTurboStrength = state.frSlaTurboStrength;
+  refState.slaTurboSteps = state.frSlaTurboSteps;
+  refState.hiresFinish = false;   // 7+1 is a clip-render mode
   const modelLink0 = buildModelChain(g, refState, avail);
   g[N.clip] = String(clipFile || "").toLowerCase().endsWith(".gguf")
     ? { class_type: "CLIPLoaderGGUF", inputs: { clip_name: clipFile, type: "minimax" } }

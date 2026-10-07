@@ -1035,8 +1035,18 @@ export function defaultState(saved) {
     // Face Refine's OWN turbo switch — independent of the main render's turboMode (see
     // SPEC_MINIMAX_H3_FACE_REFINE.md §18). OFF (default): no turbo LoRA, frSteps is the
     // real step count. ON: applies the named saved preset's full accel recipe.
-    frTurboOn: saved.frTurboOn ?? false,
-    frTurboPreset: saved.frTurboPreset || "",   // a preset id from allPresets(), e.g. "u:PDD-8step"
+    frTurboMode: saved.frTurboMode || "none",
+    // The same choices as the main Turbo section, kept apart so Face Refine never changes the main render's.
+    frPddFile:         saved.frPddFile         || "none",
+    frPddNfe:          String(saved.frPddNfe ?? "8"),
+    frPddLoraStrength: saved.frPddLoraStrength ?? 1.0,
+    frTurboLora:         saved.frTurboLora         || "none",
+    frTurboLoraStrength: saved.frTurboLoraStrength ?? 1.0,
+    frTurboSteps:        saved.frTurboSteps        ?? 4,
+    frTurboLoraLowVram:  !!saved.frTurboLoraLowVram,
+    frSlaTurboLora:     saved.frSlaTurboLora     || "none",
+    frSlaTurboStrength: saved.frSlaTurboStrength ?? 1.0,
+    frSlaTurboSteps:    saved.frSlaTurboSteps    ?? 6,
 
     accelMode:      saved.accelMode      || "solattn",   // legacy — kept only so old
                                                          // workflows can be migrated below
@@ -1051,6 +1061,7 @@ export function defaultState(saved) {
     hiresFinish:  !!saved.hiresFinish,
     hiresStartMp: saved.hiresStartMp ?? 0.5,
     hiresFinalMp: saved.hiresFinalMp ?? saved.megapixels ?? 1.0,
+    hiresChunkRows: saved.hiresChunkRows ?? 2048,   // H3 Memory Optimization "Activation chunk rows" of the 7+1 last step
     clipFrames:  saved.clipFrames  ?? DEFAULT_FRAMES,
     clipLengthCustom:    !!saved.clipLengthCustom,
     clipLengthCustomSec: saved.clipLengthCustomSec ?? framesToSeconds(DEFAULT_FRAMES),
@@ -1110,6 +1121,8 @@ export function defaultState(saved) {
     // — the trained window for a reference video is ~2-15s, so clipping matters.
     refVideos: Array.isArray(saved.refVideos) ? saved.refVideos.slice(0, 3).map(v => ({
       file: v.file || "", start: v.start ?? 0, end: v.end ?? 5, withAudio: v.withAudio !== false,
+      // mp = downscale on queue; srcW/srcH = the probed size that stops it from upscaling a smaller clip
+      mp: v.mp ?? 0, srcW: v.srcW ?? 0, srcH: v.srcH ?? 0,
     })) : [],
     refAudios: Array.isArray(saved.refAudios) ? saved.refAudios.slice(0, 3).map(a => ({
       file: a.file || "", start: a.start ?? 0, end: a.end ?? 5,

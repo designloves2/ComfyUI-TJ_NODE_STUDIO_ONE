@@ -3148,30 +3148,70 @@ app.registerExtension({
         // saved preset's full accel recipe (turbo LoRA + its trained step count) — the
         // Steps field is ignored while it's on, since a turbo LoRA's step count is not a
         // preference (SPEC_MINIMAX_H3_FACE_REFINE.md §17-B/§18).
-        const frUserPresets = Array.isArray(state.userPresets) ? state.userPresets : [];
-        const frPresetEntries = allPresets(frUserPresets).filter(p => p.turbo && p.turbo !== "none");
+        // Same choices as the main Turbo section: None / Turbo LoRA (Basic) / larryvrh / SLA, each with
+        // its own LoRA, strength and steps — kept in fr* keys so the main render's Turbo is untouched.
+        const frMode = state.frTurboMode || "none";
+        const frNote = (t) => el("div", { text: t, style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } });
         const frTurboRow = [
-          checkboxRow("Turbo", !!state.frTurboOn, v => { state.frTurboOn = v; persist(); renderLeft(); }),
+          label("Turbo"),
+          select(TURBO_MODES.map(t => ({ value: t.key, label: t.label })), frMode,
+            v => { state.frTurboMode = v; persist(); renderLeft(); }),
         ];
-        if (state.frTurboOn) {
-          if (frPresetEntries.length) {
-            const curId = state.frTurboPreset || frPresetEntries[0].id;
-            frTurboRow.push(select(frPresetEntries.map(p => ({ value: p.id, label: p.label || p.id })),
-              curId, v => { state.frTurboPreset = v; persist(); }));
-            if (!state.frTurboPreset) { state.frTurboPreset = curId; persist(); }
-          } else {
-            frTurboRow.push(el("div", { text: "No turbo preset found — save one (with a turbo LoRA set) from the main panel's Preset menu first.",
-              style: { fontSize: "10px", color: C.warn } }));
-          }
+        const frNode = (TURBO_MODES.find(t => t.key === frMode) || {}).node;
+        if (frNode && ctx.availability && Object.keys(ctx.availability).length && !ctx.availability[frNode]) {
+          frTurboRow.push(el("div", { html: `⚠ <code>${frNode}</code> not installed — this option is skipped at run time.`,
+            style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
         }
+        if (frMode === "pdd") {
+          frTurboRow.push(
+            label("Turbo LoRA"),
+            loraSelect(frLoraOpts, state.frPddFile || "none", v => { state.frPddFile = v; persist(); renderLeft(); }).el,
+            row([
+              col([label("steps"), numberField(Number(state.frPddNfe) || 8,
+                v => { state.frPddNfe = String(Math.max(1, Math.round(v))); persist(); renderLeft(); }, 1)]),
+              col([label("lora strength"), numberField(state.frPddLoraStrength ?? 1.0,
+                v => { state.frPddLoraStrength = v; persist(); }, 0.05)]),
+            ]));
+          if (!state.frPddFile || state.frPddFile === "none")
+            frTurboRow.push(el("div", { text: "⚠ No turbo LoRA set — turbo is skipped.", style: { fontSize: "10px", color: C.warn } }));
+        } else if (frMode === "larryvrh") {
+          frTurboRow.push(
+            label("Turbo LoRA"),
+            loraSelect(frLoraOpts, state.frTurboLora || "none", v => { state.frTurboLora = v; persist(); renderLeft(); }).el,
+            row([
+              col([label("strength"), numberField(state.frTurboLoraStrength ?? 1.0,
+                v => { state.frTurboLoraStrength = v; persist(); }, 0.05)]),
+              col([label("turbo steps"), numberField(state.frTurboSteps ?? 4,
+                v => { state.frTurboSteps = Math.max(1, Math.round(v)); persist(); renderLeft(); }, 1)]),
+            ]),
+            checkboxRow("Low VRAM turbo load", !!state.frTurboLoraLowVram, v => { state.frTurboLoraLowVram = v; persist(); }));
+          if (!state.frTurboLora || state.frTurboLora === "none")
+            frTurboRow.push(el("div", { text: "⚠ No turbo LoRA set — turbo is skipped.", style: { fontSize: "10px", color: C.warn } }));
+        } else if (frMode === "lightx2v") {
+          frTurboRow.push(
+            label("SLA turbo LoRA"),
+            loraSelect(frLoraOpts, state.frSlaTurboLora || "none", v => { state.frSlaTurboLora = v; persist(); renderLeft(); }).el,
+            row([
+              col([label("strength"), numberField(state.frSlaTurboStrength ?? 1.0,
+                v => { state.frSlaTurboStrength = v; persist(); }, 0.05)]),
+              col([label("steps"), numberField(state.frSlaTurboSteps ?? 6,
+                v => { state.frSlaTurboSteps = Math.max(1, Math.round(v)); persist(); renderLeft(); }, 1)]),
+            ]),
+            frNote("An ordinary LoRA distilled against the SLA kernel; H3 SLA Attention is applied with it."));
+          if (!state.frSlaTurboLora || state.frSlaTurboLora === "none")
+            frTurboRow.push(el("div", { text: "⚠ No SLA turbo LoRA set — turbo is skipped.", style: { fontSize: "10px", color: C.warn } }));
+        }
+        const frTurboSteps = frMode === "pdd" ? Number(state.frPddNfe) || 8
+          : frMode === "larryvrh" ? state.frTurboSteps ?? 4 : frMode === "lightx2v" ? state.frSlaTurboSteps ?? 6 : null;
         leftPanel.appendChild(panel([
           label("Denoise"),
           row([col(frTurboRow)]),
           row([
-            col([label(state.frTurboOn ? "Steps (fixed by the turbo preset)" : "Steps"),
+            col([label(frMode !== "none" ? "Steps (set by Turbo)" : "Steps"),
               (() => {
-                const nf = numberField(state.frSteps ?? 8, v => { state.frSteps = Math.max(1, Math.round(v)); persist(); }, 1);
-                if (state.frTurboOn) { nf.disabled = true; nf.style.opacity = "0.5"; }
+                const nf = numberField(frMode !== "none" ? frTurboSteps : (state.frSteps ?? 8),
+                  v => { state.frSteps = Math.max(1, Math.round(v)); persist(); }, 1);
+                if (frMode !== "none") { nf.disabled = true; nf.style.opacity = "0.5"; }
                 return nf;
               })()]),
             col([label("Base denoise"), numberField(state.frDenoise ?? 0.40, v => { state.frDenoise = Math.min(1, Math.max(0.01, v)); persist(); }, 0.01)]),
@@ -4549,6 +4589,8 @@ app.registerExtension({
                     col([label("Final MP"), numberField(state.hiresFinalMp ?? 1.0,
                       v => { state.hiresFinalMp = Math.max(0.1, v); persist(); hiresLine.textContent = hiresText(); refreshPlan(); }, 0.1)]),
                   ]),
+                  col([label("Activation chunk rows"), numberField(state.hiresChunkRows ?? 2048,
+                    v => { state.hiresChunkRows = Math.max(256, Math.round(v)); persist(); }, 256)]),
                   hiresLine,
                 ] : []),
               );
@@ -5525,7 +5567,7 @@ app.registerExtension({
           aspect: st.aspect,
           megapixels: st.megapixels,
           hiresFinish: hiresActive(st, ctx.availability),
-          hiresStartMp: st.hiresStartMp, hiresFinalMp: st.hiresFinalMp,
+          hiresStartMp: st.hiresStartMp, hiresFinalMp: st.hiresFinalMp, hiresChunkRows: st.hiresChunkRows,
           frames: st.clipFrames,
           steps: st.steps,
           sampler: st.sampler,
@@ -6626,6 +6668,7 @@ app.registerExtension({
         state.hiresFinish = !!meta.hiresFinish;
         if (meta.hiresStartMp != null) state.hiresStartMp = meta.hiresStartMp;
         if (meta.hiresFinalMp != null) state.hiresFinalMp = meta.hiresFinalMp;
+        if (meta.hiresChunkRows != null) state.hiresChunkRows = meta.hiresChunkRows;
         if (meta.frames) { state.clipFrames = meta.frames; state.clipLengthCustom = false; }
         if (meta.steps != null) state.steps = meta.steps;
         if (meta.sampler) state.sampler = meta.sampler;

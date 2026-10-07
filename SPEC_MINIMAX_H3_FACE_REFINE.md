@@ -765,3 +765,19 @@ only which face is numbered 0 ... re-renders cards from this and never re-scans"
 `nodes.py`)을 나란히 놓고 랭킹 함수 호출부를 직접 비교하고 나서야 찾았다. 이 버그처럼
 "프리뷰와 결과가 다르다"류는 두 코드 경로가 같은 입력을 같은 기준으로 해석하는지부터
 확인하는 게 맞는 접근이었다.
+
+## §18-B Turbo = the same choices as the main Turbo section (supersedes the preset picker above)
+
+The Face Refine **Turbo** checkbox + saved-preset dropdown (`frTurboOn`, `frTurboPreset`) is gone. The Denoise panel now has the
+main Turbo section's own select — **None / Turbo LoRA (Basic) / Turbo LoRA (larryvrh) / SLA Turbo (lightx2v)** — with the same
+fields, kept in separate `fr*` keys so the main render's Turbo is never touched:
+
+- Basic (`pdd`): `frPddFile` (one LoRA picker, Reference slot), `frPddNfe` (steps, default 8), `frPddLoraStrength`.
+- larryvrh: `frTurboLora`, `frTurboLoraStrength`, `frTurboSteps` (4), `frTurboLoraLowVram`.
+- lightx2v: `frSlaTurboLora`, `frSlaTurboStrength`, `frSlaTurboSteps` (6).
+- `frTurboMode` (`none` default) selects the mode; the Steps field is read-only while a mode is on (shows the mode's steps).
+
+Graph builder: right after `refState` is made, `refState.turboMode = state.frTurboMode` and the `fr*` values are copied onto the
+matching main keys (`pddFileReference`, `pddNfe`, `pddLoraStrength`, `turboLoraReference`, `turboLoraStrength`, `turboSteps`,
+`turboLoraLowVram`, `slaTurboLora/Strength/Steps`); `refState.hiresFinish = false` (7+1 does not apply). Old workflows with
+`frTurboOn: true` open with Turbo = None.

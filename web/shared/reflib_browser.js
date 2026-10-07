@@ -8,15 +8,16 @@ import { openGalleryImport } from "./reflib_gallery_import.js";
 import { loadLimits, limitWarning } from "./reflib_limits.js";
 
 
-// In / out trim of an audio asset (seconds). The numbers are the asset's library default
-// (settings.start / settings.end; end 0 = to the end); the H3 nodes apply them when the asset is used.
-// Drag the yellow in / out handles on the waveform, drag the lit range to move it, click outside to jump
-// the nearest handle, double-click to reset. The number fields follow every drag and the waveform
-// follows every typed value.
-function audioTrimEditor(a, f, src) {
+// In / out trim of an audio or video asset (seconds). The numbers are the asset's library default
+// (settings.start / settings.end; end 0 = to the end); the H3 nodes apply them when the asset is used
+// (the original file is never changed). Audio: drag the yellow in / out handles on the waveform, drag the
+// lit range to move it, click outside to jump the nearest handle, double-click to reset; the number
+// fields follow every drag and the waveform follows every typed value. Video: the same number fields,
+// Whole and play-range buttons on the video player (no waveform).
+function trimEditor(a, f, src, videoEl) {
   const duration = a.duration || 0;
-  const canvas = el("canvas", { width: 900, height: 160, style: {
-    width: "100%", height: "160px", background: "#101010", borderRadius: "4px", cursor: "ew-resize", touchAction: "none" } });
+  const canvas = a.kind === "audio" ? el("canvas", { width: 900, height: 160, style: {
+    width: "100%", height: "160px", background: "#101010", borderRadius: "4px", cursor: "ew-resize", touchAction: "none" } }) : null;
   const info = el("div", { style: { color: C.muted, fontSize: "11px" } });
   const num = (input) => Math.max(0, Number(input.value) || 0);
   const outOf = () => (num(f.end) > 0 ? Math.min(num(f.end), duration) : duration);
@@ -25,7 +26,7 @@ function audioTrimEditor(a, f, src) {
 
   const draw = () => {
     info.textContent = `in ${num(f.start).toFixed(2)}s  →  out ${outOf().toFixed(2)}s  (length ${Math.max(0, outOf() - num(f.start)).toFixed(2)}s of ${duration.toFixed(2)}s)`;
-    if (!duration) return;
+    if (!canvas || !duration) return;
     const g = canvas.getContext("2d"), w = canvas.width, h = canvas.height, ruler = 14;
     g.clearRect(0, 0, w, h);
     const x0 = (num(f.start) / duration) * w, x1 = (outOf() / duration) * w;
@@ -53,52 +54,54 @@ function audioTrimEditor(a, f, src) {
     if (playhead != null) { g.fillStyle = "#ff5a5a"; g.fillRect((playhead / duration) * w - 1, 0, 2, h - ruler); }
   };
 
-  reflib.waveform(a.id).then(r => { if (r.ok) { peaks = r.peaks; draw(); } });
-  const rect = () => canvas.getBoundingClientRect();
-  const timeAt = (e) => Math.min(1, Math.max(0, (e.clientX - rect().left) / rect().width)) * duration;
-  const hit = (e) => {
-    const r = rect(), x = e.clientX - r.left;
-    const sx = (num(f.start) / duration) * r.width, ex = (outOf() / duration) * r.width;
-    if (Math.abs(x - sx) <= 10) return "start";
-    if (Math.abs(x - ex) <= 10) return "end";
-    return x > sx && x < ex ? "move" : "new";
-  };
-  const setStart = (t) => { f.start.value = round(Math.min(Math.max(0, t), Math.max(0, outOf() - 0.05))); };
-  const setEnd = (t) => { const v = round(Math.max(t, num(f.start) + 0.05)); f.end.value = v >= duration - 0.01 ? 0 : v; };
-  let drag = null;
-  canvas.addEventListener("pointerdown", (e) => {
-    if (!duration) return;
-    let mode = hit(e);
-    const t = timeAt(e);
-    if (mode === "new") mode = t < num(f.start) ? "start" : "end";
-    drag = { mode, t0: t, s0: num(f.start), len: outOf() - num(f.start) };
-    canvas.setPointerCapture(e.pointerId);
-    canvas.dispatchEvent(new PointerEvent("pointermove", { clientX: e.clientX, pointerId: e.pointerId }));
-  });
-  canvas.addEventListener("pointermove", (e) => {
-    if (!drag) { canvas.style.cursor = { start: "ew-resize", end: "ew-resize", move: "grab", new: "crosshair" }[hit(e)]; return; }
-    const t = timeAt(e);
-    if (drag.mode === "start") setStart(t);
-    else if (drag.mode === "end") setEnd(t);
-    else {
-      const start = Math.min(Math.max(0, drag.s0 + (t - drag.t0)), duration - drag.len);
-      f.start.value = round(start);
-      const out = round(start + drag.len);
-      f.end.value = out >= duration - 0.01 ? 0 : out;
-    }
-    draw();
-  });
-  const release = () => { drag = null; };
-  canvas.addEventListener("pointerup", release);
-  canvas.addEventListener("pointercancel", release);
-  canvas.addEventListener("dblclick", () => { f.start.value = 0; f.end.value = 0; draw(); });
+  if (canvas) {
+    reflib.waveform(a.id).then(r => { if (r.ok) { peaks = r.peaks; draw(); } });
+    const rect = () => canvas.getBoundingClientRect();
+    const timeAt = (e) => Math.min(1, Math.max(0, (e.clientX - rect().left) / rect().width)) * duration;
+    const hit = (e) => {
+      const r = rect(), x = e.clientX - r.left;
+      const sx = (num(f.start) / duration) * r.width, ex = (outOf() / duration) * r.width;
+      if (Math.abs(x - sx) <= 10) return "start";
+      if (Math.abs(x - ex) <= 10) return "end";
+      return x > sx && x < ex ? "move" : "new";
+    };
+    const setStart = (t) => { f.start.value = round(Math.min(Math.max(0, t), Math.max(0, outOf() - 0.05))); };
+    const setEnd = (t) => { const v = round(Math.max(t, num(f.start) + 0.05)); f.end.value = v >= duration - 0.01 ? 0 : v; };
+    let drag = null;
+    canvas.addEventListener("pointerdown", (e) => {
+      if (!duration) return;
+      let mode = hit(e);
+      const t = timeAt(e);
+      if (mode === "new") mode = t < num(f.start) ? "start" : "end";
+      drag = { mode, t0: t, s0: num(f.start), len: outOf() - num(f.start) };
+      canvas.setPointerCapture(e.pointerId);
+      canvas.dispatchEvent(new PointerEvent("pointermove", { clientX: e.clientX, pointerId: e.pointerId }));
+    });
+    canvas.addEventListener("pointermove", (e) => {
+      if (!drag) { canvas.style.cursor = { start: "ew-resize", end: "ew-resize", move: "grab", new: "crosshair" }[hit(e)]; return; }
+      const t = timeAt(e);
+      if (drag.mode === "start") setStart(t);
+      else if (drag.mode === "end") setEnd(t);
+      else {
+        const start = Math.min(Math.max(0, drag.s0 + (t - drag.t0)), duration - drag.len);
+        f.start.value = round(start);
+        const out = round(start + drag.len);
+        f.end.value = out >= duration - 0.01 ? 0 : out;
+      }
+      draw();
+    });
+    const release = () => { drag = null; };
+    canvas.addEventListener("pointerup", release);
+    canvas.addEventListener("pointercancel", release);
+    canvas.addEventListener("dblclick", () => { f.start.value = 0; f.end.value = 0; draw(); });
+  }
 
-  const player = new Audio(src);
+  const player = a.kind === "audio" ? new Audio(src) : videoEl;
   let guard = null;
   const stopPlay = () => { player.pause(); if (guard) player.removeEventListener("timeupdate", guard); guard = null; playhead = null; draw(); };
   const play = btn("▶ Range", () => {
     stopPlay();
-    player.currentTime = num(f.start); player.play();
+    player.currentTime = num(f.start); player.muted = false; player.play();
     guard = () => { playhead = player.currentTime; if (player.currentTime >= outOf()) stopPlay(); else draw(); };
     player.addEventListener("timeupdate", guard);
   }, { padding: "3px 8px" });
@@ -123,7 +126,7 @@ function audioTrimEditor(a, f, src) {
   const lbl = (t) => el("span", { text: t, style: { color: C.muted, whiteSpace: "nowrap" } });
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "4px", border: `1px solid ${C.border}`,
     borderRadius: "6px", padding: "6px", background: C.bg2 } },
-    canvas,
+    ...(canvas ? [canvas] : []),
     el("div", { style: { display: "flex", gap: "4px", alignItems: "center" } }, lbl("in(s)"), f.start, lbl("out(s)"), f.end, whole, play, stopBtn),
     info);
   wrap.stopPlay = stopPlay;
@@ -131,17 +134,17 @@ function audioTrimEditor(a, f, src) {
   return wrap;
 }
 
-// Cards of a trimmed audio asset show the kept part: the waveform is dimmed outside the range, a yellow
-// range bar runs along the bottom of the picture and an "in–out" tag sits in the corner.
-function audioCutOverlay(a) {
+// Cards of a trimmed audio / video asset show the kept part: audio dims the waveform outside the range,
+// both get a yellow range bar along the bottom of the picture and an "in–out" tag in the corner.
+function cutOverlay(a) {
   const start = a.settings?.start || 0, end = a.settings?.end || 0;
-  if (a.kind !== "audio" || !a.duration || (!start && !end)) return { nodes: [], title: "" };
+  if ((a.kind !== "audio" && a.kind !== "video") || !a.duration || (!start && !end)) return { nodes: [], title: "" };
   const out = end > 0 ? Math.min(end, a.duration) : a.duration;
   const l = (start / a.duration) * 100, r = (out / a.duration) * 100;
   const dim = (css) => el("div", { style: { position: "absolute", top: "0", bottom: "0", background: "rgba(0,0,0,0.72)", pointerEvents: "none", ...css } });
   return {
     nodes: [
-      dim({ left: "0", width: `${l}%` }), dim({ left: `${r}%`, right: "0" }),
+      ...(a.kind === "audio" ? [dim({ left: "0", width: `${l}%` }), dim({ left: `${r}%`, right: "0" })] : []),
       el("div", { style: { position: "absolute", left: "0", right: "0", bottom: "0", height: "6px", background: "rgba(0,0,0,0.65)", pointerEvents: "none" } },
         el("i", { style: { position: "absolute", top: "0", bottom: "0", left: `${l}%`, width: `${r - l}%`, background: "#ffcf5a" } })),
       el("div", { text: `✂ ${start.toFixed(1)}–${out.toFixed(1)}s`, style: { position: "absolute", top: "3px", right: "3px",
@@ -274,7 +277,7 @@ export function mountAssetBrowser({ height }) {
       if (S.category !== "all" && a.category !== S.category) continue;
       if (S.query && !`${a.name} ${(a.tags || []).join(" ")} ${a.id}`.toLowerCase().includes(S.query)) continue;
       const on = a.id === S.id;
-      const cut = audioCutOverlay(a);
+      const cut = cutOverlay(a);
       const card = el("div", { title: `#${a.id} ${a.name}${cut.title ? `  ·  ${cut.title}` : ""}`, style: {
         position: "relative", cursor: "pointer", borderRadius: "8px", overflow: "hidden", background: C.bg2,
         border: `1px solid ${on ? C.lime : C.border}`, boxShadow: on ? `0 0 0 1px ${C.lime}` : "none" } },
@@ -318,13 +321,18 @@ export function mountAssetBrowser({ height }) {
       mp: el("input", { type: "number", step: "0.1", min: "0", value: a.settings?.mp ?? 0, style: fieldStyle }),
       start: el("input", { type: "number", step: "0.01", min: "0", value: a.settings?.start ?? 0 }),
       end: el("input", { type: "number", step: "0.01", min: "0", value: a.settings?.end ?? 0, title: "0 = to the end" }),
+      withAudio: el("input", { type: "checkbox", checked: a.settings?.with_audio !== false }),
     };
     S.form = f;
     if (a.kind === "audio") {
-      const trim = audioTrimEditor(a, f, src);
+      const trim = trimEditor(a, f, src);
       S.stopPlay = trim.stopPlay;
       media = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } }, trim,
         el("audio", { src, controls: true, style: { width: "100%", height: "32px" } }));
+    } else if (a.kind === "video") {
+      const trim = trimEditor(a, f, src, media);
+      S.stopPlay = trim.stopPlay;
+      media = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } }, media, trim);
     }
     const facts = [`#${a.id}`, a.kind, a.width ? `${a.width}x${a.height}` : null, a.duration ? `${a.duration.toFixed(1)}s` : null,
       a.size ? `${(a.size / 1048576).toFixed(2)} MB` : null].filter(Boolean).join("  ·  ");
@@ -336,7 +344,9 @@ export function mountAssetBrowser({ height }) {
       el("div", { text: a.rel_path || `Set (${(a.members || []).length} images)`, style: { color: C.muted, fontSize: "11px" } }),
       el("div", { style: { display: "grid", gridTemplateColumns: "76px 1fr", gap: "4px 6px", alignItems: "center" } },
         lab("Name"), f.name, lab("Category"), f.category, lab("Sub"), f.sub, lab("Tags"), f.tags,
-        lab("Note"), f.note, ...(a.kind === "audio" ? [] : [lab("mp (cap)"), f.mp])),
+        lab("Note"), f.note,
+        ...(a.kind === "audio" ? [] : [lab("mp (downscale)"), f.mp]),
+        ...(a.kind === "video" ? [lab("Video sound"), f.withAudio] : [])),
       el("div", { text: used, style: { color: C.muted, fontSize: "11px" } })));
   }
 
@@ -558,13 +568,14 @@ export function mountAssetBrowser({ height }) {
     const f = S.form;
     if (S.id == null || !f) return;
     const settings = {};
-    if (S.detail.asset.kind === "audio") {
+    const kind = S.detail.asset.kind;
+    if (kind === "image" || kind === "video") settings.mp = Number(f.mp.value) || 0;
+    if (kind === "audio" || kind === "video") {
       settings.start = Math.max(0, Number(f.start.value) || 0);
       settings.end = Math.max(0, Number(f.end.value) || 0);
       if (settings.end > 0 && settings.end <= settings.start) { say("out must be later than in (0 = to the end)", true); return; }
-    } else {
-      settings.mp = Number(f.mp.value) || 0;
     }
+    if (kind === "video") settings.with_audio = f.withAudio.checked;
     const r = await reflib.update(S.id, {
       name: f.name.value, category: f.category.value, subcategory: f.sub.value,
       tags: f.tags.value.split(",").map(t => t.trim()).filter(Boolean), note: f.note.value,

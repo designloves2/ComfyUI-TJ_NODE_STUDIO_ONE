@@ -89,6 +89,17 @@ Web: add it to whatever the equivalent list is (proxy/availability route) and re
 `const HIRES_COLOR = "#ffb3d1"`; clip card border: `2px` solid HIRES_COLOR when `v.meta?.hires` and not picked and not `is_full`
 (order: picked → BRAND, is_full → STITCH_COLOR, hires → HIRES_COLOR, else C.border).
 
+## Addendum: Activation chunk rows (stage 2)
+Third field under Start MP / Final MP: **Activation chunk rows** (number, step 256, min 256, default 2048) = the stage-2
+`H3MemoryOptimization.chunk_rows` (was fixed 2048).
+- core: state default `hiresChunkRows: saved.hiresChunkRows ?? 2048`.
+- presets: `"hiresChunkRows"` appended to `RECIPE_KEYS` (after `"hiresFinalMp"`).
+- graph: `chunk_rows: Math.round(state.hiresChunkRows ?? 2048)` in the `N.hrMem` node.
+- UI (shown only while 7+1 is on): `col([label("Activation chunk rows"), numberField(state.hiresChunkRows ?? 2048, v => { state.hiresChunkRows = Math.max(256, Math.round(v)); persist(); }, 256)])`
+  placed right after the Start MP / Final MP row and before the size line. No `renderLeft()` (same scroll rule).
+- meta: `hiresChunkRows: st.hiresChunkRows` next to `hiresStartMp/hiresFinalMp` in `metaForVideo`; Reuse Setting:
+  `if (meta.hiresChunkRows != null) state.hiresChunkRows = meta.hiresChunkRows;`.
+
 ## Verified on the node (real renders, 124 frames, Start 0.4 / Final 1.0 -> 736×1344)
 Text, First/Last (real first+last images), Reference (2 images), One-Take 2 clips (seam clean), meta recorded, pink border shown.
 NOT verified: overlay text visually during a run, Audio Lock, Last Frame Chain, FlashVSR/RTX with 7+1, library (TJ_H3Reference) clips with 7+1.

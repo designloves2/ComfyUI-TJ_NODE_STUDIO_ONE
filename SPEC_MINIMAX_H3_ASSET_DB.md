@@ -262,7 +262,10 @@ with in/out handles (drag, drag the lit range, click to jump nearest handle, dou
 number fields synced both ways, "▶ range" playback with playhead, compact audio player, video in/out +
 "with audio" checkbox; cards of trimmed assets show a range bar and "✂ in–out s" tag. Asset JSON carries
 `duration`, `sample_rate`, `has_audio`, `settings.start/end`.
-**STUDIO_ONE TODO (not started):** the Asset tab viewer should get the same trim controls for audio/video.
+**STUDIO_ONE:** the Asset tab viewer has the audio waveform trim and, for video, the same in/out fields + "Whole" /
+"▶ Range" on the player, **mp (downscale)** and **Video sound** (`settings.with_audio`); a trimmed video card shows the range
+bar and "✂ in–out s". Saved through `assets/{id}/update`; the original file is untouched and `TJ_H3Reference` applies
+start/end/mp/with_audio when the clip is queued (verified with `resolve`: `attached[].settings`).
 Also pending at TJ_NODE: `TJ_CustomLLM` ("LLM (TJ)") node, routes `/tj_node/custom_llm/connect|status|presets`.
 
 ### 2.13 Name mentions (TJ_NODE, 2026-10-07; local, uncommitted)
