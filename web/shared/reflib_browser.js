@@ -519,7 +519,7 @@ export function mountAssetBrowser({ height }) {
     const category = S.category === "all" ? "etc" : S.category;
     const wanted = ACCEPT[mode].split(",");
     const bad = files.find(f => !wanted.includes("." + f.name.split(".").pop().toLowerCase()));
-    if (bad) { say(`${bad.name}: not a${mode === "set" ? "n image" : mode === "audio" ? "n audio" : ` ${mode}`} file`, true); return; }
+    if (bad) { say(`${bad.name}: not a${mode === "set" || mode === "image" ? "n image" : mode === "audio" ? "n audio" : " video"} file`, true); return; }
     if (mode === "set" && (files.length < 2 || files.length > MAX_SET)) {
       say(`A set needs 2-${MAX_SET} images (${files.length} selected)`, true);
       return;
