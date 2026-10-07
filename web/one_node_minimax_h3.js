@@ -21,7 +21,7 @@ import {
   TURBO_MODES, ATTN_BACKENDS, ATTN_FORWARDS, BLOCK_CACHES, H3_OPTIMIZERS, FBC_MODES,
   attnBlockedReason, attnForwardBlockedReason, attnForwardOverlapNote, blockCacheBlockedReason,
   h3OptimizerBlockedReason, h3OptimizerOverlapNote,
-  effectiveTurbo, effectiveSteps, migrateLegacyAccel,
+  effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, migrateLegacyAccel,
   continuityModesFor, generationModesFor, configIssues, ltxUpscaleReady, ltxUpscaleMissing,
   faceRefineReady, faceRefineMissing, postprocessReady, IMAGE_GEN_MODES, imageGenSubModeReady,
   CHARSHEET_PROMPT_TEMPLATE,
@@ -388,6 +388,15 @@ app.registerExtension({
         color: "#e0a530", fontSize: "16px", fontWeight: "700",
         textShadow: "0 0 12px rgba(224,165,48,0.5)",
       }});
+      // 7+1: the last step runs on a second sampler with no live preview of its own, so the
+      // preview freezes on the 7th step's frame — this says why, same layer as the banners above.
+      const hiresBanner = el("div", { text: "Upscaling & refining detail…", style: {
+        display: "none", position: "absolute", inset: "0", zIndex: "5",
+        alignItems: "center", justifyContent: "center", textAlign: "center",
+        background: "rgba(0,0,0,0.6)", padding: "0 16px",
+        color: "#ff9ec7", fontSize: "18px", fontWeight: "700",
+        textShadow: "0 0 12px rgba(255,158,199,0.5)",
+      }});
       // Postprocess and Image Generator have no live per-step sampling preview of their
       // own either (Postprocess is a fixed video-effects chain; Image Generator's H3
       // sampling is too short at 8 frames to bother streaming) — same "is it doing
@@ -428,7 +437,7 @@ app.registerExtension({
         color: "#fff", border: "none", borderRadius: "4px", width: "22px", height: "22px",
         cursor: "pointer", fontSize: "12px", padding: "0", display: "none",
       }});
-      previewBox.append(placeholder, frDetectBanner, fvsrBanner, busyBanner, previewImg, previewVid, resultVid, badge, fsBtn, compareBtn);
+      previewBox.append(placeholder, frDetectBanner, fvsrBanner, hiresBanner, busyBanner, previewImg, previewVid, resultVid, badge, fsBtn, compareBtn);
 
       let lastResultURL = null;
       // Captured in showResultVideo() at the moment a result becomes the shown preview —
@@ -894,7 +903,7 @@ app.registerExtension({
         lastResultURL = url;
         modeResultCache[resultModeKey()] = { kind: "image", url, final };
         if (final) previewLocked = true;
-        placeholder.style.display = "none"; frDetectBanner.style.display = "none"; fvsrBanner.style.display = "none";
+        placeholder.style.display = "none"; frDetectBanner.style.display = "none"; fvsrBanner.style.display = "none"; hiresBanner.style.display = "none";
         hideBusyBanner();
         try { previewVid.pause(); } catch {}
         previewVid.style.display = "none";
@@ -909,7 +918,7 @@ app.registerExtension({
         if (final) previewLocked = true;
         placeholder.style.display = "none";
         frDetectBanner.style.display = "none";
-        fvsrBanner.style.display = "none";
+        fvsrBanner.style.display = "none"; hiresBanner.style.display = "none";
         hideBusyBanner();
         previewImg.style.display = "none";
         try { previewVid.pause(); } catch {}
@@ -4276,8 +4285,15 @@ app.registerExtension({
           row([
             col([label("Aspect"), select(ASPECTS.map(a => ({ value: a.label, label: a.label })), state.aspect,
               v => { state.aspect = v; persist(); refreshPlan(); })]),
-            col([label("Megapixels"), numberField(state.megapixels ?? 1.0,
-              v => { state.megapixels = Math.max(0.1, v); persist(); refreshPlan(); }, 0.1)]),
+            col([label("Megapixels"), (() => {
+              const f = numberField(state.megapixels ?? 1.0,
+                v => { state.megapixels = Math.max(0.1, v); persist(); refreshPlan(); }, 0.1);
+              if (hiresActive(state, ctx.availability)) {
+                f.disabled = true; f.style.opacity = "0.4";
+                f.title = "7+1 hi-res finish is on — set Start / Final MP in the Turbo section.";
+              }
+              return f;
+            })()]),
           ]),
         ]));
 
@@ -4480,6 +4496,14 @@ app.registerExtension({
               );
             } else if (turboMode === "pdd") {
               const isRef = state.generationMode === "reference";
+              const hiresOn = hiresActive(state, ctx.availability);
+              // The two MP fields only change this line, so they must not rebuild the panel
+              // (a rebuild put the column back at the top while you were typing).
+              const hiresText = () => {
+                const hs = hiresSizes(state);
+                return `${hs.start.width}×${hs.start.height} → ${hs.final.width}×${hs.final.height} (×${hs.scale})`;
+              };
+              const hiresLine = el("div", { text: hiresText(), style: { fontSize: "10px", color: C.muted } });
               // Core-native PDD (v0.35.0+) loads the Acc file as a plain LoRA, so it comes
               // from the normal loras list — not the pdd_acc folder the old pack registered.
               const pddOpts = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
@@ -4498,11 +4522,31 @@ app.registerExtension({
                   loraSelect(pddOpts, state.pddFileReference || "none",
                     v => { state.pddFileReference = v; rememberLora({ pdd_file_reference: v }); }).el]),
                 row([
-                  col([label("steps"), numberField(Number(state.pddNfe) || 8,
-                    v => { state.pddNfe = String(Math.max(1, Math.round(v))); persist(); renderLeft(); }, 1)]),
+                  col([label("steps"), (() => {
+                    const f = numberField(hiresOn ? 8 : (Number(state.pddNfe) || 8),
+                      v => { state.pddNfe = String(Math.max(1, Math.round(v))); persist(); renderLeft(); }, 1);
+                    if (hiresOn) { f.disabled = true; f.style.opacity = "0.4"; }
+                    return f;
+                  })()]),
                   col([label("lora strength"), numberField(state.pddLoraStrength ?? 1.0,
                     v => { state.pddLoraStrength = v; persist(); }, 0.05)]),
                 ]),
+                checkboxRow("7+1 hi-res finish", !!state.hiresFinish, v => {
+                  state.hiresFinish = v;
+                  if (v) state.hiresFinalMp = state.megapixels ?? 1.0;   // start from what the canvas was
+                  persist(); renderLeft(); refreshPlan();
+                }, { title: "Run 7 of the 8 steps small, scale the latent up, then run the last step at full size." }),
+                el("div", { text: "Needs the 8-step turbo LoRA above. Steps are fixed at 8 (7 small + 1 large).",
+                  style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+                ...(hiresOn ? [
+                  row([
+                    col([label("Start MP"), numberField(state.hiresStartMp ?? 0.5,
+                      v => { state.hiresStartMp = Math.max(0.1, v); persist(); hiresLine.textContent = hiresText(); refreshPlan(); }, 0.1)]),
+                    col([label("Final MP"), numberField(state.hiresFinalMp ?? 1.0,
+                      v => { state.hiresFinalMp = Math.max(0.1, v); persist(); hiresLine.textContent = hiresText(); refreshPlan(); }, 0.1)]),
+                  ]),
+                  hiresLine,
+                ] : []),
               );
             } else if (turboMode === "lightx2v") {
               rows.push(
@@ -5466,7 +5510,7 @@ app.registerExtension({
       // What the gallery needs to show a clip and to put its prompt back into the
       // editor. Kept flat and small — this is written next to every video file.
       function metaForVideo(promptText, extra = {}, st = state) {
-        const { width, height } = resolveResolution(st.aspect, st.megapixels);
+        const { width, height } = hiresActive(st, ctx.availability) ? hiresSizes(st).final : resolveResolution(st.aspect, st.megapixels);
         return {
           v: 1,
           prompt: String(promptText || ""),
@@ -5476,6 +5520,8 @@ app.registerExtension({
           mode: st.generationMode || "t2v",
           aspect: st.aspect,
           megapixels: st.megapixels,
+          hiresFinish: hiresActive(st, ctx.availability),
+          hiresStartMp: st.hiresStartMp, hiresFinalMp: st.hiresFinalMp,
           frames: st.clipFrames,
           steps: st.steps,
           sampler: st.sampler,
@@ -6155,10 +6201,12 @@ app.registerExtension({
             const checkpointName = isOneTake ? `${self.id}_${i}` : null;
 
             const fvsrOn = clipState.upscaleMode === "flashvsr";
-            const progressNodes = fvsrOn ? [NODE_IDS.sampler, NODE_IDS.fvsr] : NODE_IDS.sampler;
+            const hiresOn = hiresActive(clipState, ctx.availability);
+            const progressNodes = [NODE_IDS.sampler, ...(hiresOn ? [NODE_IDS.hrSampler] : []), ...(fvsrOn ? [NODE_IDS.fvsr] : [])];
             const onClipProgress = (v, m, nodeId) => {
-              if (nodeId === NODE_IDS.fvsr) setFlashVSRProgress(v, m);
-              else { fvsrBanner.style.display = "none"; setStepProgress(v, m); }
+              if (nodeId === NODE_IDS.hrSampler) hiresBanner.style.display = "flex";
+              else if (nodeId === NODE_IDS.fvsr) setFlashVSRProgress(v, m);
+              else { fvsrBanner.style.display = "none"; hiresBanner.style.display = "none"; setStepProgress(v, m); }
             };
             let res;
             let mem = null;   // memory watcher for this clip; see watchMemory()
@@ -6212,7 +6260,7 @@ app.registerExtension({
                 });
               } finally { mem.stop(); }
             }
-            fvsrBanner.style.display = "none";
+            fvsrBanner.style.display = "none"; hiresBanner.style.display = "none";
             if (isOneTake) prevCheckpointName = checkpointName;
 
             // Captured once, right after the clip actually finishes — reused for both the
@@ -6247,6 +6295,7 @@ app.registerExtension({
                   // Post-decode frame ops wired into this clip's graph (null when not run).
                   deblur:  ran.deblur  || null,
                   upscale: ran.upscale || null,
+                  hires:   ran.hires   || null,
                 } : {}),
                 // Memory extremes over this clip. vramFreeMinMiB near zero is the
                 // signature of a spill: the step times balloon and nothing errors.
@@ -6262,7 +6311,7 @@ app.registerExtension({
               }, rs);
               // An inline upscale changes the frame size metaForVideo() can't predict, so
               // re-probe the file. Deblur alone never resizes — skip the round trip for it.
-              if (ran?.upscale) await reconcileGeometry(clipMeta, vid);
+              if (ran?.upscale || ran?.hires) await reconcileGeometry(clipMeta, vid);
               saveMeta(vid.filename, vid.subfolder || "", clipMeta);
 
               // "Save the un-processed clip too" — the second file the graph wrote straight
@@ -6418,7 +6467,7 @@ app.registerExtension({
             if (why) console.warn("[MMH3] underlying error:", e.message);
           }
         } finally {
-          fvsrBanner.style.display = "none";
+          fvsrBanner.style.display = "none"; hiresBanner.style.display = "none";
           delete state._extendFrom;   // one-shot: never let a stale flag stitch a later run
           // ComfyUI keeps the models resident after a prompt, so a finished run would
           // otherwise sit on the whole card until the next one. The run is over here —
@@ -6567,6 +6616,9 @@ app.registerExtension({
         }
         if (meta.aspect) state.aspect = meta.aspect;
         if (meta.megapixels != null) state.megapixels = meta.megapixels;
+        state.hiresFinish = !!meta.hiresFinish;
+        if (meta.hiresStartMp != null) state.hiresStartMp = meta.hiresStartMp;
+        if (meta.hiresFinalMp != null) state.hiresFinalMp = meta.hiresFinalMp;
         if (meta.frames) { state.clipFrames = meta.frames; state.clipLengthCustom = false; }
         if (meta.steps != null) state.steps = meta.steps;
         if (meta.sampler) state.sampler = meta.sampler;

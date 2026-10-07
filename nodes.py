@@ -3200,6 +3200,7 @@ MMH3_OPTIONAL_NODES = [
     # Image Generator (T2I/Ref2I) — 2nd-pass latent upscale between the cheap preview-res
     # first pass and the final-res decode.
     "MinimaxH3LatentUpscaler3D",
+    "BlockSparseAttention",
     # Image Generator's "Use Fizgig Latent" option (shootthesound/ComfyUI-Fizgig-H3-Still)
     "FizgigH3StillLatent", "FizgigH3StillDecode",
     # Character Sheet's grid-assembly step (buildCharacterSheetGridGraph) — batches the

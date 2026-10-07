@@ -117,9 +117,25 @@ export function effectiveTurbo(state, avail) {
   return { mode: "lightx2v", fellBack: false };
 }
 
+/**
+ * 7+1 hi-res finish: the first 7 of the 8 turbo steps run at Start MP, the latent is scaled
+ * up, and the last step refines it at Final MP. Only exists with Turbo LoRA (Basic).
+ */
+export function hiresActive(state, avail) {
+  return !!state.hiresFinish && effectiveTurbo(state, avail).mode === "pdd";
+}
+
+/** Stage-1 size, the size the latent upscaler lands on (both 32-aligned), and the ratio between them. */
+export function hiresSizes(state) {
+  const start = resolveResolution(state.aspect, state.hiresStartMp ?? 0.5);
+  const final = resolveResolution(state.aspect, state.hiresFinalMp ?? state.megapixels);
+  return { start, final, scale: Math.round(final.width / start.width * 1000) / 1000 };
+}
+
 /** Steps this run will actually sample at, given the turbo selection. */
 export function effectiveSteps(state, avail) {
   const t = effectiveTurbo(state, avail).mode;
+  if (t === "pdd" && hiresActive(state, avail)) return 8;
   if (t === "larryvrh") return Math.max(1, Math.round(state.turboSteps ?? 4));
   if (t === "lightx2v") return Math.max(1, Math.round(state.slaTurboSteps ?? 6));
   // Turbo LoRA (Basic): an ordinary step count — any turbo LoRA can be loaded, so there is
@@ -1032,6 +1048,9 @@ export function defaultState(saved) {
     // canvas / length
     aspect:      saved.aspect      || "9:16 Portrait",
     megapixels:  saved.megapixels  ?? 1.0,
+    hiresFinish:  !!saved.hiresFinish,
+    hiresStartMp: saved.hiresStartMp ?? 0.5,
+    hiresFinalMp: saved.hiresFinalMp ?? saved.megapixels ?? 1.0,
     clipFrames:  saved.clipFrames  ?? DEFAULT_FRAMES,
     clipLengthCustom:    !!saved.clipLengthCustom,
     clipLengthCustomSec: saved.clipLengthCustomSec ?? framesToSeconds(DEFAULT_FRAMES),

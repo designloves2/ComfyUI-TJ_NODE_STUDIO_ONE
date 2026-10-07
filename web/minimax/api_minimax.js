@@ -57,6 +57,7 @@ export const MMH3_OPTIONAL_NODES = [
   "TJ_SkinRetouch",
   // Image Generator (T2I/Ref2I) — 2nd-pass latent upscale (preview-res -> final-res)
   "MinimaxH3LatentUpscaler3D",
+  "BlockSparseAttention",
   // Image Generator's "Use Fizgig Latent" option — shootthesound/ComfyUI-Fizgig-H3-Still
   // (true one-frame H3 latent + a decode that doesn't band a lone frame)
   "FizgigH3StillLatent", "FizgigH3StillDecode",

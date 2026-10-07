@@ -86,6 +86,9 @@ const RECIPE_KEYS = [
   // both the save and apply side (see cloneVal below) so a preset's own array is never
   // the SAME array as the live panel's — editing one must not silently edit the other.
   "loras",
+  // 7+1 hi-res finish: the checkbox and its two sizes travel with a saved recipe, but it is
+  // not a matching axis — a built-in preset never turns it on or off.
+  "hiresFinish", "hiresStartMp", "hiresFinalMp",
 ];
 
 // Shallow-clones an array of plain objects (loras); anything else passes through as-is.

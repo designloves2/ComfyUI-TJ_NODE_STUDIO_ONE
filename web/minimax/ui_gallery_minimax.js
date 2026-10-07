@@ -21,6 +21,7 @@ const STITCH_MAX = 10;
 // visually indistinguishable (reported: "선택색상과 동일한 컬러를 사용하고 있어 선택과
 // 스티치가 구분이 잘 안됨").
 const STITCH_COLOR = "#e0a530";
+const HIRES_COLOR = "#ffb3d1";   // clips made with the 7+1 hi-res finish
 
 // Overlap (39) plus four frames of guard — see the note on the trim field below.
 const DEFAULT_STITCH_TRIM_FRAMES = ONE_TAKE_OVERLAP_FRAMES + 4;
@@ -1466,7 +1467,7 @@ export function createGalleryOverlay(state, ctx) {
       // never the video/img choice or preload — always this).
       const card = el("div", { style: {
         position: "relative",
-        background: C.bg1, border: `1px solid ${picked ? BRAND : (v.is_full ? STITCH_COLOR : C.border)}`,
+        background: C.bg1, border: `${v.meta?.hires && !picked && !v.is_full ? 2 : 1}px solid ${picked ? BRAND : (v.is_full ? STITCH_COLOR : v.meta?.hires ? HIRES_COLOR : C.border)}`,
         borderRadius: "8px", cursor: "pointer",
         display: "flex", flexDirection: "column",
         opacity: (stitchMode && !picked && stitchOrder.length >= STITCH_MAX) ? "0.4"
