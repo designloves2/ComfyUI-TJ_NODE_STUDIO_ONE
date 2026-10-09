@@ -21,9 +21,14 @@ function createImgUpload(labelText, initialFile, onUpload) {
   const img  = el("img", { style: { position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", pointerEvents: "none" }});
   img.style.display = "none";
   function setFilename(name) {
-    if (name) { img.src = `/view?filename=${encodeURIComponent(name)}&type=input&t=${Date.now()}`; img.style.display = "block"; hint.style.display = "none"; }
-    else       { img.style.display = "none"; hint.style.display = ""; }
+    if (name) { img.src = `/view?filename=${encodeURIComponent(name)}&type=input&t=${Date.now()}`; img.style.display = "block"; hint.style.display = "none"; clearBtn.style.display = "block"; }
+    else       { img.style.display = "none"; hint.style.display = ""; clearBtn.style.display = "none"; }
   }
+  // ✕ clears through the call site's own onUpload with an empty filename.
+  const clearBtn = el("button", { type: "button", text: "✕", title: "Clear", style: { position: "absolute", top: "4px", left: "4px", zIndex: "3",
+    background: "rgba(0,0,0,0.65)", color: "#fff", border: "none", borderRadius: "4px",
+    width: "22px", height: "22px", cursor: "pointer", fontSize: "11px", padding: "0", display: "none" } });
+  clearBtn.addEventListener("click", async (e) => { e.stopPropagation(); await onUpload(""); setFilename(null); });
   // Bottom-left, same spot/style every other ONE STUDIO tool's image slots use for this.
   // uploadImage() (api_anima.js) passes a string straight through unchanged, so onUpload
   // (upload then set state) works for a gallery pick too.
@@ -40,11 +45,11 @@ function createImgUpload(labelText, initialFile, onUpload) {
     });
   });
 
-  box.appendChild(hint); box.appendChild(img); box.appendChild(galleryBtn); wrap.appendChild(box);
+  box.appendChild(hint); box.appendChild(img); box.appendChild(clearBtn); box.appendChild(galleryBtn); wrap.appendChild(box);
   const inp = el("input", { type: "file", accept: "image/*", style: { display: "none" } });
   wrap.appendChild(inp);
   inp.addEventListener("change", async () => { if (inp.files[0]) { const n = await onUpload(inp.files[0]); setFilename(n); inp.value = ""; }});
-  box.addEventListener("click", (e) => { if (e.target === galleryBtn) return; inp.click(); });
+  box.addEventListener("click", (e) => { if (e.target === galleryBtn || e.target === clearBtn) return; inp.click(); });
   box.addEventListener("dragover", e => { e.preventDefault(); box.style.borderColor = C.lime; });
   box.addEventListener("dragleave", () => { box.style.borderColor = C.border; });
   box.addEventListener("drop", async e => { e.preventDefault(); box.style.borderColor = C.border; const f = e.dataTransfer.files[0]; if (f) { const n = await onUpload(f); setFilename(n); }});

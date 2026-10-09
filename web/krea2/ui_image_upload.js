@@ -36,11 +36,11 @@ export function createImageUpload(labelText, initialFile, onUpload,
     } else warnEl.style.display = "none";
   });
 
-  const clearBtn = onClear ? el("button", { type: "button", text: "✕", title: "Clear", style: {
+  const clearBtn = el("button", { type: "button", text: "✕", title: "Clear", style: {
     position: "absolute", top: "4px", right: "4px", zIndex: "3",
     background: "rgba(0,0,0,0.65)", color: "#fff", border: "none", borderRadius: "4px",
     width: "20px", height: "20px", cursor: "pointer", fontSize: "11px", padding: "0", display: "none",
-  }}) : null;
+  }});
 
   let currentFile = null;
   function setFilename(name) {
@@ -48,11 +48,11 @@ export function createImageUpload(labelText, initialFile, onUpload,
     if (name) {
       img.src = `/view?filename=${encodeURIComponent(name)}&type=input&t=${Date.now()}`;
       img.style.display = "block"; hint.style.display = "none";
-      if (clearBtn) clearBtn.style.display = "block";
+      clearBtn.style.display = "block";
     } else {
       img.style.display = "none"; hint.style.display = "";
       if (warnEl) warnEl.style.display = "none";
-      if (clearBtn) clearBtn.style.display = "none";
+      clearBtn.style.display = "none";
     }
   }
 
@@ -75,7 +75,7 @@ export function createImageUpload(labelText, initialFile, onUpload,
   });
 
   box.append(hint, img);
-  if (clearBtn) box.appendChild(clearBtn);
+  box.appendChild(clearBtn);
   box.appendChild(galleryBtn);
   wrap.appendChild(box);
   if (warnEl) wrap.appendChild(warnEl);
@@ -86,10 +86,11 @@ export function createImageUpload(labelText, initialFile, onUpload,
     if (inp.files[0]) { const n = await onUpload(inp.files[0]); setFilename(n); inp.value = ""; }
   });
   box.addEventListener("click", (e) => {
-    if ((clearBtn && e.target === clearBtn) || e.target === galleryBtn) return;
+    if (e.target === clearBtn || e.target === galleryBtn) return;
     inp.click();
   });
-  if (clearBtn) clearBtn.addEventListener("click", (e) => { e.stopPropagation(); setFilename(null); onClear(); });
+  // Without an onClear the card clears through its own onUpload handler (an empty filename).
+  clearBtn.addEventListener("click", async (e) => { e.stopPropagation(); setFilename(null); if (onClear) onClear(); else await onUpload(""); });
   box.addEventListener("dragover", e => { e.preventDefault(); box.style.borderColor = C.lime; });
   box.addEventListener("dragleave", () => { box.style.borderColor = C.border; });
   box.addEventListener("drop", async e => {

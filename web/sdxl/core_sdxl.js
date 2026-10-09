@@ -220,7 +220,13 @@ export function createInputImageSlot(state, fieldName, uploadFn, ctx, { label = 
     });
   });
 
-  box.appendChild(hint); box.appendChild(img); box.appendChild(expandBtn); box.appendChild(galleryBtn);
+  // ✕ (top-left; ⤢ expand owns top-right) empties the slot's state field.
+  const clearBtn = el("button", { type: "button", text: "✕", title: "Clear", style: { position: "absolute", top: "4px", left: "4px", zIndex: "3",
+    background: "rgba(0,0,0,0.65)", color: "#fff", border: "none", borderRadius: "4px",
+    width: "22px", height: "22px", cursor: "pointer", fontSize: "11px", padding: "0", display: "none" } });
+  clearBtn.addEventListener("click", (e) => { e.stopPropagation(); state[fieldName] = null; showImage(null); ctx.persist(); });
+
+  box.appendChild(hint); box.appendChild(img); box.appendChild(expandBtn); box.appendChild(clearBtn); box.appendChild(galleryBtn);
 
   function showImage(name) {
     if (name) {
@@ -229,11 +235,13 @@ export function createInputImageSlot(state, fieldName, uploadFn, ctx, { label = 
       img.style.display = "block";
       hint.style.display = "none";
       expandBtn.style.display = "block";
+      clearBtn.style.display = "block";
     } else {
       img.src = "";
       img.style.display = "none";
       hint.style.display = "block";
       expandBtn.style.display = "none";
+      clearBtn.style.display = "none";
     }
   }
 

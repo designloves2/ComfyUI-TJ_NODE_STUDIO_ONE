@@ -87,9 +87,17 @@ export function createImageUpload({ label = "Image", onUpload, initialFilename =
     });
   });
 
+  // Top-left ✕ (the ⤢ expand icon owns top-right): clears through the call site's own onUpload
+  // with an empty filename, so each card's state handler resets exactly what it set.
+  const clearBtn = el("button", { type: "button", text: "✕", title: "Clear", style: { position: "absolute", top: "4px", left: "4px", zIndex: "3",
+    background: "rgba(0,0,0,0.65)", color: "#fff", border: "none", borderRadius: "4px",
+    width: "22px", height: "22px", cursor: "pointer", fontSize: "11px", padding: "0", display: "none" } });
+  clearBtn.addEventListener("click", async e => { e.stopPropagation(); await onUpload(""); show(null); });
+
   box.appendChild(hint);
   box.appendChild(img);
   box.appendChild(expandBtn);
+  box.appendChild(clearBtn);
   box.appendChild(galleryBtn);
 
   const fi = el("input", { type: "file", accept: "image/*", style: { display: "none" }});
@@ -97,10 +105,7 @@ export function createImageUpload({ label = "Image", onUpload, initialFilename =
   fi.addEventListener("change", async () => {
     const f = fi.files[0]; if (!f) return;
     const name = await onUpload(f);
-    img.src = `/view?filename=${encodeURIComponent(name)}&type=input&t=${Date.now()}`;
-    img.style.display = "block";
-    hint.style.display = "none";
-    expandBtn.style.display = "block";
+    show(name);
   });
 
   box.addEventListener("click", () => fi.click());
@@ -120,15 +125,19 @@ export function createImageUpload({ label = "Image", onUpload, initialFilename =
       img.style.display = "block";
       hint.style.display = "none";
       expandBtn.style.display = "block";
+      clearBtn.style.display = "block";
     } else {
       img.src = "";
       img.style.display = "none";
       hint.style.display = "block";
       expandBtn.style.display = "none";
+      clearBtn.style.display = "none";
     }
   }
 
   if (warnEl) wrap.appendChild(warnEl);
+
+  show(initialFilename);
 
   return {
     el: wrap,

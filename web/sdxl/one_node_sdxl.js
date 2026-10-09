@@ -462,6 +462,8 @@ app.registerExtension({
       autoEnhanceChk.addEventListener("change", () => { state.autoEnhance = autoEnhanceChk.checked; persist(); });
       const autoEnhanceLbl = el("label", { title: "Automatically run Prompt Enhance on the current prompt right before Generate, updating the PROMPT field in place.", style: { display: "flex", alignItems: "center", gap: "4px", fontSize: "11px", color: C.muted, cursor: "pointer", marginLeft: "auto" } }, [autoEnhanceChk, el("span", { text: "Auto Enhance" })]);
       promptHdr.appendChild(autoEnhanceLbl);
+      // Refine: revise the current prompt from an instruction without opening Prompt Edit.
+      promptHdr.appendChild(el("button",{type:"button",text:"🔧 Refine",title:"Revise the current prompt from an instruction (no need to open Prompt Edit)",style:{cursor:"pointer",background:BRAND,border:"none",borderRadius:"4px",fontSize:"11px",fontWeight:"700",color:"#fff",padding:"3px 8px",marginLeft:"6px"},onclick:()=>llmApi.refine()}));
       const expandBtn = el("button", { type: "button", text: "🔍 Prompt Edit", title: "Expand edit", style: {
         cursor: "pointer", background: BRAND, border: "none", borderRadius: "4px", fontSize: "11px",
         fontWeight: "700", color: "#fff", padding: "3px 8px", marginLeft: "6px",
