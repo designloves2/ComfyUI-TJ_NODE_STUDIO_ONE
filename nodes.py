@@ -5152,7 +5152,7 @@ def _h3_custom_base(role, base_url):
 
 def _h3_custom_request(role, base, path, payload=None, timeout=60):
     key = _H3_CUSTOM_KEYS.get(role, "")
-    headers = {"Content-Type": "application/json"}
+    headers = {"Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (compatible; TJ-Studio-One)"}
     if key:
         headers["Authorization"] = f"Bearer {key}"
     req = urllib.request.Request(base + path, headers=headers,
