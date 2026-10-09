@@ -574,6 +574,27 @@ async function _callRefine(prompt, instruction) {
   return d.result;
 }
 
+// Word-level diff (longest common subsequence). Returns the original's words as
+// [{ text, changed }] — `changed` = removed or replaced by the refined text.
+function _diffOriginal(original, refined) {
+  const a = original.split(/(\s+)/).filter(x => x !== "");
+  const words = (x) => x.split(/(\s+)/).filter(w => w.trim() !== "");
+  const aw = words(original), bw = words(refined);
+  const n = aw.length, m = bw.length;
+  const lcs = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      lcs[i][j] = aw[i] === bw[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+  const kept = new Set();   // indices into aw that survive
+  for (let i = 0, j = 0; i < n && j < m;) {
+    if (aw[i] === bw[j]) { kept.add(i); i++; j++; }
+    else if (lcs[i + 1][j] >= lcs[i][j + 1]) i++;
+    else j++;
+  }
+  let wi = 0;
+  return a.map(tok => tok.trim() === "" ? { text: tok, changed: false } : { text: tok, changed: !kept.has(wi++) });
+}
+
 /** Original / refined comparison. Resolves "apply" | "again" | "close". */
 function _showRefineCompare(original, refined) {
   return new Promise(resolve => {
@@ -596,7 +617,24 @@ function _showRefineCompare(original, refined) {
       c.append(h, ta); cols.appendChild(c);
       return ta;
     };
-    mk("Original", original, false);
+    // Original is a read-only block, not a textarea, so the changed words can be colored.
+    const origCol = document.createElement("div");
+    Object.assign(origCol.style, { flex: "1", display: "flex", flexDirection: "column", gap: "4px", minWidth: "0" });
+    const origHdr = document.createElement("div");
+    origHdr.textContent = "Original (changed or removed words highlighted)";
+    Object.assign(origHdr.style, { color: "#aaa", fontSize: "12px" });
+    const origBody = document.createElement("div");
+    Object.assign(origBody.style, {
+      flex: "1", background: "#161616", color: "#999", border: "1px solid #333", borderRadius: "6px",
+      padding: "10px", fontSize: "13px", whiteSpace: "pre-wrap", overflowY: "auto", userSelect: "text",
+    });
+    for (const w of _diffOriginal(original, refined)) {
+      const sp = document.createElement("span");
+      sp.textContent = w.text;
+      if (w.changed) Object.assign(sp.style, { background: "rgba(255,90,90,0.28)", color: "#ffb3b3", borderRadius: "3px" });
+      origBody.appendChild(sp);
+    }
+    origCol.append(origHdr, origBody); cols.appendChild(origCol);
     const refinedTA = mk("Refined (you can edit it before applying)", refined, true);
     const btnRow = document.createElement("div");
     Object.assign(btnRow.style, { display: "flex", gap: "8px", justifyContent: "flex-end" });
@@ -1132,8 +1170,21 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   }));
 
   // Same Refine for the main PROMPT box (no Prompt Edit needed): reads/writes the current mode's prompt.
+  let mainBusyOv = null;
+  function setMainBusy(on) {
+    const pta = getPromptTA?.(); if (!pta?.parentElement) return;
+    if (!mainBusyOv) {
+      mainBusyOv = _makeBusyOverlay("Prompt: Refine. The results window will appear shortly.");
+      pta.parentElement.style.position = "relative";
+      pta.parentElement.appendChild(mainBusyOv);
+    }
+    Object.assign(mainBusyOv.style, { inset: "auto", top: pta.offsetTop + "px", left: pta.offsetLeft + "px",
+      width: pta.offsetWidth + "px", height: pta.offsetHeight + "px", borderRadius: "6px", display: on ? "flex" : "none" });
+    pta.disabled = on;
+  }
   function refineMain() {
     return runRefine({
+      setBusy: setMainBusy,
       getText: () => getModePrompt(state.mode),
       onApply: (text) => {
         setModePrompt(state.mode, text);
