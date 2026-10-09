@@ -90,7 +90,8 @@ function imageUploadCard(labelText, currentFilename, onChange, opts) {
     const name = typeof f === "string" ? f : await uploadImage(f);
     onChange(name);
     return name;
-  }, opts);
+  // ✕ on the card clears the image through the same handler (a null filename).
+  }, { onClear: () => onChange(null), ...opts });
   wrap._refresh = setFilename;
   return wrap;
 }
