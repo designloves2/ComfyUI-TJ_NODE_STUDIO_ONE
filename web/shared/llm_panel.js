@@ -708,6 +708,14 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     if (file) loadImageFile(file);
   });
   fileInput.addEventListener("change", () => { if (fileInput.files[0]) loadImageFile(fileInput.files[0]); });
+  // Ctrl+V anywhere in the open popup: an image on the clipboard goes into the drop zone.
+  // Plain text pastes (into the prompt box etc.) are left alone.
+  promptExpandEl.addEventListener("paste", e => {
+    const item = [...(e.clipboardData?.items || [])].find(i => i.kind === "file" && i.type.startsWith("image/"));
+    if (!item) return;
+    e.preventDefault();
+    loadImageFile(item.getAsFile());
+  });
 
   const MAX_IMG_MP = 1_000_000; // 1 MP
   function resizeAndSetImage(src) {
