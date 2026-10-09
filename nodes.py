@@ -1702,13 +1702,19 @@ async def studio_llm_download_image(request):
         safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in raw_name)
         dest_path = os.path.join(download_dir, safe_name)
 
-        class _NoRedirect(urllib.request.HTTPRedirectHandler):
-            # A 30x to an internal address would sidestep the pre-flight check.
-            def redirect_request(self, *a, **k):
-                raise urllib.error.URLError("redirects are not allowed")
+        class _CheckedRedirect(urllib.request.HTTPRedirectHandler):
+            max_redirections = 5
+
+            # A 30x to an internal address would sidestep the pre-flight check, so every hop is re-checked.
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                try:
+                    _assert_public_url(newurl)
+                except ValueError as e:
+                    raise urllib.error.URLError(f"redirect blocked: {e}")
+                return super().redirect_request(req, fp, code, msg, headers, newurl)
 
         def _fetch():
-            opener = urllib.request.build_opener(_NoRedirect)
+            opener = urllib.request.build_opener(_CheckedRedirect)
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
             with opener.open(req, timeout=30) as resp:
                 return resp.read(64 * 1024 * 1024)  # 64 MB ceiling
