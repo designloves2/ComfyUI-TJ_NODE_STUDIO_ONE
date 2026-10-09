@@ -1889,14 +1889,19 @@ async def studio_llm_models(request):
 async def studio_llm_enhance(request):
     import asyncio
     data = await request.json()
+    # "refine_instruction" turns this into a revision of data["prompt"] instead of an enhance.
+    if data.get("refine_instruction"):
+        sys_text, user_text = _studio_refine_parts(data)
+    else:
+        sys_text, user_text = _studio_enhance_system(data), str(data.get("prompt", ""))
 
     if (data.get("backend") or "").lower() == "openrouter":
         model = (data.get("or_model") or "").strip() or _studio_or_models()[0]   # text
         try:
             loop = asyncio.get_event_loop()
             text = await loop.run_in_executor(
-                None, _openrouter_chat, _studio_enhance_system(data),
-                str(data.get("prompt", "")), model,
+                None, _openrouter_chat, sys_text,
+                user_text, model,
                 float(data.get("temperature", 0.7)), int(data.get("max_tokens", 1000)))
             return web.json_response({"ok": True, "result": text})
         except Exception as e:
@@ -1906,7 +1911,7 @@ async def studio_llm_enhance(request):
         try:
             text = await asyncio.get_event_loop().run_in_executor(
                 None, _h3_custom_chat, "img_enhance", data.get("custom_base"), data.get("custom_model"),
-                _studio_enhance_system(data), str(data.get("prompt", "")), data.get("custom_ctx"),
+                sys_text, user_text, data.get("custom_ctx"),
                 int(data.get("max_tokens", 1000)), float(data.get("temperature", 0.7)))
             return web.json_response({"ok": True, "result": text})
         except Exception as e:
@@ -1921,7 +1926,7 @@ async def studio_llm_enhance(request):
         def _run():
             result = TJ_PromptEnhancer().enhance(
                 get_name="(none)", set_name="studio_one_enhance",
-                raw_prompt=data.get("prompt", ""),
+                raw_prompt=user_text if data.get("refine_instruction") else data.get("prompt", ""),
                 model_backend=model_backend,
                 gguf_model=data.get("gguf_model", ""),
                 mmproj_file="none",
@@ -1931,7 +1936,7 @@ async def studio_llm_enhance(request):
                 model_format=data.get("model_format", "Universal Natural Language"),
                 aesthetic=data.get("aesthetic", "None (no aesthetic injection)"),
                 extra_instructions=data.get("extra_instructions", ""),
-                system_prompt_override="",
+                system_prompt_override=sys_text if data.get("refine_instruction") else "",
                 append_no_think=True,
                 n_gpu_layers=int(data.get("n_gpu_layers", -1)),
                 n_ctx=int(data.get("n_ctx", 4096)),
@@ -5440,6 +5445,11 @@ def _studio_enhance_system(data):
          "- Do not invent a different scene; deepen the one given.\n"
          "- Always write the rewritten prompt in English, even if the user's input is in "
          "another language.\n")
+    return s + _studio_style_lines(fmt, aes, extra)
+
+
+def _studio_style_lines(fmt, aes, extra):
+    s = ""
     full_instruction = _model_format_instruction(fmt)
     if full_instruction:
         s += f"- Target phrasing style ({fmt}) — follow this exactly:\n{full_instruction}\n"
@@ -5450,6 +5460,22 @@ def _studio_enhance_system(data):
     if extra:
         s += f"- Extra instructions: {extra}\n"
     return s
+
+
+def _studio_refine_parts(data):
+    """(system, user) for revising an already-written image prompt from a typed instruction."""
+    system = ("You revise an existing text-to-image prompt according to a revision instruction.\n"
+              "- Output ONLY the complete revised prompt — no preamble, no quotes, no markdown, no explanation.\n"
+              "- Change only what the instruction asks for; keep every other detail, the structure and the wording.\n"
+              "- Always write the prompt in English, even if the instruction is in another language.\n"
+              + _studio_style_lines(data.get("model_format", "Universal Natural Language"),
+                                    data.get("aesthetic", "None (no aesthetic injection)"),
+                                    (data.get("extra_instructions", "") or "").strip()))
+    user = ("Rewrite the current prompt according to the revision instruction. "
+            "Return only the complete revised prompt. Do not discuss the changes.\n\n"
+            f"Current prompt:\n{data.get('prompt', '')}\n\n"
+            f"Revision instruction:\n{data.get('refine_instruction', '')}")
+    return system, user
 
 
 def _fetch_openrouter_models_blocking():

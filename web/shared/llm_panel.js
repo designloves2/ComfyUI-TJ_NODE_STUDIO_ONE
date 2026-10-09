@@ -480,6 +480,161 @@ export function getLLMSummary() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+// Refine — revise an already-written prompt from a typed instruction, then compare
+// ══════════════════════════════════════════════════════════════════════════
+// Same flow as the H3 node's Prompt Refine: instruction popup → LLM → original / refined side by
+// side → Re:Refine / Apply / Close. Reached from the Prompt Edit popup's Refine button and from
+// the main PROMPT header's own button, so both share this one function. Overlays are fixed to the
+// window so they sit above the node's own full-screen popups.
+let _lastRefineInstruction = "";
+
+function _refineOverlay() {
+  const ov = document.createElement("div");
+  Object.assign(ov.style, {
+    position: "fixed", inset: "0", zIndex: "100000", background: "rgba(0,0,0,0.72)",
+    display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "inherit",
+  });
+  const box = document.createElement("div");
+  Object.assign(box.style, {
+    background: "#1b1b1b", border: "1px solid #7612DA", borderRadius: "10px", padding: "16px",
+    display: "flex", flexDirection: "column", gap: "10px", boxSizing: "border-box", color: "#ddd",
+    maxHeight: "90vh",
+  });
+  ov.appendChild(box);
+  document.body.appendChild(ov);
+  return { ov, box };
+}
+
+function _refineBtn(text, bg) {
+  const b = document.createElement("button");
+  b.type = "button"; b.textContent = text;
+  Object.assign(b.style, {
+    background: bg, color: "#fff", border: "none", borderRadius: "6px",
+    padding: "8px 16px", cursor: "pointer", fontSize: "13px", fontWeight: "700",
+  });
+  return b;
+}
+
+function _refineTitle(text) {
+  const d = document.createElement("div");
+  d.textContent = text;
+  Object.assign(d.style, { color: "#fff", fontSize: "14px", fontWeight: "700" });
+  return d;
+}
+
+function _askRefineInstruction() {
+  return new Promise(resolve => {
+    const { ov, box } = _refineOverlay();
+    box.style.width = "min(560px, 92vw)";
+    const ta = document.createElement("textarea");
+    ta.value = _lastRefineInstruction; ta.rows = 5;
+    ta.placeholder = "e.g. Make it nighttime, and change the red dress to a blue coat.";
+    Object.assign(ta.style, {
+      background: "#2a2a2a", color: "#ddd", border: "1px solid #444", borderRadius: "6px",
+      padding: "8px 10px", fontSize: "13px", fontFamily: "inherit", resize: "vertical", outline: "none",
+    });
+    const btnRow = document.createElement("div");
+    Object.assign(btnRow.style, { display: "flex", gap: "8px", justifyContent: "flex-end" });
+    const ok = _refineBtn("Refine", "#7612DA");
+    const cancel = _refineBtn("Cancel", "#444");
+    const done = (v) => { ov.remove(); resolve(v); };
+    ok.addEventListener("click", () => done(ta.value.trim() || null));
+    cancel.addEventListener("click", () => done(null));
+    ta.addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) ok.click(); if (e.key === "Escape") cancel.click(); });
+    btnRow.append(cancel, ok);
+    box.append(_refineTitle("🔧 Refine prompt"),
+      Object.assign(document.createElement("div"), { textContent: "What should change in the current prompt?" }),
+      ta, btnRow);
+    ta.focus();
+  });
+}
+
+async function _callRefine(prompt, instruction) {
+  const l = loadLLMSettings();
+  const mode = l.seed_mode || "randomize";
+  if (mode === "randomize") l.seed = Math.floor(Math.random() * 1e15);
+  else if (mode === "increment") l.seed = (l.seed || 0) + 1;
+  else if (mode === "decrement") l.seed = Math.max(0, (l.seed || 0) - 1);
+  saveLLMSettings(l);
+  const r = await fetch("/tj_studio_one/llm/enhance", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt, refine_instruction: instruction,
+      backend: l.backend_text || l.backend || "local",
+      or_model: l.or_model_text || l.or_model,
+      custom_base: l.custom_base_text, custom_model: l.custom_model_text, custom_ctx: l.custom_ctx_text,
+      gguf_model: l.gguf_model, text_encoder_name: l.text_encoder_name, clip_loader_type: l.clip_loader_type,
+      n_gpu_layers: l.n_gpu_layers, n_ctx: l.n_ctx, max_tokens: l.max_tokens,
+      temperature: l.temperature, seed: l.seed,
+      model_format: l.model_format, aesthetic: l.aesthetic, extra_instructions: l.extra_instructions,
+    }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "error");
+  return d.result;
+}
+
+/** Original / refined comparison. Resolves "apply" | "again" | "close". */
+function _showRefineCompare(original, refined) {
+  return new Promise(resolve => {
+    const { ov, box } = _refineOverlay();
+    box.style.width = "min(1100px, 96vw)"; box.style.height = "min(680px, 90vh)";
+    const cols = document.createElement("div");
+    Object.assign(cols.style, { display: "flex", gap: "12px", flex: "1", minHeight: "0" });
+    const mk = (title, text, editable) => {
+      const c = document.createElement("div");
+      Object.assign(c.style, { flex: "1", display: "flex", flexDirection: "column", gap: "4px", minWidth: "0" });
+      const h = document.createElement("div");
+      h.textContent = title; Object.assign(h.style, { color: "#aaa", fontSize: "12px" });
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.readOnly = !editable;
+      Object.assign(ta.style, {
+        flex: "1", background: editable ? "#2a2a2a" : "#161616", color: editable ? "#fff" : "#999",
+        border: `1px solid ${editable ? "#7612DA" : "#333"}`, borderRadius: "6px", padding: "10px",
+        fontSize: "13px", fontFamily: "inherit", resize: "none", outline: "none",
+      });
+      c.append(h, ta); cols.appendChild(c);
+      return ta;
+    };
+    mk("Original", original, false);
+    const refinedTA = mk("Refined (you can edit it before applying)", refined, true);
+    const btnRow = document.createElement("div");
+    Object.assign(btnRow.style, { display: "flex", gap: "8px", justifyContent: "flex-end" });
+    const again = _refineBtn("Re:Refine", "#7612DA");
+    const apply = _refineBtn("Apply", "#2e8b57");
+    const close = _refineBtn("Close", "#444");
+    const done = (v) => { ov.remove(); resolve({ action: v, text: refinedTA.value }); };
+    again.addEventListener("click", () => done("again"));
+    apply.addEventListener("click", () => done("apply"));
+    close.addEventListener("click", () => done("close"));
+    btnRow.append(again, apply, close);
+    box.append(_refineTitle("🔧 Prompt Refine result"), cols, btnRow);
+  });
+}
+
+/**
+ * Whole Refine flow on `getText()`'s prompt. `setBusy(on)` lets the caller show its own busy state;
+ * `onApply(text)` receives the accepted prompt. Returns once the user applies or closes.
+ */
+async function runRefine({ getText, onApply, setBusy }) {
+  const current = (getText() || "").trim();
+  if (!current) { alert("Nothing to refine yet — write a prompt first."); return; }
+  let instruction = await _askRefineInstruction();
+  while (instruction) {
+    _lastRefineInstruction = instruction;
+    let refined;
+    setBusy?.(true);
+    try { refined = await _callRefine(current, instruction); }
+    catch (e) { alert(t("llm_err_prefix") + e.message); return; }
+    finally { setBusy?.(false); }
+    const res = await _showRefineCompare(current, refined);
+    if (res.action === "apply") { onApply(res.text); return; }
+    if (res.action === "close") return;
+    instruction = await _askRefineInstruction();
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 // Popup — single merged screen
 // ══════════════════════════════════════════════════════════════════════════
 export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA, openSettings, defaultModelFormat }) {
@@ -785,10 +940,13 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   btnWrite.style.flex = "1";
   const btnEnhance = purpleBtn(t("llm_btn_enhance"));
   btnEnhance.style.flex = "1";
+  const btnRefine = purpleBtn(t("llm_btn_refine"));
+  btnRefine.style.flex = "1";
   const applyBtn = purpleBtn(t("llm_btn_apply"));
   applyBtn.style.flex = "1";
 
-  actionRow.appendChild(btnWrite); actionRow.appendChild(btnEnhance); actionRow.appendChild(applyBtn);
+  // Four equal buttons: Image → Prompt Write / Prompt Enhance / Refine / APPLY.
+  actionRow.appendChild(btnWrite); actionRow.appendChild(btnEnhance); actionRow.appendChild(btnRefine); actionRow.appendChild(applyBtn);
 
   function syncButtons() {
     btnWrite.disabled = !_imageB64;
@@ -796,6 +954,8 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     const hasText = existingTA.value.trim().length > 0;
     btnEnhance.disabled = !hasText;
     btnEnhance.style.opacity = hasText ? "1" : "0.45";
+    btnRefine.disabled = !hasText;
+    btnRefine.style.opacity = hasText ? "1" : "0.45";
   }
   existingTA.addEventListener("input", syncButtons);
 
@@ -956,6 +1116,28 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   }
   btnEnhance.addEventListener("click", doEnhance);
 
+  // Refine inside Prompt Edit works on the popup's own text; the accepted result lands back in it.
+  btnRefine.addEventListener("click", () => runRefine({
+    getText: () => existingTA.value,
+    onApply: (text) => { existingTA.value = text; syncButtons(); },
+    setBusy: (on) => { btnRefine.disabled = on; setBusy(on, t("llm_busy_refine")); if (!on) syncButtons(); },
+  }));
+
+  // Same Refine for the main PROMPT box (no Prompt Edit needed): reads/writes the current mode's prompt.
+  function refineMain() {
+    return runRefine({
+      getText: () => getModePrompt(state.mode),
+      onApply: (text) => {
+        setModePrompt(state.mode, text);
+        const pta = getPromptTA?.(); if (pta) pta.value = text;
+        pxTA.value = text; existingTA.value = text;
+        if (persist) persist();
+        if (updateCount) updateCount();
+        syncButtons();
+      },
+    });
+  }
+
   // ── Show hook ─────────────────────────────────────────────────────────────
   promptExpandEl._tj_llm_onshow = () => {
     existingTA.value = getModePrompt(state.mode);
@@ -974,5 +1156,5 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   // only from inside the expand overlay's own UI. Piloted on Qwen Image 2.1 first, meant
   // to be reused by every other ONE STUDIO image tool afterwards — additive return value,
   // existing callers that ignore it are unaffected.
-  return { enhance: doEnhance };
+  return { enhance: doEnhance, refine: refineMain };
 }
