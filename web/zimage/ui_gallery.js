@@ -5,6 +5,7 @@ import { button, row } from "./ui_common.js";
 import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, copyOutputToInput } from "./api.js";
 import { SUBFOLDER } from "./core.js";
 import { attachSensitiveToggle, mediaKey, isBlurred, isSensitive, setSensitive, wireRevealButton } from "../shared/ui_sensitive_media.js";
+import { mountGalleryLayout } from "../shared/gallery_layout.js";
 
 const SEND_TARGETS = [
   { mode:"i2i",        field:"i2iImage",       label:"→ I2I" },
@@ -290,6 +291,7 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
 
   function reset(){ clear(grid); offset=0; loadedImages=[]; cellRefs=[]; loadMore(); }
 
+  mountGalleryLayout(grid, topRow, { colMin: 110, before: refreshBtn, like: refreshBtn });
   ov.appendChild(grid);
   ov.appendChild(el("div",{style:{display:"flex",gap:"8px",alignItems:"center",flexShrink:"0"}},[statusEl,moreBtn]));
 

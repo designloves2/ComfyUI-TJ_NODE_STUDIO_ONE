@@ -7,6 +7,7 @@
 import { el, clear } from "../klein/core_klein.js";
 import { setThumb, wireCacheButton } from "./gallery_thumb.js";
 import { attachSensitiveToggle, mediaKey, isBlurred, wireRevealButton } from "./ui_sensitive_media.js";
+import { mountGalleryLayout } from "./gallery_layout.js";
 
 export const IMAGE_GALLERY_TOOLS = [
   // INPUT first and default: it is where a picture the user brought themselves already
@@ -168,6 +169,7 @@ export function openImageGalleryPicker(onPick, initialToolId) {
   moreBtn.style.display = "none";
   moreBtn.addEventListener("click", () => loadMore());
 
+  mountGalleryLayout(grid, topRow, { colMin: 120, before: closeBtn, like: revealBtn });
   box.append(topRow, toolBar, folderSel, grid, statusEl, moreBtn);
   ov.appendChild(box);
 

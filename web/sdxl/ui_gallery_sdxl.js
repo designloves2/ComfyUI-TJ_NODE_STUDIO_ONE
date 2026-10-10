@@ -4,6 +4,7 @@ import { setThumb, wireCacheButton } from "../shared/gallery_thumb.js";
 import { button, row } from "../klein/ui_common.js";
 import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, copyOutputToInput } from "./api_sdxl.js";
 import { attachSensitiveToggle, mediaKey, isBlurred, isSensitive, setSensitive, wireRevealButton } from "../shared/ui_sensitive_media.js";
+import { mountGalleryLayout } from "../shared/gallery_layout.js";
 
 const SEND_TARGETS = [
   { mode: "i2i",      field: "i2iImage",      label: "→ I2I"      },
@@ -267,6 +268,7 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
     } finally { loading = false; }
   }
 
+  mountGalleryLayout(grid, topRow, { colMin: 110, before: refreshBtn, like: refreshBtn });
   ov.appendChild(grid);
   ov.appendChild(statusEl);
   ov.appendChild(moreBtn);

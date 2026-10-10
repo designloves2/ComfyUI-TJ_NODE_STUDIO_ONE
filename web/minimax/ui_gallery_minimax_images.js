@@ -19,6 +19,7 @@ import { listImages, revealOutputFolder, deleteImage, copyOutputToInput, discard
          saveMeta, queuePrompt } from "./api_minimax.js";
 import { buildImageUpscaleGraph } from "./graph_builder_minimax.js";
 import { mediaKey, isBlurred, attachSensitiveToggle, makeSensitiveControl, wireRevealButton } from "../shared/ui_sensitive_media.js";
+import { mountGalleryLayout } from "../shared/gallery_layout.js";
 
 // Named aspect ratios a real render is actually likely to land on — same table the video
 // gallery's own card badge uses.
@@ -740,6 +741,7 @@ export function createImageGalleryOverlay(state, ctx) {
     show();
   }
 
+  mountGalleryLayout(grid, hdr, { colMin: 168, before: refreshBtn, like: refreshBtn });
   ov.append(hdr, postBar, grid, hint);
   return { el: ov, show, hide, showPicker, refresh, isOpen: () => ov.style.display !== "none" };
 }
