@@ -6,10 +6,9 @@ import { buildInpaintGraph, buildOutpaintGraph } from "./graph_builder_klein.js"
 import { mountLoraSection } from "./ui_lora_section.js";
 import { t } from "../shared/i18n.js";
 import { createImageUpload } from "./ui_image_upload.js";
+import { SAMPLERS, SCHEDULERS } from "../shared/sampler_lists.js";
 
 const DISP_W = LEFT_W - 24;
-const SAMPLERS   = ["euler","euler_ancestral","er_sde","dpm_2","dpm_2_ancestral","lms","dpm_fast","heun","dpm_pp_2m"];
-const SCHEDULERS = ["simple","normal","karras","exponential","sgm_uniform","beta"];
 
 // ══════════════════════════════════════════════════════════════
 // 캔버스 드로잉 엔진

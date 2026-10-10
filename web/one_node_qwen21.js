@@ -31,6 +31,7 @@ import { createImageUpload }                                              from "
 import { attachLLMPanel, mountLLMSettingsSection }                        from "./shared/llm_panel.js";
 import { attachNodeState, restoreNodeState }                              from "./shared/node_state.js";
 import { t, getLang, setLang }                                            from "./shared/i18n.js";
+import { SAMPLERS, SCHEDULERS } from "./shared/sampler_lists.js";
 
 // ── Layout (same constants pattern as 2511) ────────────────────────────────────
 const TOPBAR_H    = 40;
@@ -895,8 +896,8 @@ app.registerExtension({
           },
         };
       }
-      function SAMPLER_OPTS(){ return ["euler","euler_ancestral","er_sde","dpm_2","dpm_2_ancestral","lms","dpm_fast","heun","dpm_pp_2m"].map(v=>({value:v,label:v})); }
-      function SCHED_OPTS(){ return ["simple","normal","karras","exponential","sgm_uniform","beta"].map(v=>({value:v,label:v})); }
+      function SAMPLER_OPTS(){ return SAMPLERS.map(v=>({value:v,label:v})); }
+      function SCHED_OPTS(){ return SCHEDULERS.map(v=>({value:v,label:v})); }
 
       function renderMode(){
         const mode = state.mode; clear(leftPanel); modeHandle = null;

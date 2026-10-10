@@ -5,9 +5,8 @@ import { uploadImage } from "./api_sdxl.js";
 import { buildInpaintGraph } from "./graph_builder_sdxl.js";
 import { mountLoraSection } from "./ui_lora_sdxl.js";
 import { t } from "../shared/i18n.js";
+import { SAMPLERS, SCHEDULERS } from "../shared/sampler_lists.js";
 
-const SAMPLERS   = ["euler","euler_ancestral","dpm_2","dpm_2_ancestral","dpm_pp_2m","dpm_pp_2m_sde","dpm_pp_sde","heun","lms","dpm_fast","ddim","uni_pc"];
-const SCHEDULERS = ["normal","karras","exponential","sgm_uniform","simple","beta"];
 const DISP_W = LEFT_W - 24;
 
 // ════════════════════════════════════════════════════════════════════════════

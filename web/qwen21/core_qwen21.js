@@ -1,3 +1,4 @@
+import { SAMPLERS as SHARED_SAMPLERS, SCHEDULERS as SHARED_SCHEDULERS } from "../shared/sampler_lists.js";
 // core_qwen21.js — Qwen Image 2.1 ONE (TJ)
 export const BRAND = "#7612DA"; // unified brand color (same family as 2511)
 export const C = {
@@ -19,8 +20,8 @@ export const SUBFOLDER    = "qwen21-one-tj";
 export const API          = "/qwenimage21_one";
 export const LS_KEY       = "qwenimage21_one_tj_state_v1";
 
-export const SAMPLERS   = ["euler","euler_ancestral","er_sde","dpm_2","dpm_2_ancestral","lms","dpm_fast","heun","dpm_pp_2m"];
-export const SCHEDULERS = ["simple","normal","karras","exponential","sgm_uniform","beta"];
+export const SAMPLERS   = SHARED_SAMPLERS;
+export const SCHEDULERS = SHARED_SCHEDULERS;
 
 export const SEEDVR2_ATTN_MODES  = ["sdpa","flash_attn_2","flash_attn_3","sageattn_2","sageattn_3"];
 export const SEEDVR2_COLOR_MODES = ["lab","wavelet","wavelet_adaptive","hsv","adain","none"];

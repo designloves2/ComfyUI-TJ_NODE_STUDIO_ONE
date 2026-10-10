@@ -3,6 +3,7 @@ import { C, el } from "./core_sdxl.js";
 import { panel, label, select, numberField, row, col } from "../klein/ui_common.js";
 import { buildT2IGraph } from "./graph_builder_sdxl.js";
 import { mountLoraSection } from "./ui_lora_sdxl.js";
+import { SAMPLERS, SCHEDULERS } from "../shared/sampler_lists.js";
 
 // SDXL native resolutions
 const RES_PRESETS = [
@@ -18,8 +19,6 @@ const RES_PRESETS = [
   { label: "Custom",       w: 0,    h: 0    },
 ];
 
-const SAMPLERS   = ["euler","euler_ancestral","dpm_2","dpm_2_ancestral","dpm_pp_2m","dpm_pp_2m_sde","dpm_pp_sde","heun","lms","dpm_fast","dpm_adaptive","ddim","uni_pc"];
-const SCHEDULERS = ["normal","karras","exponential","sgm_uniform","simple","beta"];
 
 export function mountT2ILeft(leftEl, state, ctx) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } });

@@ -1,3 +1,4 @@
+import { SAMPLERS as SHARED_SAMPLERS, SCHEDULERS as SHARED_SCHEDULERS } from "../shared/sampler_lists.js";
 // core_anima.js — Anima ONE STUDIO constants, state, helpers
 export const BRAND = "#7612DA";
 export const C = {
@@ -26,8 +27,8 @@ export const RESOLUTIONS = [
   { label: "Custom",       w: 0,    h: 0    },
 ];
 
-export const SAMPLERS   = ["euler", "dpmpp_2m_sde", "dpmpp_2m", "euler_ancestral", "heun"];
-export const SCHEDULERS = ["simple", "sgm_uniform", "karras", "normal", "exponential"];
+export const SAMPLERS   = SHARED_SAMPLERS;
+export const SCHEDULERS = SHARED_SCHEDULERS;
 
 // LLLite control-patch filenames per official ComfyUI Anima templates.
 export const LLLITE_PATCH = {

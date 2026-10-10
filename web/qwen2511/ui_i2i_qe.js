@@ -5,6 +5,7 @@ import { buildI2IGraph } from "./graph_builder_qwen2511.js";
 import { mountLoraSectionQE } from "./ui_common_qe.js";
 import { uploadImage } from "./api_qwen2511.js";
 import { createImageUpload as createImgUpload } from "./ui_image_upload.js";
+import { SAMPLERS, SCHEDULERS } from "../shared/sampler_lists.js";
 
 function snap8(v) { return Math.max(8, Math.round(v / 8) * 8); }
 
@@ -49,8 +50,8 @@ export function mountI2ILeft(leftEl, state, ctx) {
       col([label("CFG"),   numberField(state.cfg   ?? 4,  v => { state.cfg   = v; ctx.persist(); }, 0.1)]),
     ]),
     row([
-      col([label("Sampler"),   select(["euler","euler_ancestral","er_sde","heun","dpm_pp_2m"], state.sampler   || "euler", v => { state.sampler   = v; ctx.persist(); })]),
-      col([label("Scheduler"), select(["simple","normal","karras","exponential","sgm_uniform","beta"],        state.scheduler || "simple", v => { state.scheduler = v; ctx.persist(); })]),
+      col([label("Sampler"),   select(SAMPLERS, state.sampler   || "euler", v => { state.sampler   = v; ctx.persist(); })]),
+      col([label("Scheduler"), select(SCHEDULERS,        state.scheduler || "simple", v => { state.scheduler = v; ctx.persist(); })]),
     ]),
   ]));
 

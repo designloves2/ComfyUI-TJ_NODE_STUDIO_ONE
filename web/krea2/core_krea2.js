@@ -32,8 +32,8 @@ export const RESOLUTIONS = [
   { label: "Custom",       w: 0,    h: 0    },
 ];
 
-export const SAMPLERS   = ["euler", "dpmpp_2m_sde", "dpmpp_2m", "euler_ancestral", "heun"];
-export const SCHEDULERS = ["simple", "sgm_uniform", "karras", "normal", "exponential"];
+export const SAMPLERS   = SHARED_SAMPLERS;
+export const SCHEDULERS = SHARED_SCHEDULERS;
 export const LORA_MAX   = 4;
 
 // DepthAnythingV2 checkpoints publicly downloadable via comfyui_controlnet_aux.
@@ -194,6 +194,7 @@ export function randomSeed() { return Math.floor(Math.random() * 1e15); }
 // (controlnet, upscale) return null and the button hides. Image paths are rewritten
 // to ~/.hermes/render-queue/inputs/<filename>; mirrors the web twin's buildAgentJob().
 import { agentInputPath } from "../shared/agent_job.js";
+import { SAMPLERS as SHARED_SAMPLERS, SCHEDULERS as SHARED_SCHEDULERS } from "../shared/sampler_lists.js";
 
 function agentPromptText(state, key) {
   const k = key || state.mode || "t2i";

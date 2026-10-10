@@ -3,6 +3,7 @@ import { C, el } from "./core_qwen2511.js";
 import { panel, label, select, numberField, row, col } from "./ui_common_qe.js";
 import { buildT2IGraph } from "./graph_builder_qwen2511.js";
 import { mountLoraSectionQE } from "./ui_common_qe.js";
+import { SAMPLERS, SCHEDULERS } from "../shared/sampler_lists.js";
 
 const RES_PRESETS = [
   { label: "1024 × 1024", w: 1024, h: 1024 },
@@ -41,8 +42,8 @@ export function mountT2ILeft(leftEl, state, ctx) {
       col([label("CFG"),   numberField(state.cfg,    v => { state.cfg    = v; ctx.persist(); }, 0.1)]),
     ]),
     row([
-      col([label("Sampler"),   select(["euler","euler_ancestral","er_sde","dpm_2","heun","dpm_pp_2m"], state.sampler,   v => { state.sampler   = v; ctx.persist(); })]),
-      col([label("Scheduler"), select(["simple","normal","karras","exponential","sgm_uniform","beta"], state.scheduler, v => { state.scheduler = v; ctx.persist(); })]),
+      col([label("Sampler"),   select(SAMPLERS, state.sampler,   v => { state.sampler   = v; ctx.persist(); })]),
+      col([label("Scheduler"), select(SCHEDULERS, state.scheduler, v => { state.scheduler = v; ctx.persist(); })]),
     ]),
   ]));
 

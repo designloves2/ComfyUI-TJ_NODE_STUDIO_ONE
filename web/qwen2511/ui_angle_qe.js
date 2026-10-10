@@ -4,6 +4,7 @@ import { panel, label, numberField, select, row, col } from "./ui_common_qe.js";
 import { buildAngleGraph } from "./graph_builder_qwen2511.js";
 import { uploadImage } from "./api_qwen2511.js";
 import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
+import { SAMPLERS, SCHEDULERS } from "../shared/sampler_lists.js";
 
 // ─ Presets ───────────────────────────────────────────────────────────────────
 const H_OPTS = [
@@ -550,8 +551,8 @@ export function mountAngleLeft(leftEl, st, ctx) {
       col([label("CFG"),   numberField(st.cfg??4,    v=>{st.cfg=v;ctx.persist?.();},   0.1)]),
     ]),
     row([
-      col([label("Sampler"),   select(["euler","euler_ancestral","er_sde","heun","dpm_pp_2m"], st.sampler||"euler",   v=>{st.sampler=v;ctx.persist?.();})]),
-      col([label("Scheduler"), select(["simple","normal","karras","exponential","sgm_uniform","beta"], st.scheduler||"simple", v=>{st.scheduler=v;ctx.persist?.();})]),
+      col([label("Sampler"),   select(SAMPLERS, st.sampler||"euler",   v=>{st.sampler=v;ctx.persist?.();})]),
+      col([label("Scheduler"), select(SCHEDULERS, st.scheduler||"simple", v=>{st.scheduler=v;ctx.persist?.();})]),
     ]),
   ]));
 

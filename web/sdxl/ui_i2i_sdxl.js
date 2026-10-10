@@ -4,9 +4,8 @@ import { panel, label, select, numberField, slider, row, col } from "../klein/ui
 import { uploadImage } from "./api_sdxl.js";
 import { buildI2IGraph } from "./graph_builder_sdxl.js";
 import { mountLoraSection } from "./ui_lora_sdxl.js";
+import { SAMPLERS, SCHEDULERS } from "../shared/sampler_lists.js";
 
-const SAMPLERS   = ["euler","euler_ancestral","dpm_2","dpm_2_ancestral","dpm_pp_2m","dpm_pp_2m_sde","dpm_pp_sde","heun","lms","dpm_fast","dpm_adaptive","ddim","uni_pc"];
-const SCHEDULERS = ["normal","karras","exponential","sgm_uniform","simple","beta"];
 
 export function mountI2ILeft(leftEl, state, ctx) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } });

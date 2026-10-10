@@ -5,9 +5,8 @@ import { buildEditGraph } from "./graph_builder_klein.js";
 import { createImageUpload } from "./ui_image_upload.js";
 import { uploadImage } from "./api_klein.js";
 import { mountLoraSection } from "./ui_lora_section.js";
+import { SAMPLERS, SCHEDULERS } from "../shared/sampler_lists.js";
 
-const SAMPLERS   = ["euler","euler_ancestral","er_sde","dpm_2","dpm_2_ancestral","lms","dpm_fast","heun","dpm_pp_2m"];
-const SCHEDULERS = ["simple","normal","karras","exponential","sgm_uniform","beta"];
 const MAX_REFS   = 5;
 
 export function mountEditLeft(leftEl, state, ctx) {

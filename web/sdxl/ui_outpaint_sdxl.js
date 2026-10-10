@@ -4,9 +4,8 @@ import { panel, label, select, numberField, row, col } from "../klein/ui_common.
 import { uploadImage } from "./api_sdxl.js";
 import { buildOutpaintGraph } from "./graph_builder_sdxl.js";
 import { mountLoraSection } from "./ui_lora_sdxl.js";
+import { SAMPLERS, SCHEDULERS } from "../shared/sampler_lists.js";
 
-const SAMPLERS   = ["euler","euler_ancestral","dpm_2","dpm_2_ancestral","dpm_pp_2m","dpm_pp_2m_sde","dpm_pp_sde","heun","lms","dpm_fast","ddim","uni_pc"];
-const SCHEDULERS = ["normal","karras","exponential","sgm_uniform","simple","beta"];
 
 function pxField(val, onChange) {
   const inp = el("input", { type: "number", min: "0", step: "64", style: {

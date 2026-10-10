@@ -5,9 +5,8 @@ import { buildFaceswapGraph } from "./graph_builder_klein.js";
 import { createImageUpload } from "./ui_image_upload.js";
 import { uploadImage } from "./api_klein.js";
 import { t } from "../shared/i18n.js";
+import { SAMPLERS, SCHEDULERS } from "../shared/sampler_lists.js";
 
-const SAMPLERS   = ["euler","euler_ancestral","er_sde","dpm_2","dpm_2_ancestral","lms","dpm_fast","heun","dpm_pp_2m"];
-const SCHEDULERS = ["simple","normal","karras","exponential","sgm_uniform","beta"];
 
 function mountFaceswapLoraSection(leftEl, state, ctx) {
   const wrap = el("div");
