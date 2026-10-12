@@ -10,7 +10,7 @@ import { C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, MAX_REF_IMAGES, SUBFOLDER,
 import { panel, label, button, select, slider, numberField, row, col,
          modeBar, iconBtn, openFullscreen, loraSelect }                 from "./klein/ui_common.js";
 import { queuePrompt, interrupt, setLastImage, saveMeta, uploadImage,
-         copyOutputToInput, listPoseModels, uploadPoseModel, uploadPoseThumb, getModels, getLoraTriggers, getConfig, saveConfig,
+         copyOutputToInput, listPoseModels, uploadPoseModel, uploadPoseThumb, deletePoseModel, getModels, getLoraTriggers, getConfig, saveConfig,
          getSeedVR2Models }                                                from "./qwen21/api_qwen21.js";
 import { buildT2IGraph, buildI2IGraph, buildRefToImageGraph, buildEditGraph,
          buildInpaintGraph, buildOutpaintGraph, buildUpscaleGraph,
@@ -804,6 +804,7 @@ app.registerExtension({
         const previewBtn = button("🧊 Preview & Angle", () => previewAngle());
         const loadPoseBtn = button("📂 Load 3D Pose", () => loadPose3D());
         const poseBtns = row([previewBtn, loadPoseBtn], "6px");
+        poseBtns.style.marginTop = "12px";   // gap below the image / 3D card
         const resetViewBtn = button("↺ Reset view", () => poseViewer?.resetView());
         const discardBtn = button("✕ Use auto render", () => { discard3D(); persist(); });
         const viewerBtns = row([resetViewBtn, discardBtn], "6px");
@@ -897,7 +898,17 @@ app.registerExtension({
               const item = el("button",{type:"button",style:{display:"flex",gap:"10px",alignItems:"center",textAlign:"left",cursor:"pointer",background:C.bg2,color:C.text,border:`1px solid ${C.border}`,borderRadius:"6px",padding:"6px 8px",fontFamily:"inherit",fontSize:"12px"}},
                 [thumbBox, el("div",{},[el("div",{text:f.name}), el("div",{text:`${when} · ${(f.size/1048576).toFixed(1)} MB`,style:{color:C.muted,fontSize:"10px"}})])]);
               item.addEventListener("click", () => pick(f.name, f.thumb));
-              list.appendChild(item);
+              item.style.flex = "1";
+              const del = el("button",{type:"button",text:"🗑",title:"Delete this pose file",style:{cursor:"pointer",background:"#c0392b",color:"#fff",border:"none",borderRadius:"6px",width:"34px",fontSize:"14px"}});
+              del.addEventListener("click", async () => {
+                if (!confirm(`Delete ${f.name}? The 3D file and its preview picture are removed from disk.`)) return;
+                await deletePoseModel(folder, f.name);
+                if (state.poseMeshFile === f.name && (state.poseMeshSub || "").replace(/\\/g, "/") === `${folder}/pose`) { discard3D(); persist(); }   // the pose on screen was just deleted
+                rowEl.remove();
+                if (!list.children.length) list.appendChild(el("div",{text:"No 3D pose saved yet — use Preview & Angle, or Open file….",style:{color:C.muted,fontSize:"12px"}}));
+              });
+              const rowEl = el("div",{style:{display:"flex",gap:"6px",alignItems:"stretch"}},[item, del]);
+              list.appendChild(rowEl);
             }
           }).catch(e => { list.textContent = "Could not list the folder: " + e.message; });
         }

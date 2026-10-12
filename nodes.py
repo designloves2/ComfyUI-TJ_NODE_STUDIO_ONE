@@ -1543,6 +1543,21 @@ async def q21_pose_thumb(request):
     return web.json_response({"ok": True})
 
 
+@PromptServer.instance.routes.post("/qwenimage21_one/pose_delete")
+async def q21_pose_delete(request):
+    """Remove a saved 3D pose and its preview picture from output/<subfolder>/pose."""
+    data = await request.json()
+    name = os.path.basename(data.get("name", ""))
+    if not name.lower().endswith(POSE_3D_EXTS):
+        return web.json_response({"ok": False, "error": "not a 3D file"}, status=400)
+    folder = _safe_resolve_output_path(folder_paths.get_output_directory(), data.get("subfolder", ""), "pose")
+    for fname in (name, os.path.splitext(name)[0] + ".png"):
+        path = os.path.join(folder, fname)
+        if os.path.isfile(path):
+            os.remove(path)
+    return web.json_response({"ok": True})
+
+
 @PromptServer.instance.routes.post("/qwenimage21_one/pose_upload")
 async def q21_pose_upload(request):
     """Store a 3D file the user picked from disk in output/<subfolder>/pose."""

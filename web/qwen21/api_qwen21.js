@@ -48,6 +48,9 @@ export async function uploadPoseThumb(blob, subfolder, name) {
   fd.append("file", blob, "thumb.png"); fd.append("subfolder", subfolder); fd.append("name", name);
   await api.fetchApi(`${API}/pose_thumb`, { method: "POST", body: fd });
 }
+export async function deletePoseModel(subfolder, name) {
+  await api.fetchApi(`${API}/pose_delete`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subfolder, name }) });
+}
 export async function uploadPoseModel(file, subfolder) {
   const fd = new FormData();
   fd.append("file", file); fd.append("subfolder", subfolder);
@@ -106,7 +109,7 @@ export async function setLastImage(nodeId, im) {
 }
 export function queuePrompt(promptGraph, { onProgress, outputKey = "images" } = {}) {
   return new Promise(async (resolve, reject) => {
-    let promptId = null;
+    let promptId = null, poll = null;
     const onProg = ev => {
       if (!onProgress) return;
       try { const { value, max } = ev.detail || {}; if (max) onProgress(Math.round((value / max) * 100)); } catch {}
@@ -115,6 +118,7 @@ export function queuePrompt(promptGraph, { onProgress, outputKey = "images" } = 
     const onErr   = ev => { if (ev.detail?.prompt_id && ev.detail.prompt_id !== promptId) return; cleanup(); reject(new Error(ev.detail?.exception_message || "generation failed")); };
     const onCanc  = ev => { if (ev.detail?.prompt_id && ev.detail.prompt_id !== promptId) return; cleanup(); reject(new Error("cancelled")); };
     function cleanup() {
+      clearInterval(poll);
       api.removeEventListener("progress", onProg);
       api.removeEventListener("executed", onExec);
       api.removeEventListener("execution_error", onErr);
@@ -129,6 +133,16 @@ export function queuePrompt(promptGraph, { onProgress, outputKey = "images" } = 
       const data = await resp.json();
       if (data.error) { cleanup(); reject(new Error(data.error.message || "queue failed")); return; }
       promptId = data.prompt_id;
+      // The websocket 'executed' event can be missed (reload, reconnect); the history says the same thing.
+      poll = setInterval(async () => {
+        try {
+          const e = (await (await api.fetchApi(`/history/${promptId}`)).json())[promptId];
+          if (!e) return;
+          if (e.status?.status_str === "error") { cleanup(); reject(new Error("generation failed")); return; }
+          const out = Object.values(e.outputs || {}).find(o => o?.[outputKey]?.length);
+          if (out) { cleanup(); resolve({ prompt_id: promptId, output: out }); }
+        } catch { /* try again on the next tick */ }
+      }, 2500);
     } catch(e) { cleanup(); reject(e); }
   });
 }
