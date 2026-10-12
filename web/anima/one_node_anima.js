@@ -11,6 +11,7 @@ import { mountT2ILeft } from "./ui_t2i_anima.js";
 import { mountControlLeft } from "./ui_control_anima.js";
 import { mountUpscaleLeft } from "./ui_upscale_anima.js";
 import { attachNodeState, restoreNodeState } from "../shared/node_state.js";
+import { attachPanZoom, createCompareView } from "../shared/pan_zoom.js";
 
 // ── Layout ───────────────────────────────────────────────────────────────────
 const TOPBAR_H    = 40;
@@ -55,27 +56,6 @@ const SEND_TO = {
 };
 
 // ── Compare view (source vs result, for control modes) ───────────────────────
-function createCompareView(originalURL, resultURL) {
-  const container = el("div", { style:{ position:"relative", width:"100%", height:"100%", overflow:"hidden", borderRadius:"8px" }});
-  const resultImg = el("img", { src:resultURL,  style:{ position:"absolute", inset:"0", width:"100%", height:"100%", objectFit:"contain" }});
-  const origWrap  = el("div", { style:{ position:"absolute", inset:"0 auto 0 0", width:"100%", overflow:"hidden" }});
-  const origImg   = el("img", { src:originalURL, style:{ position:"absolute", inset:"0", width:`${PREVIEW_SIZE}px`, height:"100%", objectFit:"contain" }});
-  origWrap.appendChild(origImg);
-  const divider = el("div", { style:{ position:"absolute", top:"0", bottom:"0", left:"100%", width:"3px", background:"rgba(255,255,255,0.85)", cursor:"ew-resize", zIndex:"10" }});
-  const handle  = el("div", { style:{ position:"absolute", top:"50%", left:"-10px", transform:"translateY(-50%)", width:"20px", height:"40px", borderRadius:"10px", background:BRAND, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:"11px", userSelect:"none" }, text:"⟺" });
-  divider.appendChild(handle);
-  let pos=50;
-  function update(p){ pos=Math.max(0,Math.min(100,p)); origWrap.style.width=pos+"%"; divider.style.left=pos+"%"; }
-  update(0);
-  divider.addEventListener("pointerdown", e => {
-    divider.setPointerCapture(e.pointerId);
-    const mv=e2=>{ const r=container.getBoundingClientRect(); update((e2.clientX-r.left)/r.width*100); };
-    const up=()=>{ divider.removeEventListener("pointermove",mv); divider.removeEventListener("pointerup",up); };
-    divider.addEventListener("pointermove",mv); divider.addEventListener("pointerup",up);
-  });
-  container.appendChild(resultImg); container.appendChild(origWrap); container.appendChild(divider);
-  return container;
-}
 
 // ── Main extension ────────────────────────────────────────────────────────────
 app.registerExtension({
@@ -202,16 +182,12 @@ app.registerExtension({
       clearBtn.addEventListener("click",()=>{ delete modeResults[state.mode]; resetZoom(); resetPreview(); });
 
       // Zoom / Pan
-      let zoomEnabled=true, zoomScale=1, panX=0, panY=0, isPanning=false, panSX=0, panSY=0, pSTX=0, pSTY=0;
-      function applyZoom(){ finalImg.style.transform=`scale(${zoomScale}) translate(${panX}px,${panY}px)`; finalImg.style.transformOrigin="center center"; finalImg.style.cursor=zoomScale>1?"grab":"default"; }
-      function resetZoom(){ zoomScale=1; panX=0; panY=0; applyZoom(); }
+      let zoomEnabled = true;
+      function resetZoom() { pz.reset(); }
       const zoomLockBtn = el("button",{type:"button",text:"🔓",title:"Scroll zoom on/off",style:{position:"absolute",top:"6px",right:"32px",zIndex:"5",background:"rgba(0,0,0,0.65)",color:"#fff",border:"none",borderRadius:"4px",width:"22px",height:"22px",cursor:"pointer",fontSize:"11px",padding:"0",display:"none"}});
       zoomLockBtn.addEventListener("click",()=>{ zoomEnabled=!zoomEnabled; zoomLockBtn.textContent=zoomEnabled?"🔓":"🔒"; if(!zoomEnabled)resetZoom(); });
-      previewBox.addEventListener("wheel",e=>{if(!zoomEnabled||!modeResults[state.mode])return;e.preventDefault();zoomScale=Math.max(1,Math.min(8,zoomScale*(e.deltaY<0?1.12:0.9)));if(zoomScale===1){panX=0;panY=0;}applyZoom();},{passive:false});
-      previewBox.addEventListener("mousedown",e=>{if(!zoomEnabled||zoomScale<=1||e.button!==0)return;isPanning=true;panSX=e.clientX;panSY=e.clientY;pSTX=panX;pSTY=panY;finalImg.style.cursor="grabbing";e.preventDefault();});
-      document.addEventListener("mousemove",e=>{if(!isPanning)return;panX=pSTX+(e.clientX-panSX)/zoomScale;panY=pSTY+(e.clientY-panSY)/zoomScale;applyZoom();});
-      document.addEventListener("mouseup",()=>{if(isPanning){isPanning=false;finalImg.style.cursor=zoomScale>1?"grab":"default";}});
-      previewBox.addEventListener("dblclick",()=>{ const mr=modeResults[state.mode]; if(mr) openFullscreen(mr.url); });
+      // wheel = zoom · left-drag = pan · double-click = fit (shared/pan_zoom.js); the lock button switches it off
+      const pz = attachPanZoom(previewBox, () => [finalImg], { enabled: () => zoomEnabled && !!modeResults[state.mode] });
 
       function resetPreview(){
         previewBox.innerHTML=""; previewBox.appendChild(placeholder); previewBox.appendChild(finalImg); previewBox.appendChild(loadingOv); previewBox.appendChild(zoomLockBtn); previewBox.appendChild(clearBtn);

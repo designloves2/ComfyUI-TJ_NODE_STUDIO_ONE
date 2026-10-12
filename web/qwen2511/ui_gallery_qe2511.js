@@ -4,6 +4,7 @@ import { setThumb, wireCacheButton } from "../shared/gallery_thumb.js";
 import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, copyOutputToInput } from "./api_qwen2511.js";
 import { attachSensitiveToggle, mediaKey, isBlurred, isSensitive, setSensitive, wireRevealButton } from "../shared/ui_sensitive_media.js";
 import { mountGalleryLayout } from "../shared/gallery_layout.js";
+import { attachPanZoom } from "../shared/pan_zoom.js";
 
 const SEND_TARGETS = [
   { mode: "i2i",      field: "i2iImage",        label: "→ I2I" },
@@ -170,6 +171,8 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
       renderBig();
     });
     bigBox.appendChild(eyeBtn);
+    bigBox.style.overflow = "hidden";   // zoomed picture stays inside the box
+    attachPanZoom(bigBox, () => bigBox.querySelectorAll("img"));
     const counter = el("div", { text: `${imgIdx + 1} / ${loadedImages.length}`, style: { color: C.muted, fontSize: "11px" } });
 
     const closeB  = btn("Close", () => closeViewer());

@@ -32,6 +32,7 @@ import { attachNodeState, restoreNodeState }                              from "
 import { t, getLang, setLang }                                            from "./shared/i18n.js";
 import { SAMPLERS, SCHEDULERS } from "./shared/sampler_lists.js";
 import { mountUpscaleMethodTabs, mountVosrPanel } from "./shared/vosr_upscale.js";
+import { attachPanZoom, createCompareView } from "./shared/pan_zoom.js";
 
 // ── Layout (same constants pattern as 2511) ────────────────────────────────────
 const TOPBAR_H    = 40;
@@ -146,27 +147,6 @@ function loraRow(state, ctx) {
 }
 
 // ── Compare view (identical pattern to 2511) ────────────────────────────────────
-function createCompareView(originalURL, resultURL) {
-  const container = el("div",{style:{position:"relative",width:"100%",height:"100%",overflow:"hidden",borderRadius:"8px"}});
-  const resultImg = el("img",{src:resultURL, style:{position:"absolute",inset:"0",width:"100%",height:"100%",objectFit:"contain"}});
-  const origWrap  = el("div",{style:{position:"absolute",inset:"0 auto 0 0",width:"100%",overflow:"hidden"}});
-  const origImg   = el("img",{src:originalURL,style:{position:"absolute",inset:"0",width:`${PREVIEW_SIZE}px`,height:"100%",objectFit:"contain"}});
-  origWrap.appendChild(origImg);
-  const divider = el("div",{style:{position:"absolute",top:"0",bottom:"0",left:"100%",width:"3px",background:"rgba(255,255,255,0.85)",cursor:"ew-resize",zIndex:"10"}});
-  const handle  = el("div",{style:{position:"absolute",top:"50%",left:"-10px",transform:"translateY(-50%)",width:"20px",height:"40px",borderRadius:"10px",background:BRAND,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:"11px",userSelect:"none"},text:"⟺"});
-  divider.appendChild(handle);
-  let pos=50;
-  function update(p){pos=Math.max(0,Math.min(100,p));origWrap.style.width=pos+"%";divider.style.left=pos+"%";}
-  update(0);
-  divider.addEventListener("pointerdown",e=>{
-    divider.setPointerCapture(e.pointerId);
-    const mv=e2=>{const r=container.getBoundingClientRect();update((e2.clientX-r.left)/r.width*100);};
-    const up=()=>{divider.removeEventListener("pointermove",mv);divider.removeEventListener("pointerup",up);};
-    divider.addEventListener("pointermove",mv);divider.addEventListener("pointerup",up);
-  });
-  container.appendChild(resultImg);container.appendChild(origWrap);container.appendChild(divider);
-  return container;
-}
 
 app.registerExtension({
   name: "TJ.QwenImage21ONE.v1",
@@ -294,6 +274,8 @@ app.registerExtension({
       const previewBox = el("div",{style:{width:`${PREVIEW_SIZE}px`,height:`${PREVIEW_SIZE}px`,flexShrink:"0",background:"#000",borderRadius:"8px",border:`1px solid ${C.border}`,position:"relative",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",alignSelf:"flex-start"}});
       const placeholder = el("div",{text:"Generate to see result",style:{color:C.muted,fontSize:"12px"}});
       const finalImg = el("img",{style:{maxWidth:"100%",maxHeight:"100%",objectFit:"contain",display:"none"}});
+      // wheel = zoom · left-drag = pan · double-click = fit (shared/pan_zoom.js)
+      attachPanZoom(previewBox, () => [finalImg], { enabled: () => !!modeResults[state.mode] });
       const loadingOv = el("div",{style:{position:"absolute",inset:"0",background:"rgba(0,0,0,0.5)",display:"none",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"12px",zIndex:"10"}});
       const spinner = el("div",{style:{width:"44px",height:"44px",border:`3px solid ${C.border}`,borderTop:`3px solid ${BRAND}`,borderRadius:"50%",animation:"q21v1-spin 0.8s linear infinite"}});
       loadingOv.appendChild(spinner); loadingOv.appendChild(el("div",{text:"Generating…",style:{color:C.text,fontSize:"12px"}}));

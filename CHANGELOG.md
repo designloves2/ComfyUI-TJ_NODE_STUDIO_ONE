@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+### Image viewers: one zoom / pan / fit
+- Result previews, Compare views and the gallery's enlarged picture of every image node (and the H3 image gallery viewer)
+  share one gesture set: **wheel = zoom, left-drag = pan, double-click = fit**. In Compare both pictures zoom and pan
+  together and the compare bar stays put and keeps working. Native image dragging (the picture "following" the
+  cursor) is blocked. Shared code: `web/shared/pan_zoom.js`.
+
 ### UPSCALE: VOSR next to SeedVR2 (all image nodes)
 - Every image node's **UPSCALE** mode now has two methods, chosen with tabs at the top of the left
   menu: **VOSR** (ComfyUI-VOSR2, one-step 1.4B super-resolution) and **SEEDVR2** (unchanged). VOSR
