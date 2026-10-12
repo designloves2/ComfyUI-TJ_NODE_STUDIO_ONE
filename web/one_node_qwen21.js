@@ -801,7 +801,7 @@ app.registerExtension({
         const viewerBtns = row([resetViewBtn, discardBtn], "6px");
         function refreshPoseUI(){
           const on = !!(poseViewer && state.poseMeshFile);
-          poseCard.style.display = on ? "none" : "";
+          poseCard.style.display = on ? "none" : "flex";   // the card is a centered flex column
           viewerHost.style.display = on ? "block" : "none";
           viewerBtns.style.display = on ? "flex" : "none";
           previewBtn.textContent = on ? "🧊 Preview & Angle (rebuild)" : "🧊 Preview & Angle";
