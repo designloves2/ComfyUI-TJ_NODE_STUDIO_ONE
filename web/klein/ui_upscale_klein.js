@@ -5,6 +5,7 @@ import { uploadImage, copyOutputToInput } from "./api_klein.js";
 import { getSeedVR2Models } from "./api_klein.js";
 import { createImageUpload } from "./ui_image_upload.js";
 import { t } from "../shared/i18n.js";
+import { mountUpscaleMethodTabs, mountVosrPanel, buildVosrUpscaleGraph } from "../shared/vosr_upscale.js";
 
 function searchableSelect(options, value, onChange) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } });
@@ -43,6 +44,12 @@ export function mountUpscaleLeft(leftEl, state, ctx) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } });
   leftEl.appendChild(wrap);
 
+  // Method tabs (VOSR / SEEDVR2) at the very top; the SeedVR2 controls below live in seedBody.
+  const upUi = { C, el, panel, label, row, col };
+  const vosrBody = mountVosrPanel(state, () => ctx.persist(), upUi);
+  const seedBody = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } });
+  mountUpscaleMethodTabs(wrap, state, () => ctx.persist(), { vosr: vosrBody, seedvr2: seedBody }, upUi);
+
   // ── Image upload (다른 모드와 동일한 방식) ────────────────────────────────
   const imgUpload = createImageUpload({
     label: "Source Image",
@@ -54,6 +61,7 @@ export function mountUpscaleLeft(leftEl, state, ctx) {
     },
   });
   wrap.appendChild(panel([label("Source Image"), imgUpload.el]));
+  wrap.appendChild(vosrBody); wrap.appendChild(seedBody);
 
   // ── Model selects ──────────────────────────────────────────────────────────
   const ditWrap = el("div");
@@ -78,7 +86,7 @@ export function mountUpscaleLeft(leftEl, state, ctx) {
     } finally { refreshBtn.textContent = "↻ Refresh"; refreshBtn.disabled = false; }
   });
 
-  wrap.appendChild(panel([
+  seedBody.appendChild(panel([
     el("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } }, [
       ditWrap, vaeWrap, refreshBtn,
       el("div", { style: { fontSize: "10px", color: C.muted } },
@@ -118,7 +126,7 @@ export function mountUpscaleLeft(leftEl, state, ctx) {
     return row([el("div", { text: lbl, style: { flex: "1", fontSize: "12px", color: C.text } }), sel], "8px");
   }
 
-  wrap.appendChild(panel([
+  seedBody.appendChild(panel([
     label("Upscale Settings"),
     numRow("Resolution (short edge)", "upscaleResolution", 16, 16384, 2, 2048),
     numRow("Max Resolution", "upscaleMaxResolution", 0, 16384, 2, 4096),
@@ -140,12 +148,14 @@ export function mountUpscaleLeft(leftEl, state, ctx) {
   return {
     setImage(name) { state.upscaleImage = name; imgUpload.setFilename(name); ctx.persist(); },
     beforeGenerate: async () => {
+      if (state.upscaleMethod !== "seedvr2") return;
       if (!state.upscaleImage) throw new Error("소스 이미지를 업로드하세요.");
       if (!state.upscaleDitModel || state.upscaleDitModel === "none") throw new Error("DiT 모델을 선택하세요.");
       if (!state.upscaleVaeModel || state.upscaleVaeModel === "none") throw new Error("VAE 모델을 선택하세요.");
     },
     getGraph() {
       const s = state;
+      if (s.upscaleMethod !== "seedvr2") return buildVosrUpscaleGraph(s, s.saveSubfolder || "vosr");
       const prompt = {};
 
       const ditOffload = (s.upscaleOffloadDevice && s.upscaleOffloadDevice !== "none") ? s.upscaleOffloadDevice : "cpu";

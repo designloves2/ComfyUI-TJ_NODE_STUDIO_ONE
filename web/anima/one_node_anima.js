@@ -9,6 +9,7 @@ import { attachLLMPanel } from "../shared/llm_panel.js";
 import { createGalleryOverlay } from "./ui_gallery_anima.js";
 import { mountT2ILeft } from "./ui_t2i_anima.js";
 import { mountControlLeft } from "./ui_control_anima.js";
+import { mountUpscaleLeft } from "./ui_upscale_anima.js";
 import { attachNodeState, restoreNodeState } from "../shared/node_state.js";
 
 // ── Layout ───────────────────────────────────────────────────────────────────
@@ -29,6 +30,7 @@ const MODES = [
   { key: "inpaint",       label: "INPAINTING",    enabled: true },
   { key: "anycontrol",    label: "ANY CONTROL",   enabled: true },
   { key: "depthcontrol",  label: "DEPTH CONTROL", enabled: true },
+  { key: "upscale",       label: "UPSCALE",       enabled: true },
 ];
 
 // Send-to targets per mode: where a generated result can be copied as the NEXT
@@ -36,13 +38,20 @@ const MODES = [
 const SEND_TO = {
   t2i:          [{ mode:"inpaint",      label:"→ Inpainting",    field:"inpaintImage"      },
                  { mode:"anycontrol",   label:"→ Any Control",   field:"anyControlImage"   },
-                 { mode:"depthcontrol", label:"→ Depth Control", field:"depthControlImage" }],
+                 { mode:"depthcontrol", label:"→ Depth Control", field:"depthControlImage" },
+                 { mode:"upscale",      label:"→ Upscale",       field:"upscaleImage"      }],
   inpaint:      [{ mode:"anycontrol",   label:"→ Any Control",   field:"anyControlImage"   },
-                 { mode:"depthcontrol", label:"→ Depth Control", field:"depthControlImage" }],
+                 { mode:"depthcontrol", label:"→ Depth Control", field:"depthControlImage" },
+                 { mode:"upscale",      label:"→ Upscale",       field:"upscaleImage"      }],
   anycontrol:   [{ mode:"inpaint",      label:"→ Inpainting",    field:"inpaintImage"      },
-                 { mode:"depthcontrol", label:"→ Depth Control", field:"depthControlImage" }],
+                 { mode:"depthcontrol", label:"→ Depth Control", field:"depthControlImage" },
+                 { mode:"upscale",      label:"→ Upscale",       field:"upscaleImage"      }],
   depthcontrol: [{ mode:"inpaint",      label:"→ Inpainting",    field:"inpaintImage"      },
-                 { mode:"anycontrol",   label:"→ Any Control",   field:"anyControlImage"   }],
+                 { mode:"anycontrol",   label:"→ Any Control",   field:"anyControlImage"   },
+                 { mode:"upscale",      label:"→ Upscale",       field:"upscaleImage"      }],
+  upscale:      [{ mode:"inpaint",      label:"→ Inpainting",    field:"inpaintImage"      },
+                 { mode:"anycontrol",   label:"→ Any Control",   field:"anyControlImage"   },
+                 { mode:"depthcontrol", label:"→ Depth Control", field:"depthControlImage" }],
 };
 
 // ── Compare view (source vs result, for control modes) ───────────────────────
@@ -343,6 +352,7 @@ app.registerExtension({
           case "inpaint":       modeHandle=mountControlLeft("inpaint",leftPanel,state,ctx);      break;
           case "anycontrol":    modeHandle=mountControlLeft("anycontrol",leftPanel,state,ctx);    break;
           case "depthcontrol":  modeHandle=mountControlLeft("depthcontrol",leftPanel,state,ctx);  break;
+          case "upscale":       modeHandle=mountUpscaleLeft(leftPanel,state,ctx);                 break;
         }
         leftOuter.appendChild(seedGenWrap);
         promptTA.value=getModePrompt(mode); updateCount();

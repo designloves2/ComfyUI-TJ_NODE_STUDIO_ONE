@@ -1,4 +1,5 @@
 import { SAMPLERS as SHARED_SAMPLERS, SCHEDULERS as SHARED_SCHEDULERS } from "../shared/sampler_lists.js";
+import { vosrState } from "../shared/vosr_upscale.js";
 // core_qwen21.js — Qwen Image 2.1 ONE (TJ)
 export const BRAND = "#7612DA"; // unified brand color (same family as 2511)
 export const C = {
@@ -126,6 +127,7 @@ export function defaultState(saved) {
 
     // Upscale (SeedVR2) — model-family-agnostic, mirrors 2511 verbatim
     upscaleImage:            saved.upscaleImage            || null,
+    ...vosrState(saved),
     upscaleDitModel:         saved.upscaleDitModel         || "none",
     upscaleVaeModel:         saved.upscaleVaeModel         || "none",
     upscaleResolution:       saved.upscaleResolution       ?? 2048,

@@ -1,5 +1,6 @@
 // core_sdxl.js — constants, colors, state persistence for SDXL ONE (TJ)
 import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
+import { vosrState } from "../shared/vosr_upscale.js";
 export const BRAND = "#7612DA";
 export const C = {
   lime: BRAND, bg0: "#0b0b0b", bg1: "#111111", bg2: "#181818",
@@ -114,6 +115,7 @@ export function defaultState(saved) {
     upscaleRefinerCfg:     saved.upscaleRefinerCfg     ?? 7,
 
     // SEEDVR2 upscale
+    ...vosrState(saved),
     upscaleDitModel:        saved.upscaleDitModel        || "none",
     upscaleVaeModel:        saved.upscaleVaeModel        || "none",
     upscaleResolution:      saved.upscaleResolution      ?? 2048,

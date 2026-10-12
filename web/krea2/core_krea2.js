@@ -152,6 +152,7 @@ export function defaultState(saved) {
 
     // UPSCALE — SeedVR2
     upscaleImage:            saved.upscaleImage            || null,
+    ...vosrState(saved),
     upscaleDitModel:         saved.upscaleDitModel         || "none",
     upscaleVaeModel:         saved.upscaleVaeModel         || "none",
     upscaleResolution:       saved.upscaleResolution       ?? 2048,
@@ -195,6 +196,7 @@ export function randomSeed() { return Math.floor(Math.random() * 1e15); }
 // to ~/.hermes/render-queue/inputs/<filename>; mirrors the web twin's buildAgentJob().
 import { agentInputPath } from "../shared/agent_job.js";
 import { SAMPLERS as SHARED_SAMPLERS, SCHEDULERS as SHARED_SCHEDULERS } from "../shared/sampler_lists.js";
+import { vosrState } from "../shared/vosr_upscale.js";
 
 function agentPromptText(state, key) {
   const k = key || state.mode || "t2i";

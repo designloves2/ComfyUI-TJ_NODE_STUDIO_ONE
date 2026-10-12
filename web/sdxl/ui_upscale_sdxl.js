@@ -1,13 +1,15 @@
 // ui_upscale_sdxl.js — Upscale left panel for SDXL ONE (TJ)
 // Three sub-modes: ESRGAN, Refiner (I2I with refiner ckpt), SEEDVR2
-import { C, el, clear, BRAND, createInputImageSlot } from "./core_sdxl.js";
+import { C, el, clear, BRAND, SUBFOLDER, createInputImageSlot } from "./core_sdxl.js";
 import { panel, label, button, select, numberField, slider, row, col } from "../klein/ui_common.js";
 import { uploadImage, getESRGANModels, getSeedVR2Models } from "./api_sdxl.js";
 import { buildESRGANGraph, buildRefinerUpscaleGraph, buildSeedVR2Graph } from "./graph_builder_sdxl.js";
+import { mountVosrPanel, buildVosrUpscaleGraph } from "../shared/vosr_upscale.js";
 
 const UPSCALE_MODES = [
   { key: "esrgan",  label: "ESRGAN"  },
   { key: "refiner", label: "Refiner" },
+  { key: "vosr",    label: "VOSR"    },
   { key: "seedvr2", label: "SEEDVR2" },
 ];
 
@@ -75,7 +77,7 @@ export function mountUpscaleLeft(leftEl, state, ctx) {
     }});
     subModeBar.appendChild(btn);
   });
-  wrap.appendChild(subModeBar);
+  wrap.insertBefore(subModeBar, wrap.firstChild);   // method tabs at the very top of the left menu
 
   const modeSection = el("div");
   wrap.appendChild(modeSection);
@@ -119,6 +121,11 @@ export function mountUpscaleLeft(leftEl, state, ctx) {
         col([label("CFG"),   numberField(state.upscaleRefinerCfg ?? 7,   v => { state.upscaleRefinerCfg   = v; ctx.persist(); }, 0.5)]),
       ]),
     ]));
+  }
+
+  // ── VOSR ───────────────────────────────────────────────────────────
+  function buildVosrSection() {
+    modeSection.appendChild(mountVosrPanel(state, () => ctx.persist(), { C, el, panel, label, row, col }));
   }
 
   // ── SEEDVR2 ─────────────────────────────────────────────────────────────────
@@ -189,6 +196,7 @@ export function mountUpscaleLeft(leftEl, state, ctx) {
     const mode = state.upscaleMode || "esrgan";
     if (mode === "esrgan")  buildESRGANSection();
     if (mode === "refiner") buildRefinerSection();
+    if (mode === "vosr")    buildVosrSection();
     if (mode === "seedvr2") buildSeedVR2Section();
   }
   refreshSubMode();
@@ -219,6 +227,11 @@ export function mountUpscaleLeft(leftEl, state, ctx) {
       const mode = state.upscaleMode || "esrgan";
       if (mode === "esrgan")  return buildESRGANGraph(state);
       if (mode === "refiner") return buildRefinerUpscaleGraph(state);
+      if (mode === "vosr") {
+        const g = buildVosrUpscaleGraph(state, `${state.saveSubfolder || SUBFOLDER}/SX`);
+        if (state.outputMode === "preview") g["UP:save"] = { class_type: "PreviewImage", inputs: { images: ["UP:run", 0] } };
+        return g;
+      }
       return buildSeedVR2Graph(state);
     },
   };

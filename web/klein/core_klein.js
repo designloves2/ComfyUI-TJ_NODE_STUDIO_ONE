@@ -1,3 +1,4 @@
+import { vosrState } from "../shared/vosr_upscale.js";
 // core_klein.js — constants, colors, state persistence for flux2 klein One (TJ)
 export const LIME = "#7612DA";
 export const C = {
@@ -88,6 +89,7 @@ export function defaultState(saved) {
 
     // UPSCALE (SeedVR2)
     upscaleImage:            saved.upscaleImage            || null,
+    ...vosrState(saved),
     upscaleDitModel:         saved.upscaleDitModel         || "none",
     upscaleVaeModel:         saved.upscaleVaeModel         || "none",
     upscaleResolution:       saved.upscaleResolution       ?? 2048,

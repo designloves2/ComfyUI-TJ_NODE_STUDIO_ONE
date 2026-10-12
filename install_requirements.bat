@@ -162,8 +162,11 @@ set REPOS[24]=https://github.com/lihaoyun6/ComfyUI-FlashVSR_Ultra_Fast
 rem Fizgig H3 Still - MiniMax H3 Image Generator's "Use Fizgig Latent" option (a true
 rem one-frame latent + a decode that does not band a lone frame). No extra dependencies.
 set REPOS[25]=https://github.com/shootthesound/ComfyUI-Fizgig-H3-Still
+rem VOSR2 - one-step image super-resolution, the UPSCALE tab next to SeedVR2 in every image
+rem node. The model bundle (~7 GB) downloads itself into models/vosr2 on its first run.
+set REPOS[26]=https://github.com/ylchen333/ComfyUI-VOSR2
 
-set COUNT=26
+set COUNT=27
 set /a LAST=COUNT-1
 
 :: ComfyUI Manager names a folder after the pack's pyproject "name", not the repo name.
@@ -176,6 +179,7 @@ set "ALT[16]=minimax-h3-firstblockcache"
 set "ALT[20]=rife_comfyui_wrapper"
 set "ALT[21]=h3-optimizations"
 set "ALT[23]=comfyui-ace-step-ksampler"
+set "ALT[26]=comfyui-vosr2"
 
 set /a N_NEW=0, N_UPD=0, N_CUR=0, N_FAIL=0
 

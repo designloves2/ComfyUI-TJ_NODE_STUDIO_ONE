@@ -32,6 +32,7 @@ import { attachLLMPanel, mountLLMSettingsSection }                        from "
 import { attachNodeState, restoreNodeState }                              from "./shared/node_state.js";
 import { t, getLang, setLang }                                            from "./shared/i18n.js";
 import { SAMPLERS, SCHEDULERS } from "./shared/sampler_lists.js";
+import { mountUpscaleMethodTabs, mountVosrPanel } from "./shared/vosr_upscale.js";
 
 // ── Layout (same constants pattern as 2511) ────────────────────────────────────
 const TOPBAR_H    = 40;
@@ -709,8 +710,14 @@ app.registerExtension({
         };
       }
       function mountUpscale(container){
+        // Method tabs (VOSR / SEEDVR2) at the very top; the SeedVR2 controls below live in seedBody.
+        const upUi = { C, el, panel, label, row, col, accent: BRAND };
+        const vosrBody = mountVosrPanel(state, persist, upUi);
+        const seedBody = el("div",{style:{display:"flex",flexDirection:"column",gap:"6px"}});
+        mountUpscaleMethodTabs(container, state, persist, { vosr: vosrBody, seedvr2: seedBody }, upUi);
         const card = imageUploadCard("Source Image", state.upscaleImage, (fn)=>{ state.upscaleImage=fn; persist(); });
         container.appendChild(panel([label("Source Image"), card]));
+        container.appendChild(vosrBody); container.appendChild(seedBody);
 
         const ditWrap = el("div"), vaeWrap = el("div");
         function buildModelSelects(models){
@@ -727,7 +734,7 @@ app.registerExtension({
           try { const d=await getSeedVR2Models(); buildModelSelects(d.models||["none"]); }
           finally { refreshBtn.textContent="↻ Refresh"; refreshBtn.disabled=false; }
         });
-        container.appendChild(panel([el("div",{style:{display:"flex",flexDirection:"column",gap:"6px"}},[
+        seedBody.appendChild(panel([el("div",{style:{display:"flex",flexDirection:"column",gap:"6px"}},[
           ditWrap, vaeWrap, refreshBtn,
           el("div",{style:{fontSize:"10px",color:C.muted}},[el("span",{html:"Models → <code>models/SEEDVR2/</code>"})]),
         ])]));
@@ -747,7 +754,7 @@ app.registerExtension({
           sel.addEventListener("change",e=>{state[key]=e.target.value;persist();});
           return row([el("div",{text:lbl,style:{flex:"1",fontSize:"12px",color:C.text}}),sel],"8px");
         }
-        container.appendChild(panel([
+        seedBody.appendChild(panel([
           label("Upscale Settings"),
           numRow("Resolution (short edge)","upscaleResolution",16,16384,2,2048),
           numRow("Max Resolution","upscaleMaxResolution",0,16384,2,4096),
@@ -763,6 +770,7 @@ app.registerExtension({
         return {
           beforeGenerate: async () => {
             if (!state.upscaleImage) throw new Error("Upload a source image.");
+            if (state.upscaleMethod !== "seedvr2") return;
             if (!state.upscaleDitModel || state.upscaleDitModel==="none") throw new Error("Select a SeedVR2 DiT model.");
             if (!state.upscaleVaeModel || state.upscaleVaeModel==="none") throw new Error("Select a SeedVR2 VAE model.");
           },

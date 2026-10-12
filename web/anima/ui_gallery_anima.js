@@ -21,6 +21,7 @@ const SEND_TARGETS = [
   { mode: "inpaint",      label: "→ Inpainting",    field: "inpaintImage"      },
   { mode: "anycontrol",   label: "→ Any Control",   field: "anyControlImage"   },
   { mode: "depthcontrol", label: "→ Depth Control", field: "depthControlImage" },
+  { mode: "upscale",      label: "→ Upscale",       field: "upscaleImage"      },
 ];
 
 export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {

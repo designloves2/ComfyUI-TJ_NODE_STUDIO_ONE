@@ -4,6 +4,7 @@ import { panel, label, button, row, col } from "./ui_common_qe.js";
 import { buildUpscaleGraph } from "./graph_builder_qwen2511.js";
 import { uploadImage, getSeedVR2Models } from "./api_qwen2511.js";
 import { createImageUpload as createImgUpload } from "./ui_image_upload.js";
+import { mountUpscaleMethodTabs, mountVosrPanel, buildVosrUpscaleGraph } from "../shared/vosr_upscale.js";
 
 function searchableSelect(options, value, onChange) {
   const wrap = el("div", { style:{ display:"flex", flexDirection:"column", gap:"2px" }});
@@ -26,10 +27,17 @@ export function mountUpscaleLeft(leftEl, state, ctx) {
   const wrap = el("div", { style:{ display:"flex", flexDirection:"column", gap:"6px" }});
   leftEl.appendChild(wrap);
 
+  // Method tabs (VOSR / SEEDVR2) at the very top; the SeedVR2 controls below live in seedBody.
+  const upUi = { C, el, panel, label, row, col };
+  const vosrBody = mountVosrPanel(state, () => ctx.persist(), upUi);
+  const seedBody = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } });
+  mountUpscaleMethodTabs(wrap, state, () => ctx.persist(), { vosr: vosrBody, seedvr2: seedBody }, upUi);
+
   const { el: imgEl, setFilename } = createImgUpload("Source Image", state.upscaleImage||null, async f=>{
     const n=await uploadImage(f); state.upscaleImage=n; ctx.persist(); return n;
   });
   wrap.appendChild(panel([label("Source Image"), imgEl]));
+  wrap.appendChild(vosrBody); wrap.appendChild(seedBody);
 
   const ditWrap = el("div"), vaeWrap = el("div");
   let ditSel, vaeSel;
@@ -48,7 +56,7 @@ export function mountUpscaleLeft(leftEl, state, ctx) {
     try { const d=await getSeedVR2Models(); buildModelSelects(d.models||["none"]); }
     finally { refreshBtn.textContent="↻ Refresh"; refreshBtn.disabled=false; }
   });
-  wrap.appendChild(panel([el("div",{style:{display:"flex",flexDirection:"column",gap:"6px"}},[
+  seedBody.appendChild(panel([el("div",{style:{display:"flex",flexDirection:"column",gap:"6px"}},[
     ditWrap, vaeWrap, refreshBtn,
     el("div",{style:{fontSize:"10px",color:C.muted}},[el("span",{html:"Models → <code>models/SEEDVR2/</code>"})]),
   ])]));
@@ -67,7 +75,7 @@ export function mountUpscaleLeft(leftEl, state, ctx) {
     sel.addEventListener("change",e=>{state[key]=e.target.value;ctx.persist();});
     return row([el("div",{text:lbl,style:{flex:"1",fontSize:"12px",color:C.text}}),sel],"8px");
   }
-  wrap.appendChild(panel([
+  seedBody.appendChild(panel([
     label("Upscale Settings"),
     numRow("Resolution (short edge)","upscaleResolution",16,16384,2,2048),
     numRow("Max Resolution","upscaleMaxResolution",0,16384,2,4096),
@@ -84,6 +92,7 @@ export function mountUpscaleLeft(leftEl, state, ctx) {
 
   return {
     beforeGenerate: async () => {
+      if (state.upscaleMethod !== "seedvr2") return;
       if (!state.upscaleImage)                                          throw new Error("Upload a source image.");
       if (!state.upscaleDitModel || state.upscaleDitModel==="none")    throw new Error("Select a SeedVR2 DiT model.");
       if (!state.upscaleVaeModel || state.upscaleVaeModel==="none")    throw new Error("Select a SeedVR2 VAE model.");

@@ -167,6 +167,9 @@ REPOS=(
     # Fizgig H3 Still - MiniMax H3 Image Generator's "Use Fizgig Latent" option (a true
     # one-frame latent + a decode that does not band a lone frame). No extra dependencies.
     "https://github.com/shootthesound/ComfyUI-Fizgig-H3-Still"
+    # VOSR2 - one-step image super-resolution, the UPSCALE tab next to SeedVR2 in every image
+    # node. The model bundle (~7 GB) downloads itself into models/vosr2 on its first run.
+    "https://github.com/ylchen333/ComfyUI-VOSR2"
 )
 
 # ComfyUI Manager names a folder after the pack's pyproject `name`, which is often not
@@ -179,6 +182,7 @@ REPOS=(
 alt_folder_for() {
     case "$1" in
         ComfyUI-SeedVR2_VideoUpscaler)     printf 'seedvr2_videoupscaler' ;;
+        ComfyUI-VOSR2)                     printf 'comfyui-vosr2' ;;
         Nvidia_RTX_Nodes_ComfyUI)          printf 'comfyui_nvidia_rtx_nodes' ;;
         ComfyUI-MiniMaxH3-FirstBlockCache) printf 'minimax-h3-firstblockcache' ;;
         ComfyUI-VFI)                       printf 'rife_comfyui_wrapper' ;;

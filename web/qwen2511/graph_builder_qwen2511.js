@@ -1,5 +1,6 @@
 // graph_builder_qwen2511.js — Qwen Image Edit 2511 ONE inline graph builders (TJ)
 import { SUBFOLDER, buildAnglePrompt } from "./core_qwen2511.js";
+import { buildVosrUpscaleGraph } from "../shared/vosr_upscale.js";
 
 const P = "QE"; // node ID prefix
 
@@ -322,6 +323,7 @@ export function buildAngleGraph(state) {
 // ── UPSCALE (SeedVR2) ─────────────────────────────────────────────────────────
 export function buildUpscaleGraph(state) {
   if (!state.upscaleImage)                                          throw new Error("No source image uploaded for upscale.");
+  if (state.upscaleMethod !== "seedvr2") return buildVosrUpscaleGraph(state, `${state.saveSubfolder || SUBFOLDER}/QE_up`);
   if (!state.upscaleDitModel || state.upscaleDitModel === "none") throw new Error("Select a SeedVR2 DiT model.");
   if (!state.upscaleVaeModel || state.upscaleVaeModel === "none") throw new Error("Select a SeedVR2 VAE model.");
 

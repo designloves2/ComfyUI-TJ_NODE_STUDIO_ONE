@@ -103,6 +103,7 @@ chmod +x install_requirements.sh
 | **ComfyUI-RMBG** | 배경 제거 (RE-BG 모드) | Z-Image · RE-BG | [1038lab/ComfyUI-RMBG](https://github.com/1038lab/ComfyUI-RMBG) |
 | **comfyui_controlnet_aux** | ControlNet 전처리기 (Depth · Canny · Pose 등) | Z-Image · ControlNet | [Fannovel16/comfyui_controlnet_aux](https://github.com/Fannovel16/comfyui_controlnet_aux) |
 | **ComfyUI-SeedVR2** | SeedVR2 AI 업스케일 (UPSCALE 모드) | 전체 노드 | [numz](https://github.com/numz) [ComfyUI-SeedVR2_VideoUpscaler](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler) |
+| **ComfyUI-VOSR2** | VOSR 2.0 원스텝 초해상도 (UPSCALE 모드의 VOSR 탭) | 이미지 노드 7종 | [ylchen333](https://github.com/ylchen333) [ComfyUI-VOSR2](https://github.com/ylchen333/ComfyUI-VOSR2) — 모델(약 7GB)은 첫 실행 때 `models/vosr2/`로 자동 다운로드 |
 | **comfyui-krea2-controlnet** | Krea2 Control LoRA 추론 — I2I ControlNet | Krea2 ControlNet | [facok/comfyui-krea2-controlnet](https://github.com/facok/comfyui-krea2-controlnet) |
 
 ---

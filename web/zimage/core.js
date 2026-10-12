@@ -126,6 +126,7 @@ export function defaultState(saved) {
     // OUTPUT
     // UPSCALE (SeedVR2)
     upscaleImage:            saved.upscaleImage            || null,
+    ...vosrState(saved),
     upscaleDitModel:         saved.upscaleDitModel         || "none",
     upscaleVaeModel:         saved.upscaleVaeModel         || "none",
     upscaleResolution:       saved.upscaleResolution       ?? 2048,
@@ -167,6 +168,7 @@ export function randomSeed() { return Math.floor(Math.random() * 1e15); }
 // / face-redraw / upscale modes return null and the button hides. `i2iImage` is
 // rewritten to ~/.hermes/render-queue/inputs/<filename>. Mirrors the web twin.
 import { agentInputPath } from "../shared/agent_job.js";
+import { vosrState } from "../shared/vosr_upscale.js";
 
 export function buildAgentJob(state) {
   if (state.mode !== "t2i" && state.mode !== "i2i") return null;

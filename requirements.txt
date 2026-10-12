@@ -32,6 +32,10 @@ gguf>=0.9.0
 # flash-attn (선택사항 — sageattn/flash_attn 모드 사용 시)
 # pip install flash-attn --no-build-isolation
 
+# ── ComfyUI-VOSR2 (이미지 노드 Upscale 탭 'VOSR') ─────────────────────────────
+# 추가 pip 패키지 없음 (huggingface_hub 만 사용 — ComfyUI 에 포함). 모델(~7GB)은 첫 실행 때
+# models/vosr2 로 자동 다운로드됩니다.
+
 # ── ComfyUI-RMBG (Z-Image RE-BG) ─────────────────────────────────────────────
 # (RMBG는 자체 의존성 포함 — 별도 설치 불필요)
 

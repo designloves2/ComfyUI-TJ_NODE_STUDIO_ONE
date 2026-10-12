@@ -9,6 +9,7 @@
 // (TJ_BatchToMinimaxH3 → 10 image slots, sampler fed from output index 2). Verify against
 // /object_info/TextEncodeQwenImage21 before shipping if this ever drifts.
 import { SUBFOLDER, POSE_SYSTEM_PROMPT_DEFAULT, POSE_SAM3D_MODEL_DEFAULT } from "./core_qwen21.js";
+import { buildVosrUpscaleGraph } from "../shared/vosr_upscale.js";
 
 const P = "Q21"; // node ID prefix
 
@@ -267,6 +268,7 @@ export function buildOutpaintGraph(state) {
 // ── UPSCALE (SeedVR2) — model-family-agnostic, mirrors 2511 verbatim ──────────
 export function buildUpscaleGraph(state) {
   if (!state.upscaleImage)                                          throw new Error("No source image uploaded for upscale.");
+  if (state.upscaleMethod !== "seedvr2") return buildVosrUpscaleGraph(state, `${state.saveSubfolder || SUBFOLDER}/Q21_up`);
   if (!state.upscaleDitModel || state.upscaleDitModel === "none") throw new Error("Select a SeedVR2 DiT model.");
   if (!state.upscaleVaeModel || state.upscaleVaeModel === "none") throw new Error("Select a SeedVR2 VAE model.");
 

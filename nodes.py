@@ -3764,6 +3764,13 @@ async def anima_save_config(request):
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 
 
+@PromptServer.instance.routes.get("/anima_one/seedvr2_models")
+async def anima_get_seedvr2_models(request):
+    seedvr2_dir = os.path.join(folder_paths.models_dir, "SEEDVR2")
+    models = _scan_path(seedvr2_dir)
+    return web.json_response({"models": models})
+
+
 @PromptServer.instance.routes.get("/anima_one/models")
 async def anima_get_models(request):
     try:

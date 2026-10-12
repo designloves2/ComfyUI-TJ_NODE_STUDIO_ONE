@@ -1,4 +1,5 @@
 import { SAMPLERS as SHARED_SAMPLERS, SCHEDULERS as SHARED_SCHEDULERS } from "../shared/sampler_lists.js";
+import { vosrState } from "../shared/vosr_upscale.js";
 // core_anima.js — Anima ONE STUDIO constants, state, helpers
 export const BRAND = "#7612DA";
 export const C = {
@@ -111,6 +112,21 @@ export function defaultState(saved) {
     depthControlEnd:      saved.depthControlEnd      ?? 1.0,
     depthCkpt:            saved.depthCkpt || "depth_anything_v2_vitl.pth",
     preprocResolution:    saved.preprocResolution ?? 512,
+
+    // Upscale — VOSR or SeedVR2 (state.upscaleMethod), same fields as the other image nodes
+    upscaleImage:            saved.upscaleImage            || null,
+    ...vosrState(saved),
+    upscaleDitModel:         saved.upscaleDitModel         || "none",
+    upscaleVaeModel:         saved.upscaleVaeModel         || "none",
+    upscaleResolution:       saved.upscaleResolution       ?? 2048,
+    upscaleMaxResolution:    saved.upscaleMaxResolution    ?? 4096,
+    upscaleBatchSize:        saved.upscaleBatchSize        ?? 1,
+    upscaleBlocksToSwap:     saved.upscaleBlocksToSwap     ?? 0,
+    upscaleAttentionMode:    saved.upscaleAttentionMode    || "sdpa",
+    upscaleColorCorrection:  saved.upscaleColorCorrection  || "lab",
+    upscaleOffloadDevice:    (saved.upscaleOffloadDevice && saved.upscaleOffloadDevice !== "none") ? saved.upscaleOffloadDevice : "cpu",
+    upscaleInputNoiseScale:  saved.upscaleInputNoiseScale  ?? 0,
+    upscaleLatentNoiseScale: saved.upscaleLatentNoiseScale ?? 0,
 
     outputMode:    saved.outputMode    || "save",
     saveSubfolder: saved.saveSubfolder || "",

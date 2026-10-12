@@ -1,5 +1,6 @@
 // graph_builder_krea2.js — Krea 2 ONE STUDIO workflow graph builders
 import { SUBFOLDER, safeDepthCkpt } from "./core_krea2.js";
+import { buildVosrUpscaleGraph } from "../shared/vosr_upscale.js";
 
 function unetNode(name) {
   // Krea 2 GGUF: city96 UnetLoaderGGUF gates on general.architecture and doesn't
@@ -400,6 +401,7 @@ export function buildIdentityGraph(state) {
 export function buildUpscaleGraph(state) {
   if (!state.upscaleImage)
     throw new Error("No source image uploaded for upscale.");
+  if (state.upscaleMethod !== "seedvr2") return buildVosrUpscaleGraph(state, `${state.saveSubfolder || SUBFOLDER}/K2_up`);
   if (!state.upscaleDitModel || state.upscaleDitModel === "none")
     throw new Error("Select a SeedVR2 DiT model in the UPSCALE panel.");
   if (!state.upscaleVaeModel || state.upscaleVaeModel === "none")

@@ -2,6 +2,19 @@
 
 ---
 
+## Unreleased
+
+### UPSCALE: VOSR next to SeedVR2 (all image nodes)
+- Every image node's **UPSCALE** mode now has two methods, chosen with tabs at the top of the left
+  menu: **VOSR** (ComfyUI-VOSR2, one-step 1.4B super-resolution) and **SEEDVR2** (unchanged). VOSR
+  settings: model, precision, upscale ×, color alignment, tile / VAE tile size and overlap (defaults
+  512 / 1024, as the pack recommends above 512 px). SDXL keeps its ESRGAN / Refiner tabs and gets
+  VOSR next to SEEDVR2. H3 Image Generator is not part of this.
+- **Anima gets an UPSCALE mode** (it had none), with the same two methods and Send-to / gallery
+  targets.
+- `install_requirements.bat/.sh` and the dependency check now include ComfyUI-VOSR2; its model bundle
+  (~7 GB) downloads itself into `models/vosr2/` on the first run.
+
 ## v1.36.0 (2026-10-07)
 
 ### Reference videos: MP and range settings
