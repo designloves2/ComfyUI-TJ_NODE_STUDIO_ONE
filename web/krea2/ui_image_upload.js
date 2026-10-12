@@ -74,6 +74,14 @@ export function createImageUpload(labelText, initialFile, onUpload,
     });
   });
 
+  // A saved file that no longer exists would show a broken-image icon: show the empty card instead,
+  // and forget the saved name when the server says the file is gone (404).
+  img.addEventListener("error", async () => {
+    if (!img.getAttribute("src")) return;
+    const gone = await fetch(img.src, { method: "HEAD" }).then(r => r.status === 404, () => false);
+    setFilename(null);
+    if (gone) { if (onClear) onClear(); else await onUpload(""); }
+  });
   box.append(hint, img);
   box.appendChild(clearBtn);
   box.appendChild(galleryBtn);

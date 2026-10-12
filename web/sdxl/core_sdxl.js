@@ -228,6 +228,14 @@ export function createInputImageSlot(state, fieldName, uploadFn, ctx, { label = 
     width: "22px", height: "22px", cursor: "pointer", fontSize: "11px", padding: "0", display: "none" } });
   clearBtn.addEventListener("click", (e) => { e.stopPropagation(); state[fieldName] = null; showImage(null); ctx.persist(); });
 
+  // A saved file that no longer exists would show a broken-image icon: show the empty card instead,
+  // and forget the saved name when the server says the file is gone (404).
+  img.addEventListener("error", async () => {
+    if (!img.getAttribute("src")) return;
+    const gone = await fetch(img.src, { method: "HEAD" }).then(r => r.status === 404, () => false);
+    showImage(null);
+    if (gone) { state[fieldName] = null; ctx.persist(); }
+  });
   box.appendChild(hint); box.appendChild(img); box.appendChild(expandBtn); box.appendChild(clearBtn); box.appendChild(galleryBtn);
 
   function showImage(name) {
