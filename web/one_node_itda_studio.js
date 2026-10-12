@@ -414,7 +414,7 @@ app.registerExtension({
           "App Settings",
           `<div class="modal-grid">
             <label>Gallery Path</label>
-            <input id="appSettingsGalleryDir" type="text" placeholder="(default: ComfyUI/output/one_itda_studio_gallery)" value="${(settings.gallery_dir || "").replace(/"/g, "&quot;")}">
+            <input id="appSettingsGalleryDir" type="text" placeholder="output/[Enter folder name]" value="${(settings.gallery_dir || "").replace(/"/g, "&quot;")}">
           </div>
           <p class="muted">Where "⏺ Render" and "🖼 Gallery" store/read rendered timelines. Leave blank for the default location.</p>`,
           `<button id="appSettingsApply">Apply</button><button id="modalOk">Close</button>`
