@@ -1543,6 +1543,20 @@ async def q21_pose_thumb(request):
     return web.json_response({"ok": True})
 
 
+POSE_TEMP_INPUT = re.compile(r"^q21_(pose3d_\d+|\d+_Q21_pose_render_\d+_?)\.png$")
+
+
+@PromptServer.instance.routes.post("/qwenimage21_one/pose_input_cleanup")
+async def q21_pose_input_cleanup(request):
+    """Remove the temporary pose picture (3D capture / auto render copy) POSE put in input/ for a run."""
+    name = os.path.basename((await request.json()).get("filename", ""))
+    if POSE_TEMP_INPUT.match(name):
+        path = os.path.join(folder_paths.get_input_directory(), name)
+        if os.path.isfile(path):
+            os.remove(path)
+    return web.json_response({"ok": True})
+
+
 @PromptServer.instance.routes.post("/qwenimage21_one/pose_delete")
 async def q21_pose_delete(request):
     """Remove a saved 3D pose and its preview picture from output/<subfolder>/pose."""

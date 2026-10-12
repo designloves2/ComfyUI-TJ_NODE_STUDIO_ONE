@@ -154,10 +154,9 @@ export function defaultState(saved) {
     refMaxMegapixels: saved.refMaxMegapixels ?? 0,
 
     // POSE mode (VNCCS PoseStudio LoRA) — Image 1 is a SAM3D-Body render of the pose image
-    // (extracted server-side before generation), Image 2 is the character. poseRenderImage is
-    // that render (becomes <image1>, and the Compare view's "before"; poseRenderType = which
-    // folder it lives in). After "Preview & Angle", poseMeshFile/poseMeshSub is the GLB shown in
-    // the 3D viewer, poseCamera its orbit/zoom state, and the viewer's capture replaces the render.
+    // (extracted server-side before generation), Image 2 is the character. After "Preview & Angle",
+    // poseMeshFile/poseMeshSub is the GLB shown in the 3D viewer, poseCamera its orbit/zoom state, and the
+    // viewer's capture replaces the render.
     poseImageRaw:     saved.poseImageRaw     || null,
     poseSizeMode:     (saved.poseSizeMode === "image1" || saved.poseSizeMode === "custom") ? saved.poseSizeMode : "image2", // result size: Image 1's / Image 2's size, or poseCustomW x poseCustomH
     posePicW:         saved.posePicW         || null,   // natural size of Image 1
@@ -169,8 +168,6 @@ export function defaultState(saved) {
     poseMeshFile:     saved.poseMeshFile     || null,
     poseMeshSub:      saved.poseMeshSub      || "",
     poseCamera:       saved.poseCamera       || null,
-    poseRenderImage:  saved.poseRenderImage  || null,
-    poseRenderType:   saved.poseRenderType   || "output",
     poseCharacterImage: saved.poseCharacterImage || null,
 
     // Settings — VNCCS PoseStudio LoRA + SAM3D model file + editable/resettable system prompt.

@@ -96,7 +96,7 @@ export function mountVosrPanel(state, persist, ui) {
   const inputStyle = { width: "70px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`, borderRadius: "4px", padding: "4px 6px", fontSize: "12px", fontFamily: "inherit", outline: "none" };
   const lbl = (text, tip) => {
     const d = el("div", { text, style: { flex: "1", fontSize: "12px", color: C.text } });
-    if (tip) { d.title = tip; d.style.cursor = "help"; d.style.borderBottom = `1px dotted ${C.muted}`; d.style.display = "inline-block"; }
+    if (tip) { d.title = tip; d.style.cursor = "help"; }
     return d;
   };
   function numRow(text, key, min, max, step, def, tip) {

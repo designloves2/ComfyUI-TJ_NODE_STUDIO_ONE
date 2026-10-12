@@ -48,6 +48,9 @@ export async function uploadPoseThumb(blob, subfolder, name) {
   fd.append("file", blob, "thumb.png"); fd.append("subfolder", subfolder); fd.append("name", name);
   await api.fetchApi(`${API}/pose_thumb`, { method: "POST", body: fd });
 }
+export async function cleanupPoseInput(filename) {
+  await api.fetchApi(`${API}/pose_input_cleanup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename }) });
+}
 export async function deletePoseModel(subfolder, name) {
   await api.fetchApi(`${API}/pose_delete`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subfolder, name }) });
 }

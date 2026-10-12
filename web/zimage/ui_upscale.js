@@ -106,8 +106,6 @@ export function mountUpscaleLeft(leftEl, state, ctx) {
     if (tooltip) {
       lblEl.title = tooltip;
       lblEl.style.cursor = "help";
-      lblEl.style.borderBottom = `1px dotted ${C.muted}`;
-      lblEl.style.display = "inline-block";
     }
     return row([lblEl, inp], "8px");
   }

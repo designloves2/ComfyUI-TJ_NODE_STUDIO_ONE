@@ -66,7 +66,7 @@ export function mountUpscaleLeft(leftEl, state, ctx) {
     inp.value = state[key]??def;
     inp.addEventListener("input",()=>{state[key]=parseFloat(inp.value)||def;ctx.persist();});
     const lblEl = el("div",{text:lbl,style:{flex:"1",fontSize:"12px",color:C.text}});
-    if (tip) { lblEl.title=tip; lblEl.style.cursor="help"; lblEl.style.borderBottom=`1px dotted ${C.muted}`; lblEl.style.display="inline-block"; }
+    if (tip) { lblEl.title=tip; lblEl.style.cursor="help"; }
     return row([lblEl,inp],"8px");
   }
   function comboRow(lbl, key, options, def) {

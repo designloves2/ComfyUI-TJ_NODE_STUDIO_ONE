@@ -10,7 +10,7 @@ import { C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, MAX_REF_IMAGES, SUBFOLDER,
 import { panel, label, button, select, slider, numberField, row, col,
          modeBar, iconBtn, openFullscreen, loraSelect }                 from "./klein/ui_common.js";
 import { queuePrompt, interrupt, setLastImage, saveMeta, uploadImage,
-         copyOutputToInput, listPoseModels, uploadPoseModel, uploadPoseThumb, deletePoseModel, getModels, getLoraTriggers, getConfig, saveConfig,
+         copyOutputToInput, listPoseModels, uploadPoseModel, uploadPoseThumb, deletePoseModel, cleanupPoseInput, getModels, getLoraTriggers, getConfig, saveConfig,
          getSeedVR2Models }                                                from "./qwen21/api_qwen21.js";
 import { buildT2IGraph, buildI2IGraph, buildRefToImageGraph, buildEditGraph,
          buildInpaintGraph, buildOutpaintGraph, buildUpscaleGraph,
@@ -744,7 +744,7 @@ app.registerExtension({
           inp.value = state[key]??def;
           inp.addEventListener("input",()=>{state[key]=parseFloat(inp.value)||def;persist();});
           const lblEl = el("div",{text:lbl,style:{flex:"1",fontSize:"12px",color:C.text}});
-          if (tip) { lblEl.title=tip; lblEl.style.cursor="help"; lblEl.style.borderBottom=`1px dotted ${C.muted}`; lblEl.style.display="inline-block"; }
+          if (tip) { lblEl.title=tip; lblEl.style.cursor="help"; }
           return row([lblEl,inp],"8px");
         }
         function comboRow(lbl, key, options, def){
@@ -792,7 +792,7 @@ app.registerExtension({
       const snapSize = v => Math.max(64, Math.round(v / 16) * 16);
       function mountPose(container){
         const poseCard = imageUploadCard("Image 1 — Pose Image", state.poseImageRaw, (fn)=>{
-          state.poseImageRaw = fn; state.poseRenderImage = null;
+          state.poseImageRaw = fn;
           discard3D(); persist(); poseCard._refresh(fn);
         }, {
           onLoad: (w, h) => { state.posePicW = w; state.posePicH = h; persist(); updateSizeText(); },
@@ -947,8 +947,15 @@ app.registerExtension({
         container.appendChild(panel([row([col([label("SAMPLER"),select(SAMPLER_OPTS(),state.sampler,v=>{state.sampler=v;persist();})]),col([label("SCHEDULER"),select(SCHED_OPTS(),state.scheduler,v=>{state.scheduler=v;persist();})])])]));
         container.appendChild(loraRow(state, ctx));
 
+        // The pose picture this run put in input/ (3D capture, or a copy of the auto render) is removed when the
+        // queue is done. The Compare view keeps what it needs: the capture in memory, the render from output/.
+        let tempInput = null, captureURL = null, renderURL = null;
         return {
-          getSourceURL: () => state.poseRenderImage ? `/view?filename=${encodeURIComponent(state.poseRenderImage)}&type=${state.poseRenderType || "output"}` : null,
+          afterGenerate: async () => {
+            const name = tempInput; tempInput = null;
+            if (name) { try { await cleanupPoseInput(name); } catch { /* it stays in input/ */ } }
+          },
+          getSourceURL: () => captureURL || renderURL,
           setImage: (fn) => { state.poseCharacterImage = fn; charCard._refresh(fn); },
           getGraph: async () => {
             if (!state.poseImageRaw && !(poseViewer && state.poseMeshFile)) throw new Error("Upload the pose image first (Image 1), or load a 3D pose.");
@@ -957,18 +964,21 @@ app.registerExtension({
             if (poseViewer && state.poseMeshFile) {
               // Preview & Angle was used: the 3D view as it is shown now is the pose image.
               const sz = poseResultSize();
-              const blob = await (await fetch(poseViewer.capture(sz ? Math.min(4096, Math.max(sz.w, sz.h)) : 1024))).blob();
+              captureURL = poseViewer.capture(sz ? Math.min(4096, Math.max(sz.w, sz.h)) : 1024);
+              const blob = await (await fetch(captureURL)).blob();
               poseInput = await uploadImage(new File([blob], `q21_pose3d_${Date.now()}.png`, { type: "image/png" }));
-              state.poseRenderImage = poseInput; state.poseRenderType = "input";
+              tempInput = poseInput; renderURL = null;
             } else {
               const extractResult = await queuePrompt(buildPoseExtractGraph(state));
               const renderIm = extractResult?.output?.images?.[0];
               if (!renderIm) throw new Error("Pose extraction produced no image.");
-              state.poseRenderImage = renderIm.filename; state.poseRenderType = "output";
+              captureURL = null;
+              renderURL = `/view?filename=${encodeURIComponent(renderIm.filename)}&subfolder=${encodeURIComponent(renderIm.subfolder || "")}&type=output`;
               // The render lands in output/ (SaveImage), but LoadImage only validates
               // against input/ — copy it over before wiring it as <image1> for Phase 2,
               // same as every other "reuse an output as the next input" flow in this pack.
               poseInput = await copyOutputToInput(renderIm.filename, renderIm.subfolder || "", "output");
+              tempInput = poseInput;
             }
             persist();
             return buildPoseGraph(state, poseInput, poseResultSize());
@@ -1029,7 +1039,7 @@ app.registerExtension({
           const po = getPromptOverride();
           if (po) { for (const n of Object.values(prompt)) { if (n.class_type === "TextEncodeQwenImage21" && n.inputs?.prompt) n.inputs.prompt = po + " " + n.inputs.prompt; } }
         }
-        catch (err) { alert(`Build error: ${err.message}`); running=false; genBtn.disabled=false; genBtn.textContent="▶ Generate"; loadingOv.style.display="none"; if(!modeResults[state.mode]) resetPreview(); return; }
+        catch (err) { alert(`Build error: ${err.message}`); modeHandle?.afterGenerate?.(); running=false; genBtn.disabled=false; genBtn.textContent="▶ Generate"; loadingOv.style.display="none"; if(!modeResults[state.mode]) resetPreview(); return; }
 
         try {
           genBtn.textContent = "⏳ Running…";
@@ -1042,6 +1052,7 @@ app.registerExtension({
         } finally {
           running = false; genBtn.disabled = false; genBtn.textContent = "▶ Generate"; loadingOv.style.display = "none";
           state.modelOverride = ""; state.clipOverride = ""; state.vaeOverride = "";
+          modeHandle?.afterGenerate?.();
         }
       };
 

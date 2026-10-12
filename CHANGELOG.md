@@ -29,6 +29,9 @@
   Every pose gets a small preview picture saved next to it (same name, `.png`) and the list shows it, so you
   can see what each pose is; older poses get theirs the first time they are loaded.
   Each list row has a 🗑 button that deletes the 3D file and its preview picture (after a confirmation).
+- The temporary pose picture a run puts in `input/` (the 3D capture, or a copy of the auto render) is removed when
+  the queue is done. The Compare view's "before" no longer breaks (the auto render's link lacked its folder).
+- UPSCALE settings: the dotted underline under setting labels is gone (VOSR and SEEDVR2).
 - The view is captured square (1024 px) on a black background. The result size is chosen in a new
   **Image Size** panel — *Same as Image 2 (character)* or *Custom* W×H (any size, snapped to 16) — for both
   the 3D and the automatic pose image; POSE also gets the **LoRA** list like the other modes (applied after
