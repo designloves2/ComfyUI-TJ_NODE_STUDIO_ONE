@@ -27,7 +27,7 @@ import {
   CHARSHEET_PROMPT_TEMPLATE,
   clipPlan, formatDuration, formatClock, framesToSeconds, alignFrameCount, FPS, ONE_TAKE_OVERLAP_FRAMES, resolveResolution,
   parseBrief, groupShots, composeClipPrompt, composeStitchedPrompt,
-  turboLoraForMode, pddFileForMode, clipAssets, normalizeAssetRef, explainGenerationError,
+  turboLoraForMode, pddFileForMode, clipAssets, flLibrarySource, normalizeAssetRef, explainGenerationError,
   promptText, promptFirstFrame, promptEnabled, activePrompts, buildAgentJob,
 } from "./minimax/core_minimax.js";
 import { downloadAgentJob, agentStamp } from "./shared/agent_job.js";
@@ -6198,7 +6198,8 @@ app.registerExtension({
             // Across all three the shared part of the prompt still reaches every clip,
             // which is what keeps a run looking like one piece.
             const isRef = rs.generationMode === "reference";
-            let firstFrame = isRef ? null : (rs.firstFrameImage || null);
+            const libFrames = flLibrarySource(rs);   // First/Last from the Asset Library: file frames stay out
+            let firstFrame = (isRef || libFrames) ? null : (rs.firstFrameImage || null);
             let refImages  = rs.refImages || [];
             const continued = pos > 0 && rs.continuityMode === "lastframe" && !!chainFrame;
             if (pos > 0) firstFrame = continued ? chainFrame : null;
@@ -6278,7 +6279,7 @@ app.registerExtension({
                   promptText: promptForClip(i, rs),
                   seed: seedForClip(i, rs),
                   firstFrame,
-                  lastFrame: (pos === active.length - 1) ? (rs.lastFrameImage || null) : null,
+                  lastFrame: (pos === active.length - 1 && !libFrames) ? (rs.lastFrameImage || null) : null,
                   refImages,
                   clipIndex: i,
                   saveLastFrame: true,

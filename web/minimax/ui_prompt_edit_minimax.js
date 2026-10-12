@@ -15,6 +15,7 @@ import { openAudioGalleryPicker } from "../shared/ui_audio_gallery_picker.js";
 import { ask } from "../shared/ui_ask.js";
 import { mountLibraryRefs, emptyAssetRef, sourceToggle } from "../shared/reflib_refpanel.js";
 import { libraryRefFor, libraryContextCached } from "../shared/reflib_llm.js";
+import { reflib } from "../shared/reflib_api.js";
 import { attachAtComplete } from "../shared/reflib_at.js";
 import { getMediaFiles, getSystemPrompt, uploadImage, uploadMedia, analyzeImagesNative, writeBriefNative, analyzeImagesOpenRouter, writeBriefOpenRouter, analyzeImageLlama, writeBriefLlama, analyzeImagesCustom, writeBriefCustom, listPromptSets, getPromptSet, savePromptSet, deletePromptSet, missingInputFiles } from "./api_minimax.js";
 
@@ -791,22 +792,25 @@ This cannot be undone.`,
     // send, not a second place to edit them.
     if (state.briefImageMode === "fl") {
       const a = clipAssets(state, selected);
-      const thumb = (src, tag) => {
+      const libIds = flLibraryIds();
+      const thumb = (src, tag, libId) => {
         const box = el("div", { style: {
           width: "72px", height: "72px", borderRadius: "6px", border: `1px solid ${C.border}`,
           background: "#000", display: "flex", alignItems: "center", justifyContent: "center",
           overflow: "hidden", flexShrink: "0",
         }});
-        if (src) box.appendChild(el("img", { src: `/view?filename=${encodeURIComponent(src)}&type=input&t=${Date.now()}`,
+        if (libId) box.appendChild(el("img", { src: reflib.memberThumbUrl(libId),
+          style: { width: "100%", height: "100%", objectFit: "cover" } }));
+        else if (src) box.appendChild(el("img", { src: `/view?filename=${encodeURIComponent(src)}&type=input&t=${Date.now()}`,
           style: { width: "100%", height: "100%", objectFit: "cover" } }));
         else box.appendChild(el("div", { text: "none", style: { color: C.muted, fontSize: "10px" } }));
         return el("div", { style: { display: "flex", flexDirection: "column", gap: "4px", alignItems: "center" } },
           [box, el("div", { text: tag, style: { fontSize: "9.5px", color: C.muted } })]);
       };
       imgRow.append(
-        el("div", { text: "First/Last frame — set on the main screen, or via \"Continue generating the clip\" above.",
+        el("div", { text: (libIds.first || libIds.last ? "First/Last frame (Asset Library)" : "First/Last frame") + " — set on the main screen, or via \"Continue generating the clip\" above.",
           style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-        el("div", { style: { display: "flex", gap: "12px" } }, [thumb(a.firstFrame, "Start"), thumb(a.lastFrame, "End")]),
+        el("div", { style: { display: "flex", gap: "12px" } }, [thumb(a.firstFrame, "Start", libIds.first), thumb(a.lastFrame, "End", libIds.last)]),
         modelSelWrap,
       );
       return;
@@ -1349,6 +1353,36 @@ ${name}`, style: {
 
   // The pictures this clip will actually be made from — the override set when it has
   // one, or the main screen's own first/last frame pair in First/Last mode.
+  // First/Last frames picked from the Asset Library for the clip being edited (null = file frames).
+  function flLibraryIds() {
+    const a = clipAssets(state, selected);
+    const p = (state.prompts || [])[selected] || {};
+    const lib = (a.own ? p.refSource : state.refSource) === "library" ? a.assetRef : null;
+    return { first: lib?.first || null, last: lib?.last || null };
+  }
+
+  // The vision pass reads pictures from input/, so a library frame is copied there first, scaled
+  // to 1 MP like every other picture sent to the vision model (one fixed name per asset, overwritten each time).
+  async function libraryFrameFile(id) {
+    const bitmap = await createImageBitmap(await (await fetch(reflib.fileUrl({ id }))).blob());
+    const scale = Math.min(1, Math.sqrt(1024 * 1024 / (bitmap.width * bitmap.height)));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const jpg = await new Promise(r => canvas.toBlob(r, "image/jpeg", 0.92));
+    return uploadImage(new File([jpg], `h3lib_${id}.jpg`, { type: "image/jpeg" }));
+  }
+
+  // attachedImages() plus the First/Last frames of the Asset Library, which are not file names.
+  async function attachedImagesResolved() {
+    if (enhMode === "image" && state.briefImageMode === "fl") {
+      const { first, last } = flLibraryIds();
+      if (first || last) return Promise.all([first, last].filter(Boolean).map(libraryFrameFile));
+    }
+    return attachedImages();
+  }
+
   function attachedImages() {
     if (enhMode !== "image") return [];
     const a = clipAssets(state, selected);
@@ -1413,7 +1447,7 @@ ${name}`, style: {
     deriveModes(); renderImageRow(); renderModelSel();
     // Same resolver the render loop uses, so Prompt Write always looks at the pictures
     // this clip will actually be made from.
-    const images = attachedImages();
+    const images = await attachedImagesResolved();
     const lib = await libraryContextForClip();
     if (lib?.error) { ctx.showPopup?.(`Library references: ${lib.error}`, true); return; }
     // Brief and Vision each choose their own backend (native CLIP vs OpenRouter vs the
@@ -1509,7 +1543,7 @@ ${name}`, style: {
     if (!instruction || !instruction.trim()) return;
     lastRefineInstruction = instruction.trim();
 
-    const images = includeImagesChk?.checked ? attachedImages() : [];
+    const images = includeImagesChk?.checked ? await attachedImagesResolved() : [];
     const lib = await libraryContextForClip();
     if (lib?.error) { ctx.showPopup?.(`Library references: ${lib.error}`, true); return; }
     if (includeImagesChk?.checked && !images.length && !lib) { ctx.showPopup?.("Include Images is on, but no image is attached.", true); return; }

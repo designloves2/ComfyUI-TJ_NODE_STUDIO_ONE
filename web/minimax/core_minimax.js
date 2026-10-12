@@ -1115,7 +1115,7 @@ export function defaultState(saved) {
     // Library assets / project the whole node uses (Asset tab). When set for the current mode
     // they replace the file slots; empty = the file slots work as before.
     assetRef: normalizeAssetRef(saved.assetRef),
-    refSource: saved.refSource === "library" ? "library" : "files",
+    refSource: saved.refSource === "library" || normalizeAssetRef(saved.assetRef) ? "library" : "files",
     // Reference videos / audios (REF2VA). The model takes up to 3 of each; videos are
     // fed as 24fps frames plus, optionally, their own soundtrack. start/end are seconds
     // — the trained window for a reference video is ~2-15s, so clipping matters.
@@ -1572,6 +1572,10 @@ export const promptOverrides = (p) => (typeof p === "string" ? false : !!p?.over
  * disagree about which images a clip used — that disagreement is exactly what makes a
  * wrong render expensive to notice.
  */
+export function flLibrarySource(state) {
+  return state.generationMode === "firstlast" && state.refSource === "library";
+}
+
 export function clipAssets(state, i) {
   const p = (state.prompts || [])[i];
   if (promptOverrides(p)) {
@@ -1591,8 +1595,9 @@ export function clipAssets(state, i) {
     assetRef:    state.assetRef || null,
     refImages:   (state.refImages || []).filter(Boolean),
     refImagesMp: state.refImagesMp || [],
-    firstFrame:  promptFirstFrame(p) || state.firstFrameImage || "",
-    lastFrame:   state.lastFrameImage || "",
+    // First/Last with the Asset Library as the source: the file frames are not used.
+    firstFrame:  promptFirstFrame(p) || (flLibrarySource(state) ? "" : state.firstFrameImage || ""),
+    lastFrame:   flLibrarySource(state) ? "" : state.lastFrameImage || "",
     refVideos:   state.refVideos || [],
     refAudios:   state.refAudios || [],
   };

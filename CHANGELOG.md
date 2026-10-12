@@ -2,6 +2,17 @@
 
 ---
 
+## Unreleased
+
+### MiniMax H3 — Image to Video (F/L): Files / Gallery or Asset Library
+- The **First / Last Keyframes** panel now has the same **Source** switch as Reference: *Files / Gallery* or
+  *Asset Library*. Only the chosen source is shown, used for the render and sent to the LLM; switching back to
+  Files drops the library frames.
+- **Prompt Edit** (Image → Brief, First/Last) shows the library frames (with the heading "(Asset Library)") and
+  **Prompt Write / Prompt Refine send them to the vision model** — before, library frames were neither shown nor sent.
+  A library frame is copied to `input/h3lib_<asset id>.jpg` (scaled to 1 MP, overwritten each time) for the vision pass.
+- With the library as the source, leftover file frames are not rendered (they were used as a fallback for an empty slot).
+
 ## v1.38.1 (2026-10-12)
 
 ### ITDA ONE STUDIO (TJ)

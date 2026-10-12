@@ -280,26 +280,38 @@ export function mountImagePanel(state, ctx) {
     }
 
     if (mode === "firstlast") {
-      const first = imageSlot("① First frame\n(click / drop)", state.firstFrameImage,
-        n => { state.firstFrameImage = n; ctx.persist(); });
-      const last = imageSlot("② Last frame\n(optional)", state.lastFrameImage,
-        n => { state.lastFrameImage = n; ctx.persist(); });
-      const firstMp = numberField(state.firstFrameMp ?? 1.0, v => { state.firstFrameMp = Math.max(0, v); ctx.persist(); }, 0.1);
-      const lastMp  = numberField(state.lastFrameMp  ?? 1.0, v => { state.lastFrameMp  = Math.max(0, v); ctx.persist(); }, 0.1);
-      firstMp.style.width = "60px"; lastMp.style.width = "60px";
-      const mpCol = (imgEl, mpEl) => el("div", { style: { display: "flex", flexDirection: "column", gap: "3px", alignItems: "center" } },
-        [imgEl, el("div", { text: "MP", style: { fontSize: "9px", color: C.muted } }), mpEl]);
-      wrap.appendChild(panel([
+      const useLib = state.refSource === "library";
+      const kids = [
         label("First / Last Keyframes"),
-        el("div", { style: { display: "flex", gap: "6px", justifyContent: "center" } },
-          [mpCol(first.el, firstMp), mpCol(last.el, lastMp)]),
-        el("div", { text: "MP = megapixels sent to the model for that image (0 = send as uploaded, no resize).",
-          style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-        libraryBlock("firstlast", "A library frame replaces that file slot."),
-        el("div", { html: "Both are optional. With neither, this is the same as Text only. In a relay run the "
-          + "<b>Last Frame Chain</b> continuity mode overwrites ① for every clip after the first.",
-          style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-      ]));
+        sourceToggle(useLib ? "library" : "files", (src) => {
+          state.refSource = src;
+          if (src === "files") state.assetRef = null;
+          ctx.persist(); render(); ctx.refreshModes?.();
+        }),
+      ];
+      if (useLib) {
+        // Library source: only the library block - the file slots are not shown (and not used).
+        kids.push(libraryBlock("firstlast", "First / Last frames picked from the Asset tab; the file slots are not used."));
+      } else {
+        const first = imageSlot("① First frame\n(click / drop)", state.firstFrameImage,
+          n => { state.firstFrameImage = n; ctx.persist(); });
+        const last = imageSlot("② Last frame\n(optional)", state.lastFrameImage,
+          n => { state.lastFrameImage = n; ctx.persist(); });
+        const firstMp = numberField(state.firstFrameMp ?? 1.0, v => { state.firstFrameMp = Math.max(0, v); ctx.persist(); }, 0.1);
+        const lastMp  = numberField(state.lastFrameMp  ?? 1.0, v => { state.lastFrameMp  = Math.max(0, v); ctx.persist(); }, 0.1);
+        firstMp.style.width = "60px"; lastMp.style.width = "60px";
+        const mpCol = (imgEl, mpEl) => el("div", { style: { display: "flex", flexDirection: "column", gap: "3px", alignItems: "center" } },
+          [imgEl, el("div", { text: "MP", style: { fontSize: "9px", color: C.muted } }), mpEl]);
+        kids.push(
+          el("div", { style: { display: "flex", gap: "6px", justifyContent: "center" } },
+            [mpCol(first.el, firstMp), mpCol(last.el, lastMp)]),
+          el("div", { text: "MP = megapixels sent to the model for that image (0 = send as uploaded, no resize).",
+            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
+      }
+      kids.push(el("div", { html: "Both are optional. With neither, this is the same as Text only. In a relay run the "
+        + "<b>Last Frame Chain</b> continuity mode overwrites ① for every clip after the first.",
+        style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
+      wrap.appendChild(panel(kids));
       return;
     }
 
