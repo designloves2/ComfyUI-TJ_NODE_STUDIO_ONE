@@ -2,6 +2,15 @@
 
 ---
 
+## v1.38.0 (2026-10-12)
+
+### ITDA ONE STUDIO (TJ)
+- App settings are saved on the server (`/itda_studio_one/api/app_settings`).
+- **Render to gallery**: a finished render is saved into the ITDA video gallery; the gallery lists, deletes and
+  imports items (own card design, ported from the H3 video gallery) and the video gallery picker can import from it.
+- Settings / Project / Save / Gallery are in one **☰ Menu**; Export and Send-to-ComfyUI are gone from it; the node
+  height matches MiniMax H3.
+
 ## v1.37.0 (2026-10-12)
 
 ### Galleries and Qwen 2.1 POSE files

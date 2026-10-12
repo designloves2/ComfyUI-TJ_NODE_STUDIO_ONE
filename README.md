@@ -7,6 +7,10 @@
 > 워크플로우 배선 없이 노드 하나에서 T2I · I2I · Inpaint · Outpaint · ControlNet · Edit · Faceswap · ANGLE · Upscale(SeedVR2) 등 다양한 모드를 전환합니다.
 > switch between modes in a single node without workflow wiring T2I · I2I · Inpaint · Outpaint · ControlNet · Edit · Faceswap · ANGLE · Upscale(SeedVR2) etc. switch between various modes.
 >
+> 🆕 **ITDA ONE STUDIO**: 렌더 결과를 ITDA 갤러리에 저장하고(목록·삭제·가져오기), 앱 설정이 서버에 저장되며, 설정·프로젝트·저장·갤러리가 **☰ Menu** 하나로 모였습니다.
+>
+> 🆕 **ITDA ONE STUDIO**: renders are saved to the ITDA gallery (list, delete, import), app settings are stored on the server, and Settings / Project / Save / Gallery now live in one **☰ Menu**.
+>
 > 🆕 **이미지 노드 미리보기·비교·갤러리 확대에서 휠 = 확대, 왼쪽 드래그 = 이동, 더블클릭 = 맞춤.** 비교 바는 그대로 있습니다. UPSCALE에 **VOSR**가 SeedVR2 옆에 추가되었고(Anima에도 UPSCALE 모드 추가), Qwen 2.1 POSE에 **Preview & Angle** 3D 뷰어와 **Load 3D Pose** 목록이 생겼습니다. 갤러리에는 3D 포즈 그림이 더 이상 섞이지 않습니다.
 >
 > 🆕 **Wheel = zoom, left-drag = pan, double-click = fit** in previews, Compare and the enlarged gallery picture of the image nodes; the compare bar stays put. UPSCALE gets **VOSR** next to SeedVR2 (Anima gains an UPSCALE mode), and Qwen 2.1 POSE gets the **Preview & Angle** 3D viewer and a **Load 3D Pose** list. Galleries no longer show the 3D pose pictures.
