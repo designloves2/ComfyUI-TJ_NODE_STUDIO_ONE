@@ -355,6 +355,13 @@ function buildPoseBaseGraph(state) {
   }};
   let modelOut = [`${P}:poseLora`, 0];
 
+  (state.loras || []).forEach((lora, i) => {
+    if (!lora.name || lora.name === "none" || lora.enabled === false || !(+(lora.strength || 0) > 0)) return;
+    const id = `${P}:lora${i}`;
+    g[id] = { class_type: "LoraLoaderModelOnly", inputs: { model: modelOut, lora_name: lora.name, strength_model: +(lora.strength ?? 1) } };
+    modelOut = [id, 0];
+  });
+
   if (state.useCache !== false) {
     g[`${P}:cache`] = { class_type: "QwenImage21Cache", inputs: { model: modelOut, device: "auto", dtype: "default" } };
     modelOut = [`${P}:cache`, 0];

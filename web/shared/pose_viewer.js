@@ -1,8 +1,7 @@
 // Live 3D viewer for the POSE mode's "Preview & Angle": shows the SAM3D-Body GLB in the Pose Image
 // area, lets the user orbit / zoom / pan, and captures the current view as the final pose image.
 // three.js is vendored under web/vendor/three (loaded on first use, not at page load).
-// The look follows ComfyUI's Load 3D viewer (the pose image of the reference PoseCopy workflow is its
-// capture): dark grey #282828 background, floor grid, the GLB's own material, soft lights.
+// Plain look: black background, no grid, the GLB's own material, soft lights.
 
 let three = null;
 async function loadThree() {
@@ -26,7 +25,7 @@ export async function createPoseViewer({ aspect = 1, onCameraChange } = {}) {
   const { THREE, GLTFLoader, OrbitControls } = await loadThree();
 
   const el = document.createElement("div");
-  Object.assign(el.style, { position: "relative", width: "100%", background: "#282828", borderRadius: "10px", overflow: "hidden", touchAction: "none" });
+  Object.assign(el.style, { position: "relative", width: "100%", background: "#000", borderRadius: "10px", overflow: "hidden", touchAction: "none" });
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -34,11 +33,10 @@ export async function createPoseViewer({ aspect = 1, onCameraChange } = {}) {
   el.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x282828);
+  scene.background = new THREE.Color(0x000000);
   scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.4));
   const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(2, 3, 4); scene.add(key);
   const fill = new THREE.DirectionalLight(0xffffff, 0.6); fill.position.set(-3, 1, -2); scene.add(fill);
-  const floor = new THREE.GridHelper(20, 40, 0x666666, 0x444444); scene.add(floor);
 
   const camera = new THREE.PerspectiveCamera(30, aspect, 0.01, 1000);
   const controls = new OrbitControls(camera, renderer.domElement);
@@ -55,7 +53,6 @@ export async function createPoseViewer({ aspect = 1, onCameraChange } = {}) {
 
   function fit() {
     const box = new THREE.Box3().setFromObject(root, true);
-    floor.position.y = box.min.y;
     const size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3());
     const dist = (Math.max(size.y, size.x / camera.aspect) / 2) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.2 + size.z / 2;
     home = { position: [center.x, center.y, center.z + dist], target: [center.x, center.y, center.z] };

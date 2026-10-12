@@ -784,12 +784,16 @@ app.registerExtension({
       // Generate flow (which already awaits modeHandle.getGraph()) needs no special-casing.
       // The 3D viewer outlives re-mounts of the left panel (a WebGL context per re-mount would pile up).
       let poseViewer = null, poseViewerFile = null;
+      function poseResultSize(){
+        if (state.poseSizeMode === "custom") return { w: snapSize(state.poseCustomW), h: snapSize(state.poseCustomH) };
+        if (state.poseCharW && state.poseCharH) return { w: snapSize(state.poseCharW), h: snapSize(state.poseCharH) };
+        return null;
+      }
+      const snapSize = v => Math.max(64, Math.round(v / 16) * 16);
       function mountPose(container){
         const poseCard = imageUploadCard("Image 1 — Pose Image", state.poseImageRaw, (fn)=>{
           state.poseImageRaw = fn; state.poseRenderImage = null;
           discard3D(); persist(); poseCard._refresh(fn);
-        }, {
-          onLoad: (w, h) => { state.poseW = w; state.poseH = h; persist(); },
         });
 
         // Live 3D view of the pose (after "Preview & Angle"): shown in place of the image card.
@@ -843,11 +847,32 @@ app.registerExtension({
         refreshPoseUI();
         if (state.poseMeshFile) showViewer().catch(() => { discard3D(); persist(); });
 
-        const charCard = imageUploadCard("Image 2 — Character Image", state.poseCharacterImage, (fn)=>{ state.poseCharacterImage=fn; persist(); charCard._refresh(fn); });
+        const charCard = imageUploadCard("Image 2 — Character Image", state.poseCharacterImage, (fn)=>{ state.poseCharacterImage=fn; persist(); charCard._refresh(fn); }, {
+          onLoad: (w, h) => { state.poseCharW = w; state.poseCharH = h; persist(); updateSizeText(); },
+        });
         container.appendChild(panel([label("Image 2 — Character Image"), charCard]));
+
+        // Result size: Image 2's own size, or a custom W x H (any size; snapped to 16 for the model).
+        const snap16 = v => Math.max(64, Math.round(v / 16) * 16);
+        const sizeText = el("div",{style:{color:C.muted,fontSize:"11px"}});
+        const outStyle = { width:"100%", boxSizing:"border-box", background:C.bg2, color:C.text, border:`1px solid ${C.border}`, borderRadius:"6px", padding:"5px 7px", fontSize:"12px", fontFamily:"inherit", outline:"none" };
+        const wIn = el("input",{type:"number",step:"16",min:"64",style:{...outStyle}}); wIn.value = state.poseCustomW;
+        const hIn = el("input",{type:"number",step:"16",min:"64",style:{...outStyle}}); hIn.value = state.poseCustomH;
+        wIn.addEventListener("change",()=>{ state.poseCustomW = snap16(+wIn.value || 1024); wIn.value = state.poseCustomW; persist(); updateSizeText(); });
+        hIn.addEventListener("change",()=>{ state.poseCustomH = snap16(+hIn.value || 1536); hIn.value = state.poseCustomH; persist(); updateSizeText(); });
+        const customRow = row([col([label("W"), wIn]), col([label("H"), hIn])]);
+        function updateSizeText(){
+          customRow.style.display = state.poseSizeMode === "custom" ? "flex" : "none";
+          const s = poseResultSize();
+          sizeText.textContent = s ? `→ ${s.w}×${s.h}` : "→ follows Image 2 once it is loaded";
+        }
+        const sizeSel = select([{value:"char",label:"Same as Image 2 (character)"},{value:"custom",label:"Custom"}], state.poseSizeMode, v=>{ state.poseSizeMode = v; persist(); updateSizeText(); });
+        container.appendChild(panel([label("Image Size"), sizeSel, customRow, sizeText]));
+        updateSizeText();
 
         container.appendChild(panel([row([col([label("STEPS"),numberField(state.steps,v=>{state.steps=v;persist();},1)]),col([label("CFG"),numberField(state.cfg,v=>{state.cfg=v;persist();},0.1)])])]));
         container.appendChild(panel([row([col([label("SAMPLER"),select(SAMPLER_OPTS(),state.sampler,v=>{state.sampler=v;persist();})]),col([label("SCHEDULER"),select(SCHED_OPTS(),state.scheduler,v=>{state.scheduler=v;persist();})])])]));
+        container.appendChild(loraRow(state, ctx));
 
         return {
           getSourceURL: () => state.poseRenderImage ? `/view?filename=${encodeURIComponent(state.poseRenderImage)}&type=${state.poseRenderType || "output"}` : null,
@@ -872,14 +897,7 @@ app.registerExtension({
               poseInput = await copyOutputToInput(renderIm.filename, renderIm.subfolder || "", "output");
             }
             persist();
-            // With the 3D view the result is sized like the pose image (the reference workflow's
-            // GetImageSize → EmptyLatentImage), the long edge capped at the encoder resolution.
-            let latentSize = null;
-            if (poseViewer && state.poseMeshFile && state.poseW && state.poseH) {
-              const k = Math.min(1, (state.resolution || 1536) / Math.max(state.poseW, state.poseH));
-              latentSize = { w: Math.max(16, Math.round(state.poseW * k / 16) * 16), h: Math.max(16, Math.round(state.poseH * k / 16) * 16) };
-            }
-            return buildPoseGraph(state, poseInput, latentSize);
+            return buildPoseGraph(state, poseInput, poseResultSize());
           },
         };
       }

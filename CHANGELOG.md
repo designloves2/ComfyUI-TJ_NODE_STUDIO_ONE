@@ -22,9 +22,10 @@
   view as shown becomes the pose image (Image 1). Without Preview & Angle the pose is rendered
   automatically from the image, as before.
 - The viewer is three.js, vendored in `web/vendor/three` (MIT) and loaded only when first used.
-- The view matches the reference PoseCopy workflow's Load 3D capture: square 1024 px, dark grey background,
-  floor grid. With the 3D view the result is sized like the pose image (EmptyLatentImage from its size,
-  long edge capped at the encoder resolution).
+- The view is captured square (1024 px) on a black background. The result size is chosen in a new
+  **Image Size** panel — *Same as Image 2 (character)* or *Custom* W×H (any size, snapped to 16) — for both
+  the 3D and the automatic pose image; POSE also gets the **LoRA** list like the other modes (applied after
+  the PoseStudio LoRA), next to the full Sampler / Scheduler lists.
 - The **✂ Crop Pose Image** step and the Image Output Size fields are gone; the uploaded image goes to
   SAM3D as it is.
 
