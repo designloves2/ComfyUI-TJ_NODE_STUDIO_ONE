@@ -1521,9 +1521,26 @@ async def q21_pose_models(request):
         for name in os.listdir(folder):
             full = os.path.join(folder, name)
             if name.lower().endswith(POSE_3D_EXTS) and os.path.isfile(full):
-                files.append({"name": name, "mtime": os.path.getmtime(full), "size": os.path.getsize(full)})
+                has_thumb = os.path.isfile(os.path.join(folder, os.path.splitext(name)[0] + ".png"))
+                files.append({"name": name, "mtime": os.path.getmtime(full), "size": os.path.getsize(full), "thumb": has_thumb})
     files.sort(key=lambda f: f["mtime"], reverse=True)
     return web.json_response({"files": files})
+
+
+@PromptServer.instance.routes.post("/qwenimage21_one/pose_thumb")
+async def q21_pose_thumb(request):
+    """Small preview PNG saved next to a 3D pose (same name, .png) so the list shows what each pose is."""
+    form = await request.post()
+    upload = form.get("file")
+    name = os.path.basename(form.get("name", ""))
+    if not name.lower().endswith(POSE_3D_EXTS):
+        return web.json_response({"ok": False, "error": "not a 3D file"}, status=400)
+    folder = _safe_resolve_output_path(folder_paths.get_output_directory(), form.get("subfolder", ""), "POSE")
+    if not os.path.isfile(os.path.join(folder, name)):
+        return web.json_response({"ok": False, "error": "no such pose"}, status=404)
+    with open(os.path.join(folder, os.path.splitext(name)[0] + ".png"), "wb") as f:
+        f.write(upload.file.read())
+    return web.json_response({"ok": True})
 
 
 @PromptServer.instance.routes.post("/qwenimage21_one/pose_upload")

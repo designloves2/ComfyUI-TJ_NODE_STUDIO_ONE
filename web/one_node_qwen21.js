@@ -10,7 +10,7 @@ import { C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, MAX_REF_IMAGES, SUBFOLDER,
 import { panel, label, button, select, slider, numberField, row, col,
          modeBar, iconBtn, openFullscreen, loraSelect }                 from "./klein/ui_common.js";
 import { queuePrompt, interrupt, setLastImage, saveMeta, uploadImage,
-         copyOutputToInput, listPoseModels, uploadPoseModel, getModels, getLoraTriggers, getConfig, saveConfig,
+         copyOutputToInput, listPoseModels, uploadPoseModel, uploadPoseThumb, getModels, getLoraTriggers, getConfig, saveConfig,
          getSeedVR2Models }                                                from "./qwen21/api_qwen21.js";
 import { buildT2IGraph, buildI2IGraph, buildRefToImageGraph, buildEditGraph,
          buildInpaintGraph, buildOutpaintGraph, buildUpscaleGraph,
@@ -838,6 +838,13 @@ app.registerExtension({
           if (state.poseCamera) poseViewer.setCamera(state.poseCamera);
           refreshPoseUI();
         }
+        // A small picture of the pose next to its file, so the Load 3D Pose list shows what each one is.
+        async function saveThumb(){
+          try {
+            const blob = await (await fetch(poseViewer.capture(256))).blob();
+            await uploadPoseThumb(blob, state.saveSubfolder || SUBFOLDER, state.poseMeshFile);
+          } catch { /* the list just shows the name without a picture */ }
+        }
         function discard3D(){
           state.poseMeshFile = null; state.poseMeshSub = ""; state.poseCamera = null;
           if (poseViewer) { poseViewer.dispose(); poseViewer = null; poseViewerFile = null; }
@@ -852,6 +859,7 @@ app.registerExtension({
             if (!f) throw new Error("no 3D file was produced");
             state.poseMeshFile = f.filename; state.poseMeshSub = f.subfolder || ""; state.poseCamera = null; persist();
             await showViewer();
+            await saveThumb();
           } catch (e) { if (e.message !== "cancelled") showPopup("Preview & Angle failed: " + e.message, true); }
           finally { previewBtn.disabled = false; previewBtn.textContent = "🧊 Preview & Angle"; refreshPoseUI(); }
         }
@@ -862,14 +870,14 @@ app.registerExtension({
           const box = el("div",{style:{background:"#1b1b1b",border:`1px solid ${BRAND}`,borderRadius:"10px",padding:"14px",width:"min(520px,92vw)",maxHeight:"80vh",display:"flex",flexDirection:"column",gap:"8px",color:"#ddd"}});
           const list = el("div",{style:{overflowY:"auto",display:"flex",flexDirection:"column",gap:"4px",minHeight:"60px"}});
           const close = () => ov.remove();
-          const pick = async (name) => {
+          const pick = async (name, hasThumb) => {
             state.poseMeshFile = name; state.poseMeshSub = `${folder}/POSE`; state.poseCamera = null; persist(); close();
-            try { await showViewer(); } catch (e) { discard3D(); persist(); showPopup("Could not load the 3D file: " + e.message, true); }
+            try { await showViewer(); if (!hasThumb) await saveThumb(); } catch (e) { discard3D(); persist(); showPopup("Could not load the 3D file: " + e.message, true); }
           };
           const fileIn = el("input",{type:"file",accept:".glb,.gltf,.fbx,.obj,.stl",style:{display:"none"}});
           fileIn.addEventListener("change", async () => {
             const f = fileIn.files[0]; if (!f) return;
-            try { await pick(await uploadPoseModel(f, folder)); } catch (e) { showPopup("Upload failed: " + e.message, true); }
+            try { await pick(await uploadPoseModel(f, folder), false); } catch (e) { showPopup("Upload failed: " + e.message, true); }
           });
           const openBtn = button("📁 Open file…", () => fileIn.click());
           const closeBtn = button("Close", close, "danger");
@@ -883,9 +891,12 @@ app.registerExtension({
             if (!files.length) { list.appendChild(el("div",{text:"No 3D pose saved yet — use Preview & Angle, or Open file….",style:{color:C.muted,fontSize:"12px"}})); return; }
             for (const f of files) {
               const when = new Date(f.mtime * 1000).toLocaleString();
-              const item = el("button",{type:"button",style:{textAlign:"left",cursor:"pointer",background:C.bg2,color:C.text,border:`1px solid ${C.border}`,borderRadius:"6px",padding:"7px 9px",fontFamily:"inherit",fontSize:"12px"}},
-                [el("div",{text:f.name}), el("div",{text:`${when} · ${(f.size/1048576).toFixed(1)} MB`,style:{color:C.muted,fontSize:"10px"}})]);
-              item.addEventListener("click", () => pick(f.name));
+              const thumbBox = el("div",{style:{width:"72px",height:"72px",flexShrink:"0",background:"#2b2b2b",borderRadius:"6px",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",color:C.muted,fontSize:"10px"}});
+              if (f.thumb) thumbBox.appendChild(el("img",{src:`/view?filename=${encodeURIComponent(f.name.replace(/\.[^.]+$/, ".png"))}&subfolder=${encodeURIComponent(folder + "/POSE")}&type=output&t=${Math.round(f.mtime)}`,style:{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}}));
+              else thumbBox.textContent = "no preview";
+              const item = el("button",{type:"button",style:{display:"flex",gap:"10px",alignItems:"center",textAlign:"left",cursor:"pointer",background:C.bg2,color:C.text,border:`1px solid ${C.border}`,borderRadius:"6px",padding:"6px 8px",fontFamily:"inherit",fontSize:"12px"}},
+                [thumbBox, el("div",{},[el("div",{text:f.name}), el("div",{text:`${when} · ${(f.size/1048576).toFixed(1)} MB`,style:{color:C.muted,fontSize:"10px"}})])]);
+              item.addEventListener("click", () => pick(f.name, f.thumb));
               list.appendChild(item);
             }
           }).catch(e => { list.textContent = "Could not list the folder: " + e.message; });

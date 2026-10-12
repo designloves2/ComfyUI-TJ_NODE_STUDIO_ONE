@@ -26,6 +26,8 @@
   **📂 Load 3D Pose** button next to Preview & Angle (half width each): a list of that POSE folder opens
   right away (newest first), or *Open file…* takes a GLB / GLTF / FBX / OBJ / STL from disk. A loaded 3D pose
   needs no Image 1.
+  Every pose gets a small preview picture saved next to it (same name, `.png`) and the list shows it, so you
+  can see what each pose is; older poses get theirs the first time they are loaded.
 - The view is captured square (1024 px) on a black background. The result size is chosen in a new
   **Image Size** panel — *Same as Image 2 (character)* or *Custom* W×H (any size, snapped to 16) — for both
   the 3D and the automatic pose image; POSE also gets the **LoRA** list like the other modes (applied after

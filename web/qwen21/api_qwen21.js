@@ -43,6 +43,11 @@ export async function listPoseModels(subfolder) {
   const r = await api.fetchApi(`${API}/pose_models?subfolder=${encodeURIComponent(subfolder)}`);
   return (await r.json()).files || [];
 }
+export async function uploadPoseThumb(blob, subfolder, name) {
+  const fd = new FormData();
+  fd.append("file", blob, "thumb.png"); fd.append("subfolder", subfolder); fd.append("name", name);
+  await api.fetchApi(`${API}/pose_thumb`, { method: "POST", body: fd });
+}
 export async function uploadPoseModel(file, subfolder) {
   const fd = new FormData();
   fd.append("file", file); fd.append("subfolder", subfolder);
