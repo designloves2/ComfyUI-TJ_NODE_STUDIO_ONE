@@ -811,7 +811,7 @@ app.registerExtension({
         for (const b of [previewBtn, loadPoseBtn, resetViewBtn, discardBtn]) Object.assign(b.style, { textAlign: "center", justifyContent: "center", whiteSpace: "nowrap" });
         previewBtn.style.flex = loadPoseBtn.style.flex = resetViewBtn.style.flex = discardBtn.style.flex = "1 1 0";
         previewBtn.title = "Build the 3D pose from Image 1 and look at it from any angle";
-        loadPoseBtn.title = "Open a saved 3D pose (the POSE folder of the save folder) — no Image 1 needed";
+        loadPoseBtn.title = "Open a saved 3D pose (the pose folder of the save folder) — no Image 1 needed";
         function applyViewerAspect(){
           const sz = poseResultSize();
           poseViewer?.setAspect(sz ? sz.w / sz.h : 1);
@@ -863,7 +863,7 @@ app.registerExtension({
           } catch (e) { if (e.message !== "cancelled") showPopup("Preview & Angle failed: " + e.message, true); }
           finally { previewBtn.disabled = false; previewBtn.textContent = "🧊 Preview & Angle"; refreshPoseUI(); }
         }
-        // Load a saved 3D pose: a list of the POSE folder (newest first) opens right away; "Open file…" takes one from disk.
+        // Load a saved 3D pose: a list of the pose folder (newest first) opens right away; "Open file…" takes one from disk.
         function loadPose3D(){
           const folder = state.saveSubfolder || SUBFOLDER;
           const ov = el("div",{style:{position:"fixed",inset:"0",zIndex:"100000",background:"rgba(0,0,0,0.72)",display:"flex",alignItems:"center",justifyContent:"center"}});
@@ -871,7 +871,7 @@ app.registerExtension({
           const list = el("div",{style:{overflowY:"auto",display:"flex",flexDirection:"column",gap:"4px",minHeight:"60px"}});
           const close = () => ov.remove();
           const pick = async (name, hasThumb) => {
-            state.poseMeshFile = name; state.poseMeshSub = `${folder}/POSE`; state.poseCamera = null; persist(); close();
+            state.poseMeshFile = name; state.poseMeshSub = `${folder}/pose`; state.poseCamera = null; persist(); close();
             try { await showViewer(); if (!hasThumb) await saveThumb(); } catch (e) { discard3D(); persist(); showPopup("Could not load the 3D file: " + e.message, true); }
           };
           const fileIn = el("input",{type:"file",accept:".glb,.gltf,.fbx,.obj,.stl",style:{display:"none"}});
@@ -882,7 +882,7 @@ app.registerExtension({
           const openBtn = button("📁 Open file…", () => fileIn.click());
           const closeBtn = button("Close", close, "danger");
           box.append(el("div",{text:"📂 Load 3D Pose",style:{color:"#fff",fontSize:"14px",fontWeight:"700"}}),
-            el("div",{text:`${folder}/POSE`,style:{color:C.muted,fontSize:"11px"}}), list, row([openBtn, closeBtn], "8px"), fileIn);
+            el("div",{text:`${folder}/pose`,style:{color:C.muted,fontSize:"11px"}}), list, row([openBtn, closeBtn], "8px"), fileIn);
           ov.appendChild(box); document.body.appendChild(ov);
           ov.addEventListener("click", e => { if (e.target === ov) close(); });
           list.textContent = "Loading…";
@@ -892,7 +892,7 @@ app.registerExtension({
             for (const f of files) {
               const when = new Date(f.mtime * 1000).toLocaleString();
               const thumbBox = el("div",{style:{width:"72px",height:"72px",flexShrink:"0",background:"#2b2b2b",borderRadius:"6px",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",color:C.muted,fontSize:"10px"}});
-              if (f.thumb) thumbBox.appendChild(el("img",{src:`/view?filename=${encodeURIComponent(f.name.replace(/\.[^.]+$/, ".png"))}&subfolder=${encodeURIComponent(folder + "/POSE")}&type=output&t=${Math.round(f.mtime)}`,style:{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}}));
+              if (f.thumb) thumbBox.appendChild(el("img",{src:`/view?filename=${encodeURIComponent(f.name.replace(/\.[^.]+$/, ".png"))}&subfolder=${encodeURIComponent(folder + "/pose")}&type=output&t=${Math.round(f.mtime)}`,style:{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}}));
               else thumbBox.textContent = "no preview";
               const item = el("button",{type:"button",style:{display:"flex",gap:"10px",alignItems:"center",textAlign:"left",cursor:"pointer",background:C.bg2,color:C.text,border:`1px solid ${C.border}`,borderRadius:"6px",padding:"6px 8px",fontFamily:"inherit",fontSize:"12px"}},
                 [thumbBox, el("div",{},[el("div",{text:f.name}), el("div",{text:`${when} · ${(f.size/1048576).toFixed(1)} MB`,style:{color:C.muted,fontSize:"10px"}})])]);

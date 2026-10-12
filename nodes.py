@@ -1514,8 +1514,8 @@ POSE_3D_EXTS = (".glb", ".gltf", ".fbx", ".obj", ".stl")
 
 @PromptServer.instance.routes.get("/qwenimage21_one/pose_models")
 async def q21_pose_models(request):
-    """3D pose files saved under output/<subfolder>/POSE, newest first."""
-    folder = _safe_resolve_output_path(folder_paths.get_output_directory(), request.query.get("subfolder", ""), "POSE")
+    """3D pose files saved under output/<subfolder>/pose, newest first."""
+    folder = _safe_resolve_output_path(folder_paths.get_output_directory(), request.query.get("subfolder", ""), "pose")
     files = []
     if os.path.isdir(folder):
         for name in os.listdir(folder):
@@ -1535,7 +1535,7 @@ async def q21_pose_thumb(request):
     name = os.path.basename(form.get("name", ""))
     if not name.lower().endswith(POSE_3D_EXTS):
         return web.json_response({"ok": False, "error": "not a 3D file"}, status=400)
-    folder = _safe_resolve_output_path(folder_paths.get_output_directory(), form.get("subfolder", ""), "POSE")
+    folder = _safe_resolve_output_path(folder_paths.get_output_directory(), form.get("subfolder", ""), "pose")
     if not os.path.isfile(os.path.join(folder, name)):
         return web.json_response({"ok": False, "error": "no such pose"}, status=404)
     with open(os.path.join(folder, os.path.splitext(name)[0] + ".png"), "wb") as f:
@@ -1545,13 +1545,13 @@ async def q21_pose_thumb(request):
 
 @PromptServer.instance.routes.post("/qwenimage21_one/pose_upload")
 async def q21_pose_upload(request):
-    """Store a 3D file the user picked from disk in output/<subfolder>/POSE."""
+    """Store a 3D file the user picked from disk in output/<subfolder>/pose."""
     form = await request.post()
     upload = form.get("file")
     name = os.path.basename(getattr(upload, "filename", "") or "")
     if not name.lower().endswith(POSE_3D_EXTS):
         return web.json_response({"ok": False, "error": "not a 3D file"}, status=400)
-    folder = _safe_resolve_output_path(folder_paths.get_output_directory(), form.get("subfolder", ""), "POSE")
+    folder = _safe_resolve_output_path(folder_paths.get_output_directory(), form.get("subfolder", ""), "pose")
     os.makedirs(folder, exist_ok=True)
     stem, ext = os.path.splitext(name)
     dest, n = os.path.join(folder, name), 1

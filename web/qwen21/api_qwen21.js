@@ -38,7 +38,7 @@ export async function uploadImage(file) {
 // Uploads a canvas-drawn annotation (dataURL from ui_mask_draw.js's commit action) through
 // the same /upload/image route as any other reference image — no separate route needed,
 // the drawing tool just needs to turn its canvas into a File first (see ui_mask_draw.js).
-// 3D pose files (GLB …) under output/<subfolder>/POSE: list, and store one picked from disk.
+// 3D pose files (GLB …) under output/<subfolder>/pose: list, and store one picked from disk.
 export async function listPoseModels(subfolder) {
   const r = await api.fetchApi(`${API}/pose_models?subfolder=${encodeURIComponent(subfolder)}`);
   return (await r.json()).files || [];
