@@ -510,7 +510,7 @@ def _make_gallery_handler(subfolder_default, node_key):
             unique = []
             if os.path.isdir(search):
                 pngs = glob.glob(os.path.join(search, "**", "*.png"), recursive=True)
-                filtered = [p for p in pngs if not exclude_assets or not os.path.normpath(p).startswith(assets_dir + os.sep)]
+                filtered = [p for p in pngs if "pose" not in os.path.relpath(p, search).split(os.sep)[:-1] and (not exclude_assets or not os.path.normpath(p).startswith(assets_dir + os.sep))]
                 unique = sorted(set(filtered), key=os.path.getmtime, reverse=True)
         images = []
         for f in unique[offset:offset + limit]:

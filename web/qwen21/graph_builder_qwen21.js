@@ -325,7 +325,7 @@ export function buildPoseExtractGraph(state) {
     render_style: "mesh", "render_style.shader": "default", "render_style.opacity": 1,
     "render_style.person_palette_falloff": 0.6, "render_style.region": "full_body",
   }};
-  g[`${P}:samSave`]     = { class_type: "SaveImage", inputs: { images: [`${P}:samRender`, 0], filename_prefix: `${folder}/Q21_pose_render` } };
+  g[`${P}:samSave`]     = { class_type: "SaveImage", inputs: { images: [`${P}:samRender`, 0], filename_prefix: `${folder}/pose/Q21_pose_render` } };
   return g;
 }
 
