@@ -805,6 +805,10 @@ app.registerExtension({
         const resetViewBtn = button("↺ Reset view", () => poseViewer?.resetView());
         const discardBtn = button("✕ Use auto render", () => { discard3D(); persist(); });
         const viewerBtns = row([resetViewBtn, discardBtn], "6px");
+        // Centered labels; the two view buttons share the width equally.
+        for (const b of [previewBtn, resetViewBtn, discardBtn]) Object.assign(b.style, { textAlign: "center", justifyContent: "center", whiteSpace: "nowrap" });
+        previewBtn.style.width = "100%";
+        resetViewBtn.style.flex = discardBtn.style.flex = "1 1 0";
         function applyViewerAspect(){
           const sz = poseResultSize();
           poseViewer?.setAspect(sz ? sz.w / sz.h : 1);
