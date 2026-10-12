@@ -786,14 +786,16 @@ app.registerExtension({
       let poseViewer = null, poseViewerFile = null;
       function poseResultSize(){
         if (state.poseSizeMode === "custom") return { w: snapSize(state.poseCustomW), h: snapSize(state.poseCustomH) };
-        if (state.poseCharW && state.poseCharH) return { w: snapSize(state.poseCharW), h: snapSize(state.poseCharH) };
-        return null;
+        const [w, h] = state.poseSizeMode === "image1" ? [state.posePicW, state.posePicH] : [state.poseCharW, state.poseCharH];
+        return w && h ? { w: snapSize(w), h: snapSize(h) } : null;
       }
       const snapSize = v => Math.max(64, Math.round(v / 16) * 16);
       function mountPose(container){
         const poseCard = imageUploadCard("Image 1 — Pose Image", state.poseImageRaw, (fn)=>{
           state.poseImageRaw = fn; state.poseRenderImage = null;
           discard3D(); persist(); poseCard._refresh(fn);
+        }, {
+          onLoad: (w, h) => { state.posePicW = w; state.posePicH = h; persist(); updateSizeText(); },
         });
 
         // Live 3D view of the pose (after "Preview & Angle"): shown in place of the image card.
@@ -803,6 +805,10 @@ app.registerExtension({
         const resetViewBtn = button("↺ Reset view", () => poseViewer?.resetView());
         const discardBtn = button("✕ Use auto render", () => { discard3D(); persist(); });
         const viewerBtns = row([resetViewBtn, discardBtn], "6px");
+        function applyViewerAspect(){
+          const sz = poseResultSize();
+          poseViewer?.setAspect(sz ? sz.w / sz.h : 1);
+        }
         function refreshPoseUI(){
           const on = !!(poseViewer && state.poseMeshFile);
           poseCard.style.display = on ? "none" : "flex";   // the card is a centered flex column
@@ -817,10 +823,11 @@ app.registerExtension({
         async function showViewer(){
           if (!poseViewer) {
             const { createPoseViewer } = await import("./shared/pose_viewer.js");
-            poseViewer = await createPoseViewer({ aspect: 1, onCameraChange: c => { state.poseCamera = c; persist(); } });
+            poseViewer = await createPoseViewer({ aspect: (poseResultSize() ? poseResultSize().w / poseResultSize().h : 1), onCameraChange: c => { state.poseCamera = c; persist(); } });
             poseViewerFile = null;
           }
           viewerHost.appendChild(poseViewer.el);
+          applyViewerAspect();
           if (poseViewerFile !== meshURL()) { await poseViewer.load(meshURL()); poseViewerFile = meshURL(); }
           if (state.poseCamera) poseViewer.setCamera(state.poseCamera);
           refreshPoseUI();
@@ -847,12 +854,8 @@ app.registerExtension({
         refreshPoseUI();
         if (state.poseMeshFile) showViewer().catch(() => { discard3D(); persist(); });
 
-        const charCard = imageUploadCard("Image 2 — Character Image", state.poseCharacterImage, (fn)=>{ state.poseCharacterImage=fn; persist(); charCard._refresh(fn); }, {
-          onLoad: (w, h) => { state.poseCharW = w; state.poseCharH = h; persist(); updateSizeText(); },
-        });
-        container.appendChild(panel([label("Image 2 — Character Image"), charCard]));
-
-        // Result size: Image 2's own size, or a custom W x H (any size; snapped to 16 for the model).
+        // Result size: Image 1's size, Image 2's size, or a custom W x H (any size; snapped to 16 for the model).
+        // The 3D view's canvas takes the same aspect, so what is seen is what gets captured.
         const snap16 = v => Math.max(64, Math.round(v / 16) * 16);
         const sizeText = el("div",{style:{color:C.muted,fontSize:"11px"}});
         const outStyle = { width:"100%", boxSizing:"border-box", background:C.bg2, color:C.text, border:`1px solid ${C.border}`, borderRadius:"6px", padding:"5px 7px", fontSize:"12px", fontFamily:"inherit", outline:"none" };
@@ -864,11 +867,18 @@ app.registerExtension({
         function updateSizeText(){
           customRow.style.display = state.poseSizeMode === "custom" ? "flex" : "none";
           const s = poseResultSize();
-          sizeText.textContent = s ? `→ ${s.w}×${s.h}` : "→ follows Image 2 once it is loaded";
+          sizeText.textContent = s ? `→ ${s.w}×${s.h}` : "→ follows the chosen image once it is loaded";
+          applyViewerAspect();
         }
-        const sizeSel = select([{value:"char",label:"Same as Image 2 (character)"},{value:"custom",label:"Custom"}], state.poseSizeMode, v=>{ state.poseSizeMode = v; persist(); updateSizeText(); });
+        const sizeSel = select([{value:"image1",label:"Same as Image 1 (pose)"},{value:"image2",label:"Same as Image 2 (character)"},{value:"custom",label:"Custom"}], state.poseSizeMode, v=>{ state.poseSizeMode = v; persist(); updateSizeText(); });
         container.appendChild(panel([label("Image Size"), sizeSel, customRow, sizeText]));
         updateSizeText();
+
+        const charCard = imageUploadCard("Image 2 — Character Image", state.poseCharacterImage, (fn)=>{ state.poseCharacterImage=fn; persist(); charCard._refresh(fn); }, {
+          onLoad: (w, h) => { state.poseCharW = w; state.poseCharH = h; persist(); updateSizeText(); },
+        });
+        container.appendChild(panel([label("Image 2 — Character Image"), charCard]));
+
 
         container.appendChild(panel([row([col([label("STEPS"),numberField(state.steps,v=>{state.steps=v;persist();},1)]),col([label("CFG"),numberField(state.cfg,v=>{state.cfg=v;persist();},0.1)])])]));
         container.appendChild(panel([row([col([label("SAMPLER"),select(SAMPLER_OPTS(),state.sampler,v=>{state.sampler=v;persist();})]),col([label("SCHEDULER"),select(SCHED_OPTS(),state.scheduler,v=>{state.scheduler=v;persist();})])])]));
@@ -883,7 +893,8 @@ app.registerExtension({
             let poseInput;
             if (poseViewer && state.poseMeshFile) {
               // Preview & Angle was used: the 3D view as it is shown now is the pose image.
-              const blob = await (await fetch(poseViewer.capture(1024))).blob();
+              const sz = poseResultSize();
+              const blob = await (await fetch(poseViewer.capture(sz ? Math.min(4096, Math.max(sz.w, sz.h)) : 1024))).blob();
               poseInput = await uploadImage(new File([blob], `q21_pose3d_${Date.now()}.png`, { type: "image/png" }));
               state.poseRenderImage = poseInput; state.poseRenderType = "input";
             } else {

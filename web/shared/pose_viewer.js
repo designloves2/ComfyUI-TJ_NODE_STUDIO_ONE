@@ -3,6 +3,8 @@
 // three.js is vendored under web/vendor/three (loaded on first use, not at page load).
 // Plain look: black background, no grid, the GLB's own material, soft lights.
 
+const MAX_VIEW_H = 460;
+
 let three = null;
 async function loadThree() {
   if (!three) {
@@ -25,7 +27,7 @@ export async function createPoseViewer({ aspect = 1, onCameraChange } = {}) {
   const { THREE, GLTFLoader, OrbitControls } = await loadThree();
 
   const el = document.createElement("div");
-  Object.assign(el.style, { position: "relative", width: "100%", background: "#000", borderRadius: "10px", overflow: "hidden", touchAction: "none" });
+  Object.assign(el.style, { position: "relative", width: "100%", margin: "0 auto", background: "#000", borderRadius: "10px", overflow: "hidden", touchAction: "none" });
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -69,6 +71,7 @@ export async function createPoseViewer({ aspect = 1, onCameraChange } = {}) {
 
   function setAspect(a) {
     aspect = a || 1;
+    el.style.maxWidth = `${Math.round(MAX_VIEW_H * aspect)}px`;   // a tall canvas stays within MAX_VIEW_H
     camera.aspect = aspect;
     camera.updateProjectionMatrix();
     resize();

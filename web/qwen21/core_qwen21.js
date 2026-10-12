@@ -159,7 +159,9 @@ export function defaultState(saved) {
     // folder it lives in). After "Preview & Angle", poseMeshFile/poseMeshSub is the GLB shown in
     // the 3D viewer, poseCamera its orbit/zoom state, and the viewer's capture replaces the render.
     poseImageRaw:     saved.poseImageRaw     || null,
-    poseSizeMode:     saved.poseSizeMode     || "char", // result size: "char" = Image 2's size, "custom" = poseCustomW x poseCustomH
+    poseSizeMode:     (saved.poseSizeMode === "image1" || saved.poseSizeMode === "custom") ? saved.poseSizeMode : "image2", // result size: Image 1's / Image 2's size, or poseCustomW x poseCustomH
+    posePicW:         saved.posePicW         || null,   // natural size of Image 1
+    posePicH:         saved.posePicH         || null,
     poseCustomW:      saved.poseCustomW      || 1024,
     poseCustomH:      saved.poseCustomH      || 1536,
     poseCharW:        saved.poseCharW        || null,   // natural size of Image 2
