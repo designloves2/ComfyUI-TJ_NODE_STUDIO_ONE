@@ -119,11 +119,32 @@ export function mountItdaApp(ROOT, IDS, HOOKS) {
     const name=nameOverride || state.project?.name || $('projectName').value || 'itda-project-1';
     const data=await api('/itda_studio_one/api/init',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project:name})});
     state.project=normalizeProject(data.project); state.range=state.project.range; state.snap=state.project.settings.snap!==false; state.loop=!!state.project.settings.loop; state.mute=!!state.project.settings.mute; state.previewMode=state.project.settings.preview_mode||'single'; state.scrubAudio=!!state.project.settings.scrub_audio; state.totalFrames=state.project.settings.total_frames||DEFAULT_TOTAL;
-    $('projectName').value=state.project.name || 'itda-project-1'; await loadFonts(); await scanMedia(); renderAll(); status(`Loaded ${state.project.name}`);
+    // Setting .value programmatically does NOT fire a native 'change' event, so
+    // one_node_itda_studio.js's own change-listener (the only place that persists
+    // the "last used project" to localStorage) never ran for any switch that goes
+    // through initProject() directly - New/Load/Open/row-click all bypassed it, so
+    // the saved name only ever changed when the user manually retyped the project
+    // name field. User: "항상 마지막 사용한 프로젝트를 보여주게 해줘." Dispatching
+    // it here routes every switch through that same existing persistence path.
+    $('projectName').value=state.project.name || 'itda-project-1';
+    $('projectName').dispatchEvent(new Event('change', {bubbles:true}));
+    await loadFonts(); await scanMedia(); renderAll(); status(`Loaded ${state.project.name}`);
+  }
+  // Pre-render/Export/Send-to-ComfyUI all load the project fresh FROM DISK
+  // (load_project(project_name) server-side) rather than reading the live in-memory
+  // editor state — so dropping a clip and immediately hitting Pre-render without an
+  // explicit Save first sent the backend an empty/stale project, which then failed
+  // with "Nothing on the timeline inside that range" (500). A preview action
+  // shouldn't need a manual save step first. User: "프리랜더는 일종의 미리보기
+  // 같은건데 이거 500번 애러 나는데." Factored the actual save call out (no modal) so
+  // runPrerender can invoke it silently before asking the backend to render.
+  async function saveProjectSilent(){
+    if(!state.project) return;
+    state.project.name=state.project.name || $('projectName').value || 'itda-project-1'; state.project.range=state.range; state.project.media=state.media.filter(m=>!m.local); state.project.settings={...state.project.settings,fps:fps(),total_frames:totalFrames(),snap:state.snap,loop:state.loop,mute:state.mute,preview_mode:state.previewMode,scrub_audio:state.scrubAudio};
+    await api(`/itda_studio_one/api/project/${encodeURIComponent(state.project.name)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(state.project)});
   }
   async function saveProject(){
-    if(!state.project) return; state.project.name=state.project.name || $('projectName').value || 'itda-project-1'; state.project.range=state.range; state.project.media=state.media.filter(m=>!m.local); state.project.settings={...state.project.settings,fps:fps(),total_frames:totalFrames(),snap:state.snap,loop:state.loop,mute:state.mute,preview_mode:state.previewMode,scrub_audio:state.scrubAudio};
-    await api(`/itda_studio_one/api/project/${encodeURIComponent(state.project.name)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(state.project)});
+    await saveProjectSilent();
     showModal('Save', `<p><b>${esc(state.project.name)}</b> saved.</p><p class="muted">ComfyUI/input/ITDA_STUDIO/projects/${esc(state.project.name)}.itda.json</p>`); status('Saved');
   }
   async function scanMedia(){
@@ -158,8 +179,16 @@ export function mountItdaApp(ROOT, IDS, HOOKS) {
   function renderMedia(){
     state.media.forEach(m=>ensureWaveform(m));
     const list=$('mediaList'); list.innerHTML=''; list.classList.toggle('list-view', state.mediaView==='list'); list.style.setProperty('--thumb', `${state.mediaThumb || 104}px`);
+    // Original grid was a fixed repeat(3,...) — this node's Media Bin is far narrower than
+    // ITDA's own full-page column, so at the thumbnail slider's larger sizes 3 fixed
+    // columns just squeezed the thumbnails rather than actually showing fewer, bigger
+    // ones; the slider only ever changed row height, not column count. User: "아래 크기
+    // 조절바를 움직여도 3개로 고정되어 있어서 세로만 길어진다... 최소 사이즈에서는 3개
+    // 최대사이즈에서는 2개가 보이게." Column count now follows the same slider (72–160,
+    // see dom_build.js's thumbScale input) via a --media-cols var the CSS override reads.
+    list.style.setProperty('--media-cols', (state.mediaThumb || 104) >= 116 ? '2' : '3');
     const items=state.media; $('mediaCount').textContent=`${items.length} item${items.length===1?'':'s'}`;
-    if(!items.length){ list.innerHTML='<div class="empty">Put media in ComfyUI/input/ITDA, or add session media with the + buttons above.</div>'; return; }
+    if(!items.length){ list.innerHTML='<div class="empty">Put media in ComfyUI/input/ITDA_STUDIO, or add session media with the + buttons above.</div>'; return; }
     for(const item of items){
       const div=document.createElement('div'); div.className='media-item'; div.draggable=true; div.title=`${item.name}\n${item.fps?Number(item.fps).toFixed(3)+' fps':''} ${item.total_frames||''} frames`;
       const src=fileUrl(item); let thumb='';
@@ -209,7 +238,21 @@ export function mountItdaApp(ROOT, IDS, HOOKS) {
   }
   function loadVideoMeta(item){ const v=document.createElement('video'); v.preload='metadata'; v.src=item.url; v.onloadedmetadata=()=>{ item.duration=v.duration||item.duration||5; item.width=v.videoWidth; item.height=v.videoHeight; item.original_fps=item.fps||fps(); item.fps=fps(); item.total_frames=Math.round(item.duration*fps()); renderAll(); }; }
   function addTextMedia(){ const item={id:`text:${Date.now()}`,name:'Text Clip',kind:'text',local:true,text:'Subtitle Text',fps:fps(),total_frames:Math.round(fps()*3),duration:3}; state.media.push(item); renderMedia(); addClipFromMedia(item,state.currentFrame); }
-  function addClipFromMedia(media,startFrame){ const length=media.total_frames||Math.round((media.duration||5)*fps())||120; const clip={id:`clip_${Date.now()}_${Math.random().toString(16).slice(2)}`,media_id:media.id,name:media.name,kind:media.kind,path:media.path,url:media.url||null,fps:fps(),width:media.width||null,height:media.height||null,start:Math.max(0,snapFrame(startFrame)),length,source_in:0,source_out:length,source_total_frames:media.total_frames||length,lane:0,group_id:null,audio_detached:false,text:media.text||'',x:50,y:88,size:42,opacity:1,color:'#ffffff',font_family:'system',shadow_enabled:false,shadow_color:'#000000',shadow_opacity:0.6}; normalizeClipBounds(clip); state.project.clips.push(clip); setSelection(clip.id); renderAll(); }
+  function addClipFromMedia(media,startFrame){
+    const fullLength=media.total_frames||Math.round((media.duration||5)*fps())||120;
+    const start=Math.max(0,snapFrame(startFrame));
+    // Dropping a long source (e.g. a several-minute music track) used to import its FULL
+    // duration as the clip's length, stretching the timeline's own maxFrame() (renderRuler)
+    // out to match it — even zoomed all the way out, the ruler/lanes still had to span
+    // the whole clip, making a project with a much shorter Total Frames unmanageable. User:
+    // "미디어빈에서 클립을 타임라인으로 넘길때 최대 프레임 사이즈는 토탈 프레임까지만 되게
+    // 해줘. 음악 4분짜리 넘기면 클립이 4분까지 늘어나서 타임라인을 아무리 최대한 줄려도
+    // 조절이 안됨." Clamped to what actually fits before Total Frames; source_total_frames
+    // keeps the REAL full duration so the trim handles can still pull more of it in later
+    // by hand (dragging total length out, or the clip's own right edge) — only the initial
+    // drop is capped, not the underlying source data.
+    const length=Math.max(1, Math.min(fullLength, totalFrames()-start));
+    const clip={id:`clip_${Date.now()}_${Math.random().toString(16).slice(2)}`,media_id:media.id,name:media.name,kind:media.kind,path:media.path,url:media.url||null,fps:fps(),width:media.width||null,height:media.height||null,start,length,source_in:0,source_out:length,source_total_frames:fullLength,lane:0,group_id:null,audio_detached:false,text:media.text||'',x:50,y:88,size:42,opacity:1,color:'#ffffff',font_family:'system',shadow_enabled:false,shadow_color:'#000000',shadow_opacity:0.6}; normalizeClipBounds(clip); state.project.clips.push(clip); setSelection(clip.id); renderAll(); }
 
   function setSelection(id,additive=false){
     // Any new clip selection invalidates a version-compare in progress -
@@ -307,20 +350,51 @@ export function mountItdaApp(ROOT, IDS, HOOKS) {
     const length=Math.max(1, Math.min(Math.round(Number(c.length || 1)), sourceTotal-srcIn));
     ctx.fillStyle = c.kind==='audio' ? 'rgba(205,255,235,.92)' : 'rgba(238,222,255,.92)';
     const mid=cssH/2;
-    for(let x=0;x<cssW;x++){
-      const frameA = srcIn + (x/cssW)*length;
-      const frameB = srcIn + ((x+1)/cssW)*length;
+    // The ORIGINAL ComfyUI-ITDA (itda_app_original.js) applies NO gain at all —
+    // `h=Math.max(1, peak*mid)`, a literal 1:1 plot of make_audio_waveform's raw,
+    // un-normalized 16-bit peak data. That reads fine for already-loud/properly-mixed
+    // audio, but H3-rendered clips are typically much quieter, and no fixed multiplier
+    // (2.8x, then sqrt()) fixed it for every source — a quiet clip still looked flat
+    // however hard the curve pushed, and a loud one would just clip. User: "더 키워야
+    // 되겠다... 너 이거 원본에서 어떻게 했었는지 확인 안해봤어?... 내가 이거 엄청
+    // 신경썼다고 말했는데." — checked: the original's own math can't be the fix (it has
+    // none), so per-clip PEAK NORMALIZATION instead — find THIS clip's own loudest point
+    // across its trimmed range and scale so it reaches the track's full height. Any
+    // clip, however quiet its actual source, now reads as an unmistakable waveform;
+    // near-total silence (maxPeak below a tiny floor) is left flat rather than amplifying
+    // noise into a fake-looking wall of bars.
+    let maxPeak=0;
+    { const a0=Math.max(0, Math.floor(srcIn/sourceTotal*peaks.length));
+      const b0=Math.min(peaks.length, Math.ceil((srcIn+length)/sourceTotal*peaks.length));
+      for(let j=a0;j<b0;j++){ const v=Math.abs(Number(peaks[j])||0); if(v>maxPeak) maxPeak=v; } }
+    const norm = maxPeak>0.005 ? (1/maxPeak) : 1;
+    // One solid fillRect per DEVICE PIXEL column (up to ~972 of them) but the underlying
+    // peaks[] array is far coarser (make_audio_waveform caches ~240 bins per clip) — many
+    // adjacent columns land in the SAME bin and paint the identical height, so the result
+    // was a hard, flat-topped staircase instead of a waveform: "지금 이게 무슨 마이크레프트
+    // 보는 느낌이랄까?" Discrete capped bars instead — one bar per bin (not per pixel), each
+    // its own rounded-rect with a real gap between it and the next, which is also what the
+    // original's own now-dead CSS already described (.waveform i{border-radius:2px;
+    // gap:1px}) before ComfyUI-ITDA swapped to this canvas renderer without ever updating
+    // that visual language. min-height floor keeps near-silent bars as a visible dot
+    // instead of disappearing, same as the original's own `Math.max(1, ...)`.
+    // Exactly 1px bar + 1px gap (2px pitch), snapped to the pixel grid — user: "1픽셀
+    // 줄그리고 1픽셀 간격주고 이렇게." The previous cssW/nBars division gave each bar a
+    // fractional width (~0.6-1.4px) that blurred under anti-aliasing instead of reading
+    // as a crisp hairline; Math.round(x) below pins each bar to a whole pixel.
+    const nBars=Math.max(1, Math.min(Math.round(cssW/2), peaks.length));
+    const barW=1;
+    for(let i=0;i<nBars;i++){
+      const frameA = srcIn + (i/nBars)*length;
+      const frameB = srcIn + ((i+1)/nBars)*length;
       const a=Math.max(0, Math.min(peaks.length-1, Math.floor(frameA/sourceTotal*peaks.length)));
       const b=Math.max(a+1, Math.min(peaks.length, Math.ceil(frameB/sourceTotal*peaks.length)));
       let peak=0;
       for(let j=a;j<b;j++){ const v=Math.abs(Number(peaks[j])||0); if(v>peak) peak=v; }
-      // Real source audio (especially H3-rendered clips) rarely peaks anywhere near
-      // full scale, so plotting the raw 0-1 value drew as a near-invisible sliver —
-      // boosted (clamped back to 1) the same way any NLE's waveform display isn't a
-      // literal 1:1 plot either.
-      peak=Math.min(1, peak*2.8);
-      const h=Math.max(1, peak*mid);
-      ctx.fillRect(x, mid-h, 1, h*2);
+      peak=Math.min(1, peak*norm);
+      const h=Math.max(2, peak*mid*2);
+      const x=Math.round((i/nBars)*cssW);
+      ctx.fillRect(x, mid-h/2, barW, h);
     }
   }
   function drawAllWaveforms(){
@@ -356,7 +430,32 @@ export function mountItdaApp(ROOT, IDS, HOOKS) {
       status(`Waveform failed: ${item.name} · ${e.message}`);
     }
   }
-  function renderRuler(){ const ruler=$('ruler'); ruler.innerHTML=''; const total=maxFrame(); ruler.style.width=`${LEFT_PAD+total*state.pxPerFrame+500}px`; const major=Math.max(1,Math.round(fps())); const minor=Math.max(1,Math.round(major/4)); for(let f=0; f<=total; f+=minor){ const tick=document.createElement('div'); const isMajor=f%major===0; tick.className=isMajor?'tick':'tick minor'; tick.style.left=`${LEFT_PAD+f*state.pxPerFrame}px`; if(isMajor) tick.innerHTML=`${fmtTime(f).slice(0,5)}<span class="sub">${Math.round(f)}f</span>`; ruler.appendChild(tick); } const projectEnd=document.createElement('div'); projectEnd.className='total-frame-marker'; projectEnd.style.left=`${LEFT_PAD+totalFrames()*state.pxPerFrame}px`; projectEnd.innerHTML='<span>END</span>'; ruler.appendChild(projectEnd); }
+  function renderRuler(){ const ruler=$('ruler'); ruler.innerHTML=''; const total=maxFrame(); ruler.style.width=`${LEFT_PAD+total*state.pxPerFrame+500}px`; const major=Math.max(1,Math.round(fps())); const minor=Math.max(1,Math.round(major/4)); for(let f=0; f<=total; f+=minor){ const tick=document.createElement('div'); const isMajor=f%major===0; tick.className=isMajor?'tick':'tick minor'; tick.style.left=`${LEFT_PAD+f*state.pxPerFrame}px`; if(isMajor) tick.innerHTML=`${fmtTime(f).slice(0,5)}<span class="sub">${Math.round(f)}f</span>`; ruler.appendChild(tick); } const projectEnd=document.createElement('div'); projectEnd.className='total-frame-marker'; projectEnd.style.left=`${LEFT_PAD+totalFrames()*state.pxPerFrame}px`; projectEnd.title='Drag to change the project\'s total length'; projectEnd.innerHTML='<span>END</span>'; ruler.appendChild(projectEnd);
+    // Total length was only editable from the ⚙ Project Settings modal — user: "총프레임
+    // 길이도 타임라인에서 총프레임 표시바를 직접 잡고 이동해서 조절 가능하게... 세팅에서
+    // 설정하는 것과 동기화 되게." Dragging the END marker itself now writes straight into
+    // the SAME state.project.settings.total_frames Settings reads/writes, so the two are
+    // trivially in sync — there was never a second copy to keep in sync in the first
+    // place. Not reusing frameFromTimelineEvent: it clamps to the CURRENT maxFrame(),
+    // which would make it impossible to ever drag the end marker past where it already is.
+    projectEnd.addEventListener('mousedown', e=>{
+      e.preventDefault(); e.stopPropagation();
+      const tl=$('timeline');
+      const lastClipEnd=Math.max(0, ...((state.project?.clips||[]).map(c=>c.start+c.length)));
+      const onMove=ev=>{
+        const rect=tl.getBoundingClientRect(); const s=elScale(tl);
+        const frame=Math.round(((ev.clientX-rect.left)/s+tl.scrollLeft-LEFT_PAD)/state.pxPerFrame);
+        const clamped=Math.max(Math.max(1,lastClipEnd), Math.min(frame, Math.round(fps()*3600)));
+        if(clamped!==totalFrames()){
+          state.totalFrames=clamped;
+          state.project.settings={...state.project.settings, total_frames:clamped};
+          renderTimeline(); updateControls();
+        }
+      };
+      const onUp=()=>{ document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp); };
+      document.addEventListener('mousemove',onMove); document.addEventListener('mouseup',onUp);
+    });
+  }
   function renderTimeline(){ if(!state.project) return; autoLanes(); renderRuler(); const lanes=$('lanes'); lanes.innerHTML=''; lanes.style.width=$('ruler').style.width; lanes.style.height=`${LANE_COUNT*laneH()}px`; $('rangeLayer').style.height=`${LANE_COUNT*laneH()}px`;
     for(const lane of state.project.lanes){
       const row=document.createElement('div');
@@ -375,7 +474,25 @@ export function mountItdaApp(ROOT, IDS, HOOKS) {
     const hasSel=state.selectedClipIds.length>0;
     for(const c of state.project.clips||[]){ normalizeClipBounds(c); const row=lanes.children[c.lane]; if(!row) continue; const el=document.createElement('div'); const stitched=!!(c.kind==='stitched'||c.children); el.className=`clip ${c.kind||'video'} ${c.group_id?'grouped':''} ${stitched?'stitched':''} ${isSelected(c.id)?'selected':''} ${hasSel&&!isSelected(c.id)?'dimmed':''}`; el.dataset.clipId=c.id; el.style.left=`${LEFT_PAD+c.start*state.pxPerFrame}px`; el.style.width=`${Math.max(32,c.length*state.pxPerFrame)}px`; el.style.height=`${Math.max(34,laneH()-19)}px`; el.title=`${c.name}
 Trim ${c.source_in||0}f–${c.source_out||c.length}f
-Timeline ${c.start}f–${c.start+c.length}f`; const icon=stitched?'◆':c.kind==='audio'?'♫':c.kind==='image'?'▧':c.kind==='text'?'T':'▣'; el.innerHTML=`<div class="clip-title"><span class="clip-name">${icon} ${esc(trunc(c.name,24))}</span>${['video','audio'].includes(c.kind) ? `<span class="clip-audio-icon ${c.audio_enabled===false?'off':'on'}" title="${c.audio_enabled===false?'Audio Off':'Audio On'}">${c.audio_enabled===false?'\u{1F507}':'\u{1F50A}'}</span>` : ''}<span class="clip-trim">${c.source_in||0}f to ${c.source_out||c.length}f / ${fmtTime(c.length)}</span></div><div class="clip-bars">${waveformMarkup(c)}</div>${beatTicksMarkup(c)}<div class="clip-handle left" data-trim="left"></div><div class="clip-handle right" data-trim="right"></div>`; el.addEventListener('pointerdown', startClipPointer); row.appendChild(el); }
+Timeline ${c.start}f–${c.start+c.length}f`; const icon=stitched?'◆':c.kind==='audio'?'♫':c.kind==='image'?'▧':c.kind==='text'?'T':'▣';
+      // User: "타임라인 클립에 영상 썸네일 작게 하나 표시하라고 했는데... 파일명만 보고
+      // 어떤 클립인지 알기 어려움." Media Bin rows already have this exact thumbnail
+      // (mediaListMarkup's own `item.thumb_url` <img>, same backend-generated JPEG) — a
+      // video clip's own media entry carries the same thumb_url, just never read here.
+      // Falls back to the glyph for kinds with no real thumbnail (audio/stitched/text).
+      const clipMedia = mediaFor(c);
+      const thumbMarkup = (!stitched && c.kind==='video' && clipMedia && clipMedia.thumb_url)
+        ? `<img class="clip-thumb" src="${clipMedia.thumb_url}" loading="lazy" alt="">`
+        : `<span class="clip-icon">${icon}</span>`;
+      // Original .clip-title{justify-content:space-between} spreads ALL of its direct
+      // children evenly across the full clip width — with thumb/name/audio-icon/trim as
+      // four separate flex items, the gap between thumb and name grew right along with
+      // clip-trim's gap as the clip got wider on horizontal zoom, so the filename visibly
+      // drifted away from its own thumbnail instead of staying next to it. User: "파일명이
+      // 썸네일 옆에 안붙어 있고 가로로 확대하면 이동이 된다." Grouping thumb+name into
+      // their own inner flex container keeps them a fixed pair; space-between now only
+      // separates that pair from the (audio-icon + trim) group on the right.
+      el.innerHTML=`<div class="clip-title"><div class="clip-title-left">${thumbMarkup}<span class="clip-name">${esc(trunc(c.name,24))}</span></div><div class="clip-title-right">${['video','audio'].includes(c.kind) ? `<span class="clip-audio-icon ${c.audio_enabled===false?'off':'on'}" title="${c.audio_enabled===false?'Audio Off':'Audio On'}">${c.audio_enabled===false?'\u{1F507}':'\u{1F50A}'}</span>` : ''}<span class="clip-trim">${c.source_in||0}f to ${c.source_out||c.length}f / ${fmtTime(c.length)}</span></div></div><div class="clip-bars">${waveformMarkup(c)}</div>${beatTicksMarkup(c)}<div class="clip-handle left" data-trim="left"></div><div class="clip-handle right" data-trim="right"></div>`; el.addEventListener('pointerdown', startClipPointer); row.appendChild(el); }
     renderRange(); updatePlayhead(); drawAllWaveforms(); }
   function renderRange(){ const layer=$('rangeLayer'); layer.innerHTML=''; if(state.range.start==null || state.range.end==null) return; const a=Math.min(state.range.start,state.range.end), b=Math.max(state.range.start,state.range.end); const box=document.createElement('div'); box.className='range-box'; box.style.left=`${LEFT_PAD+a*state.pxPerFrame}px`; box.style.width=`${Math.max(1,(b-a)*state.pxPerFrame)}px`; layer.appendChild(box); }
   function updatePlayhead(){
@@ -410,6 +527,7 @@ Timeline ${c.start}f–${c.start+c.length}f`; const icon=stitched?'◆':c.kind==
     const dragClips = selectedClips();
     state.drag={
       clipId:c.id,startX:e.clientX,startY:e.clientY,origStart:c.start,origLen:c.length,origSourceIn:c.source_in||0,origLane:c.lane,trim,moved:false,
+      startScrollLeft:$('timeline').scrollLeft,
       items:dragClips.map(x=>({id:x.id,start:x.start,lane:x.lane,length:x.length,source_in:x.source_in||0,source_out:x.source_out||x.length}))
     };
     renderTimeline(); updateProps(); updateControls(); updatePreview();
@@ -475,6 +593,29 @@ Timeline ${c.start}f–${c.start+c.length}f`; const icon=stitched?'◆':c.kind==
     }
     return bestEdge!=null ? Math.max(0, Math.round(bestEdge)) : Math.max(0, Math.round(rawStart));
   }
+  // Single-edge snap for trim-drags (as opposed to snapMoveStart's start+length pair for
+  // move-drags). Candidates are every OTHER clip's start/end across ALL lanes, matching
+  // the move-drag snap's cross-track behavior — user: "스냅은 동일트랙만이 아니고 아래 위
+  // 트랙도 인식하게해줘" (snap should recognize clips on tracks above/below, not just the
+  // same track).
+  function snapEdge(rawFrame, excludeIds){
+    if(!state.snap) return Math.round(rawFrame);
+    const thresholdFrames = Math.max(4, 14/state.pxPerFrame);
+    let best=null, bestDist=Infinity;
+    for(const o of (state.project?.clips||[])){
+      if(excludeIds.has(o.id)) continue;
+      const cands=[o.start, clipEnd(o)];
+      if(state.peakSnap){
+        for(const pf of peakFramesForClip(o)) cands.push(pf);
+        for(const bf of beatFramesForClip(o)) cands.push(bf);
+      }
+      for(const cand of cands){
+        const d=Math.abs(cand-rawFrame);
+        if(d<=thresholdFrames && d<bestDist){ best=cand; bestDist=d; }
+      }
+    }
+    return best!=null ? Math.round(best) : Math.round(rawFrame);
+  }
   function wouldOverlap(id,lane,start,length, extra=[]){
     const end=start+length;
     const clips=[...(state.project?.clips||[]), ...extra];
@@ -506,14 +647,30 @@ Timeline ${c.start}f–${c.start+c.length}f`; const icon=stitched?'◆':c.kind==
   function onClipPointer(e){
     if(!state.drag) return; e.preventDefault();
     const c=findClip(state.drag.clipId); if(!c) return;
+    // Auto-scroll the timeline while dragging (trimming OR moving a clip) near its left/
+    // right edge — otherwise reaching a target further than one screenful away required
+    // manually scrolling first, THEN restarting the drag. User: "드레그 하면 되는데
+    // 거기까지 스크롤해서 가져와야되잖아." A fixed step per pointermove is "good enough"
+    // without a requestAnimationFrame ticker: as long as the pointer keeps moving even
+    // slightly at the edge (the normal case while actively dragging), the scroll keeps
+    // advancing together with it.
+    const tl=$('timeline');
+    { const rect=tl.getBoundingClientRect(); const edge=36, step=22;
+      if(e.clientX>rect.right-edge) tl.scrollLeft+=step;
+      else if(e.clientX<rect.left+edge) tl.scrollLeft=Math.max(0,tl.scrollLeft-step); }
     // Same scale correction as frameFromTimelineEvent/laneFromClientY above — this is a
     // SCREEN-pixel clientX delta divided by an unscaled CSS pxPerFrame, which drifted the
-    // same way dragging a clip as scrubbing did at any canvas zoom other than 1.0.
-    const dxFrames=Math.round((e.clientX-state.drag.startX)/elScale($('timeline'))/state.pxPerFrame);
+    // same way dragging a clip as scrubbing did at any canvas zoom other than 1.0. The
+    // scroll-delta term makes the auto-scroll above actually reach further targets: without
+    // it, scrolling the content underneath a stationary pointer doesn't change clientX at
+    // all, so the drag target would never move past whatever was reachable on-screen at
+    // drag-start.
+    const scrollDelta=tl.scrollLeft-state.drag.startScrollLeft; // already CSS px, no /elScale needed
+    const dxFrames=Math.round(((e.clientX-state.drag.startX)/elScale(tl)+scrollDelta)/state.pxPerFrame);
     if(Math.abs(e.clientX-state.drag.startX)>2 || Math.abs(e.clientY-state.drag.startY)>2) state.drag.moved=true;
     if(state.drag.trim==='left'){
       const oldEnd=state.drag.origStart+state.drag.origLen;
-      let ns=clamp(trimFrame(state.drag.origStart+dxFrames),0,oldEnd-1);
+      let ns=clamp(snapEdge(state.drag.origStart+dxFrames, new Set([c.id])),0,oldEnd-1);
       let diff=ns-state.drag.origStart;
       let srcIn=Math.max(0,Math.round(state.drag.origSourceIn+diff));
       if(isTimeBoundClip(c)) srcIn=Math.min(sourceTotalFrames(c)-1,srcIn);
@@ -522,7 +679,9 @@ Timeline ${c.start}f–${c.start+c.length}f`; const icon=stitched?'◆':c.kind==
       if(newLen>maxLen){ newLen=maxLen; ns=oldEnd-newLen; diff=ns-state.drag.origStart; srcIn=Math.max(0,Math.round(state.drag.origSourceIn+diff)); if(isTimeBoundClip(c)) srcIn=Math.min(sourceTotalFrames(c)-1,srcIn); }
       if(!wouldOverlap(c.id,c.lane,ns,newLen)){ c.start=ns; c.length=newLen; c.source_in=srcIn; c.source_out=c.source_in+c.length; normalizeClipBounds(c); }
     } else if(state.drag.trim==='right'){
-      let newLen=Math.max(1,trimFrame(state.drag.origLen+dxFrames));
+      const rawEnd=state.drag.origStart+state.drag.origLen+dxFrames;
+      const snappedEnd=snapEdge(rawEnd, new Set([c.id]));
+      let newLen=Math.max(1,snappedEnd-state.drag.origStart);
       newLen=Math.min(newLen,maxClipLength(c,c.source_in||0));
       if(!wouldOverlap(c.id,c.lane,c.start,newLen)){ c.length=newLen; c.source_out=(c.source_in||0)+c.length; normalizeClipBounds(c); }
     } else {
@@ -697,8 +856,16 @@ Timeline ${c.start}f–${c.start+c.length}f`; const icon=stitched?'◆':c.kind==
     clearTextOverlay(textEl);
     if(c.kind==='video'){
       if(imgEl) imgEl.removeAttribute('src');
-      if(videoEl.dataset.src!==src){ videoEl.pause(); videoEl.removeAttribute('src'); videoEl.load(); videoEl.src=src; videoEl.dataset.src=src; videoEl.onerror=()=>status('Preview video load failed'); }
+      // Crossing a cut mid-playback lands here with a NEW element (freshly .load()'d,
+      // which resets it to paused) — only togglePlay() used to call .play(), so every
+      // clip switch during playback silently dropped back to seek-only advancement for
+      // the rest of the timeline, same slow-over-remote-connections issue as above.
+      // Re-asserting play() here whenever playback is already running keeps native
+      // continuous playback going across cuts instead of just for the first clip.
+      const isNewSrc = videoEl.dataset.src!==src;
+      if(isNewSrc){ videoEl.pause(); videoEl.removeAttribute('src'); videoEl.load(); videoEl.src=src; videoEl.dataset.src=src; videoEl.onerror=()=>status('Preview video load failed'); }
       videoEl.volume = clamp(state.monitorVolume * ((c.volume??100)/100), 0, 1); videoEl.muted = secondary || state.mute || audioMutedForClip(c); seekElementToFrame(videoEl,c,state.currentFrame);
+      if(isNewSrc && state.playing) videoEl.play().catch(()=>{});
     } else if(c.kind==='image'){
       if(videoEl){ videoEl.pause(); videoEl.removeAttribute('src'); videoEl.dataset.src=''; videoEl.load(); }
       if(imgEl.src!==src) imgEl.src=src;
@@ -708,7 +875,64 @@ Timeline ${c.start}f–${c.start+c.length}f`; const icon=stitched?'◆':c.kind==
       loadTextOverlay(c,textEl);
     }
   }
-  function seekElementToFrame(video,c,frame){ if(!video.src) return; const local=Math.max(0,(frame-c.start+(c.source_in||0))/(c.fps||fps())); if(Number.isFinite(local) && Math.abs((video.currentTime||0)-local)>.08){ try{ video.currentTime=local; }catch{} } }
+  // While actually playing, this ran on every drift check (~12x/sec at the 0.08s/2-frame
+  // threshold) and unconditionally forced video.currentTime= on ANY drift past that —
+  // including perfectly normal decode jitter from native playback itself. Each forced
+  // seek makes the browser drop its buffer and issue a fresh network request for that
+  // byte range; on localhost that resolves near-instantly and looks harmless, but over a
+  // slow/high-latency remote connection one seek can take longer than the ~80ms drift
+  // window itself, so the NEXT drift check fires and seeks AGAIN before the previous
+  // seek's data even arrived — a self-inflicted seek storm that keeps the video
+  // permanently rebuffering instead of ever catching up. User: "외부 접속시 영상 플레이를
+  // 하면 대략 1초 정도만 플레이가 되고 정지 영상으로 남아 있음" — native playback runs
+  // fine for that first ~1s (until the first correction seek fires), then never recovers.
+  // Fix: while the video is actively playing on its own (not paused/ended), trust it and
+  // only step in for real desync — small jitter is imperceptible and self-corrects,
+  // whereas a seek storm is not. Paused/scrub/clip-switch cases (video not playing) keep
+  // the original tight 0.08s snap for frame-accurate scrubbing.
+  function seekElementToFrame(video,c,frame){
+    if(!video.src) return;
+    const local=Math.max(0,(frame-c.start+(c.source_in||0))/(c.fps||fps()));
+    if(!Number.isFinite(local)) return;
+    const drift=Math.abs((video.currentTime||0)-local);
+    const playingNatively = !video.paused && !video.ended;
+    const threshold = playingNatively ? 1.5 : .08;
+    if(drift<=threshold) return;
+    // Dragging the ruler/playhead calls this on every single mousemove (scrub() in
+    // bind()) — far more often than the video's own decode pipeline can complete a seek,
+    // especially over any real network latency. Firing video.currentTime= on each one
+    // queued up a backlog of stale seeks the browser had to work through in order, so the
+    // visible frame lagged far behind the ruler position it was already showing. User:
+    // "네비게이션바 움직이면 프레임이 재생처럼 부드럽게 넘어가야되는데 엄청느린데." Only one
+    // seek in flight per element now — while it's still resolving, remember the latest
+    // requested frame instead of issuing another, and jump straight to that once 'seeked'
+    // fires, so a fast drag settles on wherever the cursor actually ended up rather than
+    // visibly working through every position it passed over.
+    if(video._itdaSeeking){ video._itdaPendingFrame=frame; return; }
+    video._itdaSeeking=true;
+    let settled=false;
+    const settle=()=>{
+      if(settled) return; settled=true;
+      clearTimeout(safety);
+      video.removeEventListener('seeked',onSeeked);
+      video.removeEventListener('error',onSeeked);
+      video._itdaSeeking=false;
+      const pending=video._itdaPendingFrame;
+      video._itdaPendingFrame=null;
+      if(pending!=null && pending!==frame) seekElementToFrame(video,c,pending);
+    };
+    const onSeeked=()=>settle();
+    // 'seeked' doesn't reliably fire for every seek (e.g. a seek to the exact same time
+    // the browser already snapped to, a mid-flight src swap, or a decode error) - without
+    // a fallback, one missed event left _itdaSeeking stuck true forever, silently
+    // swallowing every scrub request after it with no error and no recovery. User: "타임라인
+    // 네비게이션바 이동해도 미리보기 프레임 안되잖아." A 600ms safety timeout guarantees
+    // this always unsticks itself even if the browser never tells us it's done.
+    const safety=setTimeout(settle,600);
+    video.addEventListener('seeked',onSeeked);
+    video.addEventListener('error',onSeeked);
+    try{ video.currentTime=local; }catch{ settle(); }
+  }
   // Stitched clips get resolved (via childClipAtFrame) into synthetic child
   // objects whose id is `${stitched.id}:${child.id}` - a different string
   // than the top-level clip's own id. Matching must tolerate that compound
@@ -820,8 +1044,22 @@ Timeline ${c.start}f–${c.start+c.length}f`; const icon=stitched?'◆':c.kind==
   function togglePlay(){
     const v=$('previewVideo'), vB=$('previewVideoB');
     if(!state.playing){
-      if(v && !v.muted) v.play().catch(()=>{});
-      if(state.previewMode!=='single' && vB && !vB.muted) vB.play().catch(()=>{});
+      // Was gated behind `!v.muted` — but v is muted whenever nothing is selected or
+      // audio's routed through the separate monitor-audio elements (updatePlaybackAudio,
+      // monitoredAudioClips), which is the common case. With v.play() skipped, this clip
+      // had NO native continuous playback at all — the frame clock (startPlaybackClock)
+      // only nudges it via seekElementToFrame's currentTime= corrections when drift
+      // exceeds 0.08s, i.e. pure discrete seeking with no decode-ahead buffering. Each
+      // seek is a fresh network round trip; fine on localhost, but over a slow/high-
+      // latency remote connection that round trip caps how fast frames can actually
+      // arrive, well under real-time. User: "로컬이 아닌 갤러리 영상을 불러왔을때 너무
+      // 플레이가 느림....(특히 외부 접속시 거의 실시간 플레이가 안됨.)" video.play() is
+      // completely unaffected by the muted flag (only autoplay-without-gesture is), so
+      // calling it unconditionally here lets the browser drive real continuous
+      // buffered playback — the frame-clock's drift correction stays as a lightweight
+      // sync safety net instead of being the only thing moving the video at all.
+      if(v) v.play().catch(()=>{});
+      if(state.previewMode!=='single' && vB) vB.play().catch(()=>{});
       updatePlaybackAudio();
       state.playing=true;
       $('playPause').textContent='❚❚';
@@ -847,6 +1085,21 @@ Timeline ${c.start}f–${c.start+c.length}f`; const icon=stitched?'◆':c.kind==
   function stepFrame(delta){ if(delta==='first') state.currentFrame=0; else if(delta==='last') state.currentFrame=maxFrame(); else state.currentFrame=clamp(state.currentFrame+Number(delta),0,maxFrame()); updatePlayhead(); }
   function gotoSelectedStart(){ const c=selectedClip(); if(!c) return; state.currentFrame=c.start; updatePlayhead(); }
   function gotoSelectedEnd(){ const c=selectedClip(); if(!c) return; state.currentFrame=clipEnd(c)-1; updatePlayhead(); }
+  // Project-level First/End Frame — distinct from gotoSelectedStart/End above (which need
+  // a selected clip): jumps the playhead AND scrolls the timeline view itself, regardless
+  // of selection. User: "차라리 퍼스트 프레임과 앤드 프레임으로 이동하는 툴 버튼을
+  // 만들어 주던지... 프로퍼티스 오른쪽에." updatePlayhead() alone only moves the playhead
+  // line — the timeline's own scroll position was never brought along, so jumping to the
+  // end still needed the same manual scroll this was meant to avoid.
+  function gotoTimelineStart(){ state.currentFrame=0; updatePlayhead(); updatePreview(); $('timeline').scrollLeft=0; }
+  // User's final word on what "End Frame" means here: "타임라인상 가장 끝에 있는
+  // 프레임" — the furthest-right edge of actual content, full stop. Not Total Frames,
+  // not maxFrame()'s 15s floor — purely the last clip's own end, whichever clip that is.
+  function gotoTimelineEnd(){
+    const lastClipEnd=Math.max(0, ...((state.project?.clips||[]).map(c=>c.start+c.length)));
+    state.currentFrame=lastClipEnd; updatePlayhead(); updatePreview();
+    const tl=$('timeline'); tl.scrollLeft=tl.scrollWidth;
+  }
   function playSelectedFromStart(){ const c=selectedClip(); if(c){ state.currentFrame=c.start; updatePlayhead(); } togglePlay(); }
 
   function splitSelected(){
@@ -1236,7 +1489,7 @@ Timeline ${c.start}f–${c.start+c.length}f`; const icon=stitched?'◆':c.kind==
     ${['video','audio'].includes(c.kind) ? `<div class="props-section">Audio</div>${toggleField('audio_enabled','Audio',c.audio_enabled!==false)}${toggleField('solo','Solo',!!c.solo)}${sliderField('volume','Gain %',0,200,1,c.volume??100)}` : ''}
     ${['video','image'].includes(c.kind) ? `<div class="props-section">Transition In</div><label>Type</label><select data-prop="transition_type">${TRANSITION_TYPES.map(t=>`<option value="${t.value}" ${((c.transition_type||'none')===t.value)?'selected':''}>${t.label}</option>`).join('')}</select><label>Frames (0=auto)</label><input data-prop="transition_frames" type="number" min="0" value="${c.transition_frames||0}"><div class="muted" style="grid-column:1/-1">Blends this clip's head with whatever other clip's active window it starts inside of - drag it onto a different lane so it overlaps that clip's tail.</div>` : ''}
     ${['video','audio','image'].includes(c.kind) ? renderVersionsSection(c) : ''}
-    <div class="props-section">Text / Overlay</div><textarea data-prop="text">${esc(c.text||'')}</textarea><label>Font</label><select data-prop="font_family">${fontOptions}</select>${sliderField('x','X %',0,100,1,c.x??50)}${sliderField('y','Y %',0,100,1,c.y??88)}${sliderField('size','Size',8,220,1,c.size||42)}${sliderField('opacity','Opacity',0,1,0.05,c.opacity??1)}<label>Text Color</label><input data-prop="color" type="color" value="${esc(c.color||'#ffffff')}">${toggleField('shadow_enabled','Shadow',c.shadow_enabled)}<label>Shadow Color</label><input data-prop="shadow_color" type="color" value="${esc(c.shadow_color||'#000000')}">${sliderField('shadow_opacity','Shadow Opacity',0,1,0.05,c.shadow_opacity??0.6)}
+    ${c.kind==='text' ? `<div class="props-section">Text / Overlay</div><textarea data-prop="text">${esc(c.text||'')}</textarea><label>Font</label><select data-prop="font_family">${fontOptions}</select>${sliderField('x','X %',0,100,1,c.x??50)}${sliderField('y','Y %',0,100,1,c.y??88)}${sliderField('size','Size',8,220,1,c.size||42)}${sliderField('opacity','Opacity',0,1,0.05,c.opacity??1)}<label>Text Color</label><input data-prop="color" type="color" value="${esc(c.color||'#ffffff')}">${toggleField('shadow_enabled','Shadow',c.shadow_enabled)}<label>Shadow Color</label><input data-prop="shadow_color" type="color" value="${esc(c.shadow_color||'#000000')}">${sliderField('shadow_opacity','Shadow Opacity',0,1,0.05,c.shadow_opacity??0.6)}` : ''}
   </div>`;
     const kind=body.querySelector('[data-prop="kind"]'); if(kind) kind.value=c.kind||'video';
     const font=body.querySelector('[data-prop="font_family"]'); if(font) font.value=c.font_family||'system';
@@ -1367,7 +1620,7 @@ Timeline ${c.start}f–${c.start+c.length}f`; const icon=stitched?'◆':c.kind==
   function getComfyUrl(){ return localStorage.getItem('itda_comfy_url') || ''; }
   function setComfyUrl(v){ v ? localStorage.setItem('itda_comfy_url', v) : localStorage.removeItem('itda_comfy_url'); }
 
-  function showSettingsPopup(){ showModal('Project Settings', `<div class="modal-grid"><label>Project FPS</label><input id="settingsFps" type="number" min="16" max="120" step="0.001" value="${fps()}"><label>Total Frames</label><input id="settingsTotal" type="number" min="1" value="${totalFrames()}"><label>Frame Policy</label><select id="framePolicy"><option value="normalize">Normalize to Project FPS</option><option value="drop">Frame Drop</option><option value="interpolate">Interpolation</option></select><label>ComfyUI Server URL</label><input id="settingsComfyUrl" type="text" placeholder="http://127.0.0.1:8188 (leave blank if running inside ComfyUI)" value="${esc(getComfyUrl())}"></div><p class="muted">Below 16fps is not allowed; 60fps and above is flagged as a warning. Changing these rescales the timeline ruler and every clip's frame positions together.</p><p class="muted">ComfyUI Server URL is only needed in the standalone app - it's where "Send To ComfyUI" uploads clips to, since a standalone instance has no folder shared with ComfyUI. Leave blank when running inside ComfyUI itself.</p>`, `<button id="settingsApply">Apply</button><button id="modalOk">Cancel</button>`); $('settingsApply').onclick=()=>{ const oldFps=fps(); let nf=Number($('settingsFps').value||24); if(nf<16){nf=16;status('Below 16fps is not allowed - clamped to 16fps');} if(nf>=60) status('Warning: 60fps or higher'); const total=Number($('settingsTotal').value||DEFAULT_TOTAL); const ratio=nf/oldFps; state.project.settings={...state.project.settings,fps:nf,total_frames:Math.max(1,Math.round(total))}; state.totalFrames=state.project.settings.total_frames; (state.project.clips||[]).forEach(c=>{ c.start=Math.round(c.start*ratio); c.length=Math.max(1,Math.round(c.length*ratio)); c.source_in=Math.round((c.source_in||0)*ratio); c.source_out=Math.round((c.source_out||c.length)*ratio); c.fps=nf; normalizeClipBounds(c); }); setComfyUrl($('settingsComfyUrl').value.trim()); closeModal(); renderAll(); }; $('modalOk').onclick=closeModal; }
+  function showSettingsPopup(){ showModal('Project Settings', `<div class="modal-grid"><label>Project FPS</label><input id="settingsFps" type="number" min="16" max="120" step="0.001" value="${fps()}"><label>Total Frames</label><input id="settingsTotal" type="number" min="1" value="${totalFrames()}"><label>Frame Policy</label><select id="framePolicy"><option value="normalize">Normalize to Project FPS</option><option value="drop">Frame Drop</option><option value="interpolate">Interpolation</option></select></div><p class="muted">Below 16fps is not allowed; 60fps and above is flagged as a warning. Changing these rescales the timeline ruler and every clip's frame positions together.</p>`, `<button id="settingsApply">Apply</button><button id="modalOk">Cancel</button>`); $('settingsApply').onclick=()=>{ const oldFps=fps(); let nf=Number($('settingsFps').value||24); if(nf<16){nf=16;status('Below 16fps is not allowed - clamped to 16fps');} if(nf>=60) status('Warning: 60fps or higher'); const total=Number($('settingsTotal').value||DEFAULT_TOTAL); const ratio=nf/oldFps; state.project.settings={...state.project.settings,fps:nf,total_frames:Math.max(1,Math.round(total))}; state.totalFrames=state.project.settings.total_frames; (state.project.clips||[]).forEach(c=>{ c.start=Math.round(c.start*ratio); c.length=Math.max(1,Math.round(c.length*ratio)); c.source_in=Math.round((c.source_in||0)*ratio); c.source_out=Math.round((c.source_out||c.length)*ratio); c.fps=nf; normalizeClipBounds(c); }); closeModal(); renderAll(); }; $('modalOk').onclick=closeModal; }
   function snapshotClipCandidate(){
     const sel=selectedClips();
     let c=sel.find(x=>state.currentFrame>=x.start && state.currentFrame<clipEnd(x) && ['video','image','stitched'].includes(x.kind));
@@ -1502,6 +1755,7 @@ Timeline ${c.start}f–${c.start+c.length}f`; const icon=stitched?'◆':c.kind==
     showModal('Pre-render', `<div class="export-progress"><div class="spinner"></div><p>Rendering ${b-a} frames (${fmtTime(b-a)})…</p><p class="muted" id="prTimer">0.0s</p></div>`, '');
     const timer=setInterval(()=>{ const el=$('prTimer'); if(el) el.textContent=`${((Date.now()-started)/1000).toFixed(1)}s`; },100);
     try{
+      await saveProjectSilent();
       const data=await api('/itda_studio_one/api/prerender',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({project:state.project?.name, range:{start:a, end:b}})});
       clearInterval(timer);
@@ -1525,7 +1779,26 @@ Timeline ${c.start}f–${c.start+c.length}f`; const icon=stitched?'◆':c.kind==
   function bind(){
     applyTooltips();
     document.addEventListener('pointerup', e=>{ if(e.target.closest('button,input[type="range"]')) requestAnimationFrame(()=>document.activeElement?.blur?.()); }, true);
-    $('saveProject').onclick=saveProject; $('projectMenu').onclick=showProjectPopup; $('settingsTop').onclick=showSettingsPopup; $('exportProject').onclick=exportProject; $('sendComfy').onclick=sendToComfy;
+    // exportProject/sendToComfy functions stay defined (untouched, dormant) but are no
+    // longer wired to any button — those two menu items were removed. User: "익스폴트랑
+    // 샌드컴피는 메뉴에서 빼야되." $('exportProject')/$('sendComfy') now return null, and
+    // .onclick=... on null throws synchronously inside bind() — exactly the class of bug
+    // already found once this session (ROOT.querySelector('.lower') returning null) that
+    // silently kills every listener wired after it. Simply not assigning to them avoids
+    // that instead of leaving a dangling reference to a removed element.
+    $('saveProject').onclick=saveProject; $('projectMenu').onclick=showProjectPopup; $('settingsTop').onclick=showSettingsPopup;
+    // Quick top-level shortcuts (dom_build.js's newProjectTop/loadProjectTop) — same
+    // create/switch flow as showProjectPopup's own "+ New Project"/row-click, just
+    // reachable without opening the full Project Library modal first.
+    $('newProjectTop').onclick=async()=>{ const base=prompt('New Project Name','itda-project-1'); if(!base) return; const data=await api('/itda_studio_one/api/project/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:base})}); await initProject(data.project?.name || base); };
+    $('loadProjectTop').onclick=async()=>{
+      let items=[];
+      try{ const data=await api('/itda_studio_one/api/projects'); items=data.items||[]; }catch(e){ status(`Project list failed: ${e.message}`); return; }
+      if(!items.length){ status('No projects yet.'); return; }
+      showModal('Load Project', `<div id="loadProjectList" class="project-list">${items.map(it=>`<div class="project-row ${it.name===(state.project?.name)?'active':''}" data-project="${esc(it.name)}">${esc(it.name)}</div>`).join('')}</div>`, `<button id="modalOk">Cancel</button>`);
+      $('loadProjectList').querySelectorAll('.project-row').forEach(row=>row.onclick=()=>{ closeModal(); initProject(row.dataset.project); });
+      $('modalOk').onclick=closeModal;
+    };
     $('clearMedia').onclick=()=>{state.media=[]; if(state.project){state.project.media=[];state.project.clips=[];} setSelection(null); renderAll();};
     // Media pool scope cut (user's own ask): local files are video/audio only, no
     // image/text add paths — addImage/addText/addTextMedia simply have nothing to
@@ -1553,7 +1826,8 @@ Timeline ${c.start}f–${c.start+c.length}f`; const icon=stitched?'◆':c.kind==
         document.addEventListener('pointermove', move);
         document.addEventListener('pointerup', ()=>document.removeEventListener('pointermove', move), {once:true});
       });
-    } $('gotoClipStart').onclick=gotoSelectedStart; $('gotoClipEnd').onclick=gotoSelectedEnd; $('compareTop').onclick=()=>{ if(selectedClips().length===2){state.previewMode=state.previewMode==='compare'?'single':'compare'; renderAll();} }; $('overlayTop').onclick=()=>{ if(selectedClips().length===2){state.previewMode=state.previewMode==='overlay'?'single':'overlay'; renderAll();} }; const wipeTop=$('wipeTop'); if(wipeTop) wipeTop.onclick=()=>{ if(selectedClips().length===2){state.previewMode=state.previewMode==='wipe'?'single':'wipe'; renderAll();} }; $('previewMode').onclick=()=>{state.previewMode='single'; renderAll();}; $('snapshotTop').onclick=snapshot; $('fullscreenTop').onclick=()=>{ const el=$('previewStage'); if(document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen?.(); };
+    } $('gotoClipStart').onclick=gotoSelectedStart; $('gotoClipEnd').onclick=gotoSelectedEnd;
+    const gtStart=$('gotoTimelineStart'), gtEnd=$('gotoTimelineEnd'); if(gtStart) gtStart.onclick=gotoTimelineStart; if(gtEnd) gtEnd.onclick=gotoTimelineEnd; $('compareTop').onclick=()=>{ if(selectedClips().length===2){state.previewMode=state.previewMode==='compare'?'single':'compare'; renderAll();} }; $('overlayTop').onclick=()=>{ if(selectedClips().length===2){state.previewMode=state.previewMode==='overlay'?'single':'overlay'; renderAll();} }; const wipeTop=$('wipeTop'); if(wipeTop) wipeTop.onclick=()=>{ if(selectedClips().length===2){state.previewMode=state.previewMode==='wipe'?'single':'wipe'; renderAll();} }; $('previewMode').onclick=()=>{state.previewMode='single'; renderAll();}; $('snapshotTop').onclick=snapshot; $('fullscreenTop').onclick=()=>{ const el=$('previewStage'); if(document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen?.(); };
     document.querySelectorAll('[data-step]').forEach(btn=>btn.onclick=()=>stepFrame(btn.dataset.step)); $('snapToggle').onclick=()=>{state.snap=!state.snap; updateControls();}; const peakBtn=$('peakSnapToggle'); if(peakBtn) peakBtn.onclick=()=>{state.peakSnap=!state.peakSnap; updateControls(); status(`Peak Match ${state.peakSnap?'ON':'OFF'}`);}; $('loopToggle').onclick=()=>{state.loop=!state.loop; updateControls();}; $('muteToggle').onclick=()=>{state.mute=!state.mute; updateControls(); updatePreview();}; $('scrubAudioToggle').onclick=()=>{state.scrubAudio=!state.scrubAudio; updateControls(); if(!state.scrubAudio)(state.scrubAudios||[]).forEach(a=>a.pause());}; $('monitorVolume').oninput=e=>{const v=Math.min(100,Math.max(0,Number(e.target.value)||0)); e.target.value=v; state.monitorVolume=v/100; $('volumeLabel').textContent=`${v}%`; [$('previewVideo'),$('previewVideoB'),...(state.scrubAudios||[]),...(state.monitorAudios||[])].forEach(a=>{ if(a){ a.volume=state.monitorVolume; if(v>0 && !state.mute) a.muted=false; }});}; $('markIn').onclick=()=>{state.range.start=state.currentFrame; renderRange();}; $('markOut').onclick=()=>{state.range.end=state.currentFrame; renderRange();}; $('clearRange').onclick=()=>{state.range={start:null,end:null}; renderRange();};
     $('splitClip').onclick=splitSelected; $('stitchClip').onclick=stitchSelected; $('unstitchClip').onclick=unstitchSelected; const autoStitchBtn2=$('autoStitchClip'); if(autoStitchBtn2) autoStitchBtn2.onclick=autoStitchSelected; const transBtn2=$('addTransition'); if(transBtn2) transBtn2.onclick=()=>{ if(transBtn2.dataset.mode==='remove') removeTransitionSelected(); else addTransitionSelected(); }; const aiDetectBtn2=$('aiDetect'); if(aiDetectBtn2) aiDetectBtn2.onclick=aiDetectSelected; $('groupClip').onclick=groupSelected; $('ungroupClip').onclick=ungroupSelected; $('detachAudio').onclick=detachAudio; $('mergeAudio').onclick=mergeAudioBack; $('prerender').onclick=runPrerender; $('deleteClip').onclick=deleteSelected; const hz=$('hZoom'); if(hz) hz.oninput=e=>{state.pxPerFrame=Number(e.target.value)||state.pxPerFrame; renderTimeline();}; const vz=$('vZoom'); if(vz) vz.oninput=e=>{state.laneHeight=Number(e.target.value)||DEFAULT_LANE_H; renderTimeline();};
     const timeline=$('timeline'), ruler=$('ruler'); let scrubbing=false; const scrub=e=>{state.currentFrame=frameFromTimelineEvent(e); if(state.playing){state.playStartFrame=state.currentFrame; state.playStartedAt=performance.now();} updatePlayhead();}; ruler.addEventListener('mousedown',e=>{e.preventDefault(); e.stopPropagation(); scrubbing=true; scrub(e);}); document.addEventListener('mousemove',e=>{if(scrubbing){e.preventDefault(); scrub(e);}}); document.addEventListener('mouseup',e=>{ if(scrubbing){ e.preventDefault?.(); e.stopPropagation?.(); } scrubbing=false;});
@@ -1629,8 +1903,9 @@ Timeline ${c.start}f–${c.start+c.length}f`; const icon=stitched?'◆':c.kind==
       if((e.ctrlKey||e.metaKey) && k===','){e.preventDefault(); showSettingsPopup(); return;}
       if((e.ctrlKey||e.metaKey) && k==='p'){e.preventDefault(); showProjectPopup(); return;}
       if((e.ctrlKey||e.metaKey) && k==='s'){e.preventDefault(); saveProject(); return;}
-      if((e.ctrlKey||e.metaKey) && k==='e'){e.preventDefault(); $('exportProject').click(); return;}
-      if((e.ctrlKey||e.metaKey) && e.key==='Enter'){e.preventDefault(); $('sendComfy').click(); return;}
+      // Export / Send-To-ComfyUI shortcuts removed along with their menu buttons — user:
+      // "익스폴트랑 샌드컴피는 메뉴에서 빼야되" (never needed running inside ComfyUI; the
+      // new Render button replaces the export-to-gallery use case).
       if((e.ctrlKey||e.metaKey) && k==='d'){e.preventDefault(); duplicateSelected(); return;}
       if((e.ctrlKey||e.metaKey) && k==='c'){e.preventDefault(); copySelected(); return;}
       if((e.ctrlKey||e.metaKey) && k==='v'){e.preventDefault(); pasteClipboard(); return;}
@@ -1667,8 +1942,56 @@ Timeline ${c.start}f–${c.start+c.length}f`; const icon=stitched?'◆':c.kind==
       else if(e.key==='-'){state.pxPerFrame=Math.max(.5,state.pxPerFrame-.5); if($('hZoom')) $('hZoom').value=state.pxPerFrame; renderTimeline();}
     });
     $('previewVideo').addEventListener('timeupdate',()=>{ /* playhead is driven by frame clock, not video end events */ });
-    let resizing=false; $('resizeHandle').addEventListener('mousedown',()=>resizing=true); document.addEventListener('mousemove',e=>{ if(!resizing) return; const y=e.clientY-46,h=window.innerHeight-46,upper=Math.max(250,Math.min(h-210,y)); $('upperPane').style.height=`${upper}px`; document.querySelector('.lower').style.height=`${h-upper-5}px`; }); document.addEventListener('mouseup',()=>resizing=false); $('modalClose').onclick=closeModal; $('modal').addEventListener('click',e=>{if(e.target.id==='modal') closeModal();});
+    // Persist the user's last-dragged upper/lower split across remounts (reload, node
+    // re-drop) instead of always starting from the 56% CSS default — same
+    // localStorage-per-UI-pref pattern core_itda_studio.js already uses for pxPerFrame/
+    // laneHeight/mediaThumb. User: "사용자가 지정한 마지막 높이를 기억하는게 정상이야."
+    //
+    // The ORIGINAL drag math (e.clientY-46, window.innerHeight-46) computed an ABSOLUTE
+    // target height straight from the raw mouse position, assuming ITDA's own full,
+    // unscaled page (handle always at screen y=46). Embedded in a canvas-zoomed node,
+    // that absolute formula no longer lines up with where the handle actually is, so
+    // every new drag jumped to whatever height the formula produced for that click point
+    // instead of continuing from the current height. User: "한번 조절을 하고 다시
+    // 조절하려고 하면 그자리에서 조절되는게 아니고 다시 시작점으로 돌아가서... 시작점으로
+    // 돌아서서 조절됨." Same bug class as the earlier cursor/waveform scale mismatch
+    // (elScale) — rewritten as a DELTA from the drag's own start position/height (scaled
+    // by elScale for canvas zoom) instead of an absolute page-position formula, so a drag
+    // now always continues smoothly from wherever the pane already is.
+    const UPPER_H_KEY = 'itda_studio_one_upperH_v1';
+    let resizing=false, dragStartY=0, dragStartUpperH=0;
+    const elScale = (elm) => { const r = elm.getBoundingClientRect(); return elm.offsetWidth ? r.width / elm.offsetWidth : 1; };
+    // document.querySelector('.lower') (unscoped, whole-page) instead of ROOT-scoped was
+    // a real bug: with more than one ITDA STUDIO node instance on the page (or before
+    // ComfyUI's own dom-widget insertion timing lands this instance's DOM), it could
+    // return null, and .style on that threw synchronously INSIDE bind() — aborting
+    // everything after it in this same function, including the resizeHandle mousedown
+    // listener below and the initProject() call at the very end (renderTimeline/lane
+    // rows, media pool population). One throw here silently broke the whole node. User
+    // reports that were actually all this one bug: "왼쪽에 트랙이 없어", "상하 조절 기능도
+    // 다시 초기화", "조절바 위치 잡고 조절해도 움직이지도 않고", "갤러리에서 미디어 로드
+    // 해도 미디어풀에 안들어 오고". Scoped to ROOT like every other lookup in this file.
+    const applyUpperH = (upper) => { const h=window.innerHeight-46; upper=Math.max(250,Math.min(h-210,upper)); const up=$('upperPane'), lo=ROOT.querySelector('.lower'); if(up) up.style.height=`${upper}px`; if(lo) lo.style.height=`${h-upper-5}px`; };
+    $('resizeHandle').addEventListener('mousedown',e=>{ resizing=true; dragStartY=e.clientY; dragStartUpperH=$('upperPane').offsetHeight; });
+    document.addEventListener('mousemove',e=>{ if(!resizing) return; const dy=(e.clientY-dragStartY)/elScale($('upperPane')); applyUpperH(dragStartUpperH+dy); });
+    document.addEventListener('mouseup',()=>{ if(!resizing) return; resizing=false; try{ localStorage.setItem(UPPER_H_KEY, String(parseInt($('upperPane').style.height,10)||'')); }catch{} });
+    // Restored last, after every listener above is safely wired, and wrapped so a
+    // future failure here still can't take the rest of bind()/initProject() down with it.
+    try { const savedUpperH = Number(localStorage.getItem(UPPER_H_KEY)); if (savedUpperH) applyUpperH(savedUpperH); } catch(e) { console.error('[ITDA STUDIO] restore upperH failed', e); }
+    $('modalClose').onclick=closeModal; $('modal').addEventListener('click',e=>{if(e.target.id==='modal') closeModal();});
   }
   bind(); initProject(HOOKS.projectName || 'untitled').catch(e=>status(`Init failed: ${e.message}`));
-  return { state, renderAll, status };
+  // showModal/closeModal exposed so one_node_itda_studio.js's own new features (App
+  // Settings, Gallery, Render) can reuse ITDA's existing modal chrome instead of building
+  // a second, visually-inconsistent one — those features live entirely in that file, not
+  // here, to keep this ported file itself untouched beyond genuinely new wiring.
+  // refreshMedia: one_node_itda_studio.js's Gallery import (a NEW feature, not part of
+  // ITDA's original app.js) copies a file into this project's media folder server-side,
+  // then needs the Media Bin to actually show it — same scanMedia()+renderMedia() pair
+  // HOOKS.pickVideoFromGallery already calls after its own gallery import.
+  const refreshMedia = async () => { await scanMedia(); renderMedia(); };
+  // Same "backend loads from disk, not live state" gap Pre-render had — Render→Gallery
+  // (one_node_itda_studio.js, a new feature) calls /api/render_to_gallery with just the
+  // project name too, so it needs the same save-first fix.
+  return { state, renderAll, status, showModal, closeModal, refreshMedia, saveProjectSilent };
 }

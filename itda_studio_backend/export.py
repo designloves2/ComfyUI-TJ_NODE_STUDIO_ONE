@@ -207,6 +207,11 @@ _FORMAT_CODECS = {
     "mov": {"ext": "mov", "vcodec": ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p"], "acodec": ["-c:a", "aac"]},
     "webm": {"ext": "webm", "vcodec": ["-c:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-pix_fmt", "yuv420p"], "acodec": ["-c:a", "libopus"]},
 }
+# Audio-only output uses its own container/codec (m4a), not "mp4 with no video track" —
+# smaller, and opens correctly as audio in every player instead of looking like a broken
+# video file. User: "랜더는 3가지 타입으로 만들어줘. Video + Audio / Video Only / Audio Only."
+_AUDIO_ONLY_CODEC = {"ext": "m4a", "acodec": ["-c:a", "aac"]}
+RENDER_MODES = ("video_audio", "video_only", "audio_only")
 
 
 def export_timeline(
@@ -216,6 +221,7 @@ def export_timeline(
     out_dir: Path | None = None,
     stem: str | None = None,
     write_manifest: bool = True,
+    mode: str = "video_audio",
 ) -> dict[str, Any]:
     """Composes the full ITDA timeline (layered video/image, text burn-in,
     mixed audio) into a single video file (mp4/mov/webm) via one ffmpeg
@@ -224,17 +230,37 @@ def export_timeline(
     out_dir/stem/write_manifest exist so pre-render can reuse this exact
     compositing path for a sub-range without writing into the user's output
     folder or clobbering last_export.json (which ITDALoadExport reads).
+
+    mode: "video_audio" (default) | "video_only" | "audio_only" — which stream(s) the
+    output file actually gets. The compositing math runs the same regardless (still
+    need the video layer graph even for audio_only, since audio timing/mix is computed
+    the same way either way); only the final -map/codec selection and output container
+    change. User: "랜더는 3가지 타입으로 만들어줘. Video + Audio / Video Only / Audio Only."
     """
+    if mode not in RENDER_MODES:
+        mode = "video_audio"
     fmt = fmt.lower() if fmt else "mp4"
     if fmt not in _FORMAT_CODECS:
         fmt = "mp4"
     settings = project.get("settings") or {}
     fps = float(settings.get("fps") or 24)
     total_frames = int(settings.get("total_frames") or 360)
-    duration_sec = max(1.0 / fps, total_frames / fps)
 
     clips = _flatten_clips(project.get("clips") or [])
     _reject_foreign_clip_paths(clips)
+
+    # Total Frames is a project-wide setting the user may never have trimmed back down
+    # from its 360-frame default — rendering always padded out to that full length even
+    # when the actual clips on the timeline end much earlier (silent/black tail). User:
+    # "총 길이가 360프래임인데. 클립 두개 붙이니까 180프레임이면 이 영상의 랜더 총길이는
+    # 180프레임 이어야되거든. 360이 아니고. 이것도 감지해서 가능해?" Auto-detected as the
+    # last clip's own end frame, capped so it can never exceed the explicit Total Frames
+    # setting (that stays the ceiling, e.g. for intentional trailing blank space) — only
+    # shortens the render when there's genuinely nothing left to show, never lengthens it.
+    content_end = max((int(c.get("start", 0) or 0) + int(c.get("length", 0) or 0) for c in clips), default=0)
+    if content_end > 0:
+        total_frames = min(total_frames, content_end)
+    duration_sec = max(1.0 / fps, total_frames / fps)
     visual = [c for c in clips if c.get("kind") in ("video", "image") and c.get("path")]
     text_clips = [c for c in clips if c.get("kind") == "text" and (c.get("text") or c.get("name"))]
     audio_capable = [
@@ -255,7 +281,8 @@ def export_timeline(
     out_dir.mkdir(parents=True, exist_ok=True)
     if stem is None:
         stem = f"{safe}_{time.strftime('%Y%m%d_%H%M%S')}"
-    out_path = out_dir / f"{stem}.{_FORMAT_CODECS[fmt]['ext']}"
+    out_ext = _AUDIO_ONLY_CODEC["ext"] if mode == "audio_only" else _FORMAT_CODECS[fmt]["ext"]
+    out_path = out_dir / f"{stem}.{out_ext}"
 
     inputs: list[str] = []
     filter_parts: list[str] = []
@@ -424,22 +451,30 @@ def export_timeline(
         audio_labels.append(alabel)
 
     has_audio = bool(audio_labels)
+    if mode == "audio_only" and not has_audio:
+        raise ExportError("No audio in this range — nothing to render for Audio Only.")
     if has_audio:
         mix_inputs = "".join(f"[{l}]" for l in audio_labels)
         filter_parts.append(f"{mix_inputs}amix=inputs={len(audio_labels)}:duration=longest:normalize=0[aout]")
 
     filter_complex = ";".join(filter_parts)
+    include_video = mode != "audio_only"
+    include_audio = has_audio and mode != "video_only"
 
     cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
     cmd += inputs
-    cmd += ["-filter_complex", filter_complex, "-map", f"[{base_label}]"]
-    if has_audio:
+    cmd += ["-filter_complex", filter_complex]
+    if include_video:
+        cmd += ["-map", f"[{base_label}]"]
+    if include_audio:
         cmd += ["-map", "[aout]"]
-    codec = _FORMAT_CODECS[fmt]
-    cmd += ["-t", f"{duration_sec:.6f}", "-r", str(fps)]
-    cmd += codec["vcodec"]
-    if has_audio:
-        cmd += codec["acodec"]
+    cmd += ["-t", f"{duration_sec:.6f}"]
+    if include_video:
+        cmd += ["-r", str(fps)]
+        cmd += _FORMAT_CODECS[fmt]["vcodec"]
+        cmd += (_FORMAT_CODECS[fmt]["acodec"] if include_audio else [])
+    else:
+        cmd += _AUDIO_ONLY_CODEC["acodec"]
     cmd += [str(out_path)]
 
     try:
@@ -460,8 +495,10 @@ def export_timeline(
         "total_frames": total_frames,
         "width": width,
         "height": height,
-        "has_audio": has_audio,
-        "format": fmt,
+        "has_audio": include_audio,
+        "has_video": include_video,
+        "mode": mode,
+        "format": fmt if include_video else _AUDIO_ONLY_CODEC["ext"],
         "created_at": time.time(),
     }
     if write_manifest:

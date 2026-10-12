@@ -22,22 +22,51 @@ export function buildItdaDom() {
   const R = (tag, id, props, children) => reg(mk(tag, id, props, children));
 
   // ── topbar — decluttered: this node's own purple title bar already reads
-  // "ITDA STUDIO (TJ)", so the original's redundant in-panel brand text is dropped, and
-  // Settings/Project/Save/Export/Send-to-ComfyUI (all real, all still wired to the exact
-  // same ids/handlers) live inside one "☰ Menu" dropdown instead of five separate
+  // "ITDA ONE STUDIO (TJ)", so the original's redundant in-panel brand text is dropped, and
+  // Settings/Project/Save/Gallery live inside one "☰ Menu" dropdown instead of separate
   // top-level buttons — this node is nowhere near ITDA's original full-page width.
+  // Export / Send-To-ComfyUI dropped entirely (user: "익스폴트랑 샌드컴피는 메뉴에서
+  // 빼야되" — never needed running inside ComfyUI; superseded by the Render button's
+  // render-to-gallery flow). appSettingsTop is NEW: a system-wide settings modal
+  // (gallery path, LLM backend/model) distinct from settingsTop's per-project FPS/frame
+  // settings — user: "지금 설정은 시스템 설정이 아닌 프로젝트 설정이라... 이걸 시스템
+  // 설정으로 변경." galleryTop moved OUT of the menu — user: "갤러리 버튼은 메뉴안에
+  // 있지 말고 랜더 버튼 왼쪽에 있어야지" — it's a top-level topbar button now, not a
+  // menu item (see topbar below).
+  // Order/grouping per user's exact mockup:
+  //   Project Lib...
+  //   ---
+  //   New Project / Load Project / Save Project
+  //   ---
+  //   Project Settings / App Settings
   const menuDropdown = R("div", "itdaMenuDropdown", { className: "itda-menu-dropdown" }, [
+    R("button", "projectMenu", { text: "📁 Project Library…" }),
+    mk("div", null, { className: "itda-menu-sep" }),
+    R("button", "newProjectTop", { text: "＋ New Project" }),
+    R("button", "loadProjectTop", { text: "📂 Load Project" }),
+    R("button", "saveProject", { text: "💾 Save Project" }),
+    mk("div", null, { className: "itda-menu-sep" }),
     R("button", "settingsTop", { text: "⚙ Project Settings" }),
-    R("button", "projectMenu", { text: "📁 Project…" }),
-    R("button", "saveProject", { text: "💾 Save" }),
-    R("button", "exportProject", { text: "⇩ Export" }),
-    R("button", "sendComfy", { text: "➤ Send To ComfyUI" }),
+    R("button", "appSettingsTop", { text: "🖥 App Settings" }),
   ]);
   const menuBtn = R("button", "itdaMenuBtn", { className: "top-menu", title: "Menu", text: "☰ Menu" });
+  // Render — pinned to the topbar's far right end (next to fullscreen), separate from
+  // the ☰ Menu since it's the single most-used action once a timeline is done, not a
+  // rarely-touched settings/project item. User: "랜더링 버튼을 상단 우측끝에 만들고
+  // 누르면 타임라인를 랜더링해서 갤러리에 등록하는 걸로 해줘야됨."
   const topbar = R("header", null, { className: "topbar" }, [
     mk("div", null, { className: "itda-menu-wrap", style: { position: "relative" } }, [menuBtn, menuDropdown]),
     R("input", "projectName", { value: "itda-project-1", spellcheck: "false" }),
     mk("div", null, { className: "spacer" }),
+    R("button", "galleryTop", { className: "top-menu", title: "Gallery", text: "🖼 Gallery" }),
+    // 3 render types — user: "랜더는 3가지 타입으로 만들어줘. Video + Audio / Video Only /
+    // Audio Only." Sent as `mode` on the render_to_gallery request (one_node_itda_studio.js).
+    R("select", "renderMode", { title: "Render mode" }, [
+      mk("option", null, { value: "video_audio", text: "Video + Audio" }),
+      mk("option", null, { value: "video_only", text: "Video Only" }),
+      mk("option", null, { value: "audio_only", text: "Audio Only" }),
+    ]),
+    R("button", "renderTop", { className: "top-menu", title: "Render whole timeline into the Gallery", text: "⏺ Render" }),
     R("button", "nodeFsBtn", { className: "top-menu", title: "Fullscreen this node", text: "⛶" }),
   ]);
 
@@ -145,12 +174,21 @@ export function buildItdaDom() {
     R("button", "prerender", { title: "Pre-render", text: "⏩" }),
     R("button", "deleteClip", { title: "Clip Delete", text: "🗑" }),
     propsToggle,
-  ]);
-  // Zoom gets its own row — squeezed into the icon row's flex-wrap tail it was easy to
-  // miss entirely ("타임라인 가로확대/세로확대 기능도 누락된것 같은데").
-  const zoomRow = mk("div", null, { className: "itda-zoom-row" }, [
-    mk("label", null, { title: "Horizontal Zoom" }, [mk("span", null, { text: "↔ Zoom" }), R("input", "hZoom", { type: "range", min: "0.5", max: "20", step: "0.5", value: "4" })]),
-    mk("label", null, { title: "Vertical Track Zoom" }, [mk("span", null, { text: "↕ Track" }), R("input", "vZoom", { type: "range", min: "44", max: "140", value: "74" })]),
+    // First/End Frame jump buttons — user: "차라리 퍼스트 프레임과 앤드 프레임으로
+    // 이동하는 툴 버튼을 만들어 주던지... 프로퍼티스 오른쪽에." Distinct from
+    // gotoClipStart/gotoClipEnd (◀|/|▶ in the preview transport, which jump to the
+    // SELECTED CLIP's own start/end) — these jump the playhead/timeline view to frame 0
+    // or the project's own end (maxFrame()), regardless of what's selected.
+    R("button", "gotoTimelineStart", { title: "Go to First Frame", text: "⇤" }),
+    R("button", "gotoTimelineEnd", { title: "Go to End Frame", text: "⇥" }),
+    // Back in the same row as the tool icons, pinned to the far right (margin-left:auto
+    // via CSS) instead of its own separate row — was easy to miss squeezed into the
+    // icon row's flex-wrap tail, moving it to its own row fixed that but the user then
+    // asked for it back on the same row, right-aligned.
+    mk("div", null, { className: "itda-zoom-inline" }, [
+      mk("label", null, { title: "Horizontal Zoom" }, [mk("span", null, { text: "↔" }), R("input", "hZoom", { type: "range", min: "0.5", max: "20", step: "0.5", value: "4" })]),
+      mk("label", null, { title: "Vertical Track Zoom" }, [mk("span", null, { text: "↕" }), R("input", "vZoom", { type: "range", min: "44", max: "140", value: "74" })]),
+    ]),
   ]);
 
   const timeline = R("div", "timeline", { className: "timeline", tabindex: "0" }, [
@@ -168,7 +206,7 @@ export function buildItdaDom() {
     R("span", "status", { text: "Ready" }),
   ]);
 
-  const lowerPane = mk("section", null, { className: "lower timeline-panel" }, [actionRow, zoomRow, timeline, statusbar]);
+  const lowerPane = mk("section", null, { className: "lower timeline-panel" }, [actionRow, timeline, statusbar]);
 
   const resizeHandle = R("div", "resizeHandle", { className: "resize-handle" });
   const app = R("div", "app", {}, [topbar, mk("main", null, { className: "workspace" }, [upperPane, resizeHandle, lowerPane])]);

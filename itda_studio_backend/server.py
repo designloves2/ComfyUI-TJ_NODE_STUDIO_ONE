@@ -8,11 +8,12 @@ import shutil
 from aiohttp import web
 
 from .media import scan_media, ffprobe, media_roots, classify, make_video_thumbnail, make_audio_waveform, extract_video_frame, extract_image_snapshot, export_clip_for_comfy, send_clip_to_comfy_http
-from .paths import ensure_dirs, is_contained, web_root, safe_name, itda_root, input_dir, project_file
+from .paths import ensure_dirs, is_contained, web_root, safe_name, itda_root, input_dir, project_file, get_app_settings, save_app_settings, gallery_dir
 from .project import load_project, save_project, default_project
 from .export import export_timeline, prerender_range, ExportError
 from .stitch import analyze_stitch, render_bridge
 from .analyze import detect_scenes, detect_beats
+from .gallery import render_project_to_gallery, list_gallery, delete_gallery_item, import_gallery_item
 
 ITDA_VERSION = "1.0.0"
 
@@ -546,6 +547,66 @@ def register_itda_studio_routes(routes=None) -> None:
         except ExportError as e:
             raise web.HTTPInternalServerError(text=str(e))
         return web.json_response(manifest)
+
+    # ── App Settings (system-wide, not per-project) ─────────────────────────
+    @routes.get("/itda_studio_one/api/app_settings")
+    async def app_settings_get(request):
+        s = get_app_settings()
+        s.setdefault("gallery_dir", str(gallery_dir()))
+        return web.json_response({"ok": True, "settings": s})
+
+    @routes.post("/itda_studio_one/api/app_settings")
+    async def app_settings_post(request):
+        body = await request.json()
+        patch = {}
+        if "gallery_dir" in body:
+            v = (body.get("gallery_dir") or "").strip()
+            patch["gallery_dir"] = v or None
+        saved = save_app_settings(patch)
+        saved.setdefault("gallery_dir", str(gallery_dir()))
+        return web.json_response({"ok": True, "settings": saved})
+
+    # ── Render (whole timeline) → Gallery ────────────────────────────────────
+    @routes.post("/itda_studio_one/api/render_to_gallery")
+    async def render_to_gallery_route(request):
+        body = await request.json()
+        project = safe_name(body.get("project") or "itda-project-1")
+        mode = body.get("mode") or "video_audio"
+        try:
+            entry = await _offload(render_project_to_gallery, project, mode)
+        except ExportError as e:
+            raise web.HTTPInternalServerError(text=str(e))
+        return web.json_response({"ok": True, "item": entry})
+
+    @routes.get("/itda_studio_one/api/gallery/list")
+    async def gallery_list_route(request):
+        items = await _offload(list_gallery)
+        for it in items:
+            it["thumb_url"] = f"/itda_studio_one/api/file?path={it['thumb']}&project={it['project']}" if it.get("thumb") else None
+            it["video_url"] = f"/itda_studio_one/api/file?path={it['path']}&project={it['project']}"
+        return web.json_response({"ok": True, "items": items})
+
+    @routes.post("/itda_studio_one/api/gallery/delete")
+    async def gallery_delete_route(request):
+        body = await request.json()
+        item_id = body.get("id")
+        if not item_id:
+            raise web.HTTPBadRequest(text="id required")
+        ok = await _offload(delete_gallery_item, item_id)
+        return web.json_response({"ok": ok})
+
+    @routes.post("/itda_studio_one/api/gallery/import")
+    async def gallery_import_route(request):
+        body = await request.json()
+        item_id = body.get("id")
+        project = safe_name(body.get("project") or "itda-project-1")
+        if not item_id:
+            raise web.HTTPBadRequest(text="id required")
+        try:
+            dest = await _offload(import_gallery_item, item_id, project)
+        except FileNotFoundError as e:
+            raise web.HTTPNotFound(text=str(e))
+        return web.json_response({"ok": True, "path": dest})
 
     fonts_root()
     _REGISTERED = True

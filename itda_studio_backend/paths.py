@@ -55,6 +55,56 @@ def itda_root() -> Path:
     return (input_dir() / "ITDA_STUDIO").resolve()
 
 
+# ── App-level settings (system-wide, not per-project) ───────────────────────
+# A handful of settings (gallery folder, LLM backend/model — the LLM half is
+# already localStorage-only in the shared llm_panel.js) apply across every
+# project, not to one project's own .itda.json. Kept in one small JSON file at
+# the ITDA_STUDIO root instead of ComfyUI's node-widget storage, since these
+# need to be readable from the BACKEND too (render_to_gallery needs to know
+# where "the gallery" actually is before the frontend has even loaded).
+def app_settings_file() -> Path:
+    return itda_root() / "app_settings.json"
+
+
+def get_app_settings() -> dict:
+    p = app_settings_file()
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+
+
+def save_app_settings(patch: dict) -> dict:
+    cur = get_app_settings()
+    cur.update({k: v for k, v in patch.items() if v is not None})
+    p = app_settings_file()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(cur, indent=2), encoding="utf-8")
+    return cur
+
+
+def gallery_dir() -> Path:
+    """Where rendered timelines are registered — user-configurable (⚙ App
+    Settings → Gallery Path).
+
+    Defaults to MiniMax H3's OWN output folder (SUBFOLDER = "one_minimax_h3" in
+    core_minimax.js), not a separate "one_itda_studio_gallery" folder. User: "통합은
+    안하고 그냥 단독 노드를 사용하지만 서로 영상을 저장하는 패밀리 노드 이기 때문에
+    갤러리와 메타 정보는 서로 공유가 되야 맞는것 같아." — ITDA stays a standalone node
+    (no UI/route merge with H3), but the two are sibling "family" nodes that both save
+    videos with the same meta sidecar shape (see gallery.py's render_project_to_gallery),
+    so sharing one folder by default means a fresh install of both sees one gallery from
+    the start, with no setup. The App Settings override still works for anyone who wants
+    them split back out.
+    """
+    configured = get_app_settings().get("gallery_dir")
+    d = Path(configured).resolve() if configured else (output_dir() / "one_minimax_h3").resolve()
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def web_root() -> Path:
     # Unused — this package's frontend is served by ComfyUI-TJ_NODE_STUDIO_ONE's own
     # WEB_DIRECTORY (web/), not a dedicated /itda_studio_one/web/* route.
@@ -126,6 +176,7 @@ def itda_media_roots() -> list[Path]:
         itda_root() / "cache",
         input_dir() / "ITDA_STUDIO-SNAPSHOT",
         output_dir() / "one_itda_studio",
+        gallery_dir(),
     ]
 
 

@@ -1,4 +1,4 @@
-// core_itda_studio.js — ITDA STUDIO (TJ) constants, state, DOM helpers
+// core_itda_studio.js — ITDA ONE STUDIO (TJ) constants, state, DOM helpers
 //
 // Absorbed from the standalone ComfyUI-ITDA custom node's web/app.js — same project
 // JSON shape (media[]/clips[]/lanes[]) and frame-math the original used, narrowed from
@@ -14,7 +14,10 @@ export const C = {
 };
 
 export const NODE_W = 1280;
-export const NODE_H = 900;
+// Matches MiniMax H3's own on-canvas node height (ROOT_H + 30 + 40 there = 994) —
+// user: "노드 높이 미니맥스랑 동일하게 늘려서 수정." ITDA's own this.size has no extra
+// +40 margin the way MiniMax's does, so NODE_H is set to that same final number directly.
+export const NODE_H = 994;
 export const LEFT_W = 300;
 export const PAD = 10;
 export const API = "/itda_studio_one";

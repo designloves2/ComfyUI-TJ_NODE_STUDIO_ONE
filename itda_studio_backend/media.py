@@ -11,7 +11,7 @@ import wave
 from pathlib import Path
 from typing import Any
 
-from .paths import ensure_dirs, itda_root, input_dir, output_dir, resolve_under, safe_name
+from .paths import ensure_dirs, itda_root, input_dir, output_dir, resolve_under, safe_name, gallery_dir
 
 VIDEO_EXT = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
 AUDIO_EXT = {".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg"}
@@ -26,6 +26,7 @@ def media_roots(project_name: str) -> list[Path]:
         itda_root() / "cache" / safe,
         input_dir() / "ITDA_STUDIO-SNAPSHOT",
         output_dir() / "one_itda_studio",
+        gallery_dir(),
     ]
 
 
