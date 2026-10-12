@@ -22,6 +22,10 @@
   view as shown becomes the pose image (Image 1). Without Preview & Angle the pose is rendered
   automatically from the image, as before.
 - The viewer is three.js, vendored in `web/vendor/three` (MIT) and loaded only when first used.
+- The 3D files are saved in `<save folder>/POSE/` (e.g. `output/qwen21-one-tj/POSE/Q21_pose3d_#####.glb`). New
+  **📂 Load 3D Pose** button next to Preview & Angle (half width each): a list of that POSE folder opens
+  right away (newest first), or *Open file…* takes a GLB / GLTF / FBX / OBJ / STL from disk. A loaded 3D pose
+  needs no Image 1.
 - The view is captured square (1024 px) on a black background. The result size is chosen in a new
   **Image Size** panel — *Same as Image 2 (character)* or *Custom* W×H (any size, snapped to 16) — for both
   the 3D and the automatic pose image; POSE also gets the **LoRA** list like the other modes (applied after

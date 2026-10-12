@@ -1509,6 +1509,43 @@ async def q21_seedvr2_models(request):
     return web.json_response({"models": models or ["none"]})
 
 
+POSE_3D_EXTS = (".glb", ".gltf", ".fbx", ".obj", ".stl")
+
+
+@PromptServer.instance.routes.get("/qwenimage21_one/pose_models")
+async def q21_pose_models(request):
+    """3D pose files saved under output/<subfolder>/POSE, newest first."""
+    folder = _safe_resolve_output_path(folder_paths.get_output_directory(), request.query.get("subfolder", ""), "POSE")
+    files = []
+    if os.path.isdir(folder):
+        for name in os.listdir(folder):
+            full = os.path.join(folder, name)
+            if name.lower().endswith(POSE_3D_EXTS) and os.path.isfile(full):
+                files.append({"name": name, "mtime": os.path.getmtime(full), "size": os.path.getsize(full)})
+    files.sort(key=lambda f: f["mtime"], reverse=True)
+    return web.json_response({"files": files})
+
+
+@PromptServer.instance.routes.post("/qwenimage21_one/pose_upload")
+async def q21_pose_upload(request):
+    """Store a 3D file the user picked from disk in output/<subfolder>/POSE."""
+    form = await request.post()
+    upload = form.get("file")
+    name = os.path.basename(getattr(upload, "filename", "") or "")
+    if not name.lower().endswith(POSE_3D_EXTS):
+        return web.json_response({"ok": False, "error": "not a 3D file"}, status=400)
+    folder = _safe_resolve_output_path(folder_paths.get_output_directory(), form.get("subfolder", ""), "POSE")
+    os.makedirs(folder, exist_ok=True)
+    stem, ext = os.path.splitext(name)
+    dest, n = os.path.join(folder, name), 1
+    while os.path.exists(dest):
+        dest = os.path.join(folder, f"{stem}_{n}{ext}")
+        n += 1
+    with open(dest, "wb") as f:
+        f.write(upload.file.read())
+    return web.json_response({"ok": True, "name": os.path.basename(dest)})
+
+
 @PromptServer.instance.routes.get("/qwenimage21_one/config")
 async def q21_get_config(request):
     try:

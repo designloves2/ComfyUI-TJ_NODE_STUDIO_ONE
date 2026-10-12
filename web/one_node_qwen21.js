@@ -10,7 +10,7 @@ import { C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, MAX_REF_IMAGES, SUBFOLDER,
 import { panel, label, button, select, slider, numberField, row, col,
          modeBar, iconBtn, openFullscreen, loraSelect }                 from "./klein/ui_common.js";
 import { queuePrompt, interrupt, setLastImage, saveMeta, uploadImage,
-         copyOutputToInput, getModels, getLoraTriggers, getConfig, saveConfig,
+         copyOutputToInput, listPoseModels, uploadPoseModel, getModels, getLoraTriggers, getConfig, saveConfig,
          getSeedVR2Models }                                                from "./qwen21/api_qwen21.js";
 import { buildT2IGraph, buildI2IGraph, buildRefToImageGraph, buildEditGraph,
          buildInpaintGraph, buildOutpaintGraph, buildUpscaleGraph,
@@ -802,13 +802,16 @@ app.registerExtension({
         const viewerHost = el("div",{style:{display:"none"}});
         const poseStatus = el("div",{style:{color:C.muted,fontSize:"11px",lineHeight:"1.5"}});
         const previewBtn = button("🧊 Preview & Angle", () => previewAngle());
+        const loadPoseBtn = button("📂 Load 3D Pose", () => loadPose3D());
+        const poseBtns = row([previewBtn, loadPoseBtn], "6px");
         const resetViewBtn = button("↺ Reset view", () => poseViewer?.resetView());
         const discardBtn = button("✕ Use auto render", () => { discard3D(); persist(); });
         const viewerBtns = row([resetViewBtn, discardBtn], "6px");
         // Centered labels; the two view buttons share the width equally.
-        for (const b of [previewBtn, resetViewBtn, discardBtn]) Object.assign(b.style, { textAlign: "center", justifyContent: "center", whiteSpace: "nowrap" });
-        previewBtn.style.width = "100%";
-        resetViewBtn.style.flex = discardBtn.style.flex = "1 1 0";
+        for (const b of [previewBtn, loadPoseBtn, resetViewBtn, discardBtn]) Object.assign(b.style, { textAlign: "center", justifyContent: "center", whiteSpace: "nowrap" });
+        previewBtn.style.flex = loadPoseBtn.style.flex = resetViewBtn.style.flex = discardBtn.style.flex = "1 1 0";
+        previewBtn.title = "Build the 3D pose from Image 1 and look at it from any angle";
+        loadPoseBtn.title = "Open a saved 3D pose (the POSE folder of the save folder) — no Image 1 needed";
         function applyViewerAspect(){
           const sz = poseResultSize();
           poseViewer?.setAspect(sz ? sz.w / sz.h : 1);
@@ -818,7 +821,6 @@ app.registerExtension({
           poseCard.style.display = on ? "none" : "flex";   // the card is a centered flex column
           viewerHost.style.display = on ? "block" : "none";
           viewerBtns.style.display = on ? "flex" : "none";
-          previewBtn.textContent = on ? "🧊 Preview & Angle (rebuild)" : "🧊 Preview & Angle";
           poseStatus.textContent = on
             ? "Drag to rotate · wheel to zoom · right-drag to pan. This 3D view is used as the pose image when you Generate."
             : "Without Preview & Angle the pose image is rendered automatically when you Generate.";
@@ -843,7 +845,7 @@ app.registerExtension({
         }
         async function previewAngle(){
           if (!state.poseImageRaw) { showPopup("Upload the pose image first.", true); return; }
-          previewBtn.disabled = true; previewBtn.textContent = "⏳ Building 3D…";
+          previewBtn.disabled = true; previewBtn.textContent = "⏳ Building…";
           try {
             const result = await queuePrompt(buildPoseMeshGraph(state), { outputKey: "3d" });
             const f = result?.output?.["3d"]?.[0];
@@ -851,10 +853,45 @@ app.registerExtension({
             state.poseMeshFile = f.filename; state.poseMeshSub = f.subfolder || ""; state.poseCamera = null; persist();
             await showViewer();
           } catch (e) { if (e.message !== "cancelled") showPopup("Preview & Angle failed: " + e.message, true); }
-          finally { previewBtn.disabled = false; refreshPoseUI(); }
+          finally { previewBtn.disabled = false; previewBtn.textContent = "🧊 Preview & Angle"; refreshPoseUI(); }
+        }
+        // Load a saved 3D pose: a list of the POSE folder (newest first) opens right away; "Open file…" takes one from disk.
+        function loadPose3D(){
+          const folder = state.saveSubfolder || SUBFOLDER;
+          const ov = el("div",{style:{position:"fixed",inset:"0",zIndex:"100000",background:"rgba(0,0,0,0.72)",display:"flex",alignItems:"center",justifyContent:"center"}});
+          const box = el("div",{style:{background:"#1b1b1b",border:`1px solid ${BRAND}`,borderRadius:"10px",padding:"14px",width:"min(520px,92vw)",maxHeight:"80vh",display:"flex",flexDirection:"column",gap:"8px",color:"#ddd"}});
+          const list = el("div",{style:{overflowY:"auto",display:"flex",flexDirection:"column",gap:"4px",minHeight:"60px"}});
+          const close = () => ov.remove();
+          const pick = async (name) => {
+            state.poseMeshFile = name; state.poseMeshSub = `${folder}/POSE`; state.poseCamera = null; persist(); close();
+            try { await showViewer(); } catch (e) { discard3D(); persist(); showPopup("Could not load the 3D file: " + e.message, true); }
+          };
+          const fileIn = el("input",{type:"file",accept:".glb,.gltf,.fbx,.obj,.stl",style:{display:"none"}});
+          fileIn.addEventListener("change", async () => {
+            const f = fileIn.files[0]; if (!f) return;
+            try { await pick(await uploadPoseModel(f, folder)); } catch (e) { showPopup("Upload failed: " + e.message, true); }
+          });
+          const openBtn = button("📁 Open file…", () => fileIn.click());
+          const closeBtn = button("Close", close, "danger");
+          box.append(el("div",{text:"📂 Load 3D Pose",style:{color:"#fff",fontSize:"14px",fontWeight:"700"}}),
+            el("div",{text:`${folder}/POSE`,style:{color:C.muted,fontSize:"11px"}}), list, row([openBtn, closeBtn], "8px"), fileIn);
+          ov.appendChild(box); document.body.appendChild(ov);
+          ov.addEventListener("click", e => { if (e.target === ov) close(); });
+          list.textContent = "Loading…";
+          listPoseModels(folder).then(files => {
+            list.textContent = "";
+            if (!files.length) { list.appendChild(el("div",{text:"No 3D pose saved yet — use Preview & Angle, or Open file….",style:{color:C.muted,fontSize:"12px"}})); return; }
+            for (const f of files) {
+              const when = new Date(f.mtime * 1000).toLocaleString();
+              const item = el("button",{type:"button",style:{textAlign:"left",cursor:"pointer",background:C.bg2,color:C.text,border:`1px solid ${C.border}`,borderRadius:"6px",padding:"7px 9px",fontFamily:"inherit",fontSize:"12px"}},
+                [el("div",{text:f.name}), el("div",{text:`${when} · ${(f.size/1048576).toFixed(1)} MB`,style:{color:C.muted,fontSize:"10px"}})]);
+              item.addEventListener("click", () => pick(f.name));
+              list.appendChild(item);
+            }
+          }).catch(e => { list.textContent = "Could not list the folder: " + e.message; });
         }
 
-        container.appendChild(panel([label("Image 1 — Pose Image"), poseCard, viewerHost, previewBtn, viewerBtns, poseStatus]));
+        container.appendChild(panel([label("Image 1 — Pose Image"), poseCard, viewerHost, poseBtns, viewerBtns, poseStatus]));
         refreshPoseUI();
         if (state.poseMeshFile) showViewer().catch(() => { discard3D(); persist(); });
 
@@ -892,7 +929,7 @@ app.registerExtension({
           getSourceURL: () => state.poseRenderImage ? `/view?filename=${encodeURIComponent(state.poseRenderImage)}&type=${state.poseRenderType || "output"}` : null,
           setImage: (fn) => { state.poseCharacterImage = fn; charCard._refresh(fn); },
           getGraph: async () => {
-            if (!state.poseImageRaw) throw new Error("Upload the pose image first (Image 1).");
+            if (!state.poseImageRaw && !(poseViewer && state.poseMeshFile)) throw new Error("Upload the pose image first (Image 1), or load a 3D pose.");
             if (!state.poseCharacterImage) throw new Error("Upload the character image (Image 2).");
             let poseInput;
             if (poseViewer && state.poseMeshFile) {

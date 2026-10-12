@@ -311,7 +311,7 @@ export function buildPoseMeshGraph(state) {
     "format.mesh_style.bone_vis": "off", "format.mesh_style.shader": "default", "format.bone_smooth_window": 0,
     fps: 24, camera_translation: "off", track_index: -1, sam3d_body_model: [`${P}:samLoader`, 0],
   }};
-  g[`${P}:meshSave`] = { class_type: "SaveGLB", inputs: { mesh: [`${P}:meshFile`, 0], filename_prefix: `${state.saveSubfolder || SUBFOLDER}/Q21_pose3d` } };
+  g[`${P}:meshSave`] = { class_type: "SaveGLB", inputs: { mesh: [`${P}:meshFile`, 0], filename_prefix: `${state.saveSubfolder || SUBFOLDER}/POSE/Q21_pose3d` } };
   return g;
 }
 
