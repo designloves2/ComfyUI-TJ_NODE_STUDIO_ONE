@@ -789,7 +789,7 @@ app.registerExtension({
           state.poseImageRaw = fn; state.poseRenderImage = null;
           discard3D(); persist(); poseCard._refresh(fn);
         }, {
-          onLoad: (w, h) => { state.poseAspect = w / h; persist(); poseViewer?.setAspect(state.poseAspect); },
+          onLoad: (w, h) => { state.poseW = w; state.poseH = h; persist(); },
         });
 
         // Live 3D view of the pose (after "Preview & Angle"): shown in place of the image card.
@@ -813,11 +813,10 @@ app.registerExtension({
         async function showViewer(){
           if (!poseViewer) {
             const { createPoseViewer } = await import("./shared/pose_viewer.js");
-            poseViewer = await createPoseViewer({ aspect: state.poseAspect || 0.75, onCameraChange: c => { state.poseCamera = c; persist(); } });
+            poseViewer = await createPoseViewer({ aspect: 1, onCameraChange: c => { state.poseCamera = c; persist(); } });
             poseViewerFile = null;
           }
           viewerHost.appendChild(poseViewer.el);
-          poseViewer.setAspect(state.poseAspect || 0.75);
           if (poseViewerFile !== meshURL()) { await poseViewer.load(meshURL()); poseViewerFile = meshURL(); }
           if (state.poseCamera) poseViewer.setCamera(state.poseCamera);
           refreshPoseUI();
@@ -859,7 +858,7 @@ app.registerExtension({
             let poseInput;
             if (poseViewer && state.poseMeshFile) {
               // Preview & Angle was used: the 3D view as it is shown now is the pose image.
-              const blob = await (await fetch(poseViewer.capture(1536))).blob();
+              const blob = await (await fetch(poseViewer.capture(1024))).blob();
               poseInput = await uploadImage(new File([blob], `q21_pose3d_${Date.now()}.png`, { type: "image/png" }));
               state.poseRenderImage = poseInput; state.poseRenderType = "input";
             } else {
@@ -873,7 +872,14 @@ app.registerExtension({
               poseInput = await copyOutputToInput(renderIm.filename, renderIm.subfolder || "", "output");
             }
             persist();
-            return buildPoseGraph(state, poseInput);
+            // With the 3D view the result is sized like the pose image (the reference workflow's
+            // GetImageSize → EmptyLatentImage), the long edge capped at the encoder resolution.
+            let latentSize = null;
+            if (poseViewer && state.poseMeshFile && state.poseW && state.poseH) {
+              const k = Math.min(1, (state.resolution || 1536) / Math.max(state.poseW, state.poseH));
+              latentSize = { w: Math.max(16, Math.round(state.poseW * k / 16) * 16), h: Math.max(16, Math.round(state.poseH * k / 16) * 16) };
+            }
+            return buildPoseGraph(state, poseInput, latentSize);
           },
         };
       }

@@ -366,7 +366,7 @@ function buildPoseBaseGraph(state) {
   return { g, modelLink: modelOut, clipLink: [`${P}:clip`, 0], vaeLink: [`${P}:vae`, 0] };
 }
 
-export function buildPoseGraph(state, poseRenderFilename) {
+export function buildPoseGraph(state, poseRenderFilename, latentSize = null) {
   if (!state.poseCharacterImage) throw new Error("Upload the character image (Image 2).");
   if (!poseRenderFilename) throw new Error("Pose extraction failed — no render produced.");
   const { g, modelLink, clipLink, vaeLink } = buildPoseBaseGraph(state);
@@ -382,8 +382,13 @@ export function buildPoseGraph(state, poseRenderFilename) {
     resizeToMp(g, `${P}:characterMp`,  [`${P}:loadCharacter`, 0],  state.refMaxMegapixels),
   ];
 
-  const { posLink, negLink, latentLink } = addConditioning(g, clipLink, vaeLink, promptText, state.negativePrompt || "", state.resolution || state.width || 1024, imageLinks);
-  addKSampler(g, modelLink, latentLink, state, 1.0, posLink, negLink);
+  const cond = addConditioning(g, clipLink, vaeLink, promptText, state.negativePrompt || "", state.resolution || state.width || 1024, imageLinks);
+  let latentLink = cond.latentLink;
+  if (latentSize) {
+    g[`${P}:emptyLatent`] = { class_type: "EmptyLatentImage", inputs: { width: latentSize.w, height: latentSize.h, batch_size: 1 } };
+    latentLink = [`${P}:emptyLatent`, 0];
+  }
+  addKSampler(g, modelLink, latentLink, state, 1.0, cond.posLink, cond.negLink);
   addDecodeAndSave(g, vaeLink, state);
   return g;
 }
