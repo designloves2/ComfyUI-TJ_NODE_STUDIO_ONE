@@ -153,19 +153,18 @@ export function defaultState(saved) {
     // images was slow to encode and heavy on VRAM for no quality benefit.
     refMaxMegapixels: saved.refMaxMegapixels ?? 0,
 
-    // POSE mode (VNCCS PoseStudio LoRA) — Image 1 is a SAM3D-Body render of the pose
-    // image (cropped/resized client-side, extracted server-side before generation),
-    // Image 2 is the character. poseImage is the CROPPED/RESIZED file actually sent to
-    // SAM3D; poseImageRaw is the original upload the crop tool re-opens on. poseRenderImage
-    // is the SAM3D render result (becomes <image1>, and the Compare view's "before").
+    // POSE mode (VNCCS PoseStudio LoRA) — Image 1 is a SAM3D-Body render of the pose image
+    // (extracted server-side before generation), Image 2 is the character. poseRenderImage is
+    // that render (becomes <image1>, and the Compare view's "before"; poseRenderType = which
+    // folder it lives in). After "Preview & Angle", poseMeshFile/poseMeshSub is the GLB shown in
+    // the 3D viewer, poseCamera its orbit/zoom state, and the viewer's capture replaces the render.
     poseImageRaw:     saved.poseImageRaw     || null,
-    poseImage:        saved.poseImage        || null,
-    poseCropBox:      saved.poseCropBox      || null, // {x,y,w,h} in poseImageRaw's native pixels
-    poseCropRatioLabel: saved.poseCropRatioLabel || "", // e.g. "4:5" — "" when Free/unlocked
-    poseOutW:         saved.poseOutW         || 1024,
-    poseOutH:         saved.poseOutH         || 1024,
-    poseLockRatio:    saved.poseLockRatio    ?? true,
+    poseAspect:       saved.poseAspect       || null,
+    poseMeshFile:     saved.poseMeshFile     || null,
+    poseMeshSub:      saved.poseMeshSub      || "",
+    poseCamera:       saved.poseCamera       || null,
     poseRenderImage:  saved.poseRenderImage  || null,
+    poseRenderType:   saved.poseRenderType   || "output",
     poseCharacterImage: saved.poseCharacterImage || null,
 
     // Settings — VNCCS PoseStudio LoRA + SAM3D model file + editable/resettable system prompt.

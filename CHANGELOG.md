@@ -15,6 +15,16 @@
 - `install_requirements.bat/.sh` and the dependency check now include ComfyUI-VOSR2; its model bundle
   (~7 GB) downloads itself into `models/vosr2/` on the first run.
 
+### Qwen 2.1 POSE: Preview & Angle, crop removed
+- New **🧊 Preview & Angle** button under the Image 1 pose image: builds the SAM3D-Body pose as a 3D
+  model (SAM3DBody Predict → Smooth → BuildPoseFile → SaveGLB) and shows it live in the Image 1 area
+  (drag = rotate, wheel = zoom, right-drag = pan; ↺ Reset view; ✕ Use auto render). On Generate the
+  view as shown becomes the pose image (Image 1). Without Preview & Angle the pose is rendered
+  automatically from the image, as before.
+- The viewer is three.js, vendored in `web/vendor/three` (MIT) and loaded only when first used.
+- The **✂ Crop Pose Image** step and the Image Output Size fields are gone; the uploaded image goes to
+  SAM3D as it is.
+
 ## v1.36.0 (2026-10-07)
 
 ### Reference videos: MP and range settings

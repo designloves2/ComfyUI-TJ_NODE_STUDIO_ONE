@@ -87,14 +87,14 @@ export async function setLastImage(nodeId, im) {
     body: JSON.stringify({ unique_id: String(nodeId), image: im }),
   }).catch(() => {});
 }
-export function queuePrompt(promptGraph, { onProgress } = {}) {
+export function queuePrompt(promptGraph, { onProgress, outputKey = "images" } = {}) {
   return new Promise(async (resolve, reject) => {
     let promptId = null;
     const onProg = ev => {
       if (!onProgress) return;
       try { const { value, max } = ev.detail || {}; if (max) onProgress(Math.round((value / max) * 100)); } catch {}
     };
-    const onExec  = ev => { try { if (ev.detail?.prompt_id && ev.detail.prompt_id !== promptId) return; if (!ev.detail?.output?.images?.length) return; cleanup(); resolve(ev.detail); } catch(e) { cleanup(); reject(e); } };
+    const onExec  = ev => { try { if (ev.detail?.prompt_id && ev.detail.prompt_id !== promptId) return; if (!ev.detail?.output?.[outputKey]?.length) return; cleanup(); resolve(ev.detail); } catch(e) { cleanup(); reject(e); } };
     const onErr   = ev => { if (ev.detail?.prompt_id && ev.detail.prompt_id !== promptId) return; cleanup(); reject(new Error(ev.detail?.exception_message || "generation failed")); };
     const onCanc  = ev => { if (ev.detail?.prompt_id && ev.detail.prompt_id !== promptId) return; cleanup(); reject(new Error("cancelled")); };
     function cleanup() {

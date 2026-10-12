@@ -14,9 +14,8 @@ import { queuePrompt, interrupt, setLastImage, saveMeta, uploadImage,
          getSeedVR2Models }                                                from "./qwen21/api_qwen21.js";
 import { buildT2IGraph, buildI2IGraph, buildRefToImageGraph, buildEditGraph,
          buildInpaintGraph, buildOutpaintGraph, buildUpscaleGraph,
-         buildPoseExtractGraph, buildPoseGraph }                         from "./qwen21/graph_builder_qwen21.js";
+         buildPoseExtractGraph, buildPoseMeshGraph, buildPoseGraph }                         from "./qwen21/graph_builder_qwen21.js";
 import { openMaskDrawOverlay }                                            from "./qwen21/ui_mask_draw.js";
-import { openPoseCropOverlay, cropAndUploadPoseImage }                    from "./qwen21/ui_pose_crop.js";
 import { createGalleryOverlay }                                           from "./qwen21/ui_gallery_qwen21.js";
 // Reuse MiniMax H3's own compact reference-image grid (imageSlot) instead of a
 // bespoke full-width-card-per-image list — user: "Ref to Image의 레퍼런스 이미지
@@ -783,102 +782,67 @@ app.registerExtension({
       // pose image, Image 2 is the character. getGraph() does the pose extraction itself
       // (queued and awaited) before returning the actual generation graph, so the shared
       // Generate flow (which already awaits modeHandle.getGraph()) needs no special-casing.
+      // The 3D viewer outlives re-mounts of the left panel (a WebGL context per re-mount would pile up).
+      let poseViewer = null, poseViewerFile = null;
       function mountPose(container){
-        let poseNaturalW = 0, poseNaturalH = 0;
-
-        // Yellow box drawn ON the thumbnail itself, positioned proportionally within the
-        // card's own contain-fit rect — user: "로드된 이미지도 썸네일에도 설정한 크롭
-        // 영역(노란 박스 라인)이 표시되야 한다."
-        const cropOverlayBox = el("div",{style:{position:"absolute",border:"2px solid #ffd400",boxSizing:"border-box",pointerEvents:"none",display:"none"}});
-        function updateCropOverlayBox(){
-          const box = state.poseCropBox;
-          if (!box || !poseNaturalW || !poseNaturalH) { cropOverlayBox.style.display = "none"; return; }
-          const cardBox = poseCard.querySelector("img")?.parentElement;
-          if (!cardBox) return;
-          const cw = cardBox.clientWidth || 192, ch = cardBox.clientHeight || 192;
-          const scale = Math.min(cw / poseNaturalW, ch / poseNaturalH);
-          const fitW = poseNaturalW * scale, fitH = poseNaturalH * scale;
-          const offX = (cw - fitW) / 2, offY = (ch - fitH) / 2;
-          cropOverlayBox.style.left = `${offX + box.x * scale}px`;
-          cropOverlayBox.style.top = `${offY + box.y * scale}px`;
-          cropOverlayBox.style.width = `${box.w * scale}px`;
-          cropOverlayBox.style.height = `${box.h * scale}px`;
-          cropOverlayBox.style.display = "block";
-        }
-
         const poseCard = imageUploadCard("Image 1 — Pose Image", state.poseImageRaw, (fn)=>{
-          state.poseImageRaw = fn; state.poseImage = null; state.poseCropBox = null; state.poseCropRatioLabel = ""; state.poseRenderImage = null;
-          persist(); poseCard._refresh(fn); updateCropLabel(); updateCropOverlayBox();
+          state.poseImageRaw = fn; state.poseRenderImage = null;
+          discard3D(); persist(); poseCard._refresh(fn);
         }, {
-          onLoad: (w, h) => { poseNaturalW = w; poseNaturalH = h; updateCropOverlayBox(); },
+          onLoad: (w, h) => { state.poseAspect = w / h; persist(); poseViewer?.setAspect(state.poseAspect); },
         });
-        poseCard.querySelector("img")?.parentElement?.appendChild(cropOverlayBox);
-        container.appendChild(panel([label("Image 1 — Pose Image"), poseCard]));
 
-        const cropBtn = el("button",{type:"button",text: state.poseCropBox ? "✂ Edit Crop" : "✂ Crop Pose Image (required)",style:{cursor:"pointer",background:state.poseCropBox?C.brand:C.bg2,color:state.poseCropBox?"#fff":C.text,border:`1px solid ${C.border}`,borderRadius:"6px",padding:"8px",fontSize:"12px",fontFamily:"inherit"},onclick:()=>{
+        // Live 3D view of the pose (after "Preview & Angle"): shown in place of the image card.
+        const viewerHost = el("div",{style:{display:"none"}});
+        const poseStatus = el("div",{style:{color:C.muted,fontSize:"11px",lineHeight:"1.5"}});
+        const previewBtn = button("🧊 Preview & Angle", () => previewAngle());
+        const resetViewBtn = button("↺ Reset view", () => poseViewer?.resetView());
+        const discardBtn = button("✕ Use auto render", () => { discard3D(); persist(); });
+        const viewerBtns = row([resetViewBtn, discardBtn], "6px");
+        function refreshPoseUI(){
+          const on = !!(poseViewer && state.poseMeshFile);
+          poseCard.style.display = on ? "none" : "";
+          viewerHost.style.display = on ? "block" : "none";
+          viewerBtns.style.display = on ? "flex" : "none";
+          previewBtn.textContent = on ? "🧊 Preview & Angle (rebuild)" : "🧊 Preview & Angle";
+          poseStatus.textContent = on
+            ? "Drag to rotate · wheel to zoom · right-drag to pan. This 3D view is used as the pose image when you Generate."
+            : "Without Preview & Angle the pose image is rendered automatically when you Generate.";
+        }
+        const meshURL = () => `/view?filename=${encodeURIComponent(state.poseMeshFile)}&subfolder=${encodeURIComponent(state.poseMeshSub || "")}&type=output`;
+        async function showViewer(){
+          if (!poseViewer) {
+            const { createPoseViewer } = await import("./shared/pose_viewer.js");
+            poseViewer = await createPoseViewer({ aspect: state.poseAspect || 0.75, onCameraChange: c => { state.poseCamera = c; persist(); } });
+            poseViewerFile = null;
+          }
+          viewerHost.appendChild(poseViewer.el);
+          poseViewer.setAspect(state.poseAspect || 0.75);
+          if (poseViewerFile !== meshURL()) { await poseViewer.load(meshURL()); poseViewerFile = meshURL(); }
+          if (state.poseCamera) poseViewer.setCamera(state.poseCamera);
+          refreshPoseUI();
+        }
+        function discard3D(){
+          state.poseMeshFile = null; state.poseMeshSub = ""; state.poseCamera = null;
+          if (poseViewer) { poseViewer.dispose(); poseViewer = null; poseViewerFile = null; }
+          refreshPoseUI();
+        }
+        async function previewAngle(){
           if (!state.poseImageRaw) { showPopup("Upload the pose image first.", true); return; }
-          const url = `/view?filename=${encodeURIComponent(state.poseImageRaw)}&type=input`;
-          openPoseCropOverlay(root, url, state.poseCropBox, async (cropBox, ratioLabel) => {
-            state.poseCropBox = cropBox;
-            state.poseCropRatioLabel = ratioLabel && ratioLabel !== "Free" ? ratioLabel : "";
-            // A freshly-picked region resets Output Size to the crop's own native size
-            // (no resize) — the fields below let the user retarget it afterwards, locked
-            // to this crop's aspect ratio.
-            state.poseOutW = Math.round(cropBox.w); state.poseOutH = Math.round(cropBox.h);
-            outWIn.value = state.poseOutW; outHIn.value = state.poseOutH;
-            state.poseRenderImage = null; // stale after a re-crop
-            persist(); updateCropOverlayBox();
-            await reuploadPoseImage();
-          });
-        }});
-        function cropSizeLabelText(){
-          if (!state.poseCropBox) return "";
-          const ratioPrefix = state.poseCropRatioLabel ? `Ratio ${state.poseCropRatioLabel}    ` : "";
-          return `${ratioPrefix}${Math.round(state.poseCropBox.w)}×${Math.round(state.poseCropBox.h)} → ${state.poseOutW}×${state.poseOutH}`;
-        }
-        const cropSizeText = el("div",{text: cropSizeLabelText(), style:{color:"#fff",fontSize:"11px",textAlign:"center"}});
-        function updateCropLabel(){
-          cropBtn.textContent = state.poseCropBox ? "✂ Edit Crop" : "✂ Crop Pose Image (required)";
-          cropBtn.style.background = state.poseCropBox ? C.brand : C.bg2;
-          cropBtn.style.color = state.poseCropBox ? "#fff" : C.text;
-          cropSizeText.textContent = cropSizeLabelText();
-        }
-        container.appendChild(panel([cropBtn, cropSizeText]));
-
-        // ── Image Output Size — locked to the CROP's own aspect ratio (not the raw
-        // image's), same 🔒 Lock ratio UX as I2I's own size fields. Re-crops+uploads from
-        // the raw source every time W or H actually changes.
-        const outSizeStyle = { width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text, border: `1px solid ${C.border}`, borderRadius: "6px", padding: "5px 7px", fontSize: "12px", fontFamily: "inherit", outline: "none" };
-        const outWIn = el("input", { type: "number", step: "8", min: "64", style: { ...outSizeStyle } });
-        const outHIn = el("input", { type: "number", step: "8", min: "64", style: { ...outSizeStyle } });
-        outWIn.value = state.poseOutW; outHIn.value = state.poseOutH;
-        const outLockChk = el("input", { type: "checkbox" }); outLockChk.checked = state.poseLockRatio ?? true;
-        const outLockLbl = el("label", { style: { display: "flex", alignItems: "center", gap: "5px", fontSize: "11px", color: C.muted, cursor: "pointer", whiteSpace: "nowrap" } }, [outLockChk, el("span", { text: "🔒 Lock ratio" })]);
-        outLockChk.addEventListener("change", () => { state.poseLockRatio = outLockChk.checked; persist(); });
-        const snap8 = v => Math.max(8, Math.round(v / 8) * 8);
-        function cropAspect(){ const b = state.poseCropBox; return b ? b.w / b.h : (outWIn.value / outHIn.value || 1); }
-        async function reuploadPoseImage(){
-          if (!state.poseImageRaw || !state.poseCropBox) return;
-          cropBtn.disabled = true;
+          previewBtn.disabled = true; previewBtn.textContent = "⏳ Building 3D…";
           try {
-            const url = `/view?filename=${encodeURIComponent(state.poseImageRaw)}&type=input`;
-            const filename = await cropAndUploadPoseImage(url, state.poseCropBox, state.poseOutW, state.poseOutH);
-            state.poseImage = filename; state.poseRenderImage = null; persist();
-            updateCropLabel();
-          } catch (e) { showPopup("Crop failed: " + e.message, true); }
-          finally { cropBtn.disabled = false; }
+            const result = await queuePrompt(buildPoseMeshGraph(state), { outputKey: "3d" });
+            const f = result?.output?.["3d"]?.[0];
+            if (!f) throw new Error("no 3D file was produced");
+            state.poseMeshFile = f.filename; state.poseMeshSub = f.subfolder || ""; state.poseCamera = null; persist();
+            await showViewer();
+          } catch (e) { if (e.message !== "cancelled") showPopup("Preview & Angle failed: " + e.message, true); }
+          finally { previewBtn.disabled = false; refreshPoseUI(); }
         }
-        outWIn.addEventListener("change", async () => {
-          state.poseOutW = snap8(+outWIn.value || 512); outWIn.value = state.poseOutW;
-          if (outLockChk.checked) { state.poseOutH = snap8(state.poseOutW / cropAspect()); outHIn.value = state.poseOutH; }
-          persist(); updateCropLabel(); await reuploadPoseImage();
-        });
-        outHIn.addEventListener("change", async () => {
-          state.poseOutH = snap8(+outHIn.value || 512); outHIn.value = state.poseOutH;
-          if (outLockChk.checked) { state.poseOutW = snap8(state.poseOutH * cropAspect()); outWIn.value = state.poseOutW; }
-          persist(); updateCropLabel(); await reuploadPoseImage();
-        });
-        container.appendChild(panel([label("Image Output Size"), row([col([label("W"), outWIn]), col([label("H"), outHIn])]), outLockLbl]));
+
+        container.appendChild(panel([label("Image 1 — Pose Image"), poseCard, viewerHost, previewBtn, viewerBtns, poseStatus]));
+        refreshPoseUI();
+        if (state.poseMeshFile) showViewer().catch(() => { discard3D(); persist(); });
 
         const charCard = imageUploadCard("Image 2 — Character Image", state.poseCharacterImage, (fn)=>{ state.poseCharacterImage=fn; persist(); charCard._refresh(fn); });
         container.appendChild(panel([label("Image 2 — Character Image"), charCard]));
@@ -887,20 +851,29 @@ app.registerExtension({
         container.appendChild(panel([row([col([label("SAMPLER"),select(SAMPLER_OPTS(),state.sampler,v=>{state.sampler=v;persist();})]),col([label("SCHEDULER"),select(SCHED_OPTS(),state.scheduler,v=>{state.scheduler=v;persist();})])])]));
 
         return {
-          getSourceURL: () => state.poseRenderImage ? `/view?filename=${encodeURIComponent(state.poseRenderImage)}&type=output` : null,
+          getSourceURL: () => state.poseRenderImage ? `/view?filename=${encodeURIComponent(state.poseRenderImage)}&type=${state.poseRenderType || "output"}` : null,
           setImage: (fn) => { state.poseCharacterImage = fn; charCard._refresh(fn); },
           getGraph: async () => {
-            if (!state.poseImage) throw new Error("Crop the pose image first (✂ Crop Pose Image).");
+            if (!state.poseImageRaw) throw new Error("Upload the pose image first (Image 1).");
             if (!state.poseCharacterImage) throw new Error("Upload the character image (Image 2).");
-            const extractResult = await queuePrompt(buildPoseExtractGraph(state));
-            const renderIm = extractResult?.output?.images?.[0];
-            if (!renderIm) throw new Error("Pose extraction produced no image.");
-            state.poseRenderImage = renderIm.filename; persist();
-            // The render lands in output/ (SaveImage), but LoadImage only validates
-            // against input/ — copy it over before wiring it as <image1> for Phase 2,
-            // same as every other "reuse an output as the next input" flow in this pack.
-            const renderInputFilename = await copyOutputToInput(renderIm.filename, renderIm.subfolder || "", "output");
-            return buildPoseGraph(state, renderInputFilename);
+            let poseInput;
+            if (poseViewer && state.poseMeshFile) {
+              // Preview & Angle was used: the 3D view as it is shown now is the pose image.
+              const blob = await (await fetch(poseViewer.capture(1536))).blob();
+              poseInput = await uploadImage(new File([blob], `q21_pose3d_${Date.now()}.png`, { type: "image/png" }));
+              state.poseRenderImage = poseInput; state.poseRenderType = "input";
+            } else {
+              const extractResult = await queuePrompt(buildPoseExtractGraph(state));
+              const renderIm = extractResult?.output?.images?.[0];
+              if (!renderIm) throw new Error("Pose extraction produced no image.");
+              state.poseRenderImage = renderIm.filename; state.poseRenderType = "output";
+              // The render lands in output/ (SaveImage), but LoadImage only validates
+              // against input/ — copy it over before wiring it as <image1> for Phase 2,
+              // same as every other "reuse an output as the next input" flow in this pack.
+              poseInput = await copyOutputToInput(renderIm.filename, renderIm.subfolder || "", "output");
+            }
+            persist();
+            return buildPoseGraph(state, poseInput);
           },
         };
       }
@@ -989,7 +962,7 @@ app.registerExtension({
         ["EDIT", "Image 1 is the main reference; Images 2–10 are extra references in a compact grid (drag to reorder). Each image can get its own hand-drawn ✏ annotation pointing at what to change — the annotation is sent as an extra reference, not a mask."],
         ["PAINT — Inpaint", "Draw directly on the Source Image to mark the area to change (✏ Draw mask). No separate mask file — the marked-up image is sent as a second reference alongside the original."],
         ["PAINT — Outpaint", "Expands the canvas (Up/Down/Left/Right) and fills the new border with Pad Color before asking the model to extend the scene into it."],
-        ["POSE", "Copies the pose from Image 1 onto the character in Image 2, using the VNCCS PoseStudio LoRA (select it in ⚙ Settings first). Image 1 must be cropped (✂ Crop Pose Image, yellow box + handles) to the pose subject before Generate — the crop's own output size is what SAM3D Body extracts the pose at. The system prompt (editable/resettable in Settings) is automatically prepended to whatever you write in the PROMPT field."],
+        ["POSE", "Copies the pose from Image 1 onto the character in Image 2, using the VNCCS PoseStudio LoRA (select it in ⚙ Settings first). Click 🧊 Preview & Angle to build the 3D pose first: it opens a live 3D view in the Image 1 area (drag to rotate, wheel to zoom, right-drag to pan) and the view as shown at Generate is used as the pose image. Without it the pose is rendered automatically from the image as before. The system prompt (editable/resettable in Settings) is automatically prepended to whatever you write in the PROMPT field."],
         ["UPSCALE", "SeedVR2 upscaler — pick a DiT + VAE model pair from models/SEEDVR2/, independent of the Qwen model above."],
         ["Model Override", "Enable in Settings to expose model/clip/vae input sockets on the node itself, so an external loader can override this node's own Settings selection at generation time only."],
         ["Send to / Gallery", "Copies the current result into the next mode's Source/Image 1 slot, or browse this node's own render history in 🖼 Gallery."],
@@ -1013,7 +986,7 @@ app.registerExtension({
         // this graph at all, so don't reintroduce its download links.
         const samBlock = el("div",{style:{background:C.bg1,border:`1px solid ${C.border}`,borderRadius:"8px",padding:"10px 12px"}});
         samBlock.appendChild(el("div",{text:"POSE — SAM3D Body Model",style:{color:BRAND,fontSize:"12px",fontWeight:"700",marginBottom:"6px"}}));
-        samBlock.appendChild(el("div",{html:'Required for the ✂ Crop Pose Image → SAM3D pose extraction step. Place it under <code>ComfyUI/models/detection/</code>:<br><a href="https://huggingface.co/Comfy-Org/sam-3d-body/resolve/main/detection/sam_3d_body_dinov3_bf16.safetensors" target="_blank" rel="noopener" style="color:'+BRAND+'">sam_3d_body_dinov3_bf16.safetensors</a>',style:{fontSize:"11.5px",lineHeight:"1.75",color:C.text}}));
+        samBlock.appendChild(el("div",{html:'Required for the POSE pose-extraction / 3D preview step. Place it under <code>ComfyUI/models/detection/</code>:<br><a href="https://huggingface.co/Comfy-Org/sam-3d-body/resolve/main/detection/sam_3d_body_dinov3_bf16.safetensors" target="_blank" rel="noopener" style="color:'+BRAND+'">sam_3d_body_dinov3_bf16.safetensors</a>',style:{fontSize:"11.5px",lineHeight:"1.75",color:C.text}}));
         helpBody.appendChild(samBlock);
       }
       helpEl.appendChild(helpBody);

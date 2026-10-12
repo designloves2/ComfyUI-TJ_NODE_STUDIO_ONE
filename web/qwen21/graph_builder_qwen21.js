@@ -285,15 +285,13 @@ export function buildUpscaleGraph(state) {
 }
 
 // ── POSE (VNCCS PoseStudio LoRA) ────────────────────────────────────────────────
-// Phase 1: extract a SAM3D-Body render from the (already client-side cropped/resized)
-// pose image. Queued and awaited BEFORE the main generation — its result becomes <image1>.
-// Mirrors the user-supplied reference workflow's own node chain and parameter values
-// (method="gaussian" for Smooth, mesh/default/full_body for Render) 1:1.
-export function buildPoseExtractGraph(state) {
-  if (!state.poseImage) throw new Error("Crop the pose image first (✂ Crop Pose Image).");
-  const folder = state.saveSubfolder || SUBFOLDER;
-  const g = {};
-  g[`${P}:loadPose`]    = { class_type: "LoadImage", inputs: { image: state.poseImage } };
+// Phase 1: extract a SAM3D-Body render from the pose image. Queued and awaited BEFORE the main
+// generation — its result becomes <image1>. Mirrors the user-supplied reference workflow's own node
+// chain and parameter values (method="gaussian" for Smooth, mesh/default/full_body for Render) 1:1.
+// "Preview & Angle" runs the same chain up to a GLB (buildPoseMeshGraph) that the node's 3D viewer
+// shows; the viewer's capture then replaces this render as <image1>.
+function addPoseSam(g, state) {
+  g[`${P}:loadPose`]    = { class_type: "LoadImage", inputs: { image: state.poseImageRaw } };
   g[`${P}:samLoader`]   = { class_type: "SAM3DBody_Loader", inputs: { model_file: state.poseSamModel || POSE_SAM3D_MODEL_DEFAULT } };
   g[`${P}:samPredict`]  = { class_type: "SAM3DBody_Predict", inputs: {
     sam3d_body_model: [`${P}:samLoader`, 0], image: [`${P}:loadPose`, 0],
@@ -302,6 +300,26 @@ export function buildPoseExtractGraph(state) {
   g[`${P}:samSmooth`]   = { class_type: "SAM3DBody_Smooth", inputs: {
     mhr_pose_data: [`${P}:samPredict`, 0], strength: 1, method: "gaussian", window: 7, rotation_threshold_degrees: 15,
   }};
+}
+
+export function buildPoseMeshGraph(state) {
+  if (!state.poseImageRaw) throw new Error("Upload the pose image first (Image 1).");
+  const g = {};
+  addPoseSam(g, state);
+  g[`${P}:meshFile`] = { class_type: "BuildPoseFile", inputs: {
+    pose_data: [`${P}:samSmooth`, 0], format: "glb", "format.mesh_style": "body_mesh",
+    "format.mesh_style.bone_vis": "off", "format.mesh_style.shader": "default", "format.bone_smooth_window": 0,
+    fps: 24, camera_translation: "off", track_index: -1, sam3d_body_model: [`${P}:samLoader`, 0],
+  }};
+  g[`${P}:meshSave`] = { class_type: "SaveGLB", inputs: { mesh: [`${P}:meshFile`, 0], filename_prefix: `${state.saveSubfolder || SUBFOLDER}/Q21_pose3d` } };
+  return g;
+}
+
+export function buildPoseExtractGraph(state) {
+  if (!state.poseImageRaw) throw new Error("Upload the pose image first (Image 1).");
+  const folder = state.saveSubfolder || SUBFOLDER;
+  const g = {};
+  addPoseSam(g, state);
   g[`${P}:samRender`]   = { class_type: "SAM3DBody_Render", inputs: {
     pose_data: [`${P}:samSmooth`, 0], width: 0, height: 0,
     render_style: "mesh", "render_style.shader": "default", "render_style.opacity": 1,
