@@ -2,6 +2,11 @@
 
 ---
 
+## v1.38.1 (2026-10-12)
+
+### ITDA ONE STUDIO (TJ)
+- App Settings: the empty Gallery Path box now hints `output/[Enter folder name]`.
+
 ## v1.38.0 (2026-10-12)
 
 ### ITDA ONE STUDIO (TJ)
