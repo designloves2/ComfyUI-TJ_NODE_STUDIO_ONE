@@ -2,7 +2,7 @@
 
 ---
 
-## Unreleased
+## v1.39.0 (2026-10-13)
 
 ### MiniMax H3 — Image to Video (F/L): Files / Gallery or Asset Library
 - The **First / Last Keyframes** panel now has the same **Source** switch as Reference: *Files / Gallery* or

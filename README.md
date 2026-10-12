@@ -7,6 +7,10 @@
 > 워크플로우 배선 없이 노드 하나에서 T2I · I2I · Inpaint · Outpaint · ControlNet · Edit · Faceswap · ANGLE · Upscale(SeedVR2) 등 다양한 모드를 전환합니다.
 > switch between modes in a single node without workflow wiring T2I · I2I · Inpaint · Outpaint · ControlNet · Edit · Faceswap · ANGLE · Upscale(SeedVR2) etc. switch between various modes.
 >
+> 🆕 **MiniMax H3 Image to Video (F/L)**: 첫/마지막 프레임도 Reference처럼 **Files / Gallery** 또는 **Asset Library** 중 하나만 고릅니다. Prompt Edit에 에셋 프레임이 보이고, Prompt Write/Refine이 그 이미지를 LLM에 보냅니다.
+>
+> 🆕 **MiniMax H3 Image to Video (F/L)**: First / Last frames now pick one source, **Files / Gallery** or **Asset Library**, like Reference. Prompt Edit shows the library frames and Prompt Write / Refine send them to the vision model.
+>
 > 🆕 **ITDA ONE STUDIO**: 렌더 결과를 ITDA 갤러리에 저장하고(목록·삭제·가져오기), 앱 설정이 서버에 저장되며, 설정·프로젝트·저장·갤러리가 **☰ Menu** 하나로 모였습니다.
 >
 > 🆕 **ITDA ONE STUDIO**: renders are saved to the ITDA gallery (list, delete, import), app settings are stored on the server, and Settings / Project / Save / Gallery now live in one **☰ Menu**.
