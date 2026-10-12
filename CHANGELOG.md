@@ -2,7 +2,19 @@
 
 ---
 
-## Unreleased
+## v1.37.0 (2026-10-12)
+
+### Galleries and Qwen 2.1 POSE files
+- The image galleries no longer list the `pose` folder (3D pose preview pictures); the POSE auto render is now
+  saved there too (`<save folder>/pose/Q21_pose_render`). Drawing / mask pictures only go to `input/`, never to a gallery.
+
+### Image nodes: Refine, Sampler lists, gallery layout
+- **Refine** for image prompts: the four Prompt Edit buttons and a Refine button in the main prompt header, with a
+  Compare window (word diff) and a busy overlay. Ctrl+V pastes into Prompt Edit.
+- Every image node loads the **full Sampler (66) and Scheduler (11) lists**.
+- Image galleries and the picker can switch between **Grid and Masonry** (not ITDA / video).
+- Every image card has a ✕ to clear it; a missing saved image shows an empty card. Qwen 2.1 Settings save
+  automatically (Reset keeps the POSE settings). Custom LLM requests send a User-Agent; URL downloads follow redirects.
 
 ### Image viewers: one zoom / pan / fit
 - Result previews, Compare views and the gallery's enlarged picture of every image node (and the H3 image gallery viewer)

@@ -7,6 +7,10 @@
 > 워크플로우 배선 없이 노드 하나에서 T2I · I2I · Inpaint · Outpaint · ControlNet · Edit · Faceswap · ANGLE · Upscale(SeedVR2) 등 다양한 모드를 전환합니다.
 > switch between modes in a single node without workflow wiring T2I · I2I · Inpaint · Outpaint · ControlNet · Edit · Faceswap · ANGLE · Upscale(SeedVR2) etc. switch between various modes.
 >
+> 🆕 **이미지 노드 미리보기·비교·갤러리 확대에서 휠 = 확대, 왼쪽 드래그 = 이동, 더블클릭 = 맞춤.** 비교 바는 그대로 있습니다. UPSCALE에 **VOSR**가 SeedVR2 옆에 추가되었고(Anima에도 UPSCALE 모드 추가), Qwen 2.1 POSE에 **Preview & Angle** 3D 뷰어와 **Load 3D Pose** 목록이 생겼습니다. 갤러리에는 3D 포즈 그림이 더 이상 섞이지 않습니다.
+>
+> 🆕 **Wheel = zoom, left-drag = pan, double-click = fit** in previews, Compare and the enlarged gallery picture of the image nodes; the compare bar stays put. UPSCALE gets **VOSR** next to SeedVR2 (Anima gains an UPSCALE mode), and Qwen 2.1 POSE gets the **Preview & Angle** 3D viewer and a **Load 3D Pose** list. Galleries no longer show the 3D pose pictures.
+>
 > 🆕 **참조 영상이 훨씬 가벼워집니다.** Reference 모드의 참조 영상은 원본 크기 그대로 모델에 들어가 프레임마다 토큰이 되기 때문에 큰 영상은 첫 스텝이 시작되기 전에 매우 오래 걸릴 수 있었습니다. 이제 영상 타일의 **mp** 칸(그리고 Asset 탭 영상 에셋의 **mp (downscale)**)으로 큐에 들어갈 때 지정한 MP까지 줄입니다(원본 파일은 그대로, 더 작은 영상은 키우지 않음). Asset 탭 영상 에셋에는 **구간(in/out)**, **Video sound**도 생겼습니다. **Face Refine의 Turbo**는 이제 메인 Turbo 섹션과 같은 선택(None / Turbo LoRA (Basic) / larryvrh / SLA)과 자기만의 LoRA·steps를 씁니다. 7+1에는 2단계 **Activation chunk rows** 칸이 추가되었습니다.
 >
 > 🆕 **Reference videos get much lighter.** A reference video went to the model at its own size and every frame became tokens, so a large clip could take very long before the first step. The video tile's **mp** field (and **mp (downscale)** on a video asset in the Asset tab) now downsizes it when the clip is queued — the file is untouched and a smaller video is never upscaled. Video assets in the Asset tab also get an **in/out range** and **Video sound**. **Face Refine's Turbo** now offers the main Turbo section's choices (None / Turbo LoRA (Basic) / larryvrh / SLA) with its own LoRA and steps. 7+1 gains a stage-2 **Activation chunk rows** field.
