@@ -3,7 +3,7 @@
 // three.js is vendored under web/vendor/three (loaded on first use, not at page load).
 // Plain look: black background, no grid, the GLB's own material, soft lights.
 
-const MAX_VIEW_H = 460;
+const BOX = 192;   // same card size as the image upload cards
 
 let three = null;
 async function loadThree() {
@@ -27,11 +27,12 @@ export async function createPoseViewer({ aspect = 1, onCameraChange } = {}) {
   const { THREE, GLTFLoader, OrbitControls } = await loadThree();
 
   const el = document.createElement("div");
-  Object.assign(el.style, { position: "relative", width: "100%", margin: "0 auto", background: "#000", borderRadius: "10px", overflow: "hidden", touchAction: "none" });
+  // A square card like the image cards; the canvas (the result's aspect) sits centered in it, the rest stays dark grey.
+  Object.assign(el.style, { position: "relative", width: `${BOX}px`, height: `${BOX}px`, maxWidth: "100%", margin: "0 auto", boxSizing: "border-box", background: "#2b2b2b", border: "1px solid #2a2a2a", borderRadius: "10px", overflow: "hidden", touchAction: "none" });
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  Object.assign(renderer.domElement.style, { display: "block", width: "100%", height: "100%" });
+  Object.assign(renderer.domElement.style, { position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)" });
   el.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -71,17 +72,15 @@ export async function createPoseViewer({ aspect = 1, onCameraChange } = {}) {
 
   function setAspect(a) {
     aspect = a || 1;
-    el.style.maxWidth = `${Math.round(MAX_VIEW_H * aspect)}px`;   // a tall canvas stays within MAX_VIEW_H
     camera.aspect = aspect;
     camera.updateProjectionMatrix();
     resize();
   }
   function resize() {
-    const w = el.clientWidth;
-    if (!w) return;
-    const h = Math.round(w / aspect);
-    el.style.height = `${h}px`;
-    renderer.setSize(w, h, false);
+    const side = Math.min(el.clientWidth, el.clientHeight);
+    if (!side) return;
+    const w = Math.round(aspect >= 1 ? side : side * aspect), h = Math.round(aspect >= 1 ? side / aspect : side);
+    renderer.setSize(w, h);
     render();
   }
   const ro = new ResizeObserver(resize);
@@ -105,7 +104,7 @@ export async function createPoseViewer({ aspect = 1, onCameraChange } = {}) {
   function capture(longEdge = 1536) {
     const w = aspect >= 1 ? longEdge : Math.round(longEdge * aspect), h = aspect >= 1 ? Math.round(longEdge / aspect) : longEdge;
     const pr = renderer.getPixelRatio();
-    renderer.setPixelRatio(1); renderer.setSize(w, h, false);
+    renderer.setPixelRatio(1); renderer.setSize(w, h);
     render();
     const dataUrl = renderer.domElement.toDataURL("image/png");
     renderer.setPixelRatio(pr); resize();
