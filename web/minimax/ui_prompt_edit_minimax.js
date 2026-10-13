@@ -6,7 +6,7 @@
 //
 // The brief-writing instruction is the same "Minimax H3 (Video)" system prompt TJ_NODE
 // ships, fetched from the backend (with a built-in fallback when TJ_NODE isn't present).
-import { C, BRAND, el, clear, clipSecondsFor, clipFramesFor, clipTimeline, snapHalf, snapClipSec, clipSecForTyped, shotRanges, rebaseShots, activePrompts, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt, imageBriefMax, promptText, promptFirstFrame, promptEnabled, clipAssets, clipFraming, promptOverrides, normalizeAssetRef } from "./core_minimax.js";
+import { C, BRAND, el, clear, clipSecondsFor, clipFramesFor, clipTimeline, snapHalf, snapClipSec, clipSecForTyped, shotRanges, rebaseShots, snapShotTimes, activePrompts, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt, imageBriefMax, promptText, promptFirstFrame, promptEnabled, clipAssets, clipFraming, promptOverrides, normalizeAssetRef } from "./core_minimax.js";
 import { panel, label, button, select, row, col } from "../klein/ui_common.js";
 import { buildClipMediaSlots } from "./ui_clip_media_slots.js";
 import { openVideoGalleryPicker } from "./ui_video_picker_minimax.js";
@@ -599,6 +599,8 @@ This cannot be undone.`,
       : `global ${(global / 24).toFixed(2)}s`;
   }
   function timeChanged() {
+    snapClipText(selected);
+    editor.value = promptText(normPrompt(state.prompts[selected]));
     ctx.persist(); renderTimeRow(); renderList(); refreshPlanTag(); refreshPreviewTag(); ctx.refreshModes?.();
   }
   timeChk.addEventListener("change", () => {
@@ -1887,6 +1889,12 @@ ${name}`, style: {
   }
   // A clip made from a split carries its own header / sound, so it needs the override on; the
   // references it had (common set) come along so nothing is lost by switching it on.
+  // The shot times written in a clip's text are kept in half-second steps (a tie goes the way the clip's real
+  // render length rounds - see snapShotTimes), so they follow the clip's length whenever it is set or changed.
+  function snapClipText(i) {
+    const c = (state.prompts || [])[i];
+    if (c && typeof c === "object") c.text = snapShotTimes(c.text || "", clipSecondsFor(state, i));
+  }
   function keepTimes(list, old) {
     list.forEach((c, i) => {
       const o = old[i];
@@ -1970,6 +1978,10 @@ ${name}`, style: {
           state.prompts[selected].text = rebaseShots(picked.join("\n\n"));
         }
       }
+    }
+    if (reviewMode !== "one") {
+      if (reviewTarget === "all") (state.prompts || []).forEach((_, i) => snapClipText(i));
+      else snapClipText(selected);
     }
     ctx.persist();
     reviewOv.style.display = "none";
@@ -2107,6 +2119,7 @@ ${name}`, style: {
     if (splitHeader) state.promptHeader = splitHeader;
     if (splitFooter) state.promptFooter = splitFooter;
     state.prompts = keepTimes(groups.map(g => ({ text: g, firstFrame: "", enabled: true })), state.prompts || []);
+    state.prompts.forEach((_, i) => snapClipText(i));
     selected = 0;
     ctx.persist();
     splitOv.style.display = "none";

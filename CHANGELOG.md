@@ -12,6 +12,11 @@
   (nearest 17k+5, rounded down or up whichever is closer) and the real length, in half seconds, is what the box keeps:
   12 s -> 294 frames (12.25 s) -> 12.5; 11.75 s -> 277 frames (11.54 s) -> 11.5. The note under the box shows the exact frames.
   The CLIPS list, its running clock and the shot ranges use the same half-second values.
+- The **shot times written in a clip's text** (`At 00:04.250`) are also kept in half-second steps: after a split / Auto Split /
+  Use selected, and whenever the clip's time is set, each `At MM:SS.mmm` is rounded to the nearest half second, and a time exactly
+  halfway (x.25 / x.75) goes the way the clip's real render length rounds - a clip that renders longer than its half-second value
+  (11.54 s -> 11.5) sends the tie down, a shorter one (12.25 s -> 12.5) or an exact one (8.0 s) sends it up. Each shot starts at least
+  0.5 s after the one before.
 - In the CLIPS list a shot that starts after its clip has ended is shown in red (the clip is shorter than its shots).
 - The **CLIPS** list shows each clip's running clock (`0~10 sec`, `10~15 sec`, ...) and, beside it, each shot's range
   inside the clip (`[shot 1] 0~5`, `[shot 2] 5~10`). A clip with an override is orange-yellow, one whose override is the

@@ -149,6 +149,37 @@ export function rebaseShots(text) {
   return out;
 }
 
+/**
+ * Writes the shot times of one clip in half-second steps. A time between two half seconds goes to the
+ * nearest one; a time exactly halfway (x.25 / x.75) goes the way the clip's own real render length rounds
+ * to its half-second value - the clip rendered longer than its half-second value (rounded down) sends
+ * the tie down, shorter or equal (rounded up) sends it up. Every shot starts at least half a second after
+ * the one before it. `realSec` is the clip's real length (frames / 24); text with no timestamp is returned as it is.
+ */
+export function snapShotTimes(text, realSec) {
+  const raw = String(text || "");
+  const blocks = shotBlocks(raw);
+  if (blocks.length < 2) return raw;
+  const tieUp = snapClipSec(realSec) >= realSec - 1e-9;
+  const snap = (x) => {
+    const f = x * 2, fl = Math.floor(f + 1e-9);
+    return (Math.abs(f - fl - 0.5) < 1e-6 ? (tieUp ? fl + 1 : fl) : Math.round(f)) / 2;
+  };
+  let out = raw.slice(0, blocks[0].from), prev = 0;
+  blocks.forEach((b, k) => {
+    let block = raw.slice(b.from, b.to);
+    if (k > 0 && b.start != null) {
+      const at = Math.max(snap(b.start), prev + 0.5);
+      prev = at;
+      const nl = block.indexOf("\n");
+      const head = (nl < 0 ? block : block.slice(0, nl)).replace(SHOT_TIME_RE, () => `At ${fmtShotTime(at)}`);
+      block = head + (nl < 0 ? "" : block.slice(nl));
+    }
+    out += block;
+  });
+  return out;
+}
+
 // One-Take's overlap window, in real (24fps) frames — fixed, not user-configurable.
 // The stitch trim has to match exactly what TJ_H3_LatentContinuation used, and letting
 // the two drift apart (e.g. changed mid-run) would silently mis-stitch a finished run,
