@@ -55,21 +55,34 @@ export function alignFrameCount(n) {
 // (1 s up) instead of the global clip length. The model only takes 17k+5 frames, so the length
 // snaps to the nearest such count (1 s -> 22 frames); the top is the global list's longest clip.
 export const CLIP_MAX_FRAMES = 362;
+// Clip times are handled in half-second steps: a typed or computed value in between rounds to the
+// nearest half second (a tie goes up), from 1 s to 15 s.
+export const snapHalf = (sec) => Math.round(sec * 2) / 2;
+export const snapClipSec = (sec) => Math.min(15, Math.max(1, snapHalf(sec)));
+// A typed length is first turned into the frame count the model can really render (nearest 17k+5, i.e.
+// rounded down or up, whichever is closer), and that real length - in half seconds - is what gets stored:
+// 12 s -> 294 frames (12.25 s) -> 12.5. So the box, the CLIPS list and the render always agree.
+export function clipSecForTyped(sec) {
+  const k = Math.min(21, Math.max(1, Math.round((sec * FPS - 5) / 17)));
+  return snapClipSec((17 * k + 5) / FPS);
+}
 export function clipFramesFor(state, i) {
   const p = (state.prompts || [])[i];
   if (p && typeof p === "object" && p.timeOverride && p.timeSec > 0) {
-    const k = Math.max(1, Math.round((p.timeSec * FPS - 5) / 17));
+    const k = Math.max(1, Math.round((snapClipSec(p.timeSec) * FPS - 5) / 17));
     return Math.min(CLIP_MAX_FRAMES, 17 * k + 5);
   }
   return state.clipFrames ?? DEFAULT_FRAMES;
 }
 export function clipSecondsFor(state, i) { return framesToSeconds(clipFramesFor(state, i)); }
 
-/** Running clock of the run: { start, end, sec } per prompt; a switched-off clip has start/end null. */
+/** Running clock of the run, in half-second steps: { start, end, sec } per prompt; a switched-off clip has start/end null.
+ *  `sec` is the planned length (what was typed, or the global length); the frames really rendered are clipFramesFor(). */
 export function clipTimeline(state) {
   let t = 0;
   return (state.prompts || []).map((p, i) => {
-    const sec = clipSecondsFor(state, i);
+    const o = p && typeof p === "object" && p.timeOverride && p.timeSec > 0;
+    const sec = o ? snapClipSec(p.timeSec) : snapHalf(framesToSeconds(state.clipFrames ?? DEFAULT_FRAMES));
     if (!promptEnabled(p)) return { start: null, end: null, sec };
     const row = { start: t, end: t + sec, sec };
     t += sec;

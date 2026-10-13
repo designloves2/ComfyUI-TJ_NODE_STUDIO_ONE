@@ -6,7 +6,7 @@
 //
 // The brief-writing instruction is the same "Minimax H3 (Video)" system prompt TJ_NODE
 // ships, fetched from the backend (with a built-in fallback when TJ_NODE isn't present).
-import { C, BRAND, el, clear, clipSecondsFor, clipFramesFor, clipTimeline, shotRanges, rebaseShots, activePrompts, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt, imageBriefMax, promptText, promptFirstFrame, promptEnabled, clipAssets, clipFraming, promptOverrides, normalizeAssetRef } from "./core_minimax.js";
+import { C, BRAND, el, clear, clipSecondsFor, clipFramesFor, clipTimeline, snapHalf, snapClipSec, clipSecForTyped, shotRanges, rebaseShots, activePrompts, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt, imageBriefMax, promptText, promptFirstFrame, promptEnabled, clipAssets, clipFraming, promptOverrides, normalizeAssetRef } from "./core_minimax.js";
 import { panel, label, button, select, row, col } from "../klein/ui_common.js";
 import { buildClipMediaSlots } from "./ui_clip_media_slots.js";
 import { openVideoGalleryPicker } from "./ui_video_picker_minimax.js";
@@ -578,7 +578,7 @@ This cannot be undone.`,
   timeChk.style.cursor = "pointer";
   const timeChkLbl = el("label", { style: { display: "flex", alignItems: "center", gap: "5px", fontSize: "10.5px",
     cursor: "pointer" } }, [timeChk, el("span", { text: "clip time override" })]);
-  const timeIn = el("input", { type: "number", min: "1", max: "15.1", step: "0.5", style: {
+  const timeIn = el("input", { type: "number", min: "1", max: "15", step: "0.5", style: {
     width: "64px", boxSizing: "border-box", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
     borderRadius: "6px", padding: "3px 6px", fontSize: "11px", fontFamily: "inherit", outline: "none", textAlign: "center",
   }});
@@ -605,13 +605,13 @@ This cannot be undone.`,
     state.prompts[selected] = normPrompt(state.prompts[selected]);
     const p = state.prompts[selected];
     p.timeOverride = timeChk.checked;
-    if (timeChk.checked && !(p.timeSec > 0)) p.timeSec = Math.round(((state.clipFrames ?? 192) / 24) * 10) / 10;
+    if (timeChk.checked && !(p.timeSec > 0)) p.timeSec = clipSecForTyped((state.clipFrames ?? 192) / 24);
     timeChanged();
   });
   timeIn.addEventListener("change", () => {
     state.prompts[selected] = normPrompt(state.prompts[selected]);
     const v = parseFloat(timeIn.value);
-    if (v > 0) state.prompts[selected].timeSec = v;
+    if (v > 0) state.prompts[selected].timeSec = clipSecForTyped(v);   // the real render length, in half seconds
     timeChanged();
   });
   // "override for this clip" - the clip's own references, header and sound / music. Ticking it
@@ -658,7 +658,7 @@ This cannot be undone.`,
 
   function updateCount() { refreshPreviewTag(); }
 
-  const fmtSec = (s) => String(Number(s.toFixed(1)));
+  const fmtSec = (s) => String(snapHalf(s));   // list times in half-second steps
   function renderList() {
     clear(listBox);
     let onCount = 0;
@@ -699,8 +699,14 @@ This cannot be undone.`,
           style: { fontSize: "9.5px", color: p.timeOverride ? "#ffb020" : C.muted } }),
       ]);
       const shotCol = shots.length ? el("div", { style: { display: "flex", flexDirection: "column", gap: "1px", flexShrink: "0" } },
-        shots.map(s => el("div", { text: `[shot ${s.n}] ${fmtSec(s.start)}~${fmtSec(s.end)}`,
-          style: { fontSize: "9.5px", color: C.muted, whiteSpace: "nowrap" } }))) : null;
+        shots.map(s => {
+          // A shot that starts after the clip has ended is cut off: shown in red until the clip is longer
+          // (clip time override) or the shots are re-timed.
+          const late = s.start >= tl.sec - 0.05;
+          return el("div", { text: `[shot ${s.n}] ${fmtSec(s.start)}~${fmtSec(late ? s.start : s.end)}`,
+            title: late ? `Starts at ${fmtSec(s.start)}s, after this clip ends (${fmtSec(tl.sec)}s)` : "",
+            style: { fontSize: "9.5px", color: late ? C.err : C.muted, whiteSpace: "nowrap" } });
+        })) : null;
       const del = el("button", { type: "button", text: "✕", title: "Remove", style: {
         flexShrink: "0", cursor: "pointer", background: "transparent", color: C.muted,
         border: "none", fontSize: "10px", padding: "0 2px",

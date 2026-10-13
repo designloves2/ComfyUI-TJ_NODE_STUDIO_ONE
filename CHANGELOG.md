@@ -8,6 +8,11 @@
 - **Clip time override**: a checkbox + seconds box above the clip editor gives a clip its own length (1 s up to the
   longest clip; the model only takes 17k+5 frames, so it snaps to the nearest — 1 s is 22 frames, 10 s is 243). Without
   it a clip uses the global clip length. Rendering, the plan total and the stitched total use each clip's own length.
+- Clip times are handled in **half-second steps**. A typed length is turned into the frame count the model can really render
+  (nearest 17k+5, rounded down or up whichever is closer) and the real length, in half seconds, is what the box keeps:
+  12 s -> 294 frames (12.25 s) -> 12.5; 11.75 s -> 277 frames (11.54 s) -> 11.5. The note under the box shows the exact frames.
+  The CLIPS list, its running clock and the shot ranges use the same half-second values.
+- In the CLIPS list a shot that starts after its clip has ended is shown in red (the clip is shorter than its shots).
 - The **CLIPS** list shows each clip's running clock (`0~10 sec`, `10~15 sec`, ...) and, beside it, each shot's range
   inside the clip (`[shot 1] 0~5`, `[shot 2] 5~10`). A clip with an override is orange-yellow, one whose override is the
   Asset Library is pink. The list is wider for it.
