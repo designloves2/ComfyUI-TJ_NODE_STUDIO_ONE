@@ -52,6 +52,9 @@
   finished video, where each clip after the first loses the 1.625 s it shares with the one before (8 s x 9 clips = 59.0 s).
 - The explanations in the Continuity section are tooltips: a "?" next to *Continuity between clips* (it follows the chosen mode -
   None / One-Take / Reference / Last Frame Chain) and hover text on each checkbox and its label, instead of paragraphs.
+- **Canvas, Clip length, Preset and Steps are accordions** too (Text To Video, Image to Video (F/L), Reference to Video), like the rest of
+  the left menu. The closed line shows the current value (`9:16 Portrait · 1 MP`, `8.00s × 3 · 24.00s total`, the preset name, the
+  steps) and keeps up when the prompts or the length change; their explanations are "?" tooltips on the title.
 - **Postprocess**: the bottom bar no longer shows Picture / Subject / Shot, 🔧 Refine, ✨ Prompt Write and 📝 Prompt Edit (it has no prompt).
 - **COMMON — HEADER / SOUND** boxes keep the height you drag them to (remembered) and are no longer resized to their text.
 

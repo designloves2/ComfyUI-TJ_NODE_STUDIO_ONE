@@ -2061,6 +2061,7 @@ app.registerExtension({
       function currentPlan() { return clipPlan(state); }
 
       let planLine = null, totalLine = null;
+      let canvasAcc = null, clipLenAcc = null;   // accordions whose summary line refreshPlan() keeps current
       function refreshPlan() {
         const p = currentPlan();
         const { width, height } = resolveResolution(state.aspect, state.megapixels);
@@ -2089,6 +2090,9 @@ app.registerExtension({
             + ` · est. <b>${formatDuration(p.estimateMinutes)}</b>`
             + `<br><span style="color:${C.muted}">${width}×${height} · ${p.clipSec.toFixed(2)}s/clip · ${state.clipFrames} frames</span>`;
         }
+        const setSummary = (acc, text) => { if (acc?._summary) { acc._summary.textContent = text; acc._summary.title = text; } };
+        setSummary(canvasAcc, `${state.aspect} · ${state.megapixels ?? 1.0} MP`);
+        setSummary(clipLenAcc, `${p.clipSec.toFixed(2)}s × ${p.count} · ${(p.isOneTakeStitched && p.count > 1 ? p.stitchedSeconds : p.actualSeconds).toFixed(2)}s total`);
         renderPrompts();
       }
       ctx.refreshPlan = refreshPlan;
@@ -2273,27 +2277,31 @@ app.registerExtension({
        *
        * `body` is a thunk — a collapsed section never builds its contents at all.
        */
-      function accordion(key, title, summary, body) {
+      function accordion(key, title, summary, body, help = "") {
         const open = !!state.accordion?.[key];
         const head = el("div", { style: {
           display: "flex", alignItems: "center", gap: "6px", cursor: "pointer",
           userSelect: "none", padding: "1px 0",
         }});
+        const summaryEl = el("div", { text: summary || "", title: summary || "", style: {
+          flex: "1", textAlign: "right", fontSize: "10px",
+          color: summary && summary !== "OFF" && summary !== "None" ? BRAND : C.muted,
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } });
         head.append(
           el("div", { text: open ? "▼" : "▶", style: { fontSize: "9px", color: C.muted, width: "10px", flexShrink: "0" } }),
           el("div", { text: title, style: {
             fontSize: "10px", fontWeight: "700", letterSpacing: "0.06em",
             textTransform: "uppercase", color: C.muted, flexShrink: "0" } }),
-          el("div", { text: summary || "", title: summary || "", style: {
-            flex: "1", textAlign: "right", fontSize: "10px",
-            color: summary && summary !== "OFF" && summary !== "None" ? BRAND : C.muted,
-            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }),
+          ...(help ? [helpDot(help)] : []),
+          summaryEl,
         );
         head.addEventListener("click", () => {
           state.accordion = { ...(state.accordion || {}), [key]: !open };
           persist(); renderLeft();
         });
-        return panel([head, ...(open ? body().filter(Boolean) : [])]);
+        const acc = panel([head, ...(open ? body().filter(Boolean) : [])]);
+        acc._summary = summaryEl;   // refreshPlan() keeps the Canvas / Clip length summaries current
+        return acc;
       }
 
       // A small circled "?" that carries the long explanation as a native title tooltip —
@@ -4325,8 +4333,7 @@ app.registerExtension({
         }
 
         // resolution
-        leftPanel.appendChild(panel([
-          label("Canvas"),
+        canvasAcc = accordion("canvas", "Canvas", `${state.aspect} · ${state.megapixels ?? 1.0} MP`, () => [
           row([
             col([label("Aspect"), select(ASPECTS.map(a => ({ value: a.label, label: a.label })), state.aspect,
               v => { state.aspect = v; persist(); refreshPlan(); })]),
@@ -4340,7 +4347,8 @@ app.registerExtension({
               return f;
             })()]),
           ]),
-        ]));
+        ]);
+        leftPanel.appendChild(canvasAcc);
 
         // length — total is computed from the prompts, so there is nothing to type here
         planLine  = el("div", { style: { fontSize: "11px", lineHeight: "1.65", color: C.text } });
@@ -4348,10 +4356,10 @@ app.registerExtension({
           textAlign: "center", padding: "6px 0 2px", lineHeight: "1.1",
           borderBottom: `1px solid ${C.border}`, marginBottom: "5px",
         }});
-        leftPanel.appendChild(panel([
-          labelHelp("Clip length", "Length follows the prompts: one prompt is one clip. Add a "
-            + "prompt (or split the brief into shots) to make the piece longer. Each clip is "
-            + "saved on its own; combine them afterwards from 🖼 Gallery → 🔗 Stitch."),
+        const planNow = currentPlan();
+        clipLenAcc = accordion("cliplen", "Clip length",
+          `${planNow.clipSec.toFixed(2)}s × ${planNow.count} · ${(planNow.isOneTakeStitched && planNow.count > 1 ? planNow.stitchedSeconds : planNow.actualSeconds).toFixed(2)}s total`,
+          () => [
           select(
             [...CLIP_LENGTHS.map(c => ({ value: String(c.frames), label: c.label })), { value: "custom", label: "Custom (seconds)…" }],
             state.clipLengthCustom ? "custom" : String(state.clipFrames),
@@ -4374,7 +4382,10 @@ app.registerExtension({
           ])] : []),
           totalLine,
           planLine,
-        ]));
+        ], "Length follows the prompts: one prompt is one clip. Add a "
+          + "prompt (or split the brief into shots) to make the piece longer. Each clip is "
+          + "saved on its own; combine them afterwards from 🖼 Gallery → 🔗 Stitch.");
+        leftPanel.appendChild(clipLenAcc);
         refreshPlan();
 
         // preset — one entry per combination worth measuring, numbered to match the test
@@ -4408,8 +4419,9 @@ app.registerExtension({
               p.note,
             ].join("\n");
           };
-          leftPanel.appendChild(panel([
-            label("Preset"),
+          leftPanel.appendChild(accordion("preset", "Preset",
+            activePreset ? (activePreset.user ? `★ ${activePreset.label}` : `${activePreset.id}. ${activePreset.label}`) : "Custom",
+            () => [
             select(
               [{ value: "", label: activePreset ? "— Custom —" : "— Custom (current settings) —",
                  title: "The pipeline sections below, as you have them now." },
@@ -4449,10 +4461,7 @@ app.registerExtension({
               r.style.marginTop = "5px";   // the buttons sat flush against the dropdown
               return r;
             })(),
-            el("div", {
-              text: "Hover a preset to see what it turns on.",
-              style: { fontSize: "10px", color: C.muted, lineHeight: "1.5", marginTop: "4px" } }),
-          ]));
+          ], "Hover a preset to see what it turns on."));
         }
 
         // images (mode-specific) — right after Preset, since picking a preset and
@@ -5088,19 +5097,18 @@ app.registerExtension({
               style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
           ]));
 
-        leftPanel.appendChild(panel([
-          label("Steps"),
+        leftPanel.appendChild(accordion("steps", "Steps",
+          turboNow === "none" ? String(state.steps ?? 20) : `${effectiveSteps(state, ctx.availability)} (turbo)`,
+          () => [
           (() => {
             const f = numberField(state.steps ?? 20,
               v => { state.steps = Math.max(1, Math.round(v)); persist(); }, 1);
             if (turboNow !== "none") { f.disabled = true; f.style.opacity = "0.4"; }
             return f;
           })(),
-          el("div", { text: turboNow === "none"
-              ? "Used as-is."
-              : `Turbo is on — ${effectiveSteps(state, ctx.availability)} steps from the Turbo section are used instead.`,
-            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-        ]));
+        ], turboNow === "none"
+          ? "Used as-is."
+          : `Turbo is on — ${effectiveSteps(state, ctx.availability)} steps from the Turbo section are used instead.`));
 
         useBottomWrap(seedGenWrap);
         leftPanel.scrollTop = prevScroll;
