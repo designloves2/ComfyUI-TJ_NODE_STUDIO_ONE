@@ -1380,14 +1380,15 @@ app.registerExtension({
         // of that exists in Image Generator's single plain prompt box, so they were dead
         // weight left visible there (user: "Picture Subject Shot 🔧 Refine ✨ Prompt Write
         // 📝 Prompt Edit 이거는 지우고").
-        tagBtnRow.style.display = isImageGen ? "none" : "";
-        refineBtn.style.display = isImageGen ? "none" : "";
-        writeBtn.style.display  = isImageGen ? "none" : "";
+        // Postprocess has no prompt at all, so these three are hidden there too.
+        tagBtnRow.style.display = isImageGen || isPostprocess ? "none" : "";
+        refineBtn.style.display = isImageGen || isPostprocess ? "none" : "";
+        writeBtn.style.display  = isImageGen || isPostprocess ? "none" : "";
         const isCharSheetHdr = isImageGen && state.imageGenMode === "charsheet";
         // editBtn is repurposed as t2i/ref2i's own "🔍 Prompt Edit" (see its onclick's
         // imagegen branch) — only truly hidden for Character Sheet, which uses
         // sysPromptSaveBtn/ResetBtn in this same slot instead.
-        editBtn.style.display = isCharSheetHdr ? "none" : "";
+        editBtn.style.display = isCharSheetHdr || isPostprocess ? "none" : "";
         tplBtn.style.display = isImageGen && !isCharSheetHdr ? "" : "none";
         sysPromptSaveBtn.style.display  = isCharSheetHdr ? "" : "none";
         sysPromptResetBtn.style.display = isCharSheetHdr ? "" : "none";

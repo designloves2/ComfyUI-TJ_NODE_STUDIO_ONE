@@ -35,6 +35,7 @@
   the main screen; the Asset Library block takes the full width with the Load result on its right instead of underneath.
 - **First / Last Asset Library picker** is two cards side by side: a large picture (✕ in its corner), the asset name under it and its own
   From Asset… button; clicking the picture opens the picker too. Same block on the main screen and in Prompt Edit.
+- **Postprocess**: the bottom bar no longer shows Picture / Subject / Shot, 🔧 Refine, ✨ Prompt Write and 📝 Prompt Edit (it has no prompt).
 - **COMMON — HEADER / SOUND** boxes keep the height you drag them to (remembered) and are no longer resized to their text.
 
 ## v1.39.0 (2026-10-13)
