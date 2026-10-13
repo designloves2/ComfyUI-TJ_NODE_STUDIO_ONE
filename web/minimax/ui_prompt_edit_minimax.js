@@ -6,7 +6,7 @@
 //
 // The brief-writing instruction is the same "Minimax H3 (Video)" system prompt TJ_NODE
 // ships, fetched from the backend (with a built-in fallback when TJ_NODE isn't present).
-import { C, BRAND, el, clear, clipSecondsFor, clipFramesFor, clipTimeline, snapHalf, snapClipSec, clipSecForTyped, shotRanges, rebaseShots, snapShotTimes, activePrompts, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt, imageBriefMax, promptText, promptFirstFrame, promptEnabled, clipAssets, clipFraming, promptOverrides, normalizeAssetRef } from "./core_minimax.js";
+import { C, BRAND, el, clear, clipSecondsFor, clipFramesFor, clipTimeline, snapHalf, snapClipSec, clipSecForTyped, shotRanges, rebaseShots, snapShotTimes, oneTakeLlmOn, oneTakeRules, oneTakeFixShots, oneTakeIssues, activePrompts, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt, imageBriefMax, promptText, promptFirstFrame, promptEnabled, clipAssets, clipFraming, promptOverrides, normalizeAssetRef } from "./core_minimax.js";
 import { panel, label, button, select, row, col } from "../klein/ui_common.js";
 import { buildClipMediaSlots } from "./ui_clip_media_slots.js";
 import { openVideoGalleryPicker } from "./ui_video_picker_minimax.js";
@@ -699,6 +699,10 @@ This cannot be undone.`,
         el("div", { text: tl.start == null ? "off" : `${fmtSec(tl.start)}~${fmtSec(tl.end)} sec${p.timeOverride ? " ⏱" : ""}`,
           title: p.timeOverride ? "This clip has its own length" : "Global clip length",
           style: { fontSize: "9.5px", color: p.timeOverride ? "#ffb020" : C.muted } }),
+        // One-Take: each clip after the first overlaps the one before by 1.625 s, so its place in the stitched video is later-shorter.
+        ...(tl.fstart != null ? [el("div", { text: `stitched ${fmtSec(tl.fstart)}~${fmtSec(tl.fend)} sec`,
+          title: "Place in the finished One-Take video (1.625 s overlap with the previous clip removed)",
+          style: { fontSize: "9.5px", color: C.ok } })] : []),
       ]);
       const shotCol = shots.length ? el("div", { style: { display: "flex", flexDirection: "column", gap: "1px", flexShrink: "0" } },
         shots.map(s => {
@@ -1282,6 +1286,22 @@ ${name}`, style: {
   // Give the model the run's actual shape so the brief fits the clips we'll render.
   // `imageSummary` is the merged vision-analysis text for Image → Brief (§C2's pipeline);
   // it's just another paragraph of context by the time the brief model sees it.
+  // "원테이크 / 원 테이크 / onetake / one take / one-take" in the prompt switches on the One-Take mode and its prompt
+  // rules by itself (Continuity = One-Take (latent), "Write prompts with the One-Take rules" ticked).
+  const ONE_TAKE_WORD = /원\s*테이크|one[\s-]*take/i;
+  function autoOneTake(text) {
+    if (oneTakeLlmOn(state) || !ONE_TAKE_WORD.test(text || "")) return;
+    state.continuityMode = "onetake";
+    state.oneTakeLlm = true;
+    ctx.persist();
+    ctx.refreshModes?.();   // redraws the Continuity panel; it falls back to None when One-Take cannot run here
+    if (state.continuityMode === "onetake") {
+      ctx.showPopup?.("One-Take found in the prompt: Continuity is now One-Take (latent) and the One-Take prompt rules are on.", false);
+    } else {
+      ctx.showPopup?.("One-Take found in the prompt, but One-Take (latent) is not available here (update the TJ_NODE pack) - writing without it.", true);
+    }
+  }
+
   let writeTarget = "all";   // set by doWrite: "one" = this clip, "all" = split into all clips
   function buildUserPrompt(baseText, imageSummary, lib = null) {
     const one = writeTarget === "one";
@@ -1315,6 +1335,15 @@ ${name}`, style: {
         + "\"At MM:SS.mmm\" counted from that clip's own start. Never continue the time or the shot numbers from one clip to the next. "
         + "The shots of a clip must add up to that clip's own length.",
       );
+    }
+    if (oneTakeLlmOn(state)) {
+      // The clip before the one being written (target "one"): how it ends is what this one has to open with.
+      let prevEnding = "";
+      if (one && selected > 0) {
+        const prev = promptText(normPrompt(state.prompts[selected - 1])).trim();
+        prevEnding = prev.split(/\n\s*\n/).pop().replace(/\s+/g, " ").slice(-600);
+      }
+      lines.push("", oneTakeRules(lens, prevEnding));
     }
     // Library references are named by @token (the library node turns them into the model's tags),
     // so the numbered-tag manifest is replaced by the token list.
@@ -1396,6 +1425,11 @@ ${name}`, style: {
       );
     }
     if (lib) lines.push(lib.text, "");
+    if (oneTakeLlmOn(state)) {
+      lines.push("This brief is one clip of a One-Take run: keep a single [Shot 1] (later beats as \"At 00:02.000, ...\" in the same paragraph), "
+        + "keep the clip ending in motion with its exact end state, and keep the opening that copies the previous clip's end state, "
+        + "unless the instruction asks otherwise.", "");
+    }
     lines.push(
       "Revision instruction:",
       instruction,
@@ -1591,6 +1625,7 @@ ${name}`, style: {
     if (!base && !images.length && !lib) {
       ctx.showPopup?.("Write something first (or add an image).", true); return;
     }
+    autoOneTake(base);
     busy = true;
     enhBtn.disabled = true;
     setEditorBusy(true, "✨ Writing the prompt…");
@@ -1663,6 +1698,7 @@ ${name}`, style: {
     });
     if (!instruction || !instruction.trim()) return;
     lastRefineInstruction = instruction.trim();
+    autoOneTake(`${current}\n${lastRefineInstruction}`);
 
     const images = includeImagesChk?.checked ? await attachedImagesResolved() : [];
     const lib = await libraryContextForClip();
@@ -1871,6 +1907,13 @@ ${name}`, style: {
     } else {
       info += ` → clip ${selected + 1}`;
     }
+    if (oneTakeLlmOn(state) && reviewMode !== "one") {
+      const clips = structured ? structured.map(b => [b.header, ...b.shots, b.footer].join("\n"))
+        : reviewTarget === "all" ? (p.shots.length ? p.shots : [reviewText]).map((s, i) => (i === 0 ? [p.header, s] : [s]).join("\n"))
+        : [[p.header, ...p.shots, p.footer].join("\n")];
+      const issues = oneTakeIssues(reviewTarget === "all" ? clips : clips.map(c => c));
+      if (issues.length) info += `  ⚠ One-Take: ${issues.slice(0, 3).map(x => `clip ${x.clip} ${x.msg}`).join("; ")}${issues.length > 3 ? ` (+${issues.length - 3} more)` : ""}`;
+    }
     rvInfo.textContent = info;
 
     rvSummary.textContent =
@@ -1978,6 +2021,10 @@ ${name}`, style: {
           state.prompts[selected].text = rebaseShots(picked.join("\n\n"));
         }
       }
+    }
+    if (reviewMode !== "one" && oneTakeLlmOn(state)) {
+      const fold = (i) => { const c = state.prompts[i]; if (c && typeof c === "object") c.text = oneTakeFixShots(c.text); };
+      if (reviewTarget === "all") (state.prompts || []).forEach((_, i) => fold(i)); else fold(selected);
     }
     if (reviewMode !== "one") {
       if (reviewTarget === "all") (state.prompts || []).forEach((_, i) => snapClipText(i));

@@ -40,6 +40,18 @@
   the main screen; the Asset Library block takes the full width with the Load result on its right instead of underneath.
 - **First / Last Asset Library picker** is two cards side by side: a large picture (✕ in its corner), the asset name under it and its own
   From Asset… button; clicking the picture opens the picker too. Same block on the main screen and in Prompt Edit.
+- **One-Take prompt rules** (ONE_TAKE_Guide_Korean): Continuity ▸ One-Take (latent) has a new box, "Write prompts with the One-Take
+  rules (Prompt Write / Refine)". While it is on, the brief request carries the guide's rules with each clip's length and its
+  fast-action cut-off (length - 1.7 s): one `[Shot 1]` per clip, the 2-second development written as `At 00:02.000, ...` in the same
+  paragraph, each clip ending on its exact end state and the next one opening by copying it ("is already ..." / "still"), the
+  "single uninterrupted shot" sentence. When writing one clip, the end of the clip before it is passed along. A result's extra
+  `[Shot N]` are folded into `[Shot 1]` (the paragraph's own `At ...` times are left alone) and the review lists broken seams.
+  The box turns on by itself, together with Continuity = One-Take (latent), when the prompt says 원테이크 / 원 테이크 / onetake /
+  one take / one-take.
+- With One-Take the **CLIPS** list shows two times per clip: the plain running clock and `stitched a~b sec` - its place in the
+  finished video, where each clip after the first loses the 1.625 s it shares with the one before (8 s x 9 clips = 59.0 s).
+- The explanations in the Continuity section are tooltips: a "?" next to *Continuity between clips* (it follows the chosen mode -
+  None / One-Take / Reference / Last Frame Chain) and hover text on each checkbox and its label, instead of paragraphs.
 - **Postprocess**: the bottom bar no longer shows Picture / Subject / Shot, 🔧 Refine, ✨ Prompt Write and 📝 Prompt Edit (it has no prompt).
 - **COMMON — HEADER / SOUND** boxes keep the height you drag them to (remembered) and are no longer resized to their text.
 

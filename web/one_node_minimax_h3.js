@@ -4971,38 +4971,36 @@ app.registerExtension({
         leftPanel.appendChild(accordion("continuity", "Continuity",
           (contModes.find(m => m.key === state.continuityMode) || {}).label || "None",
           () => {
+            const contHint = (contModes.find(m => m.key === state.continuityMode) || {}).hint || "";
             const rows = [
-              col([label("Continuity between clips"), select(
+              col([labelHelp("Continuity between clips",
+                  [contHint, "One prompt renders one clip. To make a longer piece that holds together, split the brief into shots — each shot becomes a clip and continuity carries the look forward."]
+                    .filter(Boolean).join("\n\n")),
+                select(
                 contModes.map(m => ({ value: m.key, disabled: m.disabled,
                   label: m.disabled ? `${m.label} — ${m.reason}` : m.label })),
                 state.continuityMode, v => { state.continuityMode = v; persist(); renderLeft(); })]),
-              el("div", { text: (contModes.find(m => m.key === state.continuityMode) || {}).hint || "",
-                style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-              el("div", { text: "One prompt renders one clip. To make a longer piece that holds together, split the brief into shots — each shot becomes a clip and continuity carries the look forward.",
-                style: { fontSize: "10px", color: C.muted, lineHeight: "1.5", marginTop: "2px" } }),
             ];
             if (state.continuityMode === "onetake") {
               if (!ctx.availability?.TJ_H3_LatentContinuation) rows.push(el("div", {
                 html: "⚠ <code>TJ_H3_LatentContinuation</code> not installed — update the TJ_NODE pack, or switch Continuity to something else.",
                 style: { fontSize: "10px", color: C.warn, lineHeight: "1.5", marginTop: "4px" } }));
+              // The explanations are tooltips on the checkbox and its text, not paragraphs under them.
               rows.push(
+                checkboxRow("Write prompts with the One-Take rules (Prompt Write / Refine)", !!state.oneTakeLlm,
+                  v => { state.oneTakeLlm = v; persist(); renderLeft(); },
+                  { title: "On: the LLM follows the ONE_TAKE guide - one [Shot 1] per clip, the end state of each clip copied into the start of the next, fast actions finished 1.7 s before a clip ends. Extra [Shot N] in a result are folded into [Shot 1]; broken seams are flagged in the review.\nOff: prompts are written as usual.\nA prompt that says \"원테이크\" / \"one take\" turns this on by itself." }),
                 checkboxRow("Lock the whole audio stream (with Latent Continuation)", !!state.oneTakeLockAudio,
                   v => { state.oneTakeLockAudio = v; persist(); }),
                 checkboxRow("Auto-stitch into one clip when the run finishes (overlap trimmed)",
-                  state.oneTakeAutoStitch !== false, v => { state.oneTakeAutoStitch = v; persist(); renderLeft(); }),
-                el("div", { text: state.oneTakeAutoStitch !== false
-                    ? "The stitched result (overlap trimmed) is what lands in the Gallery. Per-clip files and checkpoints stay on disk too, for resuming a stopped run."
-                    : "Off — clips stay separate, same as any other run; nothing gets auto-combined.",
-                  style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+                  state.oneTakeAutoStitch !== false, v => { state.oneTakeAutoStitch = v; persist(); renderLeft(); },
+                  { title: "On: the stitched result (overlap trimmed) is what lands in the Gallery. Per-clip files and checkpoints stay on disk too, for resuming a stopped run.\nOff: clips stay separate, same as any other run; nothing gets auto-combined." }),
               );
               if (state.oneTakeAutoStitch !== false) rows.push(
                 checkboxRow("Replace with Audio Lock source (skip generated audio)",
                   !!state.oneTakeAudioOverride, v => { state.oneTakeAudioOverride = v; persist(); },
-                  { disabled: !state.audioLock || !state.lockAudioFile }),
-                el("div", { text: state.audioLock && state.lockAudioFile
-                    ? "The stitched result's audio track is swapped for the locked source file itself (trimmed to match), instead of the model's generated audio."
-                    : "Needs Audio Lock on with a file selected.",
-                  style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+                  { disabled: !state.audioLock || !state.lockAudioFile,
+                    title: "The stitched result's audio track is swapped for the locked source file itself (trimmed to match), instead of the model's generated audio.\nNeeds Audio Lock on with a file selected." }),
               );
             }
             return rows;

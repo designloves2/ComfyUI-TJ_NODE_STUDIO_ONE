@@ -77,20 +77,31 @@ export function clipFramesFor(state, i) {
 export function clipSecondsFor(state, i) { return framesToSeconds(clipFramesFor(state, i)); }
 
 /** Running clock of the run, in half-second steps: { start, end, sec } per prompt; a switched-off clip has start/end null.
- *  `sec` is the planned length (what was typed, or the global length); the frames really rendered are clipFramesFor(). */
+ *  `sec` is the planned length (what was typed, or the global length); the frames really rendered are clipFramesFor().
+ *  With Continuity = One-Take each clip after the first shares 1.625 s (39 frames) with the one before it, so the finished
+ *  video is shorter: fstart / fend are the clip's place in that stitched video (null otherwise). */
+export const ONE_TAKE_OVERLAP_SEC = 39 / 24;
 export function clipTimeline(state) {
-  let t = 0;
+  let t = 0, ft = 0, first = true;
+  const oneTake = state.continuityMode === "onetake";
   return (state.prompts || []).map((p, i) => {
     const o = p && typeof p === "object" && p.timeOverride && p.timeSec > 0;
     const sec = o ? snapClipSec(p.timeSec) : snapHalf(framesToSeconds(state.clipFrames ?? DEFAULT_FRAMES));
-    if (!promptEnabled(p)) return { start: null, end: null, sec };
-    const row = { start: t, end: t + sec, sec };
+    if (!promptEnabled(p)) return { start: null, end: null, sec, fstart: null, fend: null };
+    const row = { start: t, end: t + sec, sec, fstart: null, fend: null };
+    if (oneTake) {
+      row.fstart = ft;
+      row.fend = ft + (first ? sec : Math.max(0, sec - ONE_TAKE_OVERLAP_SEC));
+      ft = row.fend; first = false;
+    }
     t += sec;
     return row;
   });
 }
 
-const SHOT_TIME_RE = /\bAt[ \t]+(\d{1,2}):(\d{2}(?:\.\d+)?)/i;
+// A shot's start time is the "At MM:SS.mmm" right after its [Shot N] marker. An "At 00:02.000," further into the
+// paragraph (One-Take writes its 2-second development that way) belongs to the text and is left alone.
+const SHOT_LEAD_TIME_RE = /^([ \t>*_#-]*\[{1,2}[ \t]*(?:Shot|SHOT|shot|샷)[ \t]*\d+\]{1,2}[ \t:]*)At[ \t]+(\d{1,2}):(\d{2}(?:\.\d+)?)([ \t]*,?[ \t]*)/i;
 const SHOT_NUM_RE = /(\[{1,2}[ \t]*(?:Shot|SHOT|shot|샷)[ \t]*)(\d+)(\])/;
 const fmtShotTime = (s) => {
   const m = Math.floor(s / 60), r = s - m * 60;
@@ -105,9 +116,9 @@ function shotBlocks(text) {
   let m;
   while ((m = SHOT_LINE_RE.exec(raw)) !== null) marks.push({ at: m.index, line: m[0] });
   return marks.map((mk, k) => {
-    const tm = SHOT_TIME_RE.exec(mk.line);
+    const tm = SHOT_LEAD_TIME_RE.exec(mk.line);
     return { from: mk.at, to: k + 1 < marks.length ? marks[k + 1].at : raw.length, line: mk.line,
-             start: tm ? (+tm[1]) * 60 + (+tm[2]) : null };
+             start: tm ? (+tm[2]) * 60 + (+tm[3]) : null };
   });
 }
 
@@ -140,10 +151,10 @@ export function rebaseShots(text) {
     head = head.replace(SHOT_NUM_RE, (_, a, _n, c) => `${a}${k + 1}${c}`);
     if (k === 0) {
       // Shot 1 has no timestamp, and "the camera cuts to" no longer makes sense for the opening shot.
-      head = head.replace(/[ \t]*\bAt[ \t]+\d{1,2}:\d{2}(?:\.\d+)?[ \t]*,?/i, "")
+      head = head.replace(SHOT_LEAD_TIME_RE, "$1")
         .replace(/(\][ \t:]*)the camera cuts to[ \t]+(\w)/i, (_, a2, c) => a2 + c.toUpperCase());
     }
-    else if (b.start != null) head = head.replace(SHOT_TIME_RE, () => `At ${fmtShotTime(Math.max(0, b.start - base))}`);
+    else if (b.start != null) head = head.replace(SHOT_LEAD_TIME_RE, (_, pre, _m, _s, post) => `${pre}At ${fmtShotTime(Math.max(0, b.start - base))}${post}`);
     out += head + rest;
   });
   return out;
@@ -172,10 +183,69 @@ export function snapShotTimes(text, realSec) {
       const at = Math.max(snap(b.start), prev + 0.5);
       prev = at;
       const nl = block.indexOf("\n");
-      const head = (nl < 0 ? block : block.slice(0, nl)).replace(SHOT_TIME_RE, () => `At ${fmtShotTime(at)}`);
+      const head = (nl < 0 ? block : block.slice(0, nl)).replace(SHOT_LEAD_TIME_RE, (_, pre, _m, _s, post) => `${pre}At ${fmtShotTime(at)}${post}`);
       block = head + (nl < 0 ? "" : block.slice(nl));
     }
     out += block;
+  });
+  return out;
+}
+
+// ── One-Take rules for the brief writer (ONE_TAKE_Guide_Korean, chapter 8) ────────────────────────
+/** Whether Prompt Write / Refine should follow the One-Take guide: Continuity is One-Take and the box is ticked. */
+export const oneTakeLlmOn = (state) => state.continuityMode === "onetake" && !!state.oneTakeLlm;
+
+/** The rule block added to the brief request. `lens` = each clip's length in seconds; `prevEnding` = how the clip before ends. */
+export function oneTakeRules(lens, prevEnding = "") {
+  const cutoff = (l) => Math.max(0, l - 1.7).toFixed(1);
+  const lines = [
+    "ONE-TAKE MODE - the clips are chained into one continuous, unbroken take.",
+    "How it works: consecutive clips overlap by 39 frames (1.625 s). The first 1.625 s of clip N+1 re-renders the last 1.625 s of clip N, "
+    + "so the start of clip N+1 is a copy of the end state of clip N, not new content. New content of a clip begins at 2.0 s.",
+    "Rules:",
+    "1. Use exactly one [Shot 1] per clip. Never write [Shot 2] or higher - a shot number means a cut.",
+    "2. Write the development at 2.0 s in the same paragraph, as \"At 00:02.000, ...\" (later beats the same way, in the same paragraph).",
+    "3. End every clip by stating its exact final state, as if describing the last frame frozen: pose, direction, speed, camera position.",
+    "4. Open every clip after the first by copying that final state word for word - keep the noun phrases exactly, change only the verbs "
+    + "to \"is already ...ing\" / \"still\". Never rephrase it.",
+    "5. Finish fast or irreversible actions (strikes, jumps, throws, opening doors, sudden expressions) at least 1.7 s before the clip ends"
+    + (lens.length ? ` (cut-off per clip: ${lens.map((l, i) => `clip ${i + 1} ${cutoff(l)} s`).join(", ")})` : "")
+    + "; only slow, sustainable motion at the seam.",
+    "6. End each clip in motion (a moving vector), not stopped.",
+    "7. Describe every element on screen - supporting characters, VFX (and the direction they dissipate), props, performance, crowd - with identical wording on both sides of each seam.",
+    "8. State direction (left / right / clockwise) and speed (same steady pace) explicitly; the camera keeps moving too.",
+    "9. Start each clip with: \"The entire clip is a single uninterrupted shot with no cuts.\" and, from clip 2 on, "
+    + "\"The clip continues the same unbroken take; <the copied end state>.\"",
+  ];
+  if (prevEnding) lines.push("", `The clip before this one ends with: "${prevEnding}" - open this clip with that state, copied as rule 4 says.`);
+  return lines.join("\n");
+}
+
+/** One-Take clips have a single [Shot 1]: any [Shot N] after it is folded into its paragraph (its "At ...," stays). */
+export function oneTakeFixShots(text) {
+  const raw = String(text || "");
+  const blocks = shotBlocks(raw);
+  if (blocks.length < 2) return raw;
+  let out = raw.slice(0, blocks[0].from) + raw.slice(blocks[0].from, blocks[0].to).replace(/\s+$/, "");
+  for (let k = 1; k < blocks.length; k++) {
+    const part = raw.slice(blocks[k].from, blocks[k].to).replace(/^[ \t>*_#-]*\[{1,2}[ \t]*(?:Shot|SHOT|shot|샷)[ \t]*\d+\][ \t:]*/, "").trim();
+    out += " " + part.replace(/\bthe camera cuts to\b/i, "the camera moves to");   // one take: no cut
+  }
+  return out;
+}
+
+/** Rule breaks worth a warning, per clip: [{ clip, msg }]. `briefs` = each clip's whole brief text, in order. */
+export function oneTakeIssues(briefs) {
+  const out = [];
+  briefs.forEach((b, i) => {
+    const text = String(b || "");
+    const n = i + 1;
+    if (!/single uninterrupted shot/i.test(text)) out.push({ clip: n, msg: "no 'single uninterrupted shot' sentence" });
+    if (i > 0) {
+      const at = text.search(/\[{1,2}[ \t]*(?:Shot|SHOT|shot|샷)/);
+      const head = at >= 0 ? text.slice(Math.max(0, at - 700), at + 700) : text.slice(0, 1400);
+      if (!/\balready\b|\bstill\b/i.test(head)) out.push({ clip: n, msg: "opening does not copy the previous end state (no 'already' / 'still')" });
+    }
   });
   return out;
 }
@@ -1183,6 +1253,7 @@ export function defaultState(saved) {
     continuityMode: saved.continuityMode || "onetake",
     oneTakeLockAudio: saved.oneTakeLockAudio ?? false,
     oneTakeAutoStitch: saved.oneTakeAutoStitch ?? true,
+    oneTakeLlm: saved.oneTakeLlm ?? false,   // Prompt Write / Refine follow the ONE_TAKE guide while Continuity is One-Take
 
     // canvas / length
     aspect:      saved.aspect      || "9:16 Portrait",
