@@ -221,15 +221,24 @@ export function oneTakeRules(lens, prevEnding = "") {
   return lines.join("\n");
 }
 
-/** One-Take clips have a single [Shot 1]: any [Shot N] after it is folded into its paragraph (its "At ...," stays). */
-export function oneTakeFixShots(text) {
+/**
+ * One-Take clips have a single [Shot 1]: any [Shot N] after it is folded into its paragraph (its "At ...," stays), and a clip
+ * without the "single uninterrupted shot" sentence (in `context` - the clip's header - or in the text) gets it right after [Shot 1].
+ */
+export function oneTakeFixShots(text, context = "") {
   const raw = String(text || "");
   const blocks = shotBlocks(raw);
-  if (blocks.length < 2) return raw;
-  let out = raw.slice(0, blocks[0].from) + raw.slice(blocks[0].from, blocks[0].to).replace(/\s+$/, "");
-  for (let k = 1; k < blocks.length; k++) {
-    const part = raw.slice(blocks[k].from, blocks[k].to).replace(/^[ \t>*_#-]*\[{1,2}[ \t]*(?:Shot|SHOT|shot|샷)[ \t]*\d+\][ \t:]*/, "").trim();
-    out += " " + part.replace(/\bthe camera cuts to\b/i, "the camera moves to");   // one take: no cut
+  if (!blocks.length) return raw;
+  let out = raw;
+  if (blocks.length > 1) {
+    out = raw.slice(0, blocks[0].from) + raw.slice(blocks[0].from, blocks[0].to).replace(/\s+$/, "");
+    for (let k = 1; k < blocks.length; k++) {
+      const part = raw.slice(blocks[k].from, blocks[k].to).replace(/^[ \t>*_#-]*\[{1,2}[ \t]*(?:Shot|SHOT|shot|샷)[ \t]*\d+\][ \t:]*/, "").trim();
+      out += " " + part.replace(/\bthe camera cuts to\b/i, "the camera moves to");   // one take: no cut
+    }
+  }
+  if (!/single uninterrupted shot/i.test(`${context}\n${out}`)) {
+    out = out.replace(/(\[{1,2}[ \t]*(?:Shot|SHOT|shot|샷)[ \t]*1\][ \t:]*)/, "$1The entire clip is a single uninterrupted shot with no cuts. ");
   }
   return out;
 }
@@ -1672,7 +1681,10 @@ const ECHO_RE = /^[ \t>*_-]*(?:Target duration|Write exactly|The following image
 
 /** Split a brief into { header, shots[], footer }. Never loses text. */
 export function parseBrief(text) {
-  const raw = String(text || "").trim();
+  // A model sometimes writes the marker on the same line as the sentence before it ("... with no cuts. [Shot 1] A wide shot"),
+  // which is what the One-Take rules ask for ("The entire clip is a single uninterrupted shot ..."): a marker that follows
+  // the end of a sentence starts its own line, so the shots and the header are still told apart.
+  const raw = String(text || "").trim().replace(/([.!?:])[ \t]+(\[{1,2}[ \t]*(?:Shot|SHOT|shot|샷)[ \t]*\d+\])/g, "$1\n$2");
   if (!raw) return { header: "", shots: [], footer: "" };
 
   SHOT_LINE_RE.lastIndex = 0;

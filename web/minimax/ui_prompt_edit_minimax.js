@@ -2025,7 +2025,7 @@ ${name}`, style: {
       }
     }
     if (reviewMode !== "one" && oneTakeLlmOn(state)) {
-      const fold = (i) => { const c = state.prompts[i]; if (c && typeof c === "object") c.text = oneTakeFixShots(c.text); };
+      const fold = (i) => { const c = state.prompts[i]; if (c && typeof c === "object") c.text = oneTakeFixShots(c.text, c.header); };
       if (reviewTarget === "all") (state.prompts || []).forEach((_, i) => fold(i)); else fold(selected);
     }
     if (reviewMode !== "one") {

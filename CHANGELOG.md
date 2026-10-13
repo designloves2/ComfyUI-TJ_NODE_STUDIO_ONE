@@ -2,6 +2,16 @@
 
 ---
 
+## Unreleased
+
+### Fixes (found with a real 4-clip One-Take run: skydiver, OpenRouter, 7+1)
+- **A stitch can no longer freeze ComfyUI.** `/minimax_h3_one/stitch` ran `subprocess.run(ffmpeg, timeout=3600)` inside an `async` handler, so every
+  request waited until ffmpeg returned; when the bundled ffmpeg hung during the One-Take stitch the whole server stood still. The encodes now run
+  off the event loop (`_run_ffmpeg`), with `-nostdin` and no stdin. (Applies after the next ComfyUI restart.)
+- **Brief split when the model writes the marker on the same line** ("... with no cuts. [Shot 1] A wide shot ...", what the One-Take rules ask for):
+  `parseBrief` now starts a new line before a `[Shot N]` that follows the end of a sentence, so the header / shot / sound-music split of every clip works.
+- **One-Take: the "single uninterrupted shot" sentence** is added right after `[Shot 1]` when a clip came back without it (clip text and header are checked).
+
 ## v1.40.1 (2026-10-13)
 
 ### Fixes

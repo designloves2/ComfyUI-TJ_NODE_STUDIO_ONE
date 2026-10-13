@@ -3509,6 +3509,15 @@ async def mmh3_clip_last_frame(request):
     return web.json_response({"ok": True, "filename": dst_name})
 
 
+async def _run_ffmpeg(cmd, timeout):
+    """Run a long ffmpeg encode off the event loop. subprocess.run() inside an async handler froze every ComfyUI
+    request until ffmpeg returned - up to the whole timeout when an encode hung (found on a One-Take stitch).
+    No stdin either, so ffmpeg never waits for a key."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: subprocess.run(
+        cmd[:1] + ["-nostdin"] + cmd[1:], capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL))
+
+
 @PromptServer.instance.routes.post("/minimax_h3_one/stitch")
 async def mmh3_stitch(request):
     """Concatenate the per-clip video files into one file (stream copy, no re-encode).
@@ -3636,7 +3645,7 @@ async def mmh3_stitch(request):
                 cmd += ["-map", "[outa]"]
             cmd += ["-c:v", "libx264", "-crf", "18", "-preset", "medium", "-c:a", "aac",
                     "-movflags", "+faststart", out_path]
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+            proc = await _run_ffmpeg(cmd, 3600)
             if proc.returncode != 0 or not os.path.isfile(out_path):
                 return web.json_response(
                     {"ok": False, "error": (proc.stderr or "ffmpeg failed")[:800]}, status=500)
@@ -3676,7 +3685,7 @@ async def mmh3_stitch(request):
         # play the file over HTTP without it. faststart re-passes even with -c copy.
         cmd += ["-movflags", "+faststart", out_path]
 
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+        proc = await _run_ffmpeg(cmd, 1800)
         try:
             os.remove(list_path)
         except OSError:
@@ -3693,7 +3702,7 @@ async def mmh3_stitch(request):
             if trim and trim > 0:
                 cmd_re += ["-t", f"{trim:.3f}"]
             cmd_re += ["-movflags", "+faststart", out_path]
-            proc = subprocess.run(cmd_re, capture_output=True, text=True, timeout=3600)
+            proc = await _run_ffmpeg(cmd_re, 3600)
             try:
                 os.remove(list_path)
             except OSError:
