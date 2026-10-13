@@ -2,7 +2,7 @@
 
 ---
 
-## Unreleased
+## v1.40.2
 
 ### Fixes (found with a real 4-clip One-Take run: skydiver, OpenRouter, 7+1)
 - **A stitch can no longer freeze ComfyUI.** `/minimax_h3_one/stitch` ran `subprocess.run(ffmpeg, timeout=3600)` inside an `async` handler, so every
