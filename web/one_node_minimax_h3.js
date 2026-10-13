@@ -27,7 +27,7 @@ import {
   CHARSHEET_PROMPT_TEMPLATE,
   clipPlan, formatDuration, formatClock, framesToSeconds, alignFrameCount, FPS, ONE_TAKE_OVERLAP_FRAMES, resolveResolution,
   parseBrief, groupShots, composeClipPrompt, composeStitchedPrompt,
-  turboLoraForMode, pddFileForMode, clipAssets, flLibrarySource, normalizeAssetRef, explainGenerationError,
+  turboLoraForMode, pddFileForMode, clipAssets, flLibrarySource, clipFramesFor, clipSecondsFor, normalizeAssetRef, explainGenerationError,
   promptText, promptFirstFrame, promptEnabled, activePrompts, buildAgentJob,
 } from "./minimax/core_minimax.js";
 import { downloadAgentJob, agentStamp } from "./shared/agent_job.js";
@@ -6225,7 +6225,7 @@ app.registerExtension({
 
             const modeForClip = (continued || overridden) ? "firstlast" : rs.generationMode;
 
-            const clipState = { ...rs, generationMode: modeForClip };
+            const clipState = { ...rs, generationMode: modeForClip, clipFrames: clipFramesFor(rs, i) };
             // Library assets / project of this clip (its own when overriding, else the node's). A
             // chained clip starts from the previous clip's last frame, so a library First frame
             // does not apply to it.
@@ -6359,6 +6359,7 @@ app.registerExtension({
               // The library set this clip actually rendered with (its own when overriding), not
               // the node's common one metaForVideo() reads from `rs`.
               clipMeta.assetRef = clipState.assetRef ? { ...clipState.assetRef, ids: [...(clipState.assetRef.ids || [])] } : null;
+              clipMeta.frames = clipState.clipFrames;   // this clip's own length, not the global one
               // An inline upscale changes the frame size metaForVideo() can't predict, so
               // re-probe the file. Deblur alone never resizes — skip the round trip for it.
               if (ran?.upscale || ran?.hires) await reconcileGeometry(clipMeta, vid);
@@ -6446,7 +6447,7 @@ app.registerExtension({
               // would make the Gallery show this combined file's length as one clip's
               // length. durationSeconds carries the real total; frames:null stops the
               // per-clip value from being misread as this file's own.
-              const totalSeconds = clipRecords.length * framesToSeconds(rs.clipFrames || 192)
+              const totalSeconds = active.slice(0, clipRecords.length).reduce((sum, { i }) => sum + clipSecondsFor(rs, i), 0)
                 - (clipRecords.length - 1) * overlapSec;
               const oneTakeMeta = metaForVideo(
                 active.map(({ i }) => promptForClip(i, rs)).join("\n\n"),

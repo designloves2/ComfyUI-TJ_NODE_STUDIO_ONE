@@ -2,6 +2,34 @@
 
 ---
 
+## Unreleased
+
+### MiniMax H3 Prompt Edit: clip time, override colours, cleaner split
+- **Clip time override**: a checkbox + seconds box above the clip editor gives a clip its own length (1 s up to the
+  longest clip; the model only takes 17k+5 frames, so it snaps to the nearest — 1 s is 22 frames, 10 s is 243). Without
+  it a clip uses the global clip length. Rendering, the plan total and the stitched total use each clip's own length.
+- The **CLIPS** list shows each clip's running clock (`0~10 sec`, `10~15 sec`, ...) and, beside it, each shot's range
+  inside the clip (`[shot 1] 0~5`, `[shot 2] 5~10`). A clip with an override is orange-yellow, one whose override is the
+  Asset Library is pink. The list is wider for it.
+- **"override for this clip"** moved to the clip time row (right end). Ticking it unfolds LOCAL ENHANCE if it is folded.
+- **Shot times restart in every clip.** Split into clips (the ✂ dialog, Auto Split, Use selected) renumbers the shots of
+  each clip from `[Shot 1]` with no timestamp and counts `At MM:SS.mmm` from the clip's own start; time only carries on
+  between shots of the same clip. The LLM request says the same, and lists each clip's own length.
+- **Prompt Write, "split into all clips"**: the request asks for one full brief per clip (`subject_definitions`, `summary`,
+  `retention_analysis`, `SCENARIO`, `technical_settings`, `detailed_description` + the `[Shot N]` blocks, then
+  `overall_soundscape`, `non_diegetic_music`). Auto Split puts each clip's header sections into its THIS CLIP — HEADER,
+  the shots into the clip prompt and the sound/music into THIS CLIP — SOUND / MUSIC (override on, references carried over).
+  A single brief still goes to the common header / sound / music as before.
+- A clip that already has its own header and sound/music is written from **THIS CLIP — HEADER + clip prompt + THIS
+  CLIP — SOUND / MUSIC** together, and the result goes back into those three fields. "→ this clip" asks for one clip
+  of that clip's length.
+- Brief splitting is stricter: `[Shot N]` also matches `[shot 1]`, `[[Shot 2] …]` and bold/markdown lines, and the tail starts
+  at `overall_soundscape:` / `non_diegetic_music:` first, so a shot's own "Audio:" or "Music:" line no longer cuts it short.
+- ✨ **Prompt Write** and 🔧 **Prompt Refine** sit beside ✓ Done, always visible (also when LOCAL ENHANCE is folded).
+- **First / Last** in LOCAL ENHANCE has the same **Source** switch as Reference (Files / Gallery or Asset Library), in step with
+  the main screen; the Asset Library block takes the full width with the Load result on its right instead of underneath.
+- **COMMON — HEADER / SOUND** boxes keep the height you drag them to (remembered) and are no longer resized to their text.
+
 ## v1.39.0 (2026-10-13)
 
 ### MiniMax H3 — Image to Video (F/L): Files / Gallery or Asset Library

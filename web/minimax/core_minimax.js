@@ -51,6 +51,91 @@ export function alignFrameCount(n) {
   return f;
 }
 
+// Per-clip time override (Prompt Edit): a clip with `timeOverride` on renders `timeSec` seconds
+// (1 s up) instead of the global clip length. The model only takes 17k+5 frames, so the length
+// snaps to the nearest such count (1 s -> 22 frames); the top is the global list's longest clip.
+export const CLIP_MAX_FRAMES = 362;
+export function clipFramesFor(state, i) {
+  const p = (state.prompts || [])[i];
+  if (p && typeof p === "object" && p.timeOverride && p.timeSec > 0) {
+    const k = Math.max(1, Math.round((p.timeSec * FPS - 5) / 17));
+    return Math.min(CLIP_MAX_FRAMES, 17 * k + 5);
+  }
+  return state.clipFrames ?? DEFAULT_FRAMES;
+}
+export function clipSecondsFor(state, i) { return framesToSeconds(clipFramesFor(state, i)); }
+
+/** Running clock of the run: { start, end, sec } per prompt; a switched-off clip has start/end null. */
+export function clipTimeline(state) {
+  let t = 0;
+  return (state.prompts || []).map((p, i) => {
+    const sec = clipSecondsFor(state, i);
+    if (!promptEnabled(p)) return { start: null, end: null, sec };
+    const row = { start: t, end: t + sec, sec };
+    t += sec;
+    return row;
+  });
+}
+
+const SHOT_TIME_RE = /\bAt[ \t]+(\d{1,2}):(\d{2}(?:\.\d+)?)/i;
+const SHOT_NUM_RE = /(\[{1,2}[ \t]*(?:Shot|SHOT|shot|샷)[ \t]*)(\d+)(\])/;
+const fmtShotTime = (s) => {
+  const m = Math.floor(s / 60), r = s - m * 60;
+  return `${String(m).padStart(2, "0")}:${r.toFixed(3).padStart(6, "0")}`;
+};
+
+/** The [Shot N] blocks of a clip's text, each with the start second it names (null = none written). */
+function shotBlocks(text) {
+  const raw = String(text || "");
+  SHOT_LINE_RE.lastIndex = 0;
+  const marks = [];
+  let m;
+  while ((m = SHOT_LINE_RE.exec(raw)) !== null) marks.push({ at: m.index, line: m[0] });
+  return marks.map((mk, k) => {
+    const tm = SHOT_TIME_RE.exec(mk.line);
+    return { from: mk.at, to: k + 1 < marks.length ? marks[k + 1].at : raw.length, line: mk.line,
+             start: tm ? (+tm[1]) * 60 + (+tm[2]) : null };
+  });
+}
+
+/** [{ n, start, end }] per shot of one clip, in seconds from the clip's own start (end of the last = clipSec). */
+export function shotRanges(text, clipSec) {
+  const blocks = shotBlocks(text);
+  const starts = blocks.map((b, k) => (k === 0 ? 0 : (b.start ?? null)));
+  return blocks.map((b, k) => {
+    const next = starts.slice(k + 1).find(v => v != null);
+    return { n: k + 1, start: starts[k] ?? 0, end: next ?? clipSec };
+  });
+}
+
+/**
+ * A clip is its own video, so its shots start over: [Shot 1] with no timestamp, the next ones
+ * counted from there. Time only carries on between the shots of the same clip. Text with no
+ * [Shot N] marker is returned as it is.
+ */
+export function rebaseShots(text) {
+  const raw = String(text || "");
+  const blocks = shotBlocks(raw);
+  if (!blocks.length) return raw;
+  const base = blocks[0].start ?? 0;
+  let out = raw.slice(0, blocks[0].from);
+  blocks.forEach((b, k) => {
+    let block = raw.slice(b.from, b.to);
+    const nl = block.indexOf("\n");
+    let head = nl < 0 ? block : block.slice(0, nl);
+    const rest = nl < 0 ? "" : block.slice(nl);
+    head = head.replace(SHOT_NUM_RE, (_, a, _n, c) => `${a}${k + 1}${c}`);
+    if (k === 0) {
+      // Shot 1 has no timestamp, and "the camera cuts to" no longer makes sense for the opening shot.
+      head = head.replace(/[ \t]*\bAt[ \t]+\d{1,2}:\d{2}(?:\.\d+)?[ \t]*,?/i, "")
+        .replace(/(\][ \t:]*)the camera cuts to[ \t]+(\w)/i, (_, a2, c) => a2 + c.toUpperCase());
+    }
+    else if (b.start != null) head = head.replace(SHOT_TIME_RE, () => `At ${fmtShotTime(Math.max(0, b.start - base))}`);
+    out += head + rest;
+  });
+  return out;
+}
+
 // One-Take's overlap window, in real (24fps) frames — fixed, not user-configurable.
 // The stitch trim has to match exactly what TJ_H3_LatentContinuation used, and letting
 // the two drift apart (e.g. changed mid-run) would silently mis-stitch a finished run,
@@ -214,7 +299,7 @@ export function clipPlan(state, clipFramesOverride, avgMinutesPerClip) {
   const total   = Math.max(1, (state.prompts || [""]).length);
   const count   = Math.max(0, activePrompts(state).length);
   const avg     = avgMinutesPerClip ?? state.avgMinutesPerClip ?? 13;
-  const actualSeconds = count * clipSec;
+  const actualSeconds = activePrompts(state).reduce((sum, { i }) => sum + (clipFramesOverride != null ? clipSec : clipSecondsFor(state, i)), 0);
 
   // One-Take + auto-stitch: the finished result isn't `count` clips end-to-end — each
   // clip after the first shares `overlap` seconds with the previous one (that's the whole
@@ -1083,7 +1168,7 @@ export function defaultState(saved) {
       .map(p => (typeof p === "string"
         ? { text: p, firstFrame: "", enabled: true, override: false,
             refImages: [], refImagesMp: [], lastFrame: "", refVideos: [], refAudios: [],
-            assetRef: null, refSource: "files", header: "", footer: "" }
+            assetRef: null, refSource: "files", header: "", footer: "", timeOverride: false, timeSec: 0 }
         : { text: p?.text || "", firstFrame: p?.firstFrame || "", enabled: p?.enabled !== false,
             override: !!p?.override,
             refImages:   Array.isArray(p?.refImages) ? p.refImages.slice(0, 9) : [],
@@ -1096,7 +1181,10 @@ export function defaultState(saved) {
             refSource:   p?.refSource === "library" ? "library" : "files",
             // header/tail follow the override too - see clipFraming()
             header:      p?.header || "",
-            footer:      p?.footer || "" })),
+            footer:      p?.footer || "",
+            // this clip's own length (Prompt Edit "clip time override") - see clipFramesFor()
+            timeOverride: !!p?.timeOverride,
+            timeSec:     Number(p?.timeSec) > 0 ? Number(p.timeSec) : 0 })),
     // clips rendered per prompt (>1 continues the same description across chained clips)
     promptHeader: saved.promptHeader || "",
     promptFooter: saved.promptFooter || "",
@@ -1454,7 +1542,7 @@ export function randomSeed() { return Math.floor(Math.random() * 1e15); }
 // visual style and opening composition, the [Shot N] blocks, and trailing
 // "Ambient sound:" / "Music:" paragraphs. The preamble and tail apply to every clip, so
 // they are kept aside and re-attached at queue time instead of being split away.
-const SHOT_LINE_RE = /^[ \t]*\[(?:Shot|SHOT|샷)[ \t]*\d+\][^\n]*$/gm;
+const SHOT_LINE_RE = /^[ \t>*_#-]*\[{1,2}[ \t]*(?:Shot|SHOT|shot|샷)[ \t]*\d+\][^\n]*$/gm;
 // The brief model ends with an audio section. It has two output styles: the simple one
 // ("Ambient sound:" / "Music:") and the structured one ("overall_soundscape:" /
 // "non_diegetic_music:", sometimes markdown-bolded). Match both, plus the underscore and
@@ -1462,6 +1550,9 @@ const SHOT_LINE_RE = /^[ \t]*\[(?:Shot|SHOT|샷)[ \t]*\d+\][^\n]*$/gm;
 const TAIL_RE = /^[ \t>*_-]*(?:Ambient[ _]?sound|Ambience|Sound(?:[ _]?design|scape)?|Music|Soundtrack|Score|overall[ _]?soundscape|non[ _-]?diegetic[ _]?music|diegetic[ _]?sound|SFX|Foley|Audio|배경음|음악|사운드|효과음)[ \t_*]*:/i;
 // The model sometimes echoes its own instructions / the vision analysis back at the end
 // of a block. Everything from the first such line to the end of that block is dropped.
+// The structured audio labels of the H3 brief. They are the one reliable sign that the tail
+// starts; a shot's own "Audio:" / "Music:" line must not cut the last shot short.
+const STRUCT_TAIL_RE = /^[ \t>*_#-]*(?:overall[ _]?soundscape|non[ _-]?diegetic[ _]?music)[ \t_*]*:/i;
 const ECHO_RE = /^[ \t>*_-]*(?:Target duration|Write exactly|The following images?|USER REQUEST|Structure:|Output ONLY|Refer to media|Image \d+\s*:)/i;
 
 /** Split a brief into { header, shots[], footer }. Never loses text. */
@@ -1491,6 +1582,9 @@ export function parseBrief(text) {
   const lines = last.split("\n");
   let cut = -1;
   for (let i = 1; i < lines.length; i++) {
+    if (STRUCT_TAIL_RE.test(lines[i])) { cut = i; break; }
+  }
+  if (cut < 0) for (let i = 1; i < lines.length; i++) {
     if (TAIL_RE.test(lines[i])) { cut = i; break; }
   }
   if (cut > 0) {
@@ -1521,12 +1615,12 @@ export function groupShots(shots, groups, breaks) {
     let prev = 0;
     for (const c of cuts) { out.push(shots.slice(prev, c)); prev = c; }
     out.push(shots.slice(prev));
-    return out.map(g => g.join("\n\n"));
+    return out.map(g => rebaseShots(g.join("\n\n")));
   }
   const n = Math.max(1, Math.min(groups || 1, shots.length));
   const per = Math.ceil(shots.length / n);
   const out = [];
-  for (let i = 0; i < shots.length; i += per) out.push(shots.slice(i, i + per).join("\n\n"));
+  for (let i = 0; i < shots.length; i += per) out.push(rebaseShots(shots.slice(i, i + per).join("\n\n")));
   return out;
 }
 
@@ -1695,7 +1789,7 @@ export function buildAgentJob(state, i, presetName = null) {
   const job = {
     mode,
     preset: presetName,
-    durationSeconds: framesToSeconds(state.clipFrames ?? 192),
+    durationSeconds: clipSecondsFor(state, i),
     megapixels: state.megapixels,
     aspect: state.aspect,
     seed: state.seedMode === "randomize" ? null : seed,

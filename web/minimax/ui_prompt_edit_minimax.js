@@ -6,7 +6,7 @@
 //
 // The brief-writing instruction is the same "Minimax H3 (Video)" system prompt TJ_NODE
 // ships, fetched from the backend (with a built-in fallback when TJ_NODE isn't present).
-import { C, BRAND, el, clear, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt, imageBriefMax, promptText, promptFirstFrame, promptEnabled, clipAssets, clipFraming, promptOverrides, normalizeAssetRef } from "./core_minimax.js";
+import { C, BRAND, el, clear, clipSecondsFor, clipFramesFor, clipTimeline, shotRanges, rebaseShots, activePrompts, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt, imageBriefMax, promptText, promptFirstFrame, promptEnabled, clipAssets, clipFraming, promptOverrides, normalizeAssetRef } from "./core_minimax.js";
 import { panel, label, button, select, row, col } from "../klein/ui_common.js";
 import { buildClipMediaSlots } from "./ui_clip_media_slots.js";
 import { openVideoGalleryPicker } from "./ui_video_picker_minimax.js";
@@ -356,21 +356,22 @@ This cannot be undone.`,
 
   // ── shared header / footer ─────────────────────────────────────────────────
   // These go into every clip, so they're edited once and kept out of the split.
-  function commonField(placeholder, get, set) {
+  function commonField(placeholder, get, set, sizeKey) {
     const ta = el("textarea", { placeholder, style: {
       width: "100%", boxSizing: "border-box", flexShrink: "0",
-      minHeight: "104px", maxHeight: "320px",
+      minHeight: "104px",
       background: C.bg2, color: C.text, border: `1px solid ${C.border}`, borderRadius: "6px",
       padding: "6px 8px", fontSize: "11.5px", lineHeight: "1.5", fontFamily: "inherit",
       outline: "none", resize: "vertical", overflowY: "auto",
     }});
-    // Grow to the text instead of scrolling a fixed box. A header long enough to matter is
-    // the normal case here, and reading it four lines at a time through a scrollbar — while
-    // the empty tail box beside it sits the same size — was the actual complaint.
-    ta.autoSize = () => {
-      ta.style.height = "auto";
-      ta.style.height = Math.max(104, Math.min(320, ta.scrollHeight + 2)) + "px";
-    };
+    // The box keeps the height the user dragged it to (remembered across sessions); it is never
+    // resized to its text. autoSize stays as a no-op for the callers that still invoke it.
+    ta.autoSize = () => {};
+    try { const h = localStorage.getItem(sizeKey); if (h) ta.style.height = h; } catch { /* default height */ }
+    new ResizeObserver(() => {
+      if (!ta.offsetHeight) return;   // popup hidden
+      try { localStorage.setItem(sizeKey, `${ta.offsetHeight}px`); } catch { /* not remembered */ }
+    }).observe(ta);
     ta.value = get() || "";
     ta.addEventListener("input", () => { set(ta.value); ta.autoSize(); ctx.persist(); refreshPreviewTag(); });
     ta.addEventListener("focus", () => ta.style.borderColor = BRAND);
@@ -384,10 +385,10 @@ This cannot be undone.`,
   const framingTarget = () => (ownFraming() ? (state.prompts[selected]) : state);
   const headerTA = commonField("Opening — visual style, grade, opening composition…",
     () => clipFraming(state, selected).header,
-    v => { const t = framingTarget(); if (ownFraming()) t.header = v; else t.promptHeader = v; });
+    v => { const t = framingTarget(); if (ownFraming()) t.header = v; else t.promptHeader = v; }, "mmh3_pe_header_h");
   const footerTA = commonField("Tail — Ambient sound: … / Music: …",
     () => clipFraming(state, selected).footer,
-    v => { const t = framingTarget(); if (ownFraming()) t.footer = v; else t.promptFooter = v; });
+    v => { const t = framingTarget(); if (ownFraming()) t.footer = v; else t.promptFooter = v; }, "mmh3_pe_footer_h");
 
   const headerLbl = el("div", { text: "COMMON — HEADER", style: { color: C.muted, fontSize: "9.5px", letterSpacing: "0.06em" } });
   const footerLbl = el("div", { text: "COMMON — SOUND / MUSIC", style: { color: C.muted, fontSize: "9.5px", letterSpacing: "0.06em" } });
@@ -418,7 +419,7 @@ This cannot be undone.`,
 
   // ── body: clip list | editor ───────────────────────────────────────────────
   const body = el("div", { style: { flex: "1", display: "flex", gap: "10px", minHeight: "0" } });
-  const listCol = el("div", { style: { width: "190px", flexShrink: "0", display: "flex", flexDirection: "column", gap: "5px" } });
+  const listCol = el("div", { style: { width: "252px", flexShrink: "0", display: "flex", flexDirection: "column", gap: "5px" } });
   const listHdr = el("div", { style: { display: "flex", alignItems: "center", gap: "4px" } });
   listHdr.appendChild(el("div", { text: "CLIPS", style: { color: C.muted, fontSize: "10px", letterSpacing: "0.06em" } }));
   const onCountTag = el("div", { style: { color: C.muted, fontSize: "9.5px", flex: "1" } });
@@ -570,14 +571,98 @@ This cannot be undone.`,
     editor.disabled = busy;
     ctx.setPromptBusy?.(busy, label);
   }
-  editCol.append(editHdr, editorWrap, fiRow, fiHint);
+  // Clip time override: the clip renders its own length instead of the global clip length. The
+  // seconds snap to the model's frame grid (17k+5), so the note shows what is really rendered.
+  const timeRow = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" } });
+  const timeChk = el("input", { type: "checkbox" });
+  timeChk.style.cursor = "pointer";
+  const timeChkLbl = el("label", { style: { display: "flex", alignItems: "center", gap: "5px", fontSize: "10.5px",
+    cursor: "pointer" } }, [timeChk, el("span", { text: "clip time override" })]);
+  const timeIn = el("input", { type: "number", min: "1", max: "15.1", step: "0.5", style: {
+    width: "64px", boxSizing: "border-box", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+    borderRadius: "6px", padding: "3px 6px", fontSize: "11px", fontFamily: "inherit", outline: "none", textAlign: "center",
+  }});
+  const timeNote = el("div", { style: { fontSize: "10px", color: C.muted } });
+  function renderTimeRow() {
+    const p = normPrompt((state.prompts || [])[selected] || {});
+    const on = !!p.timeOverride;
+    timeChk.checked = on;
+    timeChkLbl.style.color = on ? "#ffb020" : C.muted;
+    timeIn.disabled = !on;
+    timeIn.style.opacity = on ? "1" : "0.4";
+    if (on) timeIn.value = String(Number((p.timeSec || 0).toFixed(2)));
+    else timeIn.value = "";
+    renderOverrideChk();
+    const global = state.clipFrames ?? 192;
+    timeNote.textContent = on
+      ? `renders ${clipSecondsFor(state, selected).toFixed(2)}s (${clipFramesFor(state, selected)} frames)`
+      : `global ${(global / 24).toFixed(2)}s`;
+  }
+  function timeChanged() {
+    ctx.persist(); renderTimeRow(); renderList(); refreshPlanTag(); refreshPreviewTag(); ctx.refreshModes?.();
+  }
+  timeChk.addEventListener("change", () => {
+    state.prompts[selected] = normPrompt(state.prompts[selected]);
+    const p = state.prompts[selected];
+    p.timeOverride = timeChk.checked;
+    if (timeChk.checked && !(p.timeSec > 0)) p.timeSec = Math.round(((state.clipFrames ?? 192) / 24) * 10) / 10;
+    timeChanged();
+  });
+  timeIn.addEventListener("change", () => {
+    state.prompts[selected] = normPrompt(state.prompts[selected]);
+    const v = parseFloat(timeIn.value);
+    if (v > 0) state.prompts[selected].timeSec = v;
+    timeChanged();
+  });
+  // "override for this clip" - the clip's own references, header and sound / music. Ticking it
+  // unfolds LOCAL ENHANCE (where those are edited) if it is folded; an unfolded one stays as it is.
+  const ovChk = el("input", { type: "checkbox" });
+  ovChk.style.cursor = "pointer";
+  const ovLbl = el("label", { style: { display: "flex", alignItems: "center", gap: "5px", fontSize: "10.5px",
+    cursor: "pointer", marginLeft: "auto", flexShrink: "0" } }, [ovChk, el("span", { text: "override for this clip" })]);
+  function renderOverrideChk() {
+    const p = normPrompt((state.prompts || [])[selected] || {});
+    ovChk.checked = !!p.override;
+    // A clip switched off for a resume has nothing to override - grey it out.
+    ovChk.disabled = !promptEnabled(p);
+    ovChk.style.cursor = ovChk.disabled ? "default" : "pointer";
+    ovLbl.style.color = p.override ? BRAND : C.text;
+  }
+  ovChk.addEventListener("change", () => {
+    state.prompts[selected] = normPrompt(state.prompts[selected]);
+    const p = state.prompts[selected];
+    p.override = ovChk.checked;
+    // Starting from the common set is the useful default: an override almost always
+    // means "these, but swap one", not "start from nothing".
+    if (ovChk.checked && !(p.refImages || []).length) {
+      p.refImages = (state.refImages || []).slice();
+      p.refImagesMp = (state.refImagesMp || []).slice();
+    }
+    if (ovChk.checked && !p.assetRef) {
+      p.refSource = state.refSource || "files";
+      p.assetRef = state.assetRef ? { ...state.assetRef, ids: [...(state.assetRef.ids || [])] } : null;
+    }
+    // The header and the sound/music tail describe the scene the images establish, so
+    // they follow the override too - seeded from the common pair the first time, which
+    // gives the user something to edit rather than two empty boxes.
+    if (ovChk.checked && !p.header && !p.footer) {
+      p.header = state.promptHeader || "";
+      p.footer = state.promptFooter || "";
+    }
+    if (ovChk.checked && state.enhCollapsed) { state.enhCollapsed = false; applyEnhCollapsed(); }
+    ctx.persist(); renderImageRow(); refreshFraming(); renderList(); renderOverrideChk(); ctx.refreshModes?.();
+  });
+  timeRow.append(timeChkLbl, timeIn, el("div", { text: "sec", style: { fontSize: "10px", color: C.muted } }), timeNote, ovLbl);
+  editCol.append(editHdr, timeRow, editorWrap, fiRow, fiHint);
   body.append(listCol, editCol);
 
   function updateCount() { refreshPreviewTag(); }
 
+  const fmtSec = (s) => String(Number(s.toFixed(1)));
   function renderList() {
     clear(listBox);
     let onCount = 0;
+    const timeline = clipTimeline(state);
     (state.prompts || []).forEach((raw, i) => {
       const p = normPrompt(raw);
       if (promptEnabled(p)) onCount++;
@@ -598,12 +683,24 @@ This cannot be undone.`,
         state.prompts[i].enabled = cb.checked;
         ctx.persist(); renderList();
       });
-      const rowLabel = el("div", {
-        text: `${i + 1} - Clip Prompt #${i + 1}`,
-        style: { flex: "1", fontSize: "10.5px", color: active ? C.text : C.muted,
-                 fontWeight: active ? "700" : "400",
-                 overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-      });
+      // A clip with its own override reads orange-yellow in the list; one whose override is the
+      // Asset Library reads pink. The running clock and each shot's range sit under / beside it.
+      const ownClip = promptOverrides(p);
+      const libClip = ownClip && p.refSource === "library";
+      const labelColor = libClip ? "#ff6fb5" : ownClip ? "#ffb020" : (active ? C.text : C.muted);
+      const tl = timeline[i];
+      const shots = shotRanges(promptText(p), tl.sec);
+      const rowLabel = el("div", { style: { flex: "1", minWidth: "0", display: "flex", flexDirection: "column", gap: "1px" } }, [
+        el("div", { text: `${i + 1} - Clip Prompt #${i + 1}`,
+          style: { fontSize: "10.5px", color: labelColor, fontWeight: (active || ownClip) ? "700" : "400",
+                   overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }),
+        el("div", { text: tl.start == null ? "off" : `${fmtSec(tl.start)}~${fmtSec(tl.end)} sec${p.timeOverride ? " ⏱" : ""}`,
+          title: p.timeOverride ? "This clip has its own length" : "Global clip length",
+          style: { fontSize: "9.5px", color: p.timeOverride ? "#ffb020" : C.muted } }),
+      ]);
+      const shotCol = shots.length ? el("div", { style: { display: "flex", flexDirection: "column", gap: "1px", flexShrink: "0" } },
+        shots.map(s => el("div", { text: `[shot ${s.n}] ${fmtSec(s.start)}~${fmtSec(s.end)}`,
+          style: { fontSize: "9.5px", color: C.muted, whiteSpace: "nowrap" } }))) : null;
       const del = el("button", { type: "button", text: "✕", title: "Remove", style: {
         flexShrink: "0", cursor: "pointer", background: "transparent", color: C.muted,
         border: "none", fontSize: "10px", padding: "0 2px",
@@ -650,7 +747,7 @@ This cannot be undone.`,
         ctx.persist(); renderList(); loadSelected(); renderImageRow(); refreshFraming();
       });
 
-      item.append(cb, rowLabel, del);
+      item.append(cb, rowLabel, ...(shotCol ? [shotCol] : []), del);
       listBox.appendChild(item);
     });
     refreshOnCountTag(onCount, (state.prompts || []).length);
@@ -663,6 +760,7 @@ This cannot be undone.`,
     editor.value = promptText(p);
     editorUndoClear.resetStack?.();
     editTitle.textContent = `Clip ${selected + 1}`;
+    renderTimeRow();
     updateCount();
     renderFirstFrameRow();
   }
@@ -762,7 +860,7 @@ This cannot be undone.`,
   function targetPlan() {
     const plan = ctx.currentPlan?.() || { count: 1, clipSec: 8 };
     const secs = parseTargetSeconds(lenIn.value);
-    if (!(secs > 0)) return { shots: plan.count, seconds: plan.count * plan.clipSec, clipSec: plan.clipSec, fromField: false };
+    if (!(secs > 0)) return { shots: plan.count, seconds: plan.actualSeconds ?? plan.count * plan.clipSec, clipSec: plan.clipSec, fromField: false };
     const shots = Math.max(1, Math.round(secs / plan.clipSec));
     return { shots, seconds: shots * plan.clipSec, clipSec: plan.clipSec, fromField: true };
   }
@@ -786,35 +884,6 @@ This cannot be undone.`,
     imgRow.style.display = state.enhCollapsed ? "none" : imgRow._flow;
     if (enhMode !== "image") return;
 
-    // First/Last mode has nothing to attach here — the two frames are the main screen's
-    // own start/end images (or this clip's "Continue generating the clip" override,
-    // above), so this is a read-only preview of what Prompt Write/Refine will actually
-    // send, not a second place to edit them.
-    if (state.briefImageMode === "fl") {
-      const a = clipAssets(state, selected);
-      const libIds = flLibraryIds();
-      const thumb = (src, tag, libId) => {
-        const box = el("div", { style: {
-          width: "72px", height: "72px", borderRadius: "6px", border: `1px solid ${C.border}`,
-          background: "#000", display: "flex", alignItems: "center", justifyContent: "center",
-          overflow: "hidden", flexShrink: "0",
-        }});
-        if (libId) box.appendChild(el("img", { src: reflib.memberThumbUrl(libId),
-          style: { width: "100%", height: "100%", objectFit: "cover" } }));
-        else if (src) box.appendChild(el("img", { src: `/view?filename=${encodeURIComponent(src)}&type=input&t=${Date.now()}`,
-          style: { width: "100%", height: "100%", objectFit: "cover" } }));
-        else box.appendChild(el("div", { text: "none", style: { color: C.muted, fontSize: "10px" } }));
-        return el("div", { style: { display: "flex", flexDirection: "column", gap: "4px", alignItems: "center" } },
-          [box, el("div", { text: tag, style: { fontSize: "9.5px", color: C.muted } })]);
-      };
-      imgRow.append(
-        el("div", { text: (libIds.first || libIds.last ? "First/Last frame (Asset Library)" : "First/Last frame") + " — set on the main screen, or via \"Continue generating the clip\" above.",
-          style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-        el("div", { style: { display: "flex", gap: "12px" } }, [thumb(a.firstFrame, "Start", libIds.first), thumb(a.lastFrame, "End", libIds.last)]),
-        modelSelWrap,
-      );
-      return;
-    }
 
     // One attach area, two possible owners. Unticked it edits the panel's common
     // references - the set every other clip also renders with - and ticked it edits this
@@ -829,37 +898,57 @@ This cannot be undone.`,
     };
 
     const head = el("div", { style: { display: "flex", alignItems: "center", gap: "8px" } });
-    const chk = el("input", { type: "checkbox" });
-    chk.checked = own; chk.style.cursor = "pointer";
-    // A clip switched off for a resume has nothing to override — grey it out.
-    if (!promptEnabled(p)) { chk.disabled = true; chk.style.cursor = "default"; }
-    chk.addEventListener("change", () => {
-      p.override = chk.checked;
-      // Starting from the common set is the useful default: an override almost always
-      // means "these, but swap one", not "start from nothing".
-      if (chk.checked && !(p.refImages || []).length) {
-        p.refImages = (state.refImages || []).slice();
-        p.refImagesMp = (state.refImagesMp || []).slice();
-      }
-      if (chk.checked && !p.assetRef) {
-        p.refSource = state.refSource || "files";
-        p.assetRef = state.assetRef ? { ...state.assetRef, ids: [...(state.assetRef.ids || [])] } : null;
-      }
-      // The header and the sound/music tail describe the scene the images establish, so
-      // they follow the override too — seeded from the common pair the first time, which
-      // gives the user something to edit rather than two empty boxes.
-      if (chk.checked && !p.header && !p.footer) {
-        p.header = state.promptHeader || "";
-        p.footer = state.promptFooter || "";
-      }
-      ctx.persist(); renderImageRow(); refreshFraming(); ctx.refreshModes?.();
-    });
     head.append(
       el("div", { text: own ? "This clip only" : "Common (shared by all clips)",
         style: { fontSize: "11px", fontWeight: "700", color: own ? BRAND : C.text, flex: "1" } }),
-      el("label", { style: { display: "flex", alignItems: "center", gap: "5px", fontSize: "10.5px",
-        color: C.text, cursor: "pointer" } }, [chk, el("span", { text: "override for this clip" })]),
     );
+
+    if (state.briefImageMode === "fl") {
+      // First/Last gets the same Source switch as Reference, kept in step with the main screen
+      // (state.refSource): Files / Gallery shows the main screen's frames (read-only here, they are
+      // set there or via "Continue generating the clip"); Asset Library shows the frames picked from
+      // the Asset tab - the common ones, or this clip's own with the override ticked.
+      const useLibFL = (own ? p.refSource : state.refSource) === "library";
+      const srcToggleFL = sourceToggle(useLibFL ? "library" : "files", (src) => {
+        if (own) { p.refSource = src; if (src === "files") p.assetRef = null; }
+        else { state.refSource = src; if (src === "files") state.assetRef = null; }
+        ctx.persist(); renderImageRow(); ctx.refreshModes?.();
+      });
+      let flBody;
+      if (useLibFL) {
+        flBody = mountLibraryRefs({
+          mode: "firstlast",
+          note: own ? "This clip only: First / Last frames from the Asset tab." : "Common: First / Last frames from the Asset tab.",
+          getRef: () => (own ? p.assetRef : state.assetRef) || emptyAssetRef(),
+          onChange: (ref) => {
+            const n = normalizeAssetRef(ref);
+            if (own) p.assetRef = n; else state.assetRef = n;
+            ctx.persist(); ctx.refreshModes?.();
+          },
+        }).el;
+      } else {
+        const a = clipAssets(state, selected);
+        const thumb = (src, tag) => {
+          const box = el("div", { style: {
+            width: "72px", height: "72px", borderRadius: "6px", border: `1px solid ${C.border}`,
+            background: "#000", display: "flex", alignItems: "center", justifyContent: "center",
+            overflow: "hidden", flexShrink: "0",
+          }});
+          if (src) box.appendChild(el("img", { src: `/view?filename=${encodeURIComponent(src)}&type=input&t=${Date.now()}`,
+            style: { width: "100%", height: "100%", objectFit: "cover" } }));
+          else box.appendChild(el("div", { text: "none", style: { color: C.muted, fontSize: "10px" } }));
+          return el("div", { style: { display: "flex", flexDirection: "column", gap: "4px", alignItems: "center" } },
+            [box, el("div", { text: tag, style: { fontSize: "9.5px", color: C.muted } })]);
+        };
+        flBody = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } }, [
+          el("div", { text: "First/Last frame — set on the main screen, or via \"Continue generating the clip\" above.",
+            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+          el("div", { style: { display: "flex", gap: "12px" } }, [thumb(a.firstFrame, "Start"), thumb(a.lastFrame, "End")]),
+        ]);
+      }
+      imgRow.append(head, srcToggleFL, flBody, modelSelWrap);
+      return;
+    }
 
     // One row, nine slots — wrapping put the tail of the set on a second line and pushed
     // the media columns beside it down with it.
@@ -1037,7 +1126,7 @@ ${name}`, style: {
     // Library assets / project for whoever owns this attach area (this clip when overriding,
     // else the node's common set) - when set they replace the file slots below.
     const libBlock = mountLibraryRefs({
-      mode: "reference",
+      mode: "reference", sideReport: true,
       note: own ? "This clip only: assets or a project from the Asset tab." : "Common: assets or a project from the Asset tab.",
       getRef: () => (own ? p.assetRef : state.assetRef) || emptyAssetRef(),
       getPrompt: () => editor.value || "",
@@ -1055,7 +1144,11 @@ ${name}`, style: {
       else { state.refSource = src; if (src === "files") state.assetRef = null; }
       ctx.persist(); renderImageRow(); ctx.refreshModes?.();
     });
-    if (useLib) imgCol.append(srcToggle, libBlock.el);
+    if (useLib) {
+      // The Asset Library block takes the whole width: the picker on the left, the Load result beside it.
+      imgCol.style.width = "100%"; imgCol.style.flex = "1";
+      imgCol.append(srcToggle, libBlock.el);
+    }
     else imgCol.append(srcToggle, grid, note);
     assetBand.append(imgCol);
     if (own && !useLib) assetBand.append(mediaRow);
@@ -1069,7 +1162,7 @@ ${name}`, style: {
   enhBtn.style.flexShrink = "0";
   enhBottom.append(targetSel,
     el("div", { text: "Length", style: { fontSize: "11px", color: C.muted, flexShrink: "0" } }),
-    lenIn, lenTag, enhBtn, refineBtn);
+    lenIn, lenTag);
   enhWrap.append(enhTop, imgRow, enhBottom);
 
   // ── collapse ───────────────────────────────────────────────────────────────
@@ -1181,8 +1274,16 @@ ${name}`, style: {
   // Give the model the run's actual shape so the brief fits the clips we'll render.
   // `imageSummary` is the merged vision-analysis text for Image → Brief (§C2's pipeline);
   // it's just another paragraph of context by the time the brief model sees it.
+  let writeTarget = "all";   // set by doWrite: "one" = this clip, "all" = split into all clips
   function buildUserPrompt(baseText, imageSummary, lib = null) {
-    const t = targetPlan();
+    const one = writeTarget === "one";
+    const t0 = targetPlan();
+    // Each clip has its own length (clip time override), so the request lists them.
+    const lens = one ? [clipSecondsFor(state, selected)]
+      : t0.fromField ? Array.from({ length: t0.shots }, (_, k) => clipSecondsFor(state, k))
+      : activePrompts(state).map(({ i }) => clipSecondsFor(state, i));
+    const t = { shots: one ? 1 : t0.shots, seconds: lens.reduce((a, b) => a + b, 0) || t0.seconds, clipSec: lens[0] || t0.clipSec };
+    const sameLen = lens.every(s => Math.abs(s - lens[0]) < 0.001);
     // Labeled key:value header block, same shape as ComfyUI-MiniMaxH3-Prompt-Writer's
     // assemble_request() user_content ("Mode: ...\nDuration: ...\nAspect ratio: ...\n\n
     // Reference manifest...\n\nCreative brief:\n...") — the label wording is copied
@@ -1193,10 +1294,19 @@ ${name}`, style: {
       : state.briefImageMode === "fl" ? "First/Last frame" : "Text/Image → Brief";
     const lines = [
       `Mode: ${modeLabel}`,
-      `Target duration: ${t.seconds.toFixed(2)} seconds total, split into ${t.shots} shot(s) of ~${t.clipSec.toFixed(2)}s each.`,
+      sameLen
+        ? `Target duration: ${t.seconds.toFixed(2)} seconds total, split into ${t.shots} shot(s) of ~${t.clipSec.toFixed(2)}s each.`
+        : `Target duration: ${t.seconds.toFixed(2)} seconds total, split into ${t.shots} clips of ${lens.map(s => `${s.toFixed(2)}s`).join(", ")}.`,
     ];
     if (t.shots > 1) {
-      lines.push(`Write exactly ${t.shots} shots, separated by a line containing only ---, one shot per clip.`);
+      lines.push(
+        `Write exactly ${t.shots} clips, separated by a line containing only ---. Every clip is its own video: write each one `
+        + "as a full brief with the labels subject_definitions:, summary:, retention_analysis:, SCENARIO:, technical_settings:, "
+        + "detailed_description: (followed by the [Shot N] blocks), overall_soundscape: and non_diegetic_music:.",
+        "Time restarts in every clip: each clip begins at [Shot 1] with no timestamp, and the later shots of the SAME clip use "
+        + "\"At MM:SS.mmm\" counted from that clip's own start. Never continue the time or the shot numbers from one clip to the next. "
+        + "The shots of a clip must add up to that clip's own length.",
+      );
     }
     // Library references are named by @token (the library node turns them into the model's tags),
     // so the numbered-tag manifest is replaced by the token list.
@@ -1466,7 +1576,10 @@ ${name}`, style: {
     if (images.length && visionCustom && !(state.h3CustomVisionBase && state.h3CustomVisionModel)) { ctx.showPopup?.("Connect Custom (Vision) needs an API base URL and a model ID - set them in Settings.", true); return; }
 
     const target = targetSel.value;
-    const base = (editor.value || "").trim();
+    writeTarget = target;
+    // A clip that already has its own header and sound / music is written from all three together.
+    const clipOwn = target === "one" && ownFraming() ? state.prompts[selected] : null;
+    const base = [clipOwn?.header, editor.value, clipOwn?.footer].map(s => (s || "").trim()).filter(Boolean).join("\n\n");
     if (!base && !images.length && !lib) {
       ctx.showPopup?.("Write something first (or add an image).", true); return;
     }
@@ -1722,19 +1835,30 @@ ${name}`, style: {
     if (reviewMode === "one") {
       rvBody.appendChild(reviewCard("one", `→ CLIP ${selected + 1} (whole brief, one paragraph)`, reviewText));
     } else {
-      if (p.header) rvBody.appendChild(reviewCard("header", "COMMON — HEADER", p.header));
-      const shots = p.shots.length ? p.shots : [reviewText];
-      shots.forEach((s, i) => rvBody.appendChild(reviewCard(`shot:${i}`, `CLIP ${i + 1}`, s)));
-      if (p.footer) rvBody.appendChild(reviewCard("footer", "COMMON — SOUND / MUSIC", p.footer));
+      const briefs = reviewMode === "split" && reviewTarget === "all" ? clipBriefs(reviewText) : null;
+      if (briefs) {
+        briefs.forEach((b, i) => {
+          if (b.header) rvBody.appendChild(reviewCard("header", `CLIP ${i + 1} — THIS CLIP — HEADER`, b.header));
+          rvBody.appendChild(reviewCard(`shot:${i}`, `CLIP ${i + 1}`, rebaseShots(b.shots.join("\n\n"))));
+          if (b.footer) rvBody.appendChild(reviewCard("footer", `CLIP ${i + 1} — THIS CLIP — SOUND / MUSIC`, b.footer));
+        });
+      } else {
+        const own = reviewTarget !== "all" && ownFraming();
+        if (p.header) rvBody.appendChild(reviewCard("header", own ? "THIS CLIP — HEADER" : "COMMON — HEADER", p.header));
+        const shots = p.shots.length ? p.shots : [reviewText];
+        shots.forEach((s, i) => rvBody.appendChild(reviewCard(`shot:${i}`, `CLIP ${i + 1}`, s)));
+        if (p.footer) rvBody.appendChild(reviewCard("footer", own ? "THIS CLIP — SOUND / MUSIC" : "COMMON — SOUND / MUSIC", p.footer));
+      }
     }
 
     // Info line — for "all" enhance, call out when the model wrote a different shot count
     // than the target asked for (the small brief model often does).
+    const structured = reviewTarget === "all" ? clipBriefs(reviewText) : null;
     const want = reviewTarget === "all" ? targetPlan().shots : 0;
-    const got = p.shots.length || 1;
+    const got = structured ? structured.length : (p.shots.length || 1);
     let info = `${reviewText.length} chars`;
     if (reviewTarget === "all") {
-      info += ` · ${got} shot${got > 1 ? "s" : ""}`;
+      info += structured ? ` · ${got} clips` : ` · ${got} shot${got > 1 ? "s" : ""}`;
       if (want && got !== want) info += `  ⚠ asked for ${want} — use ✂ Split or ↻ Enhance again`;
     } else {
       info += ` → clip ${selected + 1}`;
@@ -1744,8 +1868,35 @@ ${name}`, style: {
     rvSummary.textContent =
       reviewMode === "one"   ? `Whole brief → clip ${selected + 1}'s text. Header / tail untouched.`
     : reviewMode === "manual" ? (reviewSel.size ? `Applying ${reviewSel.size} selected part(s).` : "Click the cards to apply.")
+    : structured              ? `Replaces all prompts with ${got} clips, each with its own header and sound / music (override on).`
     : reviewTarget === "all"  ? `Replaces all prompts with ${got}${p.header ? " + header" : ""}${p.footer ? " + tail" : ""}.`
-    :                           `Replaces clip ${selected + 1}${p.header || p.footer ? " and the common parts" : ""}.`;
+    :                           `Replaces clip ${selected + 1}${p.header || p.footer ? (ownFraming() ? " and this clip's header / sound" : " and the common parts") : ""}.`;
+  }
+
+  // N clips written as N full briefs separated by --- (each with its own header sections, [Shot N]
+  // blocks and sound / music). null when the text is one brief, or --- only separates plain shots.
+  function clipBriefs(text) {
+    const parts = String(text || "").split(/^\s*-{3,}\s*$/m).map(s => s.trim()).filter(Boolean).map(parseBrief);
+    return parts.length > 1 && parts.every(b => b.shots.length) && parts.some(b => b.header || b.footer) ? parts : null;
+  }
+  // A clip made from a split carries its own header / sound, so it needs the override on; the
+  // references it had (common set) come along so nothing is lost by switching it on.
+  function keepTimes(list, old) {
+    list.forEach((c, i) => {
+      const o = old[i];
+      if (o && typeof o === "object" && o.timeOverride) { c.timeOverride = true; c.timeSec = o.timeSec; }
+    });
+    return list;
+  }
+  function seedOverride(c) {
+    c.override = true;
+    c.refImages = (state.refImages || []).slice();
+    c.refImagesMp = (state.refImagesMp || []).slice();
+    c.refVideos = (state.refVideos || []).map(v => ({ ...v }));
+    c.refAudios = (state.refAudios || []).map(a => ({ ...a }));
+    c.refSource = state.refSource || "files";
+    c.assetRef = state.assetRef ? { ...state.assetRef, ids: [...(state.assetRef.ids || [])] } : null;
+    return c;
   }
 
   function openReview(text, target, kind) {
@@ -1770,33 +1921,47 @@ ${name}`, style: {
       ctx.showPopup?.("Pick at least one card, or switch mode.", true); return;
     }
     snapshot(`enhance → ${reviewMode}`);
+    const oldPrompts = (state.prompts || []).slice();
 
     if (reviewMode === "one") {
       state.prompts[selected] = normPrompt(state.prompts[selected]);
       state.prompts[selected].text = reviewText;                 // header/footer left alone
     } else if (reviewMode === "split") {
-      if (p.header) state.promptHeader = p.header;
-      if (p.footer) state.promptFooter = p.footer;
-      if (reviewTarget === "all") {
-        state.prompts = p.shots.length
-          ? p.shots.map(s => ({ text: s, firstFrame: "", enabled: true }))
-          : [{ text: reviewText, firstFrame: "", enabled: true }];
+      const briefs = reviewTarget === "all" ? clipBriefs(reviewText) : null;
+      if (briefs) {
+        // Every clip gets its own header sections, [Shot] blocks and sound / music.
+        state.prompts = keepTimes(briefs.map(b => seedOverride({
+          text: rebaseShots(b.shots.join("\n\n")), firstFrame: "", enabled: true,
+          header: b.header || state.promptHeader || "", footer: b.footer || state.promptFooter || "",
+        })), oldPrompts);
+        selected = 0;
+      } else if (reviewTarget === "all") {
+        if (p.header) state.promptHeader = p.header;
+        if (p.footer) state.promptFooter = p.footer;
+        state.prompts = keepTimes(p.shots.length
+          ? p.shots.map(s => ({ text: rebaseShots(s), firstFrame: "", enabled: true }))
+          : [{ text: reviewText, firstFrame: "", enabled: true }], oldPrompts);
         selected = 0;
       } else {
         state.prompts[selected] = normPrompt(state.prompts[selected]);
-        state.prompts[selected].text = p.shots.join("\n\n") || reviewText;
+        const clip = state.prompts[selected];
+        // A clip with its own override keeps its header / sound in its own fields.
+        if (ownFraming()) { if (p.header) clip.header = p.header; if (p.footer) clip.footer = p.footer; }
+        else { if (p.header) state.promptHeader = p.header; if (p.footer) state.promptFooter = p.footer; }
+        clip.text = rebaseShots(p.shots.join("\n\n")) || reviewText;
       }
     } else {  // manual — only the ticked cards
-      if (reviewSel.has("header") && p.header) state.promptHeader = p.header;
-      if (reviewSel.has("footer") && p.footer) state.promptFooter = p.footer;
+      const ownTarget = reviewTarget !== "all" && ownFraming();
+      if (reviewSel.has("header") && p.header) { if (ownTarget) state.prompts[selected].header = p.header; else state.promptHeader = p.header; }
+      if (reviewSel.has("footer") && p.footer) { if (ownTarget) state.prompts[selected].footer = p.footer; else state.promptFooter = p.footer; }
       const picked = (p.shots.length ? p.shots : [reviewText]).filter((_, i) => reviewSel.has(`shot:${i}`));
       if (picked.length) {
         if (reviewTarget === "all") {
-          state.prompts = picked.map(s => ({ text: s, firstFrame: "", enabled: true }));
+          state.prompts = keepTimes(picked.map(s => ({ text: rebaseShots(s), firstFrame: "", enabled: true })), oldPrompts);
           selected = 0;
         } else {
           state.prompts[selected] = normPrompt(state.prompts[selected]);
-          state.prompts[selected].text = picked.join("\n\n");
+          state.prompts[selected].text = rebaseShots(picked.join("\n\n"));
         }
       }
     }
@@ -1935,7 +2100,7 @@ ${name}`, style: {
     const groups = groupShots(splitShots, splitBreaks.size + 1, [...splitBreaks]);
     if (splitHeader) state.promptHeader = splitHeader;
     if (splitFooter) state.promptFooter = splitFooter;
-    state.prompts = groups.map(g => ({ text: g, firstFrame: "", enabled: true }));
+    state.prompts = keepTimes(groups.map(g => ({ text: g, firstFrame: "", enabled: true })), state.prompts || []);
     selected = 0;
     ctx.persist();
     splitOv.style.display = "none";
@@ -1969,7 +2134,8 @@ ${name}`, style: {
     ctx.showPopup?.(`Clip ${selected + 1} sends ${full.length} chars (header + shots + tail).`, false);
     editor.setAttribute("title", full);
   });
-  footer.append(splitBtn, previewBtn, planTag, button("✓ Done", () => hide(), "primary"));
+  // Prompt Write / Refine stay in view whether LOCAL ENHANCE is folded or not.
+  footer.append(splitBtn, previewBtn, planTag, enhBtn, refineBtn, button("✓ Done", () => hide(), "primary"));
 
   ov.append(hdr, setsWrap, commonWrap, body, enhWrap, footer, splitOv, reviewOv);
 
