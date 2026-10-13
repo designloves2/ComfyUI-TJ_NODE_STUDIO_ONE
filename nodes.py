@@ -2199,7 +2199,7 @@ async def mmh3_llm_write_brief(request):
         loop = asyncio.get_event_loop()
         text = await loop.run_in_executor(
             None, _openrouter_chat, str(data.get("system", "")), str(data.get("user", "")),
-            model, 0.7, int(data.get("max_tokens", 2000)))
+            model, 0.7, int(data.get("max_tokens", 2000)), "low")
         return web.json_response({"ok": True, "text": text})
     except Exception as e:
         return web.json_response({"ok": False, "error": str(e)})
@@ -5016,7 +5016,7 @@ def _or_model_list(model):
     return [model]
 
 
-def _openrouter_once(key, system_prompt, user_text, model, temperature, max_tokens, exclude_reasoning, timeout=60):
+def _openrouter_once(key, system_prompt, user_text, model, temperature, max_tokens, exclude_reasoning, timeout=60, effort=None):
     import urllib.request, urllib.error, socket
     _models = _or_model_list(model)
     payload = {
@@ -5035,6 +5035,8 @@ def _openrouter_once(key, system_prompt, user_text, model, temperature, max_toke
     # only the answer). On a retry we keep it so a length-truncated reasoning dump
     # can still be salvaged via _strip_thinking.
     payload["reasoning"] = {"exclude": True} if exclude_reasoning else {}
+    if effort:
+        payload["reasoning"]["effort"] = effort   # how much a reasoning model may think before it answers
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         "https://openrouter.ai/api/v1/chat/completions", data=body,
@@ -5075,7 +5077,7 @@ def _openrouter_once(key, system_prompt, user_text, model, temperature, max_toke
     return (content or "").strip(), (ch0.get("finish_reason") or "")
 
 
-def _openrouter_chat(system_prompt, user_text, model, temperature=0.7, max_tokens=1600):
+def _openrouter_chat(system_prompt, user_text, model, temperature=0.7, max_tokens=1600, effort=None):
     key = _openrouter_api_key()
     if not key:
         raise RuntimeError("OpenRouter API key 없음 — LLM_KEY 환경변수 또는 "
@@ -5086,13 +5088,16 @@ def _openrouter_chat(system_prompt, user_text, model, temperature=0.7, max_token
     # finish_reason=length quickly; retry once with more room + the reasoning stream
     # included, then salvage the answer out of the monologue. Total stays under ~95s.
     mt = max(int(max_tokens), 3000)
-    text, fr = _openrouter_once(key, system_prompt, user_text, model, temperature, mt, True, timeout=45)
+    # A long answer (several clip briefs) takes longer than a short one: the wait grows with the budget.
+    wait = min(90, max(45, mt // 80))
+    text, fr = _openrouter_once(key, system_prompt, user_text, model, temperature, mt, True, timeout=wait, effort=effort)
     if text:
         return text
     if fr == "length":
-        text2, _ = _openrouter_once(key, system_prompt, user_text, model,
-                                    temperature, max(mt * 3, 10000), False, timeout=45)
-        salvaged = _strip_thinking(text2)
+        text2, fr2 = _openrouter_once(key, system_prompt, user_text, model,
+                                      temperature, max(mt * 3, 10000), False, timeout=wait, effort=effort)
+        # A reply that was cut off while still thinking is not an answer - never hand the monologue back as one.
+        salvaged = _strip_thinking(text2) if fr2 != "length" else ""
         if salvaged:
             return salvaged
     raise RuntimeError(

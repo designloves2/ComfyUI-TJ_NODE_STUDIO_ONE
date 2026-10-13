@@ -1639,7 +1639,9 @@ ${name}`, style: {
         : briefLlama
         ? await writeBriefLlama(buildUserPrompt(base, imageSummary, lib), state.h3LlamaBriefModel, state.h3LlamaNCtx, state.h3LlamaMaxTokens)
         : briefOR
-        ? await writeBriefOpenRouter(systemPrompt, buildUserPrompt(base, imageSummary, lib), state.h3OrModelBrief || state.h3OrModel)
+        ? await writeBriefOpenRouter(systemPrompt, buildUserPrompt(base, imageSummary, lib), state.h3OrModelBrief || state.h3OrModel,
+            // a full brief per clip is long: the room for the answer grows with the clip count
+            Math.min(16000, 2200 * (writeTarget === "one" ? 1 : Math.max(1, targetPlan().shots)) + 1500))
         : await writeBriefNative(state.nativeBriefClip, systemPrompt, buildUserPrompt(base, imageSummary, lib))).trim();
       if (!text) throw new Error("empty response");
       // Never write straight in - show what came back and let the user decide.

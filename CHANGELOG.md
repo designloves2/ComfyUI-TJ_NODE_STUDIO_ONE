@@ -2,6 +2,18 @@
 
 ---
 
+## v1.40.1 (2026-10-13)
+
+### Fixes
+- **MiniMax H3 brief writing through OpenRouter with a reasoning model** (found with a real run on `deepseek/deepseek-v4-flash-0731`):
+  the answer room was 3,000 tokens, a reasoning model spent all of it thinking, and the retry handed back the cut-off thinking
+  (41,000 characters) as if it were the brief. Now the room grows with the number of clips (2,200 tokens per clip + 1,500, up to 16,000),
+  the brief request asks the model to think little (`reasoning.effort = low`; other OpenRouter users of the helper are unchanged), the wait
+  grows with the room (45 to 90 s), and a reply that was cut off while still thinking is reported as an error instead of being used.
+- Checked with real OpenRouter runs (brief `deepseek/deepseek-v4-flash-0731`, vision `qwen/qwen3.8-flash`): 5 One-Take clips - one
+  `[Shot 1]` each, the `At 00:02.000` inside the paragraph, every clip after the first opening with the previous clip's end state, no rule
+  warnings in the review; and one clip from an Asset Library first frame (vision + brief).
+
 ## v1.40.0 (2026-10-13)
 
 ### MiniMax H3 Prompt Edit: clip time, override colours, cleaner split

@@ -747,10 +747,10 @@ export async function analyzeImagesOpenRouter(images, promptText, orModel) {
   return d.text;
 }
 
-export async function writeBriefOpenRouter(systemPrompt, userPrompt, orModel) {
+export async function writeBriefOpenRouter(systemPrompt, userPrompt, orModel, maxTokens = 2000) {
   const r = await api.fetchApi("/minimax_h3_one/llm/write_brief", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ system: systemPrompt, user: userPrompt, or_model: orModel || "" }),
+    body: JSON.stringify({ system: systemPrompt, user: userPrompt, or_model: orModel || "", max_tokens: maxTokens }),
   });
   const d = await r.json();
   if (!d.ok) throw new Error(d.error || "OpenRouter brief failed");
