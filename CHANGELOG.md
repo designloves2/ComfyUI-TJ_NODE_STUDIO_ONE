@@ -2,7 +2,7 @@
 
 ---
 
-## Unreleased
+## v1.40.0 (2026-10-13)
 
 ### MiniMax H3 Prompt Edit: clip time, override colours, cleaner split
 - **Clip time override**: a checkbox + seconds box above the clip editor gives a clip its own length (1 s up to the

@@ -367,3 +367,22 @@ for i in range(len(denoise_masks), len(latent_shapes)):
 
 남은 것은 SPEC_MINIMAX_H3_NEXT_ROUND.md §B6의 2, 3번(더 긴 실제 프롬프트로 화면상 모션 연속성
 육안 확인, Reference 모드에서 유지 확인)뿐 — 메커니즘 자체의 정확성은 이걸로 확정됐다.
+
+---
+
+## Prompt rules for the brief writer (added v1.40.0)
+
+Continuity ▸ One-Take (latent) has a box, `oneTakeLlm` ("Write prompts with the One-Take rules (Prompt Write / Refine)", default off).
+While Continuity is One-Take and the box is on, Prompt Edit's Prompt Write / Prompt Refine follow
+`ONE_TAKE_Guide_Korean/ONE_TAKE_Guide_Korean.md` (chapter 8):
+
+- the request carries `oneTakeRules(lens, prevEnding)`: one `[Shot 1]` per clip (the 2.0 s development is `At 00:02.000, ...` in the same
+  paragraph), each clip ends on its exact end state, the next clip opens by copying it (`is already ...ing` / `still`), fast actions finish
+  1.7 s before the clip ends (cut-off per clip = length - 1.7 s), every on-screen element is worded the same on both sides of a seam,
+  direction and speed are stated, every clip starts with "The entire clip is a single uninterrupted shot with no cuts."
+  Writing a single clip also passes the end of the clip before it (`prevEnding`).
+- the result is post-processed: extra `[Shot N]` are folded into `[Shot 1]` (`oneTakeFixShots`; the paragraph's own `At ...` times are kept),
+  and `oneTakeIssues` lists clips without the "single uninterrupted shot" sentence or without a copied opening (shown in the review's info line).
+- a prompt (or Refine instruction) matching `/원\s*테이크|one[\s-]*take/i` switches `continuityMode` to `onetake` and `oneTakeLlm` on.
+- the CLIPS list shows, besides the plain running clock, the clip's place in the stitched video: the first clip keeps its length,
+  each later clip adds `length - 1.625 s` (`clipTimeline().fstart / fend`).
