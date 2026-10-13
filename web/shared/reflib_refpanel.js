@@ -94,20 +94,33 @@ export function mountLibraryRefs({ mode, getRef, onChange, note = "", getPrompt 
     const apply = (patch) => { Object.assign(ref, patch); onChange(ref); render(); };
 
     if (mode === "firstlast") {
-      const slot = (label, key) => {
+      // Two cards side by side: a large picture (✕ in its corner), the asset's name under it, and the
+      // picker button under that. Clicking the picture opens the picker too.
+      const card = (label, key) => {
         const id = ref[key];
         const a = id ? index.get(id) : null;
-        return el("div", { style: { display: "flex", alignItems: "center", gap: "6px" } },
-          el("span", { text: label, style: { width: "40px", color: C.muted, fontSize: "11px" } }),
-          id ? thumb(a, 36) : null,
-          el("span", { text: id ? (a ? `#${a.id} ${a.name}` : `#${id} (missing asset)`) : "none", style: {
-            flex: "1", minWidth: "0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "11px",
-            color: id && !a ? C.err : C.text } }),
-          btn("From Asset…", () => openAssetPicker({ title: `Pick the ${label.toLowerCase()} frame`, kinds: ["image"], multi: false,
-            onPick: ids => apply({ [key]: ids[0] }) }), small),
-          id ? btn("✕", () => apply({ [key]: null }), small) : null);
+        const pick = () => openAssetPicker({ title: `Pick the ${label.toLowerCase()} frame`, kinds: ["image"], multi: false,
+          onPick: ids => apply({ [key]: ids[0] }) });
+        const box = el("div", { style: { position: "relative", width: "100%", aspectRatio: "3 / 4", maxHeight: "190px",
+          background: "#000", border: `1px solid ${id && !a ? C.err : C.border}`, borderRadius: "8px", overflow: "hidden",
+          cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" } });
+        box.addEventListener("click", pick);
+        if (a) box.append(el("img", { src: reflib.thumbUrl(a), style: { width: "100%", height: "100%", objectFit: "contain" } }));
+        else box.append(el("div", { text: id ? "missing asset" : "+", style: { color: C.muted, fontSize: id ? "11px" : "22px" } }));
+        if (id) {
+          const x = el("div", { text: "✕", title: "Remove", style: { position: "absolute", top: "4px", right: "4px", background: "rgba(0,0,0,0.75)",
+            color: "#fff", borderRadius: "4px", width: "18px", height: "18px", lineHeight: "18px", textAlign: "center", fontSize: "11px", cursor: "pointer" } });
+          x.addEventListener("click", (e) => { e.stopPropagation(); apply({ [key]: null }); });
+          box.append(x);
+        }
+        return el("div", { style: { flex: "1", minWidth: "0", maxWidth: "190px", display: "flex", flexDirection: "column", gap: "5px", alignItems: "stretch" } },
+          el("div", { text: label, style: { textAlign: "center", fontSize: "11px", fontWeight: "700", color: C.text } }),
+          box,
+          el("div", { text: id ? (a ? `#${a.id} ${a.name}` : `#${id}`) : "none", style: { textAlign: "center", fontSize: "11px", overflow: "hidden",
+            textOverflow: "ellipsis", whiteSpace: "nowrap", color: id && !a ? C.err : (id ? C.text : C.muted) } }),
+          btn("From Asset…", pick, { ...small, width: "100%" }));
       };
-      root.append(slot("First", "first"), slot("Last", "last"));
+      root.append(el("div", { style: { display: "flex", gap: "12px", justifyContent: "center" } }, card("First", "first"), card("Last", "last")));
       return;
     }
 

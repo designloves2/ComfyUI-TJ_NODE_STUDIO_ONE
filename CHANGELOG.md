@@ -28,6 +28,8 @@
 - ✨ **Prompt Write** and 🔧 **Prompt Refine** sit beside ✓ Done, always visible (also when LOCAL ENHANCE is folded).
 - **First / Last** in LOCAL ENHANCE has the same **Source** switch as Reference (Files / Gallery or Asset Library), in step with
   the main screen; the Asset Library block takes the full width with the Load result on its right instead of underneath.
+- **First / Last Asset Library picker** is two cards side by side: a large picture (✕ in its corner), the asset name under it and its own
+  From Asset… button; clicking the picture opens the picker too. Same block on the main screen and in Prompt Edit.
 - **COMMON — HEADER / SOUND** boxes keep the height you drag them to (remembered) and are no longer resized to their text.
 
 ## v1.39.0 (2026-10-13)
