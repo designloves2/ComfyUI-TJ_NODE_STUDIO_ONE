@@ -684,11 +684,31 @@ This cannot be undone.`,
   // First / Last frames of Image to Video, shown in the writer popup the way H3 shows them: the source switch and the
   // pictures stay in step with the main screen - they are the common ones, or this clip's own once "override for this
   // clip" is ticked.
-  const imgBlock = el("div", { style: { display: "none", flexDirection: "column", gap: "6px", paddingBottom: "8px", borderBottom: `1px solid ${C.border}` } });
+  const imgBlock = el("div", { style: { display: "none", flexDirection: "column", gap: "6px" } });
+  // A foldable band between the editor and the footer, only in Image to Video; the fold is remembered.
+  const imgCollapse = el("button", { type: "button", title: "Collapse / expand", style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "11px", lineHeight: "1", padding: "2px 7px", borderRadius: "5px",
+    background: "transparent", color: C.muted, border: `1px solid ${C.border}`, flexShrink: "0",
+  }});
+  imgCollapse.addEventListener("click", () => { state.enhCollapsed = !state.enhCollapsed; ctx.persist(); renderImageRow(); });
+  const imgBand = el("div", { style: {
+    display: "none", flexDirection: "column", gap: "6px", flexShrink: "0", boxSizing: "border-box",
+    background: C.bg1, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "8px 10px",
+  }}, [
+    el("div", { style: { display: "flex", alignItems: "center", gap: "8px" } }, [
+      imgCollapse, el("div", { text: "FIRST / LAST FRAMES", style: { color: BRAND, fontSize: "10.5px", fontWeight: "700", letterSpacing: "0.05em" } })]),
+    imgBlock,
+  ]);
   function renderImageRow() {
     clear(imgBlock);
     const on = state.generationMode === "firstlast";
-    imgBlock.style.display = on ? "flex" : "none";
+    const off = !!state.enhCollapsed;
+    imgBand.style.display = on ? "flex" : "none";
+    imgBlock.style.display = on && !off ? "flex" : "none";
+    imgCollapse.textContent = off ? "▸" : "▾";
+    imgBand.style.maxHeight = off ? "none" : "330px";
+    imgBand.style.overflowY = off ? "visible" : "auto";
+    if (off) return;
     if (!on || !state.prompts?.[selected]) return;
     const p = state.prompts[selected] = normPrompt(state.prompts[selected]);
     const own = !!p.override;
@@ -929,7 +949,7 @@ This cannot be undone.`,
   renderLenTag();
 
   const lenRow = el("div", { style: { display: "flex", alignItems: "center", gap: "8px" } }, [targetSel, lenIn, lenTag]);
-  writerPop.append(imgBlock, statusTag, lenRow, modelSelWrap);
+  writerPop.append(statusTag, lenRow, modelSelWrap);
 
   // ── which model writes ───────────────────────────────────────────────────────
   const briefBackend = () => state.h3BriefBackend || state.h3LlmBackend || "native";
@@ -1349,7 +1369,7 @@ This cannot be undone.`,
   function transientLook(on) {
     ov.style.background = on ? "rgba(0,0,0,0.55)" : "rgba(11,11,11,0.985)";
     ov.style.zIndex = on ? "10000" : "9999";
-    [hdr, setsWrap, commonWrap, body, footer].forEach(n => { n.style.visibility = on ? "hidden" : ""; });
+    [hdr, setsWrap, commonWrap, body, imgBand, footer].forEach(n => { n.style.visibility = on ? "hidden" : ""; });
   }
 
   // ── footer ─────────────────────────────────────────────────────────────────
@@ -1367,7 +1387,7 @@ This cannot be undone.`,
   // Prompt Write / Refine stay in view whether LOCAL ENHANCE is folded or not.
   footer.append(previewBtn, planTag, writerAnchor, enhBtn, refineBtn, button("✓ Done", () => hide(), "primary"));
 
-  ov.append(hdr, setsWrap, commonWrap, body, footer, planOv);
+  ov.append(hdr, setsWrap, commonWrap, body, imgBand, footer, planOv);
 
   function refreshPlanTag() {
     const p = ctx.currentPlan?.();
