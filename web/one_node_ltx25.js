@@ -1299,7 +1299,9 @@ app.registerExtension({
             persist(); refreshPlan();
           });
           sideCol.appendChild(cb);
-          const ta = el("textarea", { placeholder: i === 0 ? "Global prompt — the scene, camera and sound of this clip" : "(blank = reuse the previous prompt)", style: {
+          const ta = el("textarea", { placeholder: i === 0
+            ? (state.generationMode === "director" ? "Global prompt of this clip — its segments are written in Prompt Edit" : "Clip prompt — the shot, the action, the camera and the sound (shared text goes in 🌐 Global)")
+            : "(blank = reuse the previous prompt)", style: {
             flex: "1", minHeight: "86px", boxSizing: "border-box", background: C.bg2, color: C.text,
             border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px",
             fontSize: "12px", fontFamily: "inherit", outline: "none", resize: "vertical",
