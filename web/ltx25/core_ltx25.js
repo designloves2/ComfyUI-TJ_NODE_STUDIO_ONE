@@ -248,7 +248,9 @@ export function computeRtxTarget(state, srcW, srcH) {
 }
 
 export function resolveResolution(aspectLabel, megapixels) {
-  const a = ASPECTS.find(x => x.label === aspectLabel) || ASPECTS[0];
+  // "832:1216" is a shape taken from an image (Image to Video follows the frame it is given)
+  const fromImage = /^(\d+):(\d+)$/.exec(String(aspectLabel));
+  const a = ASPECTS.find(x => x.label === aspectLabel) || (fromImage ? { w: +fromImage[1], h: +fromImage[2] } : ASPECTS[0]);
   const mp = Math.max(0.1, megapixels || 1.0);
   const target = mp * 1_000_000;
   const ratio = a.w / a.h;

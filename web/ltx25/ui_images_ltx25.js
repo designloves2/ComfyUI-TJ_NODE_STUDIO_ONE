@@ -123,6 +123,7 @@ export function mountImagePanel(state, ctx) {
         kids.push(el("div", { style: { display: "flex", gap: "6px", justifyContent: "center" } }, [first.el, last.el]));
       }
       kids.push(el("div", { html: "One image is used as the first frame (or, if only ② is set, the last frame); two images are first + last. "
+        + "The canvas takes the shape of the image given (the Aspect setting is ignored), at the same megapixels. "
         + "With neither, this is the same as Text only. <b>Last Frame Chain</b> continuity replaces ① for every clip after the first, "
         + "and a clip can swap its own images in Prompt Edit.",
         style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));

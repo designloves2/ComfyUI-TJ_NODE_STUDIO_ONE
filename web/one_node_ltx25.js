@@ -132,6 +132,14 @@ app.registerExtension({
       ctx.rootEl = root;
 
       let popTimer;
+      function imageSize(file) {
+        return new Promise(resolve => {
+          const im = new Image();
+          im.onload = () => resolve({ w: im.naturalWidth, h: im.naturalHeight });
+          im.onerror = () => resolve(null);
+          im.src = `/view?filename=${encodeURIComponent(file)}&type=input`;
+        });
+      }
       function showPopup(msg, isError = true) {
         let pop = root.querySelector(".ltx25-pop");
         if (!pop) {
@@ -2858,6 +2866,11 @@ app.registerExtension({
               if (files.first && !continued) firstFrame = files.first;
               libLast = files.last || null;
             }
+            // The First / Last frame is conditioned at the clip's own size, so the canvas takes the shape of the image given.
+            const lastFile = libLast || ((framesFromPanel && pos === active.length - 1 && !libFrames) ? (rs.lastFrameImage || null) : null);
+            const sizeFrom = framesFromPanel ? (firstFrame || lastFile) : null;
+            const shape = sizeFrom ? await imageSize(sizeFrom) : null;
+            if (shape) clipState.aspect = `${shape.w}:${shape.h}`;
             const restore = pipeOv ? applyOverridesTemp(clipState, pipeOv.overrides) : null;
             const fvsrOn = clipState.upscaleMode === "flashvsr";
             const hiresOn = hiresActive(clipState, ctx.availability);
@@ -2894,7 +2907,7 @@ app.registerExtension({
                   promptText: promptForClip(i, rs),
                   seed: seedForClip(i, rs),
                   firstFrame,
-                  lastFrame: libLast || ((framesFromPanel && pos === active.length - 1 && !libFrames) ? (rs.lastFrameImage || null) : null),
+                  lastFrame: lastFile,
                   refImages,
                   clipIndex: i,
                   saveLastFrame: true,
@@ -2964,6 +2977,8 @@ app.registerExtension({
               // the node's common one metaForVideo() reads from `rs`.
               clipMeta.assetRef = clipState.assetRef ? { ...clipState.assetRef, ids: [...(clipState.assetRef.ids || [])] } : null;
               clipMeta.frames = clipState.clipFrames;   // this clip's own length, not the global one
+              const rz = resolveResolution(clipState.aspect, clipState.megapixels);   // the size it really rendered at (an image can set it)
+              clipMeta.w = rz.width; clipMeta.h = rz.height;
               // An inline upscale changes the frame size metaForVideo() can't predict, so
               // re-probe the file. Deblur alone never resizes — skip the round trip for it.
               if (ran?.upscale || ran?.hires) await reconcileGeometry(clipMeta, vid);
@@ -2982,7 +2997,7 @@ app.registerExtension({
                 // clipMeta was reconciled to the UPSCALED size — the raw clip is the
                 // decode's own resolution, no pre-op size.
                 delete rawMeta.sourceW; delete rawMeta.sourceH;
-                const rr = resolveResolution(rs.aspect, rs.megapixels);
+                const rr = resolveResolution(clipState.aspect, clipState.megapixels);
                 rawMeta.w = rr.width; rawMeta.h = rr.height;
                 await reconcileGeometry(rawMeta, rawVid, { noSource: true });
                 saveMeta(rawVid.filename, rawVid.subfolder || "", rawMeta);

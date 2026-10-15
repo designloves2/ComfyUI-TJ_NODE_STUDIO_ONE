@@ -2733,7 +2733,7 @@ LTX25_PROMPT_SETS_DIR = os.path.join(NODE_DIR, 'prompt_sets_ltx25')
 
 def _prompt_sets_dir(request):
     """The LTX studio keeps its own prompt sets: the shared handlers pick the folder by the route they were called on."""
-    return LTX25_PROMPT_SETS_DIR if request.path.startswith("/ltx25_one/") else MMH3_PROMPT_SETS_DIR
+    return LTX25_PROMPT_SETS_DIR if "/ltx25_one/" in request.path else MMH3_PROMPT_SETS_DIR
 
 
 def _safe_prompt_set_name(name):
