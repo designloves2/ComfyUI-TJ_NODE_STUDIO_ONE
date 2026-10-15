@@ -8,8 +8,10 @@
 // ships, fetched from the backend (with a built-in fallback when TJ_NODE isn't present).
 import {
   C, BRAND, el, clear, clipSecondsFor, clipFramesFor, clipTimeline, snapHalf, clipSecForTyped, composeClipPrompt, clipFraming, promptText,
-  promptEnabled, promptOverrides, activePrompts, parseTargetSeconds, emptyTimeline, clipAssets
+  promptEnabled, promptOverrides, activePrompts, parseTargetSeconds, emptyTimeline, clipAssets, normalizeAssetRef
 } from "./core_ltx25.js";
+import { imageSlot } from "./ui_images_ltx25.js";
+import { mountLibraryRefs, emptyAssetRef, sourceToggle } from "../shared/reflib_refpanel.js";
 import { LTX_WRITE_SYSTEM, LTX_WRITE_PLAIN_SYSTEM, LTX_REFINE_SYSTEM, LTX_VISION_SYSTEM } from "./prompts_ltx25.js";
 import { button, select } from "../klein/ui_common.js";
 import { createDirectorHost } from "./director/director_host.js";
@@ -629,7 +631,7 @@ This cannot be undone.`,
       p.header = state.promptHeader || "";
       p.footer = state.promptFooter || "";
     }
-    ctx.persist(); refreshFraming(); renderList(); renderOverrideChk(); ctx.refreshModes?.();
+    ctx.persist(); refreshFraming(); renderList(); renderOverrideChk(); renderImageRow(); ctx.refreshModes?.();
   });
   timeRow.append(timeChkLbl, timeIn, el("div", { text: "sec", style: { fontSize: "10px", color: C.muted } }), timeNote, ovLbl);
   // The segment timeline (the Director's editor). Each clip keeps its own: its widget values live on the
@@ -679,6 +681,40 @@ This cannot be undone.`,
     await syncHost.load(p.dir, { frames, text: p.text || "" });
     p.dir = { ...syncHost.snapshot(), frames };
   };
+  // First / Last frames of Image to Video, shown in the writer popup the way H3 shows them: the source switch and the
+  // pictures stay in step with the main screen - they are the common ones, or this clip's own once "override for this
+  // clip" is ticked.
+  const imgBlock = el("div", { style: { display: "none", flexDirection: "column", gap: "6px", paddingBottom: "8px", borderBottom: `1px solid ${C.border}` } });
+  function renderImageRow() {
+    clear(imgBlock);
+    const on = state.generationMode === "firstlast";
+    imgBlock.style.display = on ? "flex" : "none";
+    if (!on || !state.prompts?.[selected]) return;
+    const p = state.prompts[selected] = normPrompt(state.prompts[selected]);
+    const own = !!p.override;
+    const sync = () => { ctx.persist(); ctx._rerenderImages?.(); ctx.refreshModes?.(); };
+    const useLib = (own ? p.refSource : state.refSource) === "library";
+    imgBlock.append(
+      el("div", { text: own ? "This clip only" : "Common (shared by all clips)", style: { fontSize: "11px", fontWeight: "700", color: own ? BRAND : C.text } }),
+      sourceToggle(useLib ? "library" : "files", (src) => {
+        if (own) { p.refSource = src; if (src === "files") p.assetRef = null; }
+        else { state.refSource = src; if (src === "files") state.assetRef = null; }
+        sync(); renderImageRow();
+      }));
+    if (useLib) {
+      imgBlock.append(mountLibraryRefs({
+        mode: "firstlast",
+        note: own ? "This clip only: First / Last frames from the Asset tab." : "Common: First / Last frames from the Asset tab.",
+        getRef: () => (own ? p.assetRef : state.assetRef) || emptyAssetRef(),
+        onChange: (ref) => { const n = normalizeAssetRef(ref); if (own) p.assetRef = n; else state.assetRef = n; sync(); },
+      }).el);
+      return;
+    }
+    const a = clipAssets(state, selected);
+    const first = imageSlot("① First frame\n(click / drop)", a.firstFrame, n => { if (own) p.firstFrame = n || ""; else state.firstFrameImage = n; sync(); renderFirstFrameRow(); }, { box: 80 });
+    const last = imageSlot("② Last frame\n(optional)", a.lastFrame, n => { if (own) p.lastFrame = n || ""; else state.lastFrameImage = n; sync(); }, { box: 80 });
+    imgBlock.append(el("div", { style: { display: "flex", gap: "10px" } }, [first.el, last.el]));
+  }
   editCol.append(editHdr, timeRow, editorWrap, hostWrap, fiRow, fiHint);
   body.append(listCol, editCol);
 
@@ -797,6 +833,7 @@ This cannot be undone.`,
     renderTimeRow();
     updateCount();
     renderFirstFrameRow();
+    renderImageRow();
   }
 
   addBtn.addEventListener("click", () => {
@@ -827,7 +864,7 @@ This cannot be undone.`,
   const writerPop = el("div", { style: {
     display: "none", position: "absolute", bottom: "calc(100% + 6px)", right: "0", width: "380px", zIndex: "30",
     background: C.bg1, border: `1px solid ${BRAND}`, borderRadius: "8px", padding: "10px",
-    flexDirection: "column", gap: "8px", boxShadow: "0 -6px 22px rgba(0,0,0,0.55)",
+    flexDirection: "column", gap: "8px", boxShadow: "0 -6px 22px rgba(0,0,0,0.55)", maxHeight: "460px", overflowY: "auto",
   }});
   const writerAnchor = el("div", { style: { position: "relative", flexShrink: "0" } }, [writerBtn, writerPop]);
   writerBtn.addEventListener("click", (e) => {
@@ -892,7 +929,7 @@ This cannot be undone.`,
   renderLenTag();
 
   const lenRow = el("div", { style: { display: "flex", alignItems: "center", gap: "8px" } }, [targetSel, lenIn, lenTag]);
-  writerPop.append(statusTag, lenRow, modelSelWrap);
+  writerPop.append(imgBlock, statusTag, lenRow, modelSelWrap);
 
   // ── which model writes ───────────────────────────────────────────────────────
   const briefBackend = () => state.h3BriefBackend || state.h3LlmBackend || "native";
