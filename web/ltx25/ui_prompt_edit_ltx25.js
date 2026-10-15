@@ -10,7 +10,7 @@ import {
   C, BRAND, el, clear, clipSecondsFor, clipFramesFor, clipTimeline, snapHalf, clipSecForTyped, composeClipPrompt, clipFraming, promptText,
   promptEnabled, promptOverrides, activePrompts, parseTargetSeconds, emptyTimeline, clipAssets, normalizeAssetRef
 } from "./core_ltx25.js";
-import { imageSlot } from "./ui_images_ltx25.js";
+import { imageSlot, shapeWarning } from "./ui_images_ltx25.js";
 import { mountLibraryRefs, emptyAssetRef, sourceToggle } from "../shared/reflib_refpanel.js";
 import { LTX_WRITE_SYSTEM, LTX_WRITE_PLAIN_SYSTEM, LTX_REFINE_SYSTEM, LTX_VISION_SYSTEM } from "./prompts_ltx25.js";
 import { button, select } from "../klein/ui_common.js";
@@ -731,9 +731,12 @@ This cannot be undone.`,
       return;
     }
     const a = clipAssets(state, selected);
-    const first = imageSlot("① First frame\n(click / drop)", a.firstFrame, n => { if (own) p.firstFrame = n || ""; else state.firstFrameImage = n; sync(); renderFirstFrameRow(); if (n && !own) ctx.matchAspect?.(n); }, { box: 80 });
-    const last = imageSlot("② Last frame\n(optional)", a.lastFrame, n => { if (own) p.lastFrame = n || ""; else state.lastFrameImage = n; sync(); if (n && !own && !state.firstFrameImage) ctx.matchAspect?.(n); }, { box: 80 });
-    imgBlock.append(el("div", { style: { display: "flex", gap: "10px" } }, [first.el, last.el]));
+    const warn = shapeWarning();
+    const check = () => { const cur = clipAssets(state, selected); warn.refresh(cur.firstFrame, cur.lastFrame); };
+    const first = imageSlot("① First frame\n(click / drop)", a.firstFrame, n => { if (own) p.firstFrame = n || ""; else state.firstFrameImage = n; sync(); renderFirstFrameRow(); if (n && !own) ctx.matchAspect?.(n); check(); }, { box: 80 });
+    const last = imageSlot("② Last frame\n(optional)", a.lastFrame, n => { if (own) p.lastFrame = n || ""; else state.lastFrameImage = n; sync(); if (n && !own && !state.firstFrameImage) ctx.matchAspect?.(n); check(); }, { box: 80 });
+    imgBlock.append(el("div", { style: { display: "flex", gap: "10px" } }, [first.el, last.el]), warn.el);
+    check();
   }
   editCol.append(editHdr, timeRow, editorWrap, hostWrap, fiRow, fiHint);
   body.append(listCol, editCol);

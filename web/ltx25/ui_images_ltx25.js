@@ -78,6 +78,26 @@ export function imageSlot(labelText, initialFile, onSet, { box = 92 } = {}) {
   return { el: wrap, setFilename, getFilename: () => current };
 }
 
+/** Yellow notice shown while the First and Last images differ in shape; refresh(first, last) re-checks it. */
+export function shapeWarning() {
+  const box = el("div", { style: { fontSize: "10px", color: "#ffb020", lineHeight: "1.5", display: "none" } });
+  const size = (f) => new Promise(resolve => {
+    const im = new Image();
+    im.onload = () => resolve({ w: im.naturalWidth, h: im.naturalHeight });
+    im.onerror = () => resolve(null);
+    im.src = `/view?filename=${encodeURIComponent(f)}&type=input`;
+  });
+  async function refresh(first, last) {
+    box.style.display = "none";
+    if (!first || !last) return;
+    const [a, b] = await Promise.all([size(first), size(last)]);
+    if (!a || !b || Math.abs(a.w / a.h - b.w / b.h) <= 0.005) return;
+    box.textContent = `⚠ The two images have different shapes (${a.w}×${a.h} and ${b.w}×${b.h}). By the rule, the last image is scaled and centre-cropped to the first image's shape when it renders.`;
+    box.style.display = "block";
+  }
+  return { el: box, refresh };
+}
+
 /** Mode-specific image inputs. Returns { el } and writes straight into `state`. */
 export function mountImagePanel(state, ctx) {
   const wrap = el("div");
@@ -116,14 +136,17 @@ export function mountImagePanel(state, ctx) {
         // Library source: only the library block - the file slots are not shown (and not used).
         kids.push(libraryBlock("firstlast", "First / Last frames picked from the Asset tab; the file slots are not used."));
       } else {
+        const warn = shapeWarning();
+        const check = () => warn.refresh(state.firstFrameImage, state.lastFrameImage);
         const first = imageSlot("① First frame\n(click / drop)", state.firstFrameImage,
-          n => { state.firstFrameImage = n; ctx.persist(); if (n) ctx.matchAspect?.(n); });
+          n => { state.firstFrameImage = n; ctx.persist(); if (n) ctx.matchAspect?.(n); check(); });
         const last = imageSlot("② Last frame\n(optional)", state.lastFrameImage,
-          n => { state.lastFrameImage = n; ctx.persist(); if (n && !state.firstFrameImage) ctx.matchAspect?.(n); });
-        kids.push(el("div", { style: { display: "flex", gap: "6px", justifyContent: "center" } }, [first.el, last.el]));
+          n => { state.lastFrameImage = n; ctx.persist(); if (n && !state.firstFrameImage) ctx.matchAspect?.(n); check(); });
+        kids.push(el("div", { style: { display: "flex", gap: "6px", justifyContent: "center" } }, [first.el, last.el]), warn.el);
+        check();
       }
       kids.push(el("div", { html: "One image is used as the first frame (or, if only ② is set, the last frame); two images are first + last. "
-        + "The canvas takes the shape of the image given (the Aspect setting is ignored), at the same megapixels. "
+        + "The canvas takes the shape of the first image at the same megapixels, and the last image is centre-cropped to that shape (never stretched). "
         + "With neither, this is the same as Text only. <b>Last Frame Chain</b> continuity replaces ① for every clip after the first, "
         + "and a clip can swap its own images in Prompt Edit.",
         style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));

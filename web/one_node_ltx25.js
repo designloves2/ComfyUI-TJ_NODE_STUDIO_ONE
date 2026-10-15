@@ -132,6 +132,32 @@ app.registerExtension({
       ctx.rootEl = root;
 
       let popTimer;
+      // The Last frame is cut to the First frame's shape: scaled until it covers it, then centre-cropped, so neither
+      // picture is stretched and both end up the same size. A Last frame that already has that shape is used as it is.
+      const croppedLast = new Map();
+      async function cropLastToFirst(firstFile, lastFile) {
+        const key = `${firstFile}|${lastFile}`;
+        if (croppedLast.has(key)) return croppedLast.get(key);
+        const load = (f) => new Promise((resolve, reject) => {
+          const im = new Image();
+          im.onload = () => resolve(im);
+          im.onerror = () => reject(new Error(`Cannot read ${f}`));
+          im.src = `/view?filename=${encodeURIComponent(f)}&type=input`;
+        });
+        const [a, b] = await Promise.all([load(firstFile), load(lastFile)]);
+        const W = a.naturalWidth, H = a.naturalHeight;
+        let out = lastFile;
+        if (Math.abs(b.naturalWidth / b.naturalHeight - W / H) > 0.005) {
+          const k = Math.max(W / b.naturalWidth, H / b.naturalHeight);
+          const cv = el("canvas");
+          cv.width = W; cv.height = H;
+          cv.getContext("2d").drawImage(b, (W - b.naturalWidth * k) / 2, (H - b.naturalHeight * k) / 2, b.naturalWidth * k, b.naturalHeight * k);
+          const blob = await new Promise(resolve => cv.toBlob(resolve, "image/png"));
+          out = await uploadImage(new File([blob], `ltx25_lastcrop_${Date.now()}.png`, { type: "image/png" }));
+        }
+        croppedLast.set(key, out);
+        return out;
+      }
       function imageSize(file) {
         return new Promise(resolve => {
           const im = new Image();
@@ -2867,7 +2893,8 @@ app.registerExtension({
               libLast = files.last || null;
             }
             // The First / Last frame is conditioned at the clip's own size, so the canvas takes the shape of the image given.
-            const lastFile = libLast || ((framesFromPanel && pos === active.length - 1 && !libFrames) ? (rs.lastFrameImage || null) : null);
+            let lastFile = libLast || ((framesFromPanel && pos === active.length - 1 && !libFrames) ? (rs.lastFrameImage || null) : null);
+            if (framesFromPanel && firstFrame && lastFile) lastFile = await cropLastToFirst(firstFrame, lastFile);
             const sizeFrom = framesFromPanel ? (firstFrame || lastFile) : null;
             const shape = sizeFrom ? await imageSize(sizeFrom) : null;
             if (shape) clipState.aspect = `${shape.w}:${shape.h}`;
