@@ -3,6 +3,12 @@ from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
 
 WEB_DIRECTORY = "./web"
 
+from .ltx25_studio_backend.director import LTX25DirectorExtension
+
+
+async def comfy_entrypoint() -> LTX25DirectorExtension:
+    return LTX25DirectorExtension()
+
 try:
     from .dependency_check import check_dependencies
     check_dependencies()

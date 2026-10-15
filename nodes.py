@@ -5906,3 +5906,10 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "AnimaOneTJNode":              "Anima ONE STUDIO (TJ)",
     "ItdaStudioOneTJNode":         "ITDA ONE STUDIO (TJ)",
 }
+
+
+# -- LTX 2.5 Director (GPL-3.0, derived from CGlide's LTX-2.5-Director) -- real copied code in
+# ltx25_studio_backend/director/, node keys *TJ25. See LICENSE / THIRD_PARTY_NOTICES.md.
+from .ltx25_studio_backend.director import NODE_CLASS_MAPPINGS as _LTX25_NODES, NODE_DISPLAY_NAME_MAPPINGS as _LTX25_NAMES
+NODE_CLASS_MAPPINGS.update(_LTX25_NODES)
+NODE_DISPLAY_NAME_MAPPINGS.update(_LTX25_NAMES)

@@ -1733,4 +1733,4 @@ Several nodes were heavily reworked and integrated into the TJ wireless workflow
 ## 라이선스
 ## License
 
-*MIT License · [TJ NODE STUDIO ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE)*
+*GPL-3.0 · [TJ NODE STUDIO ONE](https://github.com/designloves2/ComfyUI-TJ_NODE_STUDIO_ONE)* — the package includes code derived from [LTX-2.5-Director](https://github.com/CGlide/LTX-2.5-Director) (CGlide) and WhatDreamsCost's LTX Director, both GPL-3.0. Earlier MIT terms: [LICENSE-MIT](LICENSE-MIT). Details: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
