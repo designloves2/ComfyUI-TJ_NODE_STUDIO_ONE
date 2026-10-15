@@ -1213,7 +1213,8 @@ export function createGalleryOverlay(state, ctx) {
       await saveMeta(out.filename, out.subfolder || "", {
         ...base,
         prompt: composeStitchedPrompt(picked.map(v => v.prompt || "")),
-        prompts: picked.map(v => v.prompt || ""),
+        prompts: picked.map(v => v.meta?.prompts?.[0] ?? v.prompt ?? ""),
+        dirs: picked.map(v => v.meta?.dir || null),
         clips: picked.length, stitched: true, chained: !!overlapSec,
         created: Date.now(), durationSeconds,
       });

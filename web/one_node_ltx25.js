@@ -1094,11 +1094,20 @@ app.registerExtension({
       resetTAHBtn.addEventListener("click", () => resetPromptTAHeights());
       promptHdr.append(addBtn, resetTAHBtn);
 
-      const promptList = el("div", { style: { flex: "1", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px" } });
+      const promptList = el("div", { style: { flex: "1", minHeight: "0", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px" } });
       promptList.className = "ltx25-lp";
+      // ComfyUI hands wheel turns to the graph canvas (zoom); this list scrolls instead, except over a text box that has text to scroll.
+      promptList.addEventListener("wheel", (e) => {
+        const box = e.target.closest?.("textarea");
+        if (box && box.scrollHeight > box.clientHeight + 1) return;
+        if (promptList.scrollHeight <= promptList.clientHeight + 1) return;
+        promptList.scrollTop += e.deltaY;
+        e.preventDefault();
+        e.stopPropagation();
+      }, { capture: true, passive: false });
       // Sibling wrapper, not a child of promptList itself — promptList gets clear()'d and
       // fully rebuilt by renderPrompts(), which would wipe an overlay appended inside it.
-      const promptListWrap = el("div", { style: { flex: "1", position: "relative", minHeight: "0" } });
+      const promptListWrap = el("div", { style: { flex: "1", position: "relative", minHeight: "0", display: "flex", flexDirection: "column" } });
       // Same visual language as the live-preview's own "busy, no per-step feedback"
       // banners (frDetectBanner/fvsrBanner above) — dim cover + centered glowing text —
       // so a Refine/Prompt Write run reads as "busy" the same way a render does, instead
@@ -3196,8 +3205,7 @@ app.registerExtension({
         // each clip comes back with its own segment timeline
         const dirs = Array.isArray(meta.dirs) ? meta.dirs : [meta.dir];
         state.prompts = parts.map((t, k) => ({ text: String(t || ""), firstFrame: "", enabled: true, dir: dirs[k] || null }));
-        // a stitched file stores each clip's composed text, header included, so it stands alone
-        if (Array.isArray(meta.prompts)) state.promptHeader = meta.stitched ? "" : (meta.promptHeader || "");
+        if (Array.isArray(meta.prompts)) state.promptHeader = meta.promptHeader || "";
         persist();
         refreshPlan();
         promptEditOv?.syncCommon?.();
