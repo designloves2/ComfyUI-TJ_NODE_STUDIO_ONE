@@ -2205,52 +2205,56 @@ async def mmh3_llm_write_brief(request):
         return web.json_response({"ok": False, "error": str(e)})
 
 
-@PromptServer.instance.routes.get("/minimax_h3_one/videos")
-async def mmh3_list_videos(request):
-    """Clips and stitched files in the node's output folder, newest first.
+def _make_video_list_handler(subfolder_default):
+    """Clips and stitched files in a node's output folder, newest first.
 
-    The shared gallery handler only globs PNGs; this node's results are videos.
+    The shared gallery handler only globs PNGs; these nodes' results are videos.
     """
-    output_dir = _get_output_dir()
-    try:
-        offset = max(0, int(request.query.get("offset", 0)))
-    except Exception:
-        offset = 0
-    try:
-        limit = min(max(1, int(request.query.get("limit", 60))), 300)
-    except Exception:
-        limit = 60
-    subf = request.query.get("subfolder", "") or MMH3_SUBFOLDER
-    try:
-        search = _safe_resolve_output_path(output_dir, subf)
-    except ValueError:
-        return web.json_response({"videos": [], "total": 0, "error": "invalid subfolder"}, status=400)
+    async def handler(request):
+        output_dir = _get_output_dir()
+        try:
+            offset = max(0, int(request.query.get("offset", 0)))
+        except Exception:
+            offset = 0
+        try:
+            limit = min(max(1, int(request.query.get("limit", 60))), 300)
+        except Exception:
+            limit = 60
+        subf = request.query.get("subfolder", "") or subfolder_default
+        try:
+            search = _safe_resolve_output_path(output_dir, subf)
+        except ValueError:
+            return web.json_response({"videos": [], "total": 0, "error": "invalid subfolder"}, status=400)
 
-    found = []
-    if search and os.path.isdir(search):
-        for ext in ("*.mp4", "*.webm", "*.mkv", "*.mov"):
-            found += glob.glob(os.path.join(search, "**", ext), recursive=True)
-    found = sorted(set(found), key=os.path.getmtime, reverse=True)
+        found = []
+        if search and os.path.isdir(search):
+            for ext in ("*.mp4", "*.webm", "*.mkv", "*.mov"):
+                found += glob.glob(os.path.join(search, "**", ext), recursive=True)
+        found = sorted(set(found), key=os.path.getmtime, reverse=True)
 
-    videos = []
-    for f in found[offset:offset + limit]:
-        rel = os.path.relpath(os.path.dirname(f), output_dir)
-        name = os.path.basename(f)
-        # the sidecar carries the prompt the clip was rendered from, so the gallery
-        # can show it and hand it back to the editor
-        meta = _read_json_meta(f) or {}
-        videos.append({
-            "filename": name,
-            "subfolder": "" if rel == "." else rel.replace("\\", "/"),
-            "mtime": os.path.getmtime(f),
-            "size": os.path.getsize(f),
-            # the stitched result is the interesting one, so flag it for the UI
-            "is_full": "_full" in name.lower(),
-            "meta": meta,
-            "prompt": meta.get("prompt", ""),
-            "favorite": bool(meta.get("favorite") or meta.get("favourite")),
-        })
-    return web.json_response({"videos": videos, "total": len(found), "offset": offset, "limit": limit})
+        videos = []
+        for f in found[offset:offset + limit]:
+            rel = os.path.relpath(os.path.dirname(f), output_dir)
+            name = os.path.basename(f)
+            # the sidecar carries the prompt the clip was rendered from, so the gallery
+            # can show it and hand it back to the editor
+            meta = _read_json_meta(f) or {}
+            videos.append({
+                "filename": name,
+                "subfolder": "" if rel == "." else rel.replace("\\", "/"),
+                "mtime": os.path.getmtime(f),
+                "size": os.path.getsize(f),
+                # the stitched result is the interesting one, so flag it for the UI
+                "is_full": "_full" in name.lower(),
+                "meta": meta,
+                "prompt": meta.get("prompt", ""),
+                "favorite": bool(meta.get("favorite") or meta.get("favourite")),
+            })
+        return web.json_response({"videos": videos, "total": len(found), "offset": offset, "limit": limit})
+    return handler
+
+
+PromptServer.instance.routes.get("/minimax_h3_one/videos")(_make_video_list_handler(MMH3_SUBFOLDER))
 
 
 @PromptServer.instance.routes.get("/minimax_h3_one/images")
@@ -2544,10 +2548,9 @@ async def mmh3_reveal(request):
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 
 
-@PromptServer.instance.routes.get("/minimax_h3_one/config")
-async def mmh3_get_config(request):
-    cfg = _load_config(MMH3_CONFIG_PATH)
-    return web.json_response({
+def _mmh3_config_response(cfg, subfolder, prefix):
+    """The settings the H3-derived studio UIs read back; one shape for the H3 and LTX studios."""
+    return {
         "unet_first_last":  cfg.get("unet_first_last",  ""),
         "unet_reference":   cfg.get("unet_reference",   ""),
         "clip_name":        cfg.get("clip_name",        ""),
@@ -2556,7 +2559,7 @@ async def mmh3_get_config(request):
         "turbo_lora":       cfg.get("turbo_lora",       ""),
         "turbo_lora_strength": cfg.get("turbo_lora_strength", 1.0),
         "upscale_model":    cfg.get("upscale_model",    ""),
-        "save_subfolder":   cfg.get("save_subfolder")   or MMH3_SUBFOLDER,
+        "save_subfolder":   cfg.get("save_subfolder")   or subfolder,
         "img_save_subfolder": cfg.get("img_save_subfolder", ""),
         "sheet_video_save_subfolder": cfg.get("sheet_video_save_subfolder", ""),
         "charsheet_system_prompt": cfg.get("charsheet_system_prompt", ""),
@@ -2664,7 +2667,7 @@ async def mmh3_get_config(request):
         "h3_llama_max_tokens":    cfg.get("h3_llama_max_tokens",    4096),
         "ltx_llama_model":        cfg.get("ltx_llama_model",        ""),
         "ltx_llama_mmproj":       cfg.get("ltx_llama_mmproj",       ""),
-        "filename_prefix":       cfg.get("filename_prefix",       "MMH3"),
+        "filename_prefix":       cfg.get("filename_prefix",       prefix),
         # LTX 2.5 Upscale mode — its own model set (generationMode "ltxupscale")
         "ltx_unet":              cfg.get("ltx_unet",              ""),
         "ltx_latent_upscaler":   cfg.get("ltx_latent_upscaler",   ""),
@@ -2699,7 +2702,12 @@ async def mmh3_get_config(request):
         # User-defined pipeline presets (name + the axes a preset owns). Server-side so
         # they outlive a browser reset; the six built-ins live in presets_minimax.js.
         "user_presets":          cfg.get("user_presets",          []),
-    })
+    }
+
+
+@PromptServer.instance.routes.get("/minimax_h3_one/config")
+async def mmh3_get_config(request):
+    return web.json_response(_mmh3_config_response(_load_config(MMH3_CONFIG_PATH), MMH3_SUBFOLDER, "MMH3"))
 
 
 @PromptServer.instance.routes.post("/minimax_h3_one/config")
@@ -5913,3 +5921,143 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 from .ltx25_studio_backend.director import NODE_CLASS_MAPPINGS as _LTX25_NODES, NODE_DISPLAY_NAME_MAPPINGS as _LTX25_NAMES
 NODE_CLASS_MAPPINGS.update(_LTX25_NODES)
 NODE_DISPLAY_NAME_MAPPINGS.update(_LTX25_NAMES)
+
+
+# -- LTX 2.5 ONE STUDIO (TJ) ------------------------------------------------------
+# H3-style studio for the LTX 2.5 Director nodes above. Generic routes (models, node
+# availability, vram, thumbs, media/video info, stitch, LLM) are the H3 ones; only what
+# is bound to this node's own output folder / config lives here.
+LTX25_CONFIG_PATH = os.path.join(NODE_DIR, 'config_ltx25.json')
+LTX25_SUBFOLDER = "one_ltx25"
+PROMPT_TEMPLATE_POOLS["ltx25"] = os.path.join(NODE_DIR, 'templates_prompt_ltx25.json')
+_ltx25_last: dict = {}
+
+PromptServer.instance.routes.get("/ltx25_one/gallery")(_make_gallery_handler(LTX25_SUBFOLDER, "ltx25"))
+PromptServer.instance.routes.get("/ltx25_one/videos")(_make_video_list_handler(LTX25_SUBFOLDER))
+PromptServer.instance.routes.post("/ltx25_one/save_meta")(_make_save_meta_handler("ltx25"))
+PromptServer.instance.routes.post("/ltx25_one/update_meta")(_make_update_meta_handler("ltx25"))
+PromptServer.instance.routes.get("/ltx25_one/meta")(_make_meta_get_handler())
+PromptServer.instance.routes.post("/ltx25_one/open_folder")(_make_open_folder_handler())
+PromptServer.instance.routes.post("/ltx25_one/delete")(_make_delete_handler("ltx25"))
+PromptServer.instance.routes.post("/ltx25_one/rename")(_make_rename_handler("ltx25"))
+PromptServer.instance.routes.post("/ltx25_one/discard_input")(_make_discard_input_handler("ltx25"))
+PromptServer.instance.routes.post("/ltx25_one/copy_to_input")(_make_copy_to_input_handler("ltx25"))
+PromptServer.instance.routes.get("/ltx25_one/lora_triggers")(_make_lora_triggers_handler())
+
+# Defaults the UI reads back. The model picks fall back to the LTX 2.5 set already saved
+# for the H3 studio's LTX Upscale mode, so a machine set up for that works here at once.
+LTX25_CONFIG_DEFAULTS = {
+    "stage2_sigmas": "0.85, 0.7250, 0.4219, 0.0", "cfg": 1.0,
+    "distilled_lora": "", "distilled_lora_strength": 0.5, "distilled_lora_on": False,
+}
+LTX25_H3_FALLBACK = ("ltx_unet", "ltx_clip", "ltx_vae_video", "ltx_vae_audio", "ltx_latent_upscaler", "ltx_tiny_vae")
+
+
+@PromptServer.instance.routes.get("/ltx25_one/config")
+async def ltx25_get_config(request):
+    cfg = _load_config(LTX25_CONFIG_PATH)
+    h3 = _load_config(MMH3_CONFIG_PATH)
+    for key in LTX25_H3_FALLBACK:
+        if not cfg.get(key):
+            cfg[key] = h3.get(key, "")
+    out = _mmh3_config_response(cfg, LTX25_SUBFOLDER, "LTX25")
+    out.update({k: cfg.get(k, v) for k, v in LTX25_CONFIG_DEFAULTS.items()})
+    return web.json_response(out)
+
+
+LTX25_CORE_NODES = [
+    "LTXDirectorTJ25", "LTXDirectorGuideTJ25", "LTXDirectorCropGuidesTJ25", "LTXVConditioning", "LTXVConcatAVLatent",
+    "LTXVSeparateAVLatent", "LTXVLatentUpsampler", "LTXVAudioVAEDecode", "LatentUpscaleModelLoader", "ConditioningZeroOut",
+    "SamplerCustomAdvanced", "CFGGuider", "BasicScheduler", "ManualSigmas", "RandomNoise", "KSamplerSelect",
+]
+LTX25_OPTIONAL_NODES = [
+    "VHS_VideoCombine", "CreateVideo", "SaveVideo", "UnetLoaderGGUF", "TJ_LTX25ClipLoaderGGUF", "LTXVChunkFeedForward",
+    "LTX2MemoryEfficientSageAttentionPatch", "PathchSageAttentionKJ", "ModelPreviewOverrideKJ", "ModelAttentionBackend",
+    "SolAttnPatch", "TJ_FreeTextEncoderVRAM", "TJ_RTXDeblur",
+]
+
+
+@PromptServer.instance.routes.get("/ltx25_one/node_availability")
+async def ltx25_node_availability(request):
+    import nodes as comfy_nodes
+    avail = {n: (n in comfy_nodes.NODE_CLASS_MAPPINGS) for n in LTX25_CORE_NODES + LTX25_OPTIONAL_NODES}
+    return web.json_response({
+        "ok": True, "available": avail,
+        "core_ok": all(avail[n] for n in LTX25_CORE_NODES),
+        "missing_core": [n for n in LTX25_CORE_NODES if not avail[n]],
+        "missing_optional": [n for n in LTX25_OPTIONAL_NODES if not avail[n]],
+    })
+
+
+@PromptServer.instance.routes.post("/ltx25_one/config")
+async def ltx25_save_config(request):
+    try:
+        patch = await request.json()
+        if not isinstance(patch, dict):
+            return web.json_response({"ok": False, "error": "invalid payload"}, status=400)
+        cfg = _load_config(LTX25_CONFIG_PATH)
+        cfg.update(patch)
+        _save_config(LTX25_CONFIG_PATH, cfg)
+        return web.json_response({"ok": True})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+
+@PromptServer.instance.routes.post("/ltx25_one/set_last_image")
+async def ltx25_set_last_image(request):
+    data = await request.json()
+    uid = str(data.get("unique_id", ""))
+    if uid:
+        rec = _ltx25_last.setdefault(uid, {})
+        if "image" in data:
+            nxt = data.get("image", {})
+            _mmh3_drop_stale_last_frame(rec.get("image"), nxt)
+            rec["image"] = nxt
+        if "video_path" in data:
+            rec["video_path"] = data.get("video_path", "")
+    return web.json_response({"ok": True})
+
+
+class LTX25OneTJNode:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {}, "optional": {}, "hidden": {"unique_id": "UNIQUE_ID"}}
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("last_frame", "video_path")
+    FUNCTION = "get_output"
+    CATEGORY = " ✨ TJ_Node/Generator"
+    OUTPUT_NODE = True
+
+    def get_output(self, unique_id=None, **kwargs):
+        rec = _ltx25_last.get(str(unique_id) if unique_id else "", {})
+        video_path = rec.get("video_path", "") or ""
+        info = rec.get("image", {}) or {}
+        try:
+            filename = info.get("filename")
+            if filename:
+                base = folder_paths.get_output_directory() if info.get("type", "output") == "output" else folder_paths.get_input_directory()
+                sub = info.get("subfolder", "") or ""
+                path = os.path.join(base, sub, filename) if sub else os.path.join(base, filename)
+                arr = np.array(Image.open(path).convert("RGB")).astype(np.float32) / 255.0
+                return (torch.from_numpy(arr)[None,], video_path)
+        except Exception as e:
+            print(f"[LTX25] output slot error: {e}")
+        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32), video_path)
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return float("nan")
+
+
+NODE_CLASS_MAPPINGS["LTX25OneTJNode"] = LTX25OneTJNode
+NODE_DISPLAY_NAME_MAPPINGS["LTX25OneTJNode"] = "LTX 2.5 ONE STUDIO (TJ)"
+
+
+# The LTX studio UI is derived from the H3 one and calls the same helper routes (models, thumbs,
+# media/video info, stitch, LLM, prompt sets, ...). Serve every /minimax_h3_one route that has no
+# /ltx25_one counterpart of its own under the new prefix too.
+_ltx25_paths = {getattr(_r, "path", "") for _r in PromptServer.instance.routes}
+for _r in list(PromptServer.instance.routes):
+    _p = getattr(_r, "path", "")
+    if _p.startswith("/minimax_h3_one/") and "/ltx25_one/" + _p[len("/minimax_h3_one/"):] not in _ltx25_paths:
+        PromptServer.instance.routes.route(_r.method, "/ltx25_one/" + _p[len("/minimax_h3_one/"):], **_r.kwargs)(_r.handler)

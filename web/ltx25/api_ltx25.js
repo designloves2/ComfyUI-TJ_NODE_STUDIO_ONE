@@ -1,0 +1,856 @@
+// api_ltx25.js — Backend communication for LTX 2.5 ONE STUDIO (TJ)
+import { api } from "../../../scripts/api.js";
+import { API, SUBFOLDER } from "./core_ltx25.js";
+
+export async function getModels() {
+  const r = await api.fetchApi(`${API}/models`);
+  return r.json();
+}
+
+// ── prompt sets ──────────────────────────────────────────────────────────────
+export async function listPromptSets() {
+  const r = await api.fetchApi(`${API}/prompt_sets`);
+  const d = await r.json();
+  return d.sets || [];
+}
+export async function getPromptSet(name) {
+  const r = await api.fetchApi(`${API}/prompt_sets/get?name=${encodeURIComponent(name)}`);
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+  return r.json();
+}
+export async function savePromptSet(payload) {
+  const r = await api.fetchApi(`${API}/prompt_sets/save`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "save failed");
+  return d;
+}
+export async function deletePromptSet(name) {
+  const r = await api.fetchApi(`${API}/prompt_sets/delete`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "delete failed");
+  return d;
+}
+
+export const MMH3_CORE_NODES = [
+  "MiniMaxH3ImageToVideo", "MiniMaxH3ReferenceToVideo", "MiniMaxH3SigmaShift",
+  "SamplerCustomAdvanced", "CreateVideo", "SaveVideo",
+];
+export const MMH3_OPTIONAL_NODES = [
+  "PathchSageAttentionKJ", "ModelPreviewOverrideKJ", "ModelPatchTorchSettings",
+  "MiniMaxH3MemoryEfficientSageAttentionPatch", "ApplyMiniMaxH3FirstBlockCache",
+  "ModelAttentionBackend", "H3SLAAttention", "TJ_FreeTextEncoderVRAM",
+  // H3-Optimizations (Zironic) — backend-preserving VRAM + optional sparse attention
+  "H3MemoryOptimization", "H3SparseAttention",
+  // designloves2/ComfyUI-sol-attn (mirror; original Saganaki22 repo was deleted) — H3-specific sparse attention + AdaLN fusion
+  "MiniMaxH3ScheduledSolAttentionPatch", "MiniMaxH3FusedModulation",
+  "MiniMaxH3TurboSampler", "MiniMaxH3TurboLoRA", "SolAttnPatch",
+  "SpectrumApplyMiniMaxH3", "RTXVideoSuperResolution", "TJ_RTXDeblur",
+  // ships with TJ_NODE (separate pack, different key) — used by Postprocess's Denoise step
+  "TJ_NODE_RTXDenoise",
+  // ships with TJ_NODE — "RTX VSR (TJ)", used by Postprocess's Upscale step
+  "TJ_NODE_RTXVSR",
+  // ships with TJ_NODE — "Skin Retouch (TJ)", used by Postprocess's item G
+  "TJ_SkinRetouch",
+  // Image Generator (T2I/Ref2I) — 2nd-pass latent upscale (preview-res -> final-res)
+  "MinimaxH3LatentUpscaler3D",
+  "BlockSparseAttention",
+  // Image Generator's "Use Fizgig Latent" option — shootthesound/ComfyUI-Fizgig-H3-Still
+  // (true one-frame H3 latent + a decode that doesn't band a lone frame)
+  "FizgigH3StillLatent", "FizgigH3StillDecode",
+  // Character Sheet's grid-assembly step
+  "BatchImagesNode", "ImageGrid", "ImageScaleToMaxDimension",
+  // FlashVSR VSR (lihaoyun6/ComfyUI-FlashVSR-Ultra-Fast, GPL-3.0) — tiled diffusion video
+  // super-resolution, offered as a 4th Upscale option alongside RTX VSR.
+  "FlashVSRInitPipe", "FlashVSRNodeAdv",
+  // LTX 2.5 Upscale mode — the LTXV* nodes + LatentUpscaleModelLoader are ComfyUI core;
+  // only the GGUF text-encoder loader is ours (needed for the gemma4 LTX clip).
+  "TJ_LTX25ClipLoaderGGUF",
+  // gallery post-processing — upscale / frame interpolation / resize on a finished clip
+  "UpscaleModelLoader", "ImageUpscaleWithModel", "RIFEInterpolation",
+  // Video Resize (TJ) — ships with TJ_NODE; node-side port of the gallery's "↔ Resize" tool
+  "TJ_VideoResize",
+  // ComfyUI core — used by Postprocess's Add Grain step (GLSLShader's own output is RGBA;
+  // SplitImageWithAlpha strips it back to RGB for whatever runs after Grain)
+  "GLSLShader", "SplitImageWithAlpha",
+  // video/audio save via VHS's nvenc_h264-mp4 format (real GPU encoding) — falls back
+  // to core CreateVideo/SaveVideo (CPU) when not installed
+  "VHS_VideoCombine",
+  // reference video / audio inputs
+  "VHS_LoadVideo", "LoadAudio", "TrimAudioDuration",
+  // Audio Lock — pins the real soundtrack into the AV latent (ships with TJ_NODE)
+  "TJ_H3_AudioLock",
+  // Reference Asset Library nodes (ship with TJ_NODE) — a clip that uses library assets / a project
+  "TJ_H3Reference", "TJ_H3ImageToVideo",
+  // One-Take — latent-level continuation (Continuity: One-Take)
+  "TJ_H3_LatentContinuation", "TJ_H3_SaveLatentCheckpoint", "TJ_H3_LoadLatentCheckpoint",
+  // Native Image -> Brief vision pipeline (no Ollama needed)
+  "TJ_MultiImageLoader", "TextGenerate", "TJStudioOneTextOutput",
+  // H3 Face Refine (Carasibana/ComfyUI-H3-FaceRefine, MIT) — post-process pass that
+  // tracks/crops a small face per frame, re-renders it through H3 as real img2img, then
+  // stitches it back. See SPEC_MINIMAX_H3_FACE_REFINE.md. TJ_H3_AudioLock (above) stands
+  // in for the pack's own MiniMaxH3NativeAudioLock — not installed, not needed.
+  "H3FaceSelect", "H3FaceTrackCrop", "H3InjectVideoLatent", "H3PerFrameDenoise",
+  "H3FaceStitch", "H3FaceTransformInfo",
+  // optional — true face-shaped paste masks instead of a rectangle (needs Impact Pack's
+  // SAMLoader for a SAM_MODEL; everything else in Face Refine works without it)
+  "H3FaceMaskSAM", "SAMLoader",
+];
+
+/**
+ * The file lists the loader nodes themselves accept, read straight from their COMBO
+ * options — guaranteed to match what prompt validation will allow.
+ */
+export async function getMediaFiles() {
+  const grab = async (node, field) => {
+    try {
+      const r = await api.fetchApi(`/object_info/${node}`);
+      if (!r.ok) return [];
+      const d = await r.json();
+      const inp = d?.[node]?.input;
+      const spec = (inp?.required || {})[field] || (inp?.optional || {})[field];
+      const opts = Array.isArray(spec?.[0]) ? spec[0] : (spec?.[1]?.options || []);
+      return Array.isArray(opts) ? opts.filter(x => typeof x === "string") : [];
+    } catch { return []; }
+  };
+  const [videos, audios] = await Promise.all([
+    grab("VHS_LoadVideo", "video"),
+    grab("LoadAudio", "audio"),
+  ]);
+  return { videos, audios };
+}
+
+/** Duration / audio-track presence for an input file (see the media_info route). */
+export async function getMediaInfo(file) {
+  try {
+    const r = await api.fetchApi(`${API}/media_info?file=${encodeURIComponent(file)}`);
+    if (!r.ok) return { ok: false };
+    return await r.json();
+  } catch { return { ok: false }; }
+}
+
+/** Upload a non-image asset (video/audio) into ComfyUI's input folder. */
+export async function uploadMedia(file) {
+  const fd = new FormData();
+  fd.append("image", file);          // ComfyUI's upload endpoint takes the "image" field
+  fd.append("subfolder", "");
+  fd.append("type", "input");
+  const r = await api.fetchApi("/upload/image", { method: "POST", body: fd });
+  if (!r.ok) throw new Error(`upload failed (${r.status}) — put the file in ComfyUI's input folder instead`);
+  const d = await r.json();
+  return d.name;
+}
+
+/** LiteGraph already knows every registered node type — no request needed. */
+function registryAvailability(names) {
+  const reg = (typeof LiteGraph !== "undefined" && LiteGraph.registered_node_types) || {};
+  const out = {};
+  for (const n of names) out[n] = !!reg[n];
+  return out;
+}
+
+/**
+ * Which pipeline nodes this install actually has, so the graph builder can skip the
+ * optional ones instead of submitting a prompt that fails validation.
+ *
+ * The frontend registry is the primary source: it can't go stale against a backend that
+ * hasn't been restarted since this pack was updated. The backend route is merged in as a
+ * cross-check and for the core/missing summaries.
+ */
+export async function getNodeAvailability() {
+  const all = [...MMH3_CORE_NODES, ...MMH3_OPTIONAL_NODES];
+  const local = registryAvailability(all);
+  let remote = {}, install = {};
+  try {
+    const r = await api.fetchApi(`${API}/node_availability`);
+    const d = await r.json();
+    remote = d.available || {};
+    install = {
+      install_dir: d.install_dir || "",
+      install_script_win: d.install_script_win || "install_requirements.bat",
+      install_script_nix: d.install_script_nix || "install_requirements.sh",
+    };
+  } catch { /* older backend or route missing — the registry still answers */ }
+
+  const available = {};
+  for (const n of all) available[n] = (n in remote) ? (remote[n] || local[n]) : local[n];
+  const missingCore     = MMH3_CORE_NODES.filter(n => !available[n]);
+  const missingOptional = MMH3_OPTIONAL_NODES.filter(n => !available[n]);
+  return {
+    ok: true, available,
+    core_ok: missingCore.length === 0,
+    missing_core: missingCore,
+    missing_optional: missingOptional,
+    ...install,
+  };
+}
+
+// Every preview run (Postprocess's, and any later mode's) that opts out of the real
+// output/ gallery lands in one shared scratch folder under ComfyUI's own temp/ —
+// Settings → Output reports its size here and can clear it with clearTempFiles().
+export async function getTempSize() {
+  const r = await api.fetchApi(`${API}/temp_size`);
+  return r.json();
+}
+export async function clearTempFiles() {
+  const r = await api.fetchApi(`${API}/temp_clear`, { method: "POST" });
+  return r.json();
+}
+
+export async function getConfig() {
+  const r = await api.fetchApi(`${API}/config`);
+  return r.json();
+}
+
+export async function saveConfig(patch) {
+  return api.fetchApi(`${API}/config`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function uploadImage(file) {
+  const fd = new FormData();
+  fd.append("image", file);
+  fd.append("subfolder", "");
+  fd.append("type", "input");
+  const r = await api.fetchApi("/upload/image", { method: "POST", body: fd });
+  const d = await r.json();
+  return d.name;
+}
+
+export async function getGallery({ offset = 0, limit = 20, subfolder = SUBFOLDER, favonly = false } = {}) {
+  const r = await api.fetchApi(`${API}/gallery?offset=${offset}&limit=${limit}&subfolder=${encodeURIComponent(subfolder)}&favonly=${favonly ? 1 : 0}`);
+  return r.json();
+}
+
+/** Clips written by this node, newest first (the shared gallery only lists PNGs). */
+export async function listVideos(subfolder, { offset = 0, limit = 120 } = {}) {
+  const r = await api.fetchApi(`${API}/videos?offset=${offset}&limit=${limit}&subfolder=${encodeURIComponent(subfolder || SUBFOLDER)}`);
+  return r.json();
+}
+
+// Image Generator's own dedicated listing (/ltx25_one/images) — separate route from
+// /videos above, so the H3 image gallery is its own thing, not a filtered view of the
+// video gallery's data.
+export async function listImages(subfolder, { offset = 0, limit = 120 } = {}) {
+  const r = await api.fetchApi(`${API}/images?offset=${offset}&limit=${limit}&subfolder=${encodeURIComponent(subfolder || SUBFOLDER)}`);
+  return r.json();
+}
+
+export async function revealOutputFolder(subfolder) {
+  try {
+    const r = await api.fetchApi(`${API}/reveal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subfolder: subfolder || SUBFOLDER }),
+    });
+    if (r.status === 404) return { ok: false, error: "restart ComfyUI to enable this" };
+    return await r.json();
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
+export async function deleteImage(filename, subfolder) {
+  const r = await api.fetchApi(`${API}/delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename, subfolder }),
+  });
+  return r.json();
+}
+
+/**
+ * VHS_VideoCombine's own final output always carries a "-audio" suffix
+ * ("..._00001-audio.mp4") whenever the clip has a soundtrack — every other save path in
+ * this pack produces a plain filename_prefix with no such suffix. Strips it off the
+ * actual file on disk (and its sidecar json) so a VHS-saved clip's name matches what the
+ * rest of the pack expects; returns the possibly-renamed {filename, subfolder} unchanged
+ * on any failure (already-renamed, no "-audio" to strip, or the route itself errors).
+ */
+export async function stripAudioSuffix(filename, subfolder) {
+  const m = /^(.*)-audio(\.[^.]+)$/.exec(filename || "");
+  if (!m) return { filename, subfolder };
+  const newFilename = m[1] + m[2];
+  try {
+    const r = await api.fetchApi(`${API}/rename`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename, subfolder, new_filename: newFilename }),
+    });
+    const d = await r.json();
+    return d.ok ? { filename: newFilename, subfolder } : { filename, subfolder };
+  } catch { return { filename, subfolder }; }
+}
+
+export async function openImageFolder(filename, subfolder) {
+  const r = await api.fetchApi(`${API}/open_folder`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename, subfolder }),
+  });
+  return r.json();
+}
+
+// Copy a generated frame back into ComfyUI's input/ so the next clip can LoadImage it.
+export async function copyOutputToInput(filename, subfolder, type) {
+  const r = await api.fetchApi(`${API}/copy_to_input`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename, subfolder: subfolder || "", type: type || "output" }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "copy failed");
+  return d.filename;
+}
+
+// VRAM + system RAM right now. Sampled during a run so the extremes land in the clip's
+// metadata: a render that spills to system RAM (and then to the pagefile) never errors,
+// it just takes tens of times longer, and without these numbers that is indistinguishable
+// from a hang after the fact.
+export async function getVramStats() {
+  try {
+    const r = await api.fetchApi(`${API}/vram_stats`);
+    return await r.json();
+  } catch { return null; }
+}
+
+// fps / width / height / frame count — used to size chunked post-processing so a
+// VHS_LoadVideo call never has to materialize more frames than memory allows.
+export async function getVideoInfo(filename, subfolder, type) {
+  const r = await api.fetchApi(`${API}/video_info`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename, subfolder: subfolder || "", type: type || "input" }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "video_info failed");
+  return d;
+}
+
+// Take back a file copy_to_input made. Every call there mints a fresh uuid-named copy, so
+// anything that copies a source in just to feed a one-off graph has to clean up after
+// itself or the input folder grows forever.
+export async function discardInputCopy(filename) {
+  if (!filename) return;
+  await api.fetchApi(`${API}/discard_input`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename }),
+  }).catch(() => {});
+}
+
+export async function setLastResult(nodeId, { image, videoPath } = {}) {
+  const body = { unique_id: String(nodeId) };
+  if (image !== undefined)     body.image = image;
+  if (videoPath !== undefined) body.video_path = videoPath;
+  await api.fetchApi(`${API}/set_last_image`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).catch(() => {});
+}
+
+// Concatenate the per-clip videos server-side (ffmpeg).
+export async function stitchClips(clips, filenamePrefix, trimSeconds, overlapSeconds, overrideAudio) {
+  const r = await api.fetchApi(`${API}/stitch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      clips, filename_prefix: filenamePrefix, trim_seconds: trimSeconds ?? null,
+      overlap_seconds: overlapSeconds ?? null, override_audio: overrideAudio || null,
+    }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "stitch failed");
+  return d;
+}
+
+/** Copy a rendered clip's last frame into input/ (to seed a continuation). Returns the
+ *  input-folder filename. */
+export async function getClipLastFrame(filename, subfolder = "") {
+  const r = await api.fetchApi(`${API}/clip_last_frame`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename, subfolder }),
+  });
+  const d = await r.json();
+  if (!d.ok || !d.filename) throw new Error(d.error || "could not read the last frame");
+  return d.filename;
+}
+
+export async function getSystemPrompt(name = "minimax") {
+  try {
+    const r = await api.fetchApi(`${API}/llm/system_prompt?name=${encodeURIComponent(name)}`);
+    if (r.status === 404) return { ok: false, instruction: "", needsRestart: true };
+    return await r.json();
+  } catch {
+    return { ok: false, instruction: "" };
+  }
+}
+
+export async function enhancePrompt(payload) {
+  const r = await api.fetchApi(`${API}/llm/enhance`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "enhance failed");
+  return d;
+}
+
+// Trigger words baked into a LoRA's safetensors header, so a freshly picked LoRA can
+// fill its own trigger field instead of the user hunting for it.
+export async function getLoraTriggers(loraName) {
+  const r = await api.fetchApi(`${API}/lora_triggers?name=${encodeURIComponent(loraName)}`);
+  return await r.json();
+}
+
+export async function saveMeta(filename, subfolder, stateObj) {
+  try {
+    await api.fetchApi(`${API}/save_meta`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename, subfolder: subfolder || "", meta: stateObj }),
+    });
+  } catch (e) { console.warn("[MMH3] saveMeta:", e); }
+}
+
+// Of a clip's trailing frames, the newest one that is not a fade-to-black. Returns null
+// when nothing is usable, so the caller can fall back to the plain last frame.
+export async function pickChainFrame(images) {
+  try {
+    const r = await api.fetchApi(`${API}/pick_chain_frame`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ images }),
+    });
+    const d = await r.json();
+    return d.ok ? d : null;
+  } catch (e) { console.warn("[MMH3] pickChainFrame:", e); return null; }
+}
+
+// Free VRAM between clips. ComfyUI keeps models resident between prompts, so an explicit
+// /free with `unload_models` is what actually drops them.
+export async function freeMemory({ unloadModels = true, emptyCache = true } = {}) {
+  try {
+    await api.fetchApi("/free", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ unload_models: unloadModels, free_memory: emptyCache }),
+    });
+  } catch {}
+}
+
+export async function interrupt() {
+  try { await api.fetchApi("/interrupt", { method: "POST" }); } catch {}
+}
+
+/**
+ * Submit one graph and resolve with its outputs.
+ * Resolves with { images, videos, byNode } where `byNode` is the raw executed payload
+ * keyed by node id — the relay loop needs specific nodes (clip video, last frame).
+ */
+export function queuePrompt(promptGraph, { onProgress, onNode, onQueued, samplerNode } = {}) {
+  return new Promise(async (resolve, reject) => {
+    let promptId = null, settled = false;
+    const outputs = {};
+    const finish = (fn, arg) => { if (settled) return; settled = true; cleanup(); fn(arg); };
+
+    // ComfyUI's `progress` payload is {value, max, node, prompt_id}. Every node with a
+    // progress bar — the per-step preview override, the video VAE decode (~one tick per
+    // latent frame), upscale/deblur/RIFE — emits on the same event, so without a node
+    // filter the "step N/M" readout jumps to bogus totals. Forward only the given node's
+    // (or nodes' — samplerNode may be a single id or an array, e.g. sampler + a following
+    // tiled post-process like FlashVSR) own ticks; if we don't know its id (reconnect with
+    // no graph) forward everything. The node id itself is passed through as a third arg
+    // so a caller watching more than one node can tell which one just ticked.
+    const samplerNodes = Array.isArray(samplerNode) ? samplerNode : (samplerNode ? [samplerNode] : null);
+    const onProgressEvt = (ev) => {
+      if (!onProgress) return;
+      try {
+        const d = ev.detail || {};
+        if (d.prompt_id && promptId && d.prompt_id !== promptId) return;
+        if (samplerNodes && d.node != null && !samplerNodes.includes(d.node)) return;
+        const { value, max } = d;
+        if (max) onProgress(value, max, d.node);
+      } catch {}
+    };
+    const onExecutedEvt = (ev) => {
+      const d = ev.detail || {};
+      if (d.prompt_id && promptId && d.prompt_id !== promptId) return;
+      if (d.node != null && d.output) {
+        outputs[d.node] = d.output;
+        try { onNode?.(d.node, d.output); } catch {}
+      }
+    };
+    // Every save path in this pack produces a plain filename_prefix except
+    // VHS_VideoCombine, whose real final file always carries its own "-audio" suffix
+    // when the clip has sound — fixed once here so every caller downstream (metadata,
+    // gallery listing, chunked stitching) sees the same plain-name shape regardless of
+    // which save node actually ran.
+    async function fixAudioSuffixes(byNode) {
+      for (const key in byNode) {
+        const out = byNode[key];
+        for (const arr of [out?.images, out?.gifs]) {
+          if (!Array.isArray(arr)) continue;
+          for (const item of arr) {
+            if (!item?.filename) continue;
+            // The rename endpoint only ever resolves paths inside the real output/ dir
+            // (see _make_rename_handler in nodes.py) — a preview's save_output:false
+            // result comes back with type "temp" and 404s there every time, harmlessly
+            // but noisily (console spam on every single preview run). Only attempt it
+            // for a real output-type item.
+            if ((item.type || "output") !== "output") continue;
+            const r = await stripAudioSuffix(item.filename, item.subfolder || "");
+            item.filename = r.filename;
+          }
+        }
+      }
+      return byNode;
+    }
+    const onSuccess = async (ev) => {
+      const d = ev.detail || {};
+      if (d.prompt_id && promptId && d.prompt_id !== promptId) return;
+      finish(resolve, { byNode: await fixAudioSuffixes(outputs) });
+    };
+    const onExecError = (ev) => {
+      const d = ev.detail || {};
+      if (d.prompt_id && promptId && d.prompt_id !== promptId) return;
+      finish(reject, new Error(d.exception_message || "generation failed"));
+    };
+    const onCancelled = (ev) => {
+      const d = ev.detail || {};
+      if (d.prompt_id && promptId && d.prompt_id !== promptId) return;
+      finish(reject, new Error("cancelled"));
+    };
+    // Safety net: on a flaky link (a backgrounded mobile tab over the tunnel) the
+    // websocket can drop mid-run, so execution_success never arrives even though the
+    // prompt finished. Poll /history for the same prompt and settle from there.
+    async function pollHistory() {
+      while (!settled) {
+        await new Promise(r => setTimeout(r, 5000));
+        if (settled || !promptId) continue;
+        try {
+          const r = await api.fetchApi(`/history/${promptId}`);
+          const entry = (await r.json())[promptId];
+          if (!entry || !entry.status) continue;
+          if (entry.status.status_str === "error") {
+            const msg = (entry.status.messages || [])
+              .map(m => Array.isArray(m) ? m.join(" ") : String(m)).join("; ");
+            finish(reject, new Error(msg || "generation failed"));
+          } else if (entry.status.completed) {
+            finish(resolve, { byNode: await fixAudioSuffixes(entry.outputs || outputs) });
+          }
+        } catch { /* keep polling */ }
+      }
+    }
+    function cleanup() {
+      api.removeEventListener("progress",            onProgressEvt);
+      api.removeEventListener("executed",            onExecutedEvt);
+      api.removeEventListener("execution_success",   onSuccess);
+      api.removeEventListener("execution_error",     onExecError);
+      api.removeEventListener("execution_cancelled", onCancelled);
+      api.removeEventListener("execution_interrupted", onCancelled);
+    }
+    api.addEventListener("progress",            onProgressEvt);
+    api.addEventListener("executed",            onExecutedEvt);
+    api.addEventListener("execution_success",   onSuccess);
+    api.addEventListener("execution_error",     onExecError);
+    api.addEventListener("execution_cancelled", onCancelled);
+    api.addEventListener("execution_interrupted", onCancelled);
+
+    try {
+      const resp = await api.fetchApi("/prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // VHS_VideoCombine reads these two flags from extra_pnginfo.workflow.extra (its
+        // own node inputs have no such widgets) — without them it leaves a video-only
+        // intermediate AND a first-frame PNG sitting next to the real "-audio" output,
+        // both of which the gallery then lists as their own separate cards.
+        body: JSON.stringify({ prompt: promptGraph, client_id: api.clientId,
+          extra_data: { extra_pnginfo: { workflow: { extra: {
+            VHS_KeepIntermediate: false, VHS_MetadataImage: false,
+          } } } } }),
+      });
+      const data = await resp.json();
+      if (data.error) {
+        cleanup();
+        const detail = data.node_errors ? ` (${Object.keys(data.node_errors).join(", ")})` : "";
+        reject(new Error((data.error.message || "queue failed") + detail));
+        return;
+      }
+      promptId = data.prompt_id;
+      try { onQueued?.(promptId); } catch {}
+      pollHistory();
+    } catch (e) { finish(reject, e); }
+  });
+}
+
+/**
+ * Waits on a prompt that's ALREADY queued (from before a page reload), instead of
+ * submitting a new one. Polls `/history/{promptId}` rather than trusting websocket
+ * `executed` events, since some of those may have already fired — and been missed —
+ * before this listener existed. Once ComfyUI's history shows it done, returns the same
+ * `{ byNode }` shape queuePrompt() resolves with, so callers don't need to care which one
+ * actually ran.
+ */
+export async function waitForHistory(promptId, { onProgress, pollMs = 1500, samplerNode } = {}) {
+  const samplerNodes = Array.isArray(samplerNode) ? samplerNode : (samplerNode ? [samplerNode] : null);
+  const onProgressEvt = (ev) => {
+    if (!onProgress) return;
+    try {
+      const d = ev.detail || {};
+      if (d.prompt_id && d.prompt_id !== promptId) return;
+      if (samplerNodes && d.node != null && !samplerNodes.includes(d.node)) return;
+      const { value, max } = d;
+      if (max) onProgress(value, max, d.node);
+    } catch {}
+  };
+  api.addEventListener("progress", onProgressEvt);
+  try {
+    while (true) {
+      const r = await api.fetchApi(`/history/${promptId}`);
+      const d = await r.json();
+      const entry = d[promptId];
+      if (entry && entry.status) {
+        if (entry.status.status_str === "error") {
+          const msg = (entry.status.messages || [])
+            .map(m => Array.isArray(m) ? m.join(" ") : String(m)).join("; ");
+          throw new Error(msg || "generation failed");
+        }
+        if (entry.status.completed) return { byNode: entry.outputs || {} };
+      }
+      await new Promise(res => setTimeout(res, pollMs));
+    }
+  } finally {
+    api.removeEventListener("progress", onProgressEvt);
+  }
+}
+
+/** Raw /history entry for a prompt, or null if ComfyUI has no record of it (never ran,
+ *  or the history was cleared). Used to decide whether a stashed job is still resumable. */
+export async function historyEntry(promptId) {
+  try {
+    const r = await api.fetchApi(`/history/${promptId}`);
+    return (await r.json())[promptId] || null;
+  } catch { return null; }
+}
+
+/**
+ * Native Image → Brief analysis — no Ollama, no HTTP proxy. Batches the given images
+ * through TJ_MultiImageLoader and hands the batch to TextGenerate on the given CLIP
+ * checkpoint in one call, which was verified to attend to every image in the batch
+ * correctly (SPEC_MINIMAX_H3_NEXT_ROUND.md §C5) — unlike Ollama's `images` array, which
+ * was tested and only ever looked at one of them (§C0).
+ *
+ * `images` are filenames already in ComfyUI's input folder (as uploadImage() returns).
+ * Runs as a small side graph through the normal /prompt queue, same as a generation —
+ * it costs a real queue turn and whatever the CLIP takes to load, not an instant HTTP
+ * round trip.
+ */
+export async function analyzeImagesNative(clipName, images, promptText, clipType = "minimax") {
+  const isGguf = String(clipName || "").toLowerCase().endsWith(".gguf");
+  const g = {
+    clip: isGguf
+      ? { class_type: "TJ_LTX25ClipLoaderGGUF", inputs: { clip_name: clipName } }
+      : { class_type: "CLIPLoader", inputs: { clip_name: clipName, type: clipType, device: "default" } },
+    batch:  { class_type: "TJ_MultiImageLoader", inputs: {
+      image_paths_json: JSON.stringify(images),
+      auto_set: true,
+      match_mode: "Megapixel",
+      resize_input: "none",
+      edge_size: 1024,
+      custom_width: 1024,
+      custom_height: 1536,
+      megapixel: 1.0,
+      interpolation: "lanczos",
+      scale_method: "Center Crop",
+      batch_select: "",
+    }},
+    gen:    { class_type: "TextGenerate", inputs: {
+      clip: ["clip", 0],
+      prompt: promptText,
+      image: ["batch", 0],
+      max_length: 1024,
+      sampling_mode: "on",
+      "sampling_mode.temperature": 0.7,
+      "sampling_mode.top_k": 64,
+      "sampling_mode.top_p": 0.95,
+      "sampling_mode.min_p": 0.05,
+      "sampling_mode.repetition_penalty": 1.05,
+      "sampling_mode.seed": 0,
+      thinking: false,
+      use_default_template: true,
+    }},
+    out:    { class_type: "TJStudioOneTextOutput", inputs: { text: ["gen", 0] } },
+  };
+  const res = await queuePrompt(g);
+  const text = res.byNode?.out?.text?.[0];
+  if (!text) throw new Error("native analysis produced no text");
+  return text;
+}
+
+/**
+ * Native brief writing — the text-only counterpart to analyzeImagesNative(), used when
+ * visionSource is "native" so the whole Image → Brief pass stays off Ollama. Same
+ * TextGenerate node, just no image input; the system + user prompt are concatenated
+ * into TextGenerate's single `prompt` field since it has no separate system role.
+ */
+export async function writeBriefNative(clipName, systemPrompt, userPrompt, clipType = "minimax") {
+  const isGguf = String(clipName || "").toLowerCase().endsWith(".gguf");
+  const g = {
+    clip: isGguf
+      ? { class_type: "TJ_LTX25ClipLoaderGGUF", inputs: { clip_name: clipName } }
+      : { class_type: "CLIPLoader", inputs: { clip_name: clipName, type: clipType, device: "default" } },
+    gen:  { class_type: "TextGenerate", inputs: {
+      clip: ["clip", 0],
+      prompt: `${systemPrompt}\n\n${userPrompt}`,
+      max_length: 2048,
+      sampling_mode: "on",
+      "sampling_mode.temperature": 0.7,
+      "sampling_mode.top_k": 64,
+      "sampling_mode.top_p": 0.95,
+      "sampling_mode.min_p": 0.05,
+      "sampling_mode.repetition_penalty": 1.05,
+      "sampling_mode.seed": 0,
+      thinking: false,
+      use_default_template: true,
+    }},
+    out:  { class_type: "TJStudioOneTextOutput", inputs: { text: ["gen", 0] } },
+  };
+  const res = await queuePrompt(g);
+  const text = res.byNode?.out?.text?.[0];
+  if (!text) throw new Error("native brief writer produced no text");
+  return text;
+}
+
+
+/**
+ * OpenRouter counterparts to analyzeImagesNative / writeBriefNative — used when the H3
+ * LLM backend is set to "openrouter" in Settings. The key lives server-side (.env,
+ * shared with the music + image nodes); the model id is passed through.
+ */
+export async function analyzeImagesOpenRouter(images, promptText, orModel) {
+  const r = await api.fetchApi("/ltx25_one/llm/analyze", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ images, prompt: promptText, or_model: orModel || "" }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "OpenRouter analyze failed");
+  return d.text;
+}
+
+export async function writeBriefOpenRouter(systemPrompt, userPrompt, orModel, maxTokens = 2000) {
+  const r = await api.fetchApi("/ltx25_one/llm/write_brief", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ system: systemPrompt, user: userPrompt, or_model: orModel || "", max_tokens: maxTokens }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "OpenRouter brief failed");
+  return d.text;
+}
+
+// "Connect Custom" backend — any OpenAI-style Chat Completions server. The endpoint is
+// { baseUrl, model, context, role? }; role picks which stored API key the server uses
+// ("vision" / "brief" by default, "ltx" for LTX Upscale). The key itself is only ever sent
+// by customLLMControls' Connect & test (shared/custom_llm_controls.js).
+export async function analyzeImagesCustom(images, promptText, ep) {
+  const r = await api.fetchApi("/ltx25_one/llm/custom_analyze", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ images, prompt: promptText, base_url: ep.baseUrl, model: ep.model, context: ep.context || 0, role: ep.role }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "Custom vision failed");
+  return d.text;
+}
+
+export async function writeBriefCustom(systemPrompt, userPrompt, ep) {
+  const r = await api.fetchApi("/ltx25_one/llm/custom_write_brief", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ system: systemPrompt, user: userPrompt, base_url: ep.baseUrl, model: ep.model, context: ep.context || 0, role: ep.role }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "Custom brief failed");
+  return d.text;
+}
+
+/**
+ * Local Llama.cpp GGUF vision — describes ONE image. This is the same
+ * /tj_studio_one/llm/image_to_prompt route the image nodes' shared Enhance/Image→Prompt
+ * panel already uses (web/shared/llm_panel.js), served by this pack's own nodes.py
+ * (_try_import_tj_llm loads TJ_NODE's image_to_prompt.py). Unlike the native
+ * TextGenerate path, it takes one image per call — no true multi-image batching — so
+ * the caller (ui_prompt_edit_ltx25.js) loops this once per reference image.
+ */
+export async function analyzeImageLlama(imageB64, ggufModel, mmprojFile, customInstruction, nCtx, maxTokens) {
+  const r = await api.fetchApi("/tj_studio_one/llm/image_to_prompt", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      image_b64: imageB64, backend: "local",
+      gguf_model: ggufModel || "", mmproj_file: mmprojFile || "none",
+      vision_task: "Caption (plain description)",
+      custom_instruction: customInstruction || "",
+      n_ctx: nCtx || 16384,
+      max_tokens: maxTokens || 1200,
+    }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "Llama GGUF vision failed");
+  return d.result;
+}
+
+/** Local Llama.cpp GGUF brief writing — /tj_studio_one/llm/enhance with
+ *  model_format "Minimax H3 (Video)", the same instruction TJ_NODE's model_formats.json
+ *  entry supplies to the native/OpenRouter paths (see system_prompt below is unused here
+ *  since this route builds its own system prompt server-side from model_format).
+ *  n_ctx defaults to 16384, not the route's own 4096 default — the H3 instruction
+ *  (guide text + few-shot examples) plus a real user request measured 5436 tokens on its
+ *  own in testing, already over 4096 before generation even starts (observed failure:
+ *  a silent empty result, no error — the request just had no room left to answer in).
+ *  max_tokens defaults to 4096: a real full brief (opening style + multiple [Shot N] +
+ *  Ambient sound + Music) got cut off mid-sentence at 2000 in testing — a truncated
+ *  brief is exactly as unusable as an empty one, so this needs real headroom, not just
+ *  enough to avoid an error. */
+export async function writeBriefLlama(userPrompt, ggufModel, nCtx, maxTokens) {
+  const r = await api.fetchApi("/tj_studio_one/llm/enhance", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt: userPrompt, backend: "local",
+      gguf_model: ggufModel || "",
+      n_ctx: nCtx || 16384,
+      model_format: "Minimax H3 (Video)",
+      purpose: "Video",
+      max_tokens: maxTokens || 4096,
+    }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || "Llama GGUF brief failed");
+  return d.result;
+}
+
+/**
+ * Which of these input-folder filenames are gone.
+ *
+ * Asked as one request rather than a HEAD per file: a prompt set can reference a dozen
+ * assets across its clips, and a load should not cost a dozen round trips.
+ */
+export async function missingInputFiles(names) {
+  const list = [...new Set((names || []).filter(Boolean))];
+  if (!list.length) return [];
+  try {
+    const r = await api.fetchApi("/tj_shared/input_exists", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ names: list }),
+    });
+    if (!r.ok) return [];
+    return (await r.json()).missing || [];
+  } catch { return []; }
+}
