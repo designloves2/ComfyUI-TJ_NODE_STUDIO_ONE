@@ -1978,8 +1978,11 @@ async def studio_llm_models(request):
 async def studio_llm_enhance(request):
     import asyncio
     data = await request.json()
-    # "refine_instruction" turns this into a revision of data["prompt"] instead of an enhance.
-    if data.get("refine_instruction"):
+    # "refine_instruction" turns this into a revision of data["prompt"] instead of an enhance;
+    # "system_override" replaces the system prompt outright (the LTX studio writes its own).
+    if data.get("system_override"):
+        sys_text, user_text = str(data["system_override"]), str(data.get("prompt", ""))
+    elif data.get("refine_instruction"):
         sys_text, user_text = _studio_refine_parts(data)
     else:
         sys_text, user_text = _studio_enhance_system(data), str(data.get("prompt", ""))
@@ -2015,7 +2018,7 @@ async def studio_llm_enhance(request):
         def _run():
             result = TJ_PromptEnhancer().enhance(
                 get_name="(none)", set_name="studio_one_enhance",
-                raw_prompt=user_text if data.get("refine_instruction") else data.get("prompt", ""),
+                raw_prompt=user_text if (data.get("refine_instruction") or data.get("system_override")) else data.get("prompt", ""),
                 model_backend=model_backend,
                 gguf_model=data.get("gguf_model", ""),
                 mmproj_file="none",
@@ -2025,7 +2028,7 @@ async def studio_llm_enhance(request):
                 model_format=data.get("model_format", "Universal Natural Language"),
                 aesthetic=data.get("aesthetic", "None (no aesthetic injection)"),
                 extra_instructions=data.get("extra_instructions", ""),
-                system_prompt_override=sys_text if data.get("refine_instruction") else "",
+                system_prompt_override=sys_text if (data.get("refine_instruction") or data.get("system_override")) else "",
                 append_no_think=True,
                 n_gpu_layers=int(data.get("n_gpu_layers", -1)),
                 n_ctx=int(data.get("n_ctx", 4096)),
@@ -2725,6 +2728,12 @@ async def mmh3_save_config(request):
 
 
 MMH3_PROMPT_SETS_DIR = os.path.join(NODE_DIR, 'prompt_sets')
+LTX25_PROMPT_SETS_DIR = os.path.join(NODE_DIR, 'prompt_sets_ltx25')
+
+
+def _prompt_sets_dir(request):
+    """The LTX studio keeps its own prompt sets: the shared handlers pick the folder by the route they were called on."""
+    return LTX25_PROMPT_SETS_DIR if request.path.startswith("/ltx25_one/") else MMH3_PROMPT_SETS_DIR
 
 
 def _safe_prompt_set_name(name):
@@ -2739,22 +2748,23 @@ def _safe_prompt_set_name(name):
     return name
 
 
-def _prompt_set_path(name):
+def _prompt_set_path(name, base):
     safe = _safe_prompt_set_name(name)
-    os.makedirs(MMH3_PROMPT_SETS_DIR, exist_ok=True)
-    return _safe_resolve_path(MMH3_PROMPT_SETS_DIR, "", f"{safe}.json")
+    os.makedirs(base, exist_ok=True)
+    return _safe_resolve_path(base, "", f"{safe}.json")
 
 
 @PromptServer.instance.routes.get("/minimax_h3_one/prompt_sets")
 async def mmh3_list_prompt_sets(request):
     out = []
+    base = _prompt_sets_dir(request)
     try:
-        os.makedirs(MMH3_PROMPT_SETS_DIR, exist_ok=True)
-        for fn in sorted(os.listdir(MMH3_PROMPT_SETS_DIR)):
+        os.makedirs(base, exist_ok=True)
+        for fn in sorted(os.listdir(base)):
             if not fn.endswith(".json"):
                 continue
             try:
-                with open(os.path.join(MMH3_PROMPT_SETS_DIR, fn), "r", encoding="utf-8") as f:
+                with open(os.path.join(base, fn), "r", encoding="utf-8") as f:
                     d = json.load(f)
                 out.append({
                     "name": d.get("name") or fn[:-5],
@@ -2774,7 +2784,7 @@ async def mmh3_list_prompt_sets(request):
 async def mmh3_get_prompt_set(request):
     name = request.query.get("name", "")
     try:
-        path = _prompt_set_path(name)
+        path = _prompt_set_path(name, _prompt_sets_dir(request))
     except ValueError:
         return web.json_response({"error": "invalid name"}, status=400)
     if not os.path.isfile(path):
@@ -2788,7 +2798,7 @@ async def mmh3_save_prompt_set(request):
     try:
         data = await request.json()
         name = data.get("name", "")
-        path = _prompt_set_path(name)
+        path = _prompt_set_path(name, _prompt_sets_dir(request))
         # A prompt set stores the reference assets too: restoring the words without the
         # pictures reproduces nothing in Reference mode. The client sends these; the
         # payload used to whitelist them away, which is why they never reached disk.
@@ -2822,7 +2832,7 @@ async def mmh3_save_prompt_set(request):
 async def mmh3_delete_prompt_set(request):
     try:
         data = await request.json()
-        path = _prompt_set_path(data.get("name", ""))
+        path = _prompt_set_path(data.get("name", ""), _prompt_sets_dir(request))
         if os.path.isfile(path):
             os.remove(path)
         return web.json_response({"ok": True})
@@ -5953,8 +5963,16 @@ LTX25_CONFIG_DEFAULTS = {
 LTX25_H3_FALLBACK = ("ltx_unet", "ltx_clip", "ltx_vae_video", "ltx_vae_audio", "ltx_latent_upscaler", "ltx_tiny_vae")
 
 
+# The LTX studio's settings file starts as a copy of the H3 studio's LLM / vision / LTX model settings, so a
+# machine already set up for H3 works at once; from then on the two are independent.
+LTX25_SEED_PREFIXES = ("h3_", "native_", "ltx_", "vision_source")
+
+
 @PromptServer.instance.routes.get("/ltx25_one/config")
 async def ltx25_get_config(request):
+    if not os.path.isfile(LTX25_CONFIG_PATH):
+        h3 = _load_config(MMH3_CONFIG_PATH)
+        _save_config(LTX25_CONFIG_PATH, {k: v for k, v in h3.items() if k.startswith(LTX25_SEED_PREFIXES)})
     cfg = _load_config(LTX25_CONFIG_PATH)
     h3 = _load_config(MMH3_CONFIG_PATH)
     for key in LTX25_H3_FALLBACK:

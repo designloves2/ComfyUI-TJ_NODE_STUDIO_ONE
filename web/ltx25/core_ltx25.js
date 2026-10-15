@@ -91,166 +91,6 @@ export function clipTimeline(state) {
   });
 }
 
-// A shot's start time is the "At MM:SS.mmm" right after its [Shot N] marker. An "At 00:02.000," further into the
-// paragraph (One-Take writes its 2-second development that way) belongs to the text and is left alone.
-const SHOT_LEAD_TIME_RE = /^([ \t>*_#-]*\[{1,2}[ \t]*(?:Shot|SHOT|shot|샷)[ \t]*\d+\]{1,2}[ \t:]*)At[ \t]+(\d{1,2}):(\d{2}(?:\.\d+)?)([ \t]*,?[ \t]*)/i;
-const SHOT_NUM_RE = /(\[{1,2}[ \t]*(?:Shot|SHOT|shot|샷)[ \t]*)(\d+)(\])/;
-const fmtShotTime = (s) => {
-  const m = Math.floor(s / 60), r = s - m * 60;
-  return `${String(m).padStart(2, "0")}:${r.toFixed(3).padStart(6, "0")}`;
-};
-
-/** The [Shot N] blocks of a clip's text, each with the start second it names (null = none written). */
-function shotBlocks(text) {
-  const raw = String(text || "");
-  SHOT_LINE_RE.lastIndex = 0;
-  const marks = [];
-  let m;
-  while ((m = SHOT_LINE_RE.exec(raw)) !== null) marks.push({ at: m.index, line: m[0] });
-  return marks.map((mk, k) => {
-    const tm = SHOT_LEAD_TIME_RE.exec(mk.line);
-    return { from: mk.at, to: k + 1 < marks.length ? marks[k + 1].at : raw.length, line: mk.line,
-             start: tm ? (+tm[2]) * 60 + (+tm[3]) : null };
-  });
-}
-
-/** [{ n, start, end }] per shot of one clip, in seconds from the clip's own start (end of the last = clipSec). */
-export function shotRanges(text, clipSec) {
-  const blocks = shotBlocks(text);
-  const starts = blocks.map((b, k) => (k === 0 ? 0 : (b.start ?? null)));
-  return blocks.map((b, k) => {
-    const next = starts.slice(k + 1).find(v => v != null);
-    return { n: k + 1, start: starts[k] ?? 0, end: next ?? clipSec };
-  });
-}
-
-/**
- * A clip is its own video, so its shots start over: [Shot 1] with no timestamp, the next ones
- * counted from there. Time only carries on between the shots of the same clip. Text with no
- * [Shot N] marker is returned as it is.
- */
-export function rebaseShots(text) {
-  const raw = String(text || "");
-  const blocks = shotBlocks(raw);
-  if (!blocks.length) return raw;
-  const base = blocks[0].start ?? 0;
-  let out = raw.slice(0, blocks[0].from);
-  blocks.forEach((b, k) => {
-    let block = raw.slice(b.from, b.to);
-    const nl = block.indexOf("\n");
-    let head = nl < 0 ? block : block.slice(0, nl);
-    const rest = nl < 0 ? "" : block.slice(nl);
-    head = head.replace(SHOT_NUM_RE, (_, a, _n, c) => `${a}${k + 1}${c}`);
-    if (k === 0) {
-      // Shot 1 has no timestamp, and "the camera cuts to" no longer makes sense for the opening shot.
-      head = head.replace(SHOT_LEAD_TIME_RE, "$1")
-        .replace(/(\][ \t:]*)the camera cuts to[ \t]+(\w)/i, (_, a2, c) => a2 + c.toUpperCase());
-    }
-    else if (b.start != null) head = head.replace(SHOT_LEAD_TIME_RE, (_, pre, _m, _s, post) => `${pre}At ${fmtShotTime(Math.max(0, b.start - base))}${post}`);
-    out += head + rest;
-  });
-  return out;
-}
-
-/**
- * Writes the shot times of one clip in half-second steps. A time between two half seconds goes to the
- * nearest one; a time exactly halfway (x.25 / x.75) goes the way the clip's own real render length rounds
- * to its half-second value - the clip rendered longer than its half-second value (rounded down) sends
- * the tie down, shorter or equal (rounded up) sends it up. Every shot starts at least half a second after
- * the one before it. `realSec` is the clip's real length (frames / 24); text with no timestamp is returned as it is.
- */
-export function snapShotTimes(text, realSec) {
-  const raw = String(text || "");
-  const blocks = shotBlocks(raw);
-  if (blocks.length < 2) return raw;
-  const tieUp = snapClipSec(realSec) >= realSec - 1e-9;
-  const snap = (x) => {
-    const f = x * 2, fl = Math.floor(f + 1e-9);
-    return (Math.abs(f - fl - 0.5) < 1e-6 ? (tieUp ? fl + 1 : fl) : Math.round(f)) / 2;
-  };
-  let out = raw.slice(0, blocks[0].from), prev = 0;
-  blocks.forEach((b, k) => {
-    let block = raw.slice(b.from, b.to);
-    if (k > 0 && b.start != null) {
-      const at = Math.max(snap(b.start), prev + 0.5);
-      prev = at;
-      const nl = block.indexOf("\n");
-      const head = (nl < 0 ? block : block.slice(0, nl)).replace(SHOT_LEAD_TIME_RE, (_, pre, _m, _s, post) => `${pre}At ${fmtShotTime(at)}${post}`);
-      block = head + (nl < 0 ? "" : block.slice(nl));
-    }
-    out += block;
-  });
-  return out;
-}
-
-// ── One-Take rules for the brief writer (ONE_TAKE_Guide_Korean, chapter 8) ────────────────────────
-/** Whether Prompt Write / Refine should follow the One-Take guide: Continuity is One-Take and the box is ticked. */
-export const oneTakeLlmOn = (state) => state.continuityMode === "onetake" && !!state.oneTakeLlm;
-
-/** The rule block added to the brief request. `lens` = each clip's length in seconds; `prevEnding` = how the clip before ends. */
-export function oneTakeRules(lens, prevEnding = "") {
-  const cutoff = (l) => Math.max(0, l - 1.7).toFixed(1);
-  const lines = [
-    "ONE-TAKE MODE - the clips are chained into one continuous, unbroken take.",
-    "How it works: consecutive clips overlap by 39 frames (1.625 s). The first 1.625 s of clip N+1 re-renders the last 1.625 s of clip N, "
-    + "so the start of clip N+1 is a copy of the end state of clip N, not new content. New content of a clip begins at 2.0 s.",
-    "Rules:",
-    "1. Use exactly one [Shot 1] per clip. Never write [Shot 2] or higher - a shot number means a cut.",
-    "2. Write the development at 2.0 s in the same paragraph, as \"At 00:02.000, ...\" (later beats the same way, in the same paragraph).",
-    "3. End every clip by stating its exact final state, as if describing the last frame frozen: pose, direction, speed, camera position.",
-    "4. Open every clip after the first by copying that final state word for word - keep the noun phrases exactly, change only the verbs "
-    + "to \"is already ...ing\" / \"still\". Never rephrase it.",
-    "5. Finish fast or irreversible actions (strikes, jumps, throws, opening doors, sudden expressions) at least 1.7 s before the clip ends"
-    + (lens.length ? ` (cut-off per clip: ${lens.map((l, i) => `clip ${i + 1} ${cutoff(l)} s`).join(", ")})` : "")
-    + "; only slow, sustainable motion at the seam.",
-    "6. End each clip in motion (a moving vector), not stopped.",
-    "7. Describe every element on screen - supporting characters, VFX (and the direction they dissipate), props, performance, crowd - with identical wording on both sides of each seam.",
-    "8. State direction (left / right / clockwise) and speed (same steady pace) explicitly; the camera keeps moving too.",
-    "9. Start each clip with: \"The entire clip is a single uninterrupted shot with no cuts.\" and, from clip 2 on, "
-    + "\"The clip continues the same unbroken take; <the copied end state>.\"",
-  ];
-  if (prevEnding) lines.push("", `The clip before this one ends with: "${prevEnding}" - open this clip with that state, copied as rule 4 says.`);
-  return lines.join("\n");
-}
-
-/**
- * One-Take clips have a single [Shot 1]: any [Shot N] after it is folded into its paragraph (its "At ...," stays), and a clip
- * without the "single uninterrupted shot" sentence (in `context` - the clip's header - or in the text) gets it right after [Shot 1].
- */
-export function oneTakeFixShots(text, context = "") {
-  const raw = String(text || "");
-  const blocks = shotBlocks(raw);
-  if (!blocks.length) return raw;
-  let out = raw;
-  if (blocks.length > 1) {
-    out = raw.slice(0, blocks[0].from) + raw.slice(blocks[0].from, blocks[0].to).replace(/\s+$/, "");
-    for (let k = 1; k < blocks.length; k++) {
-      const part = raw.slice(blocks[k].from, blocks[k].to).replace(/^[ \t>*_#-]*\[{1,2}[ \t]*(?:Shot|SHOT|shot|샷)[ \t]*\d+\][ \t:]*/, "").trim();
-      out += " " + part.replace(/\bthe camera cuts to\b/i, "the camera moves to");   // one take: no cut
-    }
-  }
-  if (!/single uninterrupted shot/i.test(`${context}\n${out}`)) {
-    out = out.replace(/(\[{1,2}[ \t]*(?:Shot|SHOT|shot|샷)[ \t]*1\][ \t:]*)/, "$1The entire clip is a single uninterrupted shot with no cuts. ");
-  }
-  return out;
-}
-
-/** Rule breaks worth a warning, per clip: [{ clip, msg }]. `briefs` = each clip's whole brief text, in order. */
-export function oneTakeIssues(briefs) {
-  const out = [];
-  briefs.forEach((b, i) => {
-    const text = String(b || "");
-    const n = i + 1;
-    if (!/single uninterrupted shot/i.test(text)) out.push({ clip: n, msg: "no 'single uninterrupted shot' sentence" });
-    if (i > 0) {
-      const at = text.search(/\[{1,2}[ \t]*(?:Shot|SHOT|shot|샷)/);
-      const head = at >= 0 ? text.slice(Math.max(0, at - 700), at + 700) : text.slice(0, 1400);
-      if (!/\balready\b|\bstill\b/i.test(head)) out.push({ clip: n, msg: "opening does not copy the previous end state (no 'already' / 'still')" });
-    }
-  });
-  return out;
-}
-
 // One-Take's overlap window, in real (24fps) frames — fixed, not user-configurable.
 // The stitch trim has to match exactly what TJ_H3_LatentContinuation used, and letting
 // the two drift apart (e.g. changed mid-run) would silently mis-stitch a finished run,
@@ -261,97 +101,10 @@ export function oneTakeIssues(briefs) {
 export const ONE_TAKE_OVERLAP_FRAMES = 39;
 
 /**
- * The larryvrh turbo LoRA for the current mode.
- *
- * Reference mode has its own slot because a turbo LoRA is trained against one base
- * model, but it falls back to the main one when unset — that keeps a setup that only
- * ever filled the main slot working in Reference mode exactly as it did before.
- */
-export function turboLoraForMode(state) {
-  const isRef = (state.generationMode || "t2v") === "reference";
-  const pick = (isRef && state.turboLoraReference && state.turboLoraReference !== "none")
-    ? state.turboLoraReference
-    : state.turboLora;
-  return (pick && pick !== "none") ? pick : "";
-}
-
-/**
- * Whether the selected turbo actually runs, and why not when it doesn't.
- *
- * Both packs fail softly here rather than throwing mid-run: a missing LoRA or an
- * uninstalled pack just means the run falls back to the normal step count.
- */
-export function effectiveTurbo(state, avail) {
-  const want = state.turboMode || "none";
-  if (want === "none") return { mode: "none", fellBack: false };
-
-  const installed = (name) => !(avail && Object.keys(avail).length) || !!avail[name];
-
-  if (want === "larryvrh") {
-    if (!turboLoraForMode(state))
-      return { mode: "none", fellBack: true, reason: "No turbo LoRA set — turbo skipped." };
-    if (!installed("MiniMaxH3TurboLoRA"))
-      return { mode: "none", fellBack: true, reason: "comfyui-minimax-h3-turbo is not installed — turbo skipped." };
-    return { mode: "larryvrh", fellBack: false };
-  }
-
-  // PDD is core-native since ComfyUI v0.35.0 (#15908): the ComfyUI-converted Acc checkpoint
-  // loads as a plain model-only LoRA that expands the final projection into its per-interval
-  // head bank, and FinalLayer picks the right head per step off the sampler's own schedule.
-  // No apply node, no dedicated pack — just the file. (The raw alibaba-pai Acc file won't
-  // load: its DiffSynth key names map to nothing, so it silently applies 0 patches. On a
-  // pre-v0.35.0 core the shape-changing LoRA load errors at patch time — a loud failure.)
-  if (want === "pdd") {
-    if (!pddFileForMode(state))
-      return { mode: "none", fellBack: true, reason: "No PDD Acc file set for this mode — turbo skipped." };
-    return { mode: "pdd", fellBack: false };
-  }
-
-  // lightx2v is a plain LoRA, but without the SLA kernel it was distilled against it
-  // contributes nothing but its own load time, so treat a missing SLA pack as a
-  // fallback rather than quietly running a LoRA that can't pay off.
-  if (!state.slaTurboLora || state.slaTurboLora === "none")
-    return { mode: "none", fellBack: true, reason: "No SLA turbo LoRA set — turbo skipped." };
-  if (!installed("H3SLAAttention"))
-    return { mode: "none", fellBack: true, reason: "H3 SLA Attention is not installed — the lightx2v LoRA gives no speedup without it." };
-  return { mode: "lightx2v", fellBack: false };
-}
-
-/**
  * 7+1 hi-res finish: the first 7 of the 8 turbo steps run at Start MP, the latent is scaled
  * up, and the last step refines it at Final MP. Only exists with Turbo LoRA (Basic).
  */
 export function hiresActive() { return true; }
-
-/** Stage 1 renders at half the final size and the latent upscaler doubles it back. */
-export function hiresSizes(state) {
-  const final = resolveResolution(state.aspect, state.megapixels);
-  return { start: { width: final.width / 2, height: final.height / 2 }, final, scale: 2 };
-}
-
-export function effectiveSteps(state, avail) {
-  const t = effectiveTurbo(state, avail).mode;
-  if (t === "pdd" && hiresActive(state, avail)) return 8;
-  if (t === "larryvrh") return Math.max(1, Math.round(state.turboSteps ?? 4));
-  if (t === "lightx2v") return Math.max(1, Math.round(state.slaTurboSteps ?? 6));
-  // Turbo LoRA (Basic): an ordinary step count — any turbo LoRA can be loaded, so there is
-  // no fixed list. pddNfe is the saved key (string) from when this was a dedicated mode.
-  if (t === "pdd") return Math.max(1, Math.round(Number(state.pddNfe) || 8));
-  return Math.max(1, Math.round(state.steps ?? 20));
-}
-
-/**
- * The PDD Acc file for the current mode.
- *
- * The release is per-variant — Ref2VA for reference, FL2VA for first-last — and pairing a
- * file with the wrong UNET is a silent quality failure rather than an error, so the two
- * are kept in separate slots instead of one field the user has to remember to change.
- */
-export function pddFileForMode(state) {
-  const isRef = (state.generationMode || "t2v") === "reference";
-  const pick = isRef ? state.pddFileReference : state.pddFile;
-  return (pick && pick !== "none") ? pick : "";
-}
 
 /**
  * Clips are driven by the prompts, not by a duration field: one prompt, one clip.
@@ -385,18 +138,6 @@ export function parseTargetSeconds(text) {
   const plain = raw.match(/^(\d+(?:\.\d+)?)$/);                         // bare number = seconds
   return plain ? +plain[1] : 0;
 }
-
-/** Image → Brief source modes: how many images, and what the brief writer does with them. */
-export const IMAGE_BRIEF_MODES = [
-  { key: "fl",  label: "First/Last (max 2)", max: 2,
-    hint: "image 1 = the starting frame, image 2 = the ending frame — write the brief as a first/last-frame shot" },
-  { key: "ref", label: "Reference (max 9)",  max: 9,
-    hint: "each image is a <Picture N> reference, in upload order" },
-];
-export function imageBriefMax(mode) {
-  return (IMAGE_BRIEF_MODES.find(m => m.key === mode) || IMAGE_BRIEF_MODES[1]).max;
-}
-
 
 /** { p, i } for every switched-on prompt, `i` = its original position (never renumbered). */
 export function activePrompts(state) {
@@ -529,33 +270,6 @@ export const GENERATION_MODES = [
   { key: "postprocess", label: "Postprocess",   hint: "chain Deblur/Denoise/Upscale/Grain/Interpolate/Resize on an existing clip" },
 ];
 
-// Image Generator's own 3 sub-modes, picked from a second pill row inside its left panel
-// (not a top-level GENERATION_MODES entry each, since all 3 share one settings panel shape
-// and swapping between them shouldn't reset the resolution/LoRA/seed fields). Each is the
-// SAME H3 video pipeline (MiniMaxH3ImageToVideo / MiniMaxH3ReferenceToVideo) run at a very
-// short length and read back as a still frame — not a separate image model.
-export const IMAGE_GEN_MODES = [
-  { key: "t2i",       label: "Text to Image",     hint: "MiniMaxH3ImageToVideo (fl2va), no reference image" },
-  { key: "ref2i",     label: "Reference to Image", hint: "MiniMaxH3ReferenceToVideo (ref2va), one reference image" },
-  { key: "charsheet", label: "Character Sheet",   hint: "ref2va 8-shot turnaround + RTX Deblur/VSR + grid assembly" },
-];
-
-// Image Generator needs none of its own model config — t2i reuses the same fl2va models
-// as "Image to Video (F/L)", ref2i/charsheet reuse the same ref2va models as "Reference to
-// Video" (both already required/configured elsewhere), so readiness is just whichever of
-// those two the selected sub-mode needs.
-export function imageGenSubModeReady(subKey, state) {
-  const a = modelAvailability(state);
-  return subKey === "t2i" ? a.fl : a.ref;
-}
-
-// Postprocess touches none of H3's own generation models (unet/clip/vae) — it only runs
-// the same finished-clip effect nodes the gallery's Upscale/Interpolate/Resize bars
-// already use, chained together. So unlike every other mode it has no model requirement
-// of its own; each individual effect step still checks its own node's availability at
-// build time (buildPostprocessGraph throws a clear error naming the missing node).
-export function postprocessReady() { return true; }
-
 // The ✨ button's default system prompt — a ready-to-use LTX-2.5 prompt author, written
 // to the LTX-2.5 prompt guide (ltx.io/blog/ltx-2-5-prompt-guide): one detailed
 // present-tense paragraph, action first, then details, then camera, then lighting/mood,
@@ -620,76 +334,6 @@ export const LTX_CONVERT_LLM_PROMPT =
   + "Natural cinematic language only — no bullet points, no keyword lists, no quality "
   + "boosters, no negative phrasing. Output only the paragraph.";
 
-// Character Sheet's default prompt — verbatim from the user's own reference workflow
-// ("[TJ]OneCharacterSheet-H3.json", nodes 1232:1241 + 1232:1242's string concatenation),
-// so the box always shows exactly what that workflow sends rather than starting blank.
-// Editable like any other prompt — this is just the starting value.
-export const CHARSHEET_PROMPT_TEMPLATE =
-  "subject_definitions:\n@image1 is <Subject 1>, Protagonist.\n\nstyle_definitions:\n"
-  + "@style is <Style 1>, @image1 High quality and detailed 3d anime"
-  + "\n\nretention_analysis:\n<Subject 1>: fully_preserved the exact facial identity, "
-  + "anatomy, clothing, skin color, skin texture, skin shade, skin radiance and "
-  + "proportions of <Subject 1>. Never render @image1 as a shot.\n<Style 1>: "
-  + "fully_preserved the artistic medium, line weight, shading, and texture across all "
-  + "angles.\n\ndetailed_description:\nThe scene is a character model sheet on a "
-  + "seamless neutral white studio backdrop with even lighting. No border. @style is "
-  + "applied throughout. Start directly at Shot 1. \n  \n[Shot 1]: Static full-body shot, "
-  + "front view from head to toe. <Subject 1> maintains a neutral pose and expression, "
-  + "arms relaxed at sides with empty open hands.\n[[Shot 2] At 00:00.625]: Static "
-  + "full-body shot, back view from head to toe. <Subject 1> maintains a neutral pose "
-  + "and expression, arms relaxed at sides with empty open hands.\n[[Shot 3] At "
-  + "00:01.250]: Static full-body shot of <Subject 1>, showing left and right profile "
-  + "views. <Subject 1> maintains a neutral pose and expression, arms relaxed at sides "
-  + "with empty open hands.\n[[Shot 4] At 00:01.875]: Static front_three_quarter view "
-  + "(framed from mid-thigh to top of head) of <Subject 1>. <Subject 1> maintains a "
-  + "neutral pose and expression, arms relaxed at sides with empty open hands.\n[[Shot "
-  + "5] At 00:02.500]: Static Back_three_quarter (framed from mid-thigh to top of head) "
-  + "of <Subject 1>. <Subject 1> maintains a neutral pose and expression, arms relaxed "
-  + "at sides with empty open hands.\n[[Shot 6] At 00:03.125]: Static tight close-up "
-  + "shot of <Subject 1>, framed directly on the face from shoulders to top of head, "
-  + "facing front. <Subject 1> has a neutral expression.\n[[Shot 7] At 00:03.750]: "
-  + "Static tight close-up shot of <Subject 1>, framed directly on the face from "
-  + "shoulders to top of head, facing front. <Subject 1> has a happy smile "
-  + "expression.\n[[Shot 8] At 00:04.375]: Static tight close-up shot of <Subject 1>, "
-  + "framed directly on the face from shoulders to top of head, facing front. <Subject "
-  + "1> has an very angry expression.\n\n\noverall_soundscape: N/A\n"
-  + "non_diegetic_music: N/A\n";
-
-// LTX 2.5 Upscale mode is a standalone refine pass — not an H3 render. It needs its own
-// model set configured in Settings (the LTX unet, latent upscaler, text encoder, and the
-// LTX video + audio VAEs). A missing piece disables the mode rather than failing at run.
-export function ltxUpscaleReady(state) {
-  const need = [state.ltxUnet, state.ltxLatentUpscaler, state.ltxClip, state.ltxVaeVideo, state.ltxVaeAudio];
-  return need.every(v => v && v !== "none");
-}
-export function ltxUpscaleMissing(state) {
-  const map = { ltxUnet: "LTX unet", ltxLatentUpscaler: "latent upscaler", ltxClip: "text encoder",
-                ltxVaeVideo: "video VAE", ltxVaeAudio: "audio VAE" };
-  return Object.keys(map).filter(k => !state[k] || state[k] === "none").map(k => map[k]);
-}
-
-// H3 Face Refine mode defaults to H3's OWN unet/clip/vae (already required for every
-// other mode) — but it can also run its own SEPARATE model set (frUseCustomModel),
-// e.g. a lighter/faster GGUF quant just for the refine pass while the main render keeps
-// the full-quality one. Either way it needs a face detector (.pt, from
-// models/ultralytics/bbox — see SPEC_MINIMAX_H3_FACE_REFINE.md §2/§15). Fallback
-// detector, SAM model and identity CLIP Vision are always optional.
-export function faceRefineReady(state) {
-  const hasDetector = !!(state.faceDetector && state.faceDetector !== "none");
-  if (!hasDetector) return false;
-  if (!state.frUseCustomModel) return true;
-  return !!(state.frUnet && state.frUnet !== "none" && state.frClip && state.frClip !== "none");
-}
-export function faceRefineMissing(state) {
-  const missing = [];
-  if (!state.faceDetector || state.faceDetector === "none") missing.push("face detector");
-  if (state.frUseCustomModel) {
-    if (!state.frUnet || state.frUnet === "none") missing.push("Face Refine unet");
-    if (!state.frClip || state.frClip === "none") missing.push("Face Refine text encoder");
-  }
-  return missing;
-}
-
 /** Turn the tensor errors these packs throw into something actionable. */
 export function explainGenerationError(message) {
   const m = String(message || "");
@@ -711,17 +355,6 @@ export function explainGenerationError(message) {
   }
   return null;
 }
-export const ACCEL_MODES  = [
-  { key: "turbo",    label: "Turbo LoRA(larryvrh)", node: "MiniMaxH3TurboLoRA", modes: ["t2v", "firstlast", "reference"] },
-  { key: "solattn",  label: "SolAttn",    node: "SolAttnPatch" },
-  { key: "spectrum", label: "Spectrum",   node: "SpectrumApplyMiniMaxH3" },
-  { key: "none",     label: "None",       node: null },
-];
-
-/** Acceleration options valid for a generation mode. */
-export function accelModesFor(generationMode) {
-  return ACCEL_MODES.filter(m => !m.modes || m.modes.includes(generationMode || "t2v"));
-}
 export const UPSCALE_MODES = [
   { key: "none",     label: "None" },
   { key: "model",    label: "Upscale Model" },
@@ -733,16 +366,6 @@ export const UPSCALE_MODES = [
 export const FLASHVSR_MODELS = ["FlashVSR", "FlashVSR-v1.1"];
 export const FLASHVSR_MODES  = ["tiny", "tiny-long", "full"];
 
-// ── pipeline axis options ─────────────────────────────────────────────────────
-export const TURBO_MODES = [
-  { key: "none",     label: "None" },
-  // Any turbo LoRA loads here as a plain model-only LoRA (core-native since v0.35.0, which
-  // is why PDD Acc needs no node of its own) — hence "Basic". Key stays "pdd" so saved
-  // settings, presets and clip metadata keep working.
-  { key: "pdd",      label: "Turbo LoRA (Basic)",    node: null },
-  { key: "larryvrh", label: "Turbo LoRA (larryvrh)", node: "MiniMaxH3TurboLoRA" },
-  { key: "lightx2v", label: "SLA Turbo (lightx2v)",  node: "H3SLAAttention" },
-];
 export const ATTN_BACKENDS = [
   { key: "none",          label: "None",                   node: null,                   dense: true },
   { key: "sage",          label: "SageAttention (KJ)",     node: "PathchSageAttentionKJ", dense: true },
@@ -755,25 +378,6 @@ export const ATTN_FORWARDS = [
   { key: "memeff_sage",  label: "H3 MemEff Sage (KJ)",         node: "MiniMaxH3MemoryEfficientSageAttentionPatch",  dense: true },
   { key: "solattn_sag",  label: "SolAttn (Saganaki22)",        node: "MiniMaxH3ScheduledSolAttentionPatch",         dense: false },
 ];
-export const BLOCK_CACHES = [
-  { key: "none",    label: "None",                   node: null },
-  { key: "fbcache", label: "H3 FirstBlockCache",     node: "ApplyMiniMaxH3FirstBlockCache" },
-];
-// H3-Optimizations (Zironic) — a backend-preserving axis. `memory` wraps whatever dense
-// backend is selected (Sage / Comfy Kitchen / stock) with chunked QKV/MLP/FinalLayer and
-// early embedding release; it is the way to get a memory-efficient CK, which the KJ MemEff
-// forward patch cannot do (that one hard-swaps the blocks' attention to a sage kernel).
-// `memory_sparse` adds H3 Sparse Attention after it — a real attention approximation.
-export const H3_OPTIMIZERS = [
-  { key: "none",          label: "None",                   node: null },
-  { key: "memory",        label: "H3 Memory Opt",          node: "H3MemoryOptimization" },
-  { key: "memory_sparse", label: "H3 Memory Opt + Sparse", node: "H3SparseAttention" },
-];
-export const FBC_MODES = [
-  "H3 Safe — 0.08 / max 2", "H3 Fast — 0.10 / max 2",
-  "H3 Aggressive — 0.12 / max 2", "Custom — manual values",
-];
-
 /**
  * Why a pipeline option can't be used right now, or "" when it's fine.
  *
@@ -805,24 +409,6 @@ export function attnForwardBlockedReason(key, turboMode, attnBackend) {
   return "";
 }
 
-/**
- * Not a block — a note. Replacing blocks[i].attn.forward removes the stock forward, and
- * the stock forward is the only thing that reads `optimized_attention_override`. So when
- * both are on, the override-based backend simply doesn't reach the transformer blocks;
- * it still covers the attention outside them (text refiner, cross-attention).
- *
- * This used to be modelled as the forward patch being illegal, which had it exactly
- * backwards: the forward patch is the faster of the two, and switching it off left the
- * inert one running. Both are legal, so the UI says what happens instead of choosing.
- */
-export function attnForwardOverlapNote(key, attnBackend) {
-  if (!key || key === "none") return "";
-  if (attnBackend === "ck" || attnBackend === "solattn_kijai" || attnBackend === "sla") {
-    const name = (ATTN_BACKENDS.find(b => b.key === attnBackend) || {}).label || attnBackend;
-    return `${name} only applies outside the transformer blocks here — this forward patch replaces the blocks' own attention.`;
-  }
-  return "";
-}
 export function blockCacheBlockedReason(key, turboMode) {
   if (key === "none") return "";
   if (turboMode !== "none")
@@ -855,17 +441,6 @@ export function h3OptimizerBlockedReason(key, turboMode, attnBackend, attnForwar
       return "An H3 attention-forward patch keeps the blocks' attention — H3 Sparse can't route around it. Use plain H3 Memory Opt.";
   }
   return "";
-}
-
-/**
- * Not a block — a note. Plain Memory Opt with an H3 attention-forward patch on: the forward
- * patch owns blocks[i].attn.forward, so the optimizer's attention/QKV-streaming step self-
- * defers (its status reports the conflict) while its MLP / FinalLayer / embedding savings
- * still apply. This is the benchmarked "Sage + chunked MLP/FinalLayer" stack.
- */
-export function h3OptimizerOverlapNote(key, attnForward) {
-  if (key !== "memory" || !attnForward || attnForward === "none") return "";
-  return "The H3 forward patch keeps the blocks' attention — the optimizer still adds its MLP / FinalLayer / embedding savings on top.";
 }
 
 /**
@@ -1234,7 +809,7 @@ export function defaultState(saved) {
       .map(p => (typeof p === "string"
         ? { text: p, firstFrame: "", enabled: true, override: false,
             refImages: [], refImagesMp: [], lastFrame: "", refVideos: [], refAudios: [],
-            assetRef: null, refSource: "files", header: "", footer: "", timeOverride: false, timeSec: 0 }
+            assetRef: null, refSource: "files", header: "", footer: "", timeOverride: false, timeSec: 0, dir: null }
         : { text: p?.text || "", firstFrame: p?.firstFrame || "", enabled: p?.enabled !== false,
             override: !!p?.override,
             refImages:   Array.isArray(p?.refImages) ? p.refImages.slice(0, 9) : [],
@@ -1250,7 +825,9 @@ export function defaultState(saved) {
             footer:      p?.footer || "",
             // this clip's own length (Prompt Edit "clip time override") - see clipFramesFor()
             timeOverride: !!p?.timeOverride,
-            timeSec:     Number(p?.timeSec) > 0 ? Number(p.timeSec) : 0 })),
+            timeSec:     Number(p?.timeSec) > 0 ? Number(p.timeSec) : 0,
+            // this clip's segment timeline: the Director's widget values + the clip length they were made for
+            dir:         p?.dir && typeof p.dir === "object" ? p.dir : null })),
     // clips rendered per prompt (>1 continues the same description across chained clips)
     promptHeader: saved.promptHeader || "",
     promptFooter: saved.promptFooter || "",
@@ -1604,104 +1181,6 @@ export function el(tag, props, children) {
 export function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 export function randomSeed() { return Math.floor(Math.random() * 1e15); }
 
-// A MiniMax brief is three parts, not just a list of shots: a preamble that sets the
-// visual style and opening composition, the [Shot N] blocks, and trailing
-// "Ambient sound:" / "Music:" paragraphs. The preamble and tail apply to every clip, so
-// they are kept aside and re-attached at queue time instead of being split away.
-const SHOT_LINE_RE = /^[ \t>*_#-]*\[{1,2}[ \t]*(?:Shot|SHOT|shot|샷)[ \t]*\d+\][^\n]*$/gm;
-// The brief model ends with an audio section. It has two output styles: the simple one
-// ("Ambient sound:" / "Music:") and the structured one ("overall_soundscape:" /
-// "non_diegetic_music:", sometimes markdown-bolded). Match both, plus the underscore and
-// hyphen spellings the model actually emits.
-const TAIL_RE = /^[ \t>*_-]*(?:Ambient[ _]?sound|Ambience|Sound(?:[ _]?design|scape)?|Music|Soundtrack|Score|overall[ _]?soundscape|non[ _-]?diegetic[ _]?music|diegetic[ _]?sound|SFX|Foley|Audio|배경음|음악|사운드|효과음)[ \t_*]*:/i;
-// The model sometimes echoes its own instructions / the vision analysis back at the end
-// of a block. Everything from the first such line to the end of that block is dropped.
-// The structured audio labels of the H3 brief. They are the one reliable sign that the tail
-// starts; a shot's own "Audio:" / "Music:" line must not cut the last shot short.
-const STRUCT_TAIL_RE = /^[ \t>*_#-]*(?:overall[ _]?soundscape|non[ _-]?diegetic[ _]?music)[ \t_*]*:/i;
-const ECHO_RE = /^[ \t>*_-]*(?:Target duration|Write exactly|The following images?|USER REQUEST|Structure:|Output ONLY|Refer to media|Image \d+\s*:)/i;
-
-/** Split a brief into { header, shots[], footer }. Never loses text. */
-export function parseBrief(text) {
-  // A model sometimes writes the marker on the same line as the sentence before it ("... with no cuts. [Shot 1] A wide shot"),
-  // which is what the One-Take rules ask for ("The entire clip is a single uninterrupted shot ..."): a marker that follows
-  // the end of a sentence starts its own line, so the shots and the header are still told apart.
-  const raw = String(text || "").trim().replace(/([.!?:])[ \t]+(\[{1,2}[ \t]*(?:Shot|SHOT|shot|샷)[ \t]*\d+\])/g, "$1\n$2");
-  if (!raw) return { header: "", shots: [], footer: "" };
-
-  SHOT_LINE_RE.lastIndex = 0;
-  const starts = [];
-  let m;
-  while ((m = SHOT_LINE_RE.exec(raw)) !== null) starts.push(m.index);
-
-  if (!starts.length) {
-    // No shot markers — fall back to `---` groups, else treat the whole thing as one shot.
-    const parts = raw.split(/^\s*-{3,}\s*$/m).map(s => s.trim()).filter(Boolean);
-    return parts.length > 1
-      ? { header: "", shots: parts, footer: "" }
-      : { header: "", shots: [raw], footer: "" };
-  }
-
-  const header = raw.slice(0, starts[0]).trim();
-  const blocks = starts.map((s, i) => raw.slice(s, i + 1 < starts.length ? starts[i + 1] : undefined).trim());
-
-  // The tail lives inside the last block; cut it at the first "Ambient sound:"-style line.
-  let footer = "";
-  const last = blocks[blocks.length - 1];
-  const lines = last.split("\n");
-  let cut = -1;
-  for (let i = 1; i < lines.length; i++) {
-    if (STRUCT_TAIL_RE.test(lines[i])) { cut = i; break; }
-  }
-  if (cut < 0) for (let i = 1; i < lines.length; i++) {
-    if (TAIL_RE.test(lines[i])) { cut = i; break; }
-  }
-  if (cut > 0) {
-    blocks[blocks.length - 1] = lines.slice(0, cut).join("\n").trim();
-    footer = lines.slice(cut).join("\n").trim();
-  }
-  const stripEcho = (s) => {
-    const ls = s.split("\n");
-    const cutAt = ls.findIndex(l => ECHO_RE.test(l));
-    return (cutAt >= 0 ? ls.slice(0, cutAt) : ls).join("\n").trim();
-  };
-  return {
-    header: stripEcho(header),
-    shots: blocks.map(stripEcho).filter(Boolean),
-    footer: stripEcho(footer),
-  };
-}
-
-/**
- * Group shots into `groups` clips. `breaks` is a set of shot indices that start a new
- * clip; when omitted the shots are spread as evenly as possible.
- */
-export function groupShots(shots, groups, breaks) {
-  if (!shots.length) return [];
-  if (breaks && breaks.length) {
-    const cuts = [...new Set(breaks)].filter(i => i > 0 && i < shots.length).sort((a, b) => a - b);
-    const out = [];
-    let prev = 0;
-    for (const c of cuts) { out.push(shots.slice(prev, c)); prev = c; }
-    out.push(shots.slice(prev));
-    return out.map(g => rebaseShots(g.join("\n\n")));
-  }
-  const n = Math.max(1, Math.min(groups || 1, shots.length));
-  const per = Math.ceil(shots.length / n);
-  const out = [];
-  for (let i = 0; i < shots.length; i += per) out.push(rebaseShots(shots.slice(i, i + per).join("\n\n")));
-  return out;
-}
-
-/** Default break points that spread `count` shots over `groups` clips. */
-export function evenBreaks(count, groups) {
-  const n = Math.max(1, Math.min(groups || 1, count));
-  const per = Math.ceil(count / n);
-  const b = [];
-  for (let i = per; i < count; i += per) b.push(i);
-  return b;
-}
-
 /**
  * A saved asset reference, cleaned: { project, ids, first, last } with real numbers, or null when it
  * points at nothing. Reference mode uses project OR ids, First/Last mode uses first / last.
@@ -1878,12 +1357,15 @@ export function buildAgentJob(state, i, presetName = null) {
   return job;
 }
 
-// Kept for the plain "split this text" path (no header/footer awareness).
-export function splitBrief(text, clipCount) {
-  const { header, shots, footer } = parseBrief(text);
-  if (!shots.length) return [];
-  const groups = groupShots(shots, clipCount || shots.length);
-  if (!header && !footer) return groups;
-  return groups.map((g, i) => [i === 0 ? header : "", g, i === groups.length - 1 ? footer : ""]
-    .filter(Boolean).join("\n\n"));
+/** The Director's timeline for a clip that has only its prompt (no segments yet). */
+export function emptyTimeline(prompt, frames) {
+  return {
+    mainTrackEnabled: true, audioTrackEnabled: true, motionTrackEnabled: true, propHeight: 90, globalPropHeight: 60,
+    showFilenames: true, showPromptZones: true, overrideAudio: false, inpaint_audio: true, global_prompt: prompt,
+    retake_global_prompt: "", retakeMode: false, retakeStart: 24, retakeLength: 48, retakePrompt: "", retakeStrength: 1,
+    retakeVideo: null, normalStartFrame: 0, normalDurationFrames: frames, reference_mode: "OFF", disable_prompt_relay: true,
+    msr_prefix_frames: 41, analyzeProvider: "ollama", analyzeBaseUrl: "", analyzeModel: "",
+    characters: [{ images: [], description: "" }, { images: [], description: "" }, { images: [], description: "" }],
+    segments: [], motionSegments: [], audioSegments: [],
+  };
 }

@@ -1514,6 +1514,14 @@ Settings → **Model Override** enable the checkbox to expose input slots on the
 | **OUTPAINT** | 캔버스 확장<br><sub>canvas expansion</sub>| Top/Bottom/Left/Right 픽셀 설정, 비교 슬라이더에서 패딩 미리보기<br><sub>Top/Bottom/Left/Right pixel settings, padded preview in compare slider</sub>|
 | **UPSCALE** | ESRGAN + Refiner 업스케일<br><sub>ESRGAN + Refiner upscale</sub>| ESRGAN 모델 선택 (`models/upscale_models/`), Refiner KSampler 정제<br><sub>ESRGAN model selection (`models/upscale_models/`), Refiner KSampler refinement</sub>|
 
+### LTX 2.5 ONE STUDIO (TJ) 🧪
+
+LTX 2.5 video + audio in the ONE STUDIO layout: a segment timeline per clip (the LTX Director editor, copied into this package — GPL-3.0, see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)), a two-stage render (half size → 2x latent upscale → refine), Prompt Write / Refine that plan clips and
+segments with the LTX-2.5 prompt guide, Last Frame Chain between clips, gallery with Extend / Reuse, Postprocess and the Asset Library.
+Models are set once in ⚙ Settings → LTX Model (one LTX model, text encoder, video / audio VAE, latent upscaler; the distilled LoRA switch is for a
+non-distilled model only). Reference features (`@ref`, MSR) stay hidden, as in the original for LTX 2.5.
+
 ### MiniMax H3 ONE STUDIO (TJ) 🧪
 
 > 🧪 실험적 — 영상+오디오 노드. 긴 영상은 클립을 이어 붙여 만들므로 결과가 완벽하지 않을 수 있습니다.

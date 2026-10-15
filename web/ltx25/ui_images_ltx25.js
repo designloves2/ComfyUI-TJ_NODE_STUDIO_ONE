@@ -5,12 +5,9 @@
 // handed over from another ONE STUDIO node's gallery).
 import { C, BRAND, el, clear, normalizeAssetRef } from "./core_ltx25.js";
 import { mountLibraryRefs, emptyAssetRef, sourceToggle } from "../shared/reflib_refpanel.js";
-import { buildClipMediaSlots } from "./ui_clip_media_slots.js";
-import { openVideoGalleryPicker } from "./ui_video_picker_ltx25.js";
-import { panel, label, select, numberField, row, col } from "../klein/ui_common.js";
-import { uploadImage, getMediaFiles, uploadMedia, getMediaInfo } from "./api_ltx25.js";
+import { panel, label } from "../klein/ui_common.js";
+import { uploadImage } from "./api_ltx25.js";
 import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
-import { openAudioGalleryPicker } from "../shared/ui_audio_gallery_picker.js";
 
 // box default 132 -> 92: fits 3 reference-image slots per row instead of 2 (user: "미니맥스
 // 이미지 업로드 카드가 지금 한줄에 2개인데... 3개로 나오게"), sized to still fit 3 per row
@@ -81,179 +78,6 @@ export function imageSlot(labelText, initialFile, onSet, { box = 92 } = {}) {
   return { el: wrap, setFilename, getFilename: () => current };
 }
 
-// ── reference type picker ─────────────────────────────────────────────────────
-// The model takes 9 images + 3 videos + 3 audios; showing all of that at once makes
-// the side panel unusable, so the kinds are opt-in from a small checkbox dropdown.
-const REF_KINDS = [
-  { key: "images", label: "Images", max: 9 },
-  { key: "videos", label: "Videos", max: 3 },
-  { key: "audios", label: "Audios", max: 3 },
-];
-
-function refTypeDropdown(state, ctx, onChange) {
-  const wrap = el("div", { style: { position: "relative" } });
-  const counts = () => ({
-    images: (state.refImages || []).filter(Boolean).length,
-    videos: (state.refVideos || []).filter(v => v && v.file).length,
-    audios: (state.refAudios || []).filter(a => a && a.file).length,
-  });
-  const btn = el("button", { type: "button", style: {
-    width: "100%", cursor: "pointer", fontFamily: "inherit", fontSize: "11px",
-    padding: "6px 8px", borderRadius: "6px", background: C.bg2, color: C.text,
-    border: `1px solid ${C.border}`, textAlign: "left",
-    display: "flex", alignItems: "center", gap: "6px",
-  }});
-  const btnText = el("span", { style: { flex: "1" } });
-  btn.append(btnText, el("span", { text: "▾", style: { color: C.muted } }));
-
-  const menu = el("div", { style: {
-    display: "none", position: "absolute", top: "calc(100% + 3px)", left: "0", right: "0",
-    zIndex: "50", background: C.bg2, border: `1px solid ${BRAND}`, borderRadius: "6px",
-    padding: "5px", flexDirection: "column", gap: "2px",
-    boxShadow: "0 6px 18px rgba(0,0,0,0.55)",
-  }});
-
-  function refreshLabel() {
-    const c = counts();
-    const on = REF_KINDS.filter(k => state.refTypes?.[k.key]);
-    btnText.textContent = on.length
-      ? on.map(k => `${k.label} ${c[k.key]}/${k.max}`).join(" · ")
-      : "no reference types selected";
-    btnText.style.color = on.length ? C.text : C.warn;
-  }
-
-  function buildMenu() {
-    clear(menu);
-    const c = counts();
-    REF_KINDS.forEach(k => {
-      const chk = el("input", { type: "checkbox" });
-      chk.checked = !!state.refTypes?.[k.key];
-      chk.addEventListener("change", () => {
-        state.refTypes = { ...(state.refTypes || {}), [k.key]: chk.checked };
-        ctx.persist(); refreshLabel(); onChange?.();
-      });
-      const line = el("label", { style: {
-        display: "flex", alignItems: "center", gap: "7px", fontSize: "11px",
-        color: C.text, cursor: "pointer", padding: "4px 5px", borderRadius: "4px",
-      }}, [chk, el("span", { text: k.label, style: { flex: "1" } }),
-           el("span", { text: `${c[k.key]}/${k.max}`, style: { color: C.muted, fontSize: "10px" } })]);
-      line.addEventListener("mouseenter", () => line.style.background = C.bg3);
-      line.addEventListener("mouseleave", () => line.style.background = "transparent");
-      menu.appendChild(line);
-    });
-  }
-
-  btn.addEventListener("click", e => {
-    e.stopPropagation();
-    const open = menu.style.display !== "none";
-    if (open) { menu.style.display = "none"; return; }
-    buildMenu(); menu.style.display = "flex";
-    const close = ev => {
-      if (wrap.contains(ev.target)) return;
-      menu.style.display = "none";
-      document.removeEventListener("mousedown", close);
-    };
-    setTimeout(() => document.addEventListener("mousedown", close), 0);
-  });
-
-  refreshLabel();
-  wrap.append(btn, menu);
-  return { el: wrap, refreshLabel };
-}
-
-// A single reference video / audio row: file picker + in/out seconds.
-function mediaRow(kind, entry, idx, files, ctx, state, onRefresh, ownList) {
-  const isVideo = kind === "video";
-  const box = el("div", { style: {
-    background: C.bg2, border: `1px solid ${C.border}`, borderRadius: "6px",
-    padding: "6px", display: "flex", flexDirection: "column", gap: "4px",
-  }});
-
-  const hdr = el("div", { style: { display: "flex", alignItems: "center", gap: "5px" } });
-  hdr.appendChild(el("div", { text: `<${isVideo ? "Video" : "Audio"} ${idx + 1}>`, style: {
-    fontSize: "10px", fontWeight: "700", color: BRAND, flex: "1" } }));
-  const del = el("button", { type: "button", text: "✕", title: "Remove", style: {
-    cursor: "pointer", background: "transparent", color: C.muted, border: "none", fontSize: "10px" } });
-  del.addEventListener("click", () => {
-    // ownList lets a per-clip override edit its own array; without it this row would
-    // always delete out of the common one, whichever list it was drawn from.
-    const list = ownList || (isVideo ? state.refVideos : state.refAudios);
-    list.splice(idx, 1); ctx.persist(); onRefresh();
-  });
-  hdr.appendChild(del);
-
-  const opts = ["", ...files];
-  const sel = select(opts.map(f => ({ value: f, label: f || "— pick a file —" })), entry.file || "",
-    v => { entry.file = v; ctx.persist(); onRefresh(); });
-
-  const up = el("button", { type: "button", text: "⬆ upload", style: {
-    cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "4px 8px",
-    borderRadius: "5px", background: C.bg3, color: C.text, border: `1px solid ${C.border}`,
-  }});
-  const inp = el("input", { type: "file", accept: isVideo ? "video/*" : "audio/*", style: { display: "none" } });
-  up.addEventListener("click", () => inp.click());
-  inp.addEventListener("change", async () => {
-    const f = inp.files[0]; inp.value = "";
-    if (!f) return;
-    up.textContent = "…";
-    try { entry.file = await uploadMedia(f); ctx.persist(); onRefresh(); }
-    catch (e) { ctx.showPopup?.(e.message, true); up.textContent = "⬆ upload"; }
-  });
-
-  const dur = Math.max(0, (Number(entry.end) || 0) - (Number(entry.start) || 0));
-  const durTag = el("div", { text: `${dur.toFixed(2)}s`, style: {
-    fontSize: "10px", color: dur > 0 ? C.muted : C.warn, textAlign: "center", paddingTop: "6px" } });
-
-  box.append(hdr, row([col([sel]), col([up])]));
-  box.appendChild(row([
-    col([label("in (s)"),  numberField(entry.start ?? 0, v => { entry.start = Math.max(0, v); ctx.persist(); onRefresh(); }, 0.5)]),
-    col([label("out (s)"), numberField(entry.end ?? 5,   v => { entry.end   = Math.max(0, v); ctx.persist(); onRefresh(); }, 0.5)]),
-    col([durTag]),
-  ]));
-
-  // Source facts (length, whether there's sound). Asking VHS for the audio of a silent
-  // clip aborts the prompt, so the checkbox is only offered when a track exists.
-  const infoTag = el("div", { style: { fontSize: "9.5px", color: C.muted } });
-  box.appendChild(infoTag);
-  let sndLabel = null;
-  if (isVideo) {
-    const chk = el("input", { type: "checkbox" });
-    chk.checked = entry.withAudio !== false;
-    chk.addEventListener("change", () => { entry.withAudio = chk.checked; ctx.persist(); });
-    sndLabel = el("label", { style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "10px", color: C.text, cursor: "pointer" } },
-      [chk, el("span", { text: "also use this clip's soundtrack" })]);
-    box.appendChild(sndLabel);
-    sndLabel._chk = chk;
-  }
-
-  if (entry.file) {
-    getMediaInfo(entry.file).then(info => {
-      if (!info.ok) { infoTag.textContent = ""; return; }
-      const bits = [`source ${info.duration.toFixed(2)}s`];
-      if (isVideo && info.fps) bits.push(`${info.fps}fps → resampled to 24`);
-      if (isVideo) bits.push(info.has_audio ? "has audio" : "no audio track");
-      infoTag.textContent = bits.join(" · ");
-
-      // keep the requested window inside the file
-      if (info.duration > 0 && (Number(entry.end) || 0) > info.duration) {
-        entry.end = +info.duration.toFixed(2); ctx.persist(); onRefresh(); return;
-      }
-      if (isVideo && !info.has_audio && sndLabel) {
-        entry.withAudio = false; ctx.persist();
-        sndLabel._chk.checked = false;
-        sndLabel._chk.disabled = true;
-        sndLabel.style.opacity = "0.45";
-        sndLabel.style.cursor = "default";
-        sndLabel.lastChild.textContent = "no soundtrack in this file";
-        infoTag.style.color = C.warn;
-      }
-    });
-  }
-
-  box.appendChild(inp);
-  return box;
-}
-
 /** Mode-specific image inputs. Returns { el } and writes straight into `state`. */
 export function mountImagePanel(state, ctx) {
   const wrap = el("div");
@@ -263,8 +87,7 @@ export function mountImagePanel(state, ctx) {
     getRef: () => state.assetRef || emptyAssetRef(),
     onChange: (ref) => { state.assetRef = normalizeAssetRef(ref); ctx.persist(); ctx.refreshModes?.(); },
   }).el;
-  let mediaFiles = { videos: [], audios: [] };
-  let mediaLoaded = false;
+ 
 
   function render() {
     clear(wrap);
@@ -297,143 +120,15 @@ export function mountImagePanel(state, ctx) {
           n => { state.firstFrameImage = n; ctx.persist(); });
         const last = imageSlot("② Last frame\n(optional)", state.lastFrameImage,
           n => { state.lastFrameImage = n; ctx.persist(); });
-        const firstMp = numberField(state.firstFrameMp ?? 1.0, v => { state.firstFrameMp = Math.max(0, v); ctx.persist(); }, 0.1);
-        const lastMp  = numberField(state.lastFrameMp  ?? 1.0, v => { state.lastFrameMp  = Math.max(0, v); ctx.persist(); }, 0.1);
-        firstMp.style.width = "60px"; lastMp.style.width = "60px";
-        const mpCol = (imgEl, mpEl) => el("div", { style: { display: "flex", flexDirection: "column", gap: "3px", alignItems: "center" } },
-          [imgEl, el("div", { text: "MP", style: { fontSize: "9px", color: C.muted } }), mpEl]);
-        kids.push(
-          el("div", { style: { display: "flex", gap: "6px", justifyContent: "center" } },
-            [mpCol(first.el, firstMp), mpCol(last.el, lastMp)]),
-          el("div", { text: "MP = megapixels sent to the model for that image (0 = send as uploaded, no resize).",
-            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
+        kids.push(el("div", { style: { display: "flex", gap: "6px", justifyContent: "center" } }, [first.el, last.el]));
       }
-      kids.push(el("div", { html: "Both are optional. With neither, this is the same as Text only. In a relay run the "
-        + "<b>Last Frame Chain</b> continuity mode overwrites ① for every clip after the first.",
+      kids.push(el("div", { html: "Both are optional. With neither, this is the same as Text only. The images become image segments of "
+        + "every clip's timeline (a clip's own timeline wins), and <b>Last Frame Chain</b> continuity replaces ① for every clip after the first.",
         style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
       wrap.appendChild(panel(kids));
       return;
     }
 
-    // ── reference mode: images (9) + videos (3) + audios (3), opt-in per kind ──
-    const useLib = state.refSource === "library";
-    // Library source: only the library block - the file slots are not shown (and not used).
-    const types = useLib ? {} : (state.refTypes || { images: true });
-    const picker = refTypeDropdown(state, ctx, render);
-    const kids = [
-      label("Reference"),
-      el("div", { html: "Uses the <b>Ref2VA</b> model.",
-        style: { fontSize: "10px", color: C.muted, lineHeight: "1.55" } }),
-      sourceToggle(useLib ? "library" : "files", (src) => {
-        state.refSource = src;
-        if (src === "files") state.assetRef = null;
-        ctx.persist(); render(); ctx.refreshModes?.();
-      }),
-      useLib ? libraryBlock("reference", "Assets or a project from the Asset tab; their order is the <Picture i> / <Video k> / <Audio j> order.") : picker.el,
-    ];
-
-    if (types.images) {
-      const grid = el("div", { style: { display: "flex", flexWrap: "wrap", gap: "5px", justifyContent: "center" } });
-      const refs = (state.refImages || []).slice(0, 9);
-      for (let i = 0; i < Math.min(9, refs.length + 1); i++) {
-        const slot = imageSlot(refs[i] ? `<Picture ${i + 1}>` : "+ add\nreference", refs[i] || null,
-          name => {
-            const list = (state.refImages || []).slice();
-            const mpList = (state.refImagesMp || []).slice();
-            if (name) { list[i] = name; } else { list.splice(i, 1); mpList.splice(i, 1); }
-            state.refImages = list.filter(Boolean).slice(0, 9);
-            state.refImagesMp = mpList.slice(0, 9);
-            // Prompt Edit reads the same pictures — mirror them so a brief can be written
-            // straight away instead of re-uploading the set in the same order.
-            ctx.persist(); render();
-          }, { box: 92 });
-        const cell = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px", alignItems: "center" } }, [slot.el]);
-        if (refs[i]) {
-          const mpIn = numberField(state.refImagesMp?.[i] ?? 1.0, v => {
-            const mpList = (state.refImagesMp || []).slice();
-            mpList[i] = Math.max(0, v);
-            state.refImagesMp = mpList;
-            ctx.persist();
-          }, 0.1);
-          mpIn.style.width = "60px"; mpIn.title = "Megapixels sent to the model (0 = send as uploaded)";
-          cell.appendChild(mpIn);
-
-          // Drag to reorder — the number is the <Picture N> token position, so reordering
-          // actually changes what the prompt refers to as "1"/"2"/etc.
-          cell.draggable = true;
-          cell.addEventListener("dragstart", (e) => {
-            e.dataTransfer.effectAllowed = "move";
-            e.dataTransfer.setData("text/plain", String(i));
-            cell.style.opacity = "0.4";
-          });
-          cell.addEventListener("dragend", () => { cell.style.opacity = "1"; });
-          cell.addEventListener("dragover", (e) => {
-            e.preventDefault(); e.dataTransfer.dropEffect = "move";
-            slot.el.style.outline = `2px solid ${BRAND}`;
-          });
-          cell.addEventListener("dragleave", () => { slot.el.style.outline = "none"; });
-          cell.addEventListener("drop", (e) => {
-            e.preventDefault();
-            slot.el.style.outline = "none";
-            const from = Number(e.dataTransfer.getData("text/plain"));
-            if (Number.isNaN(from) || from === i) return;
-            const list = (state.refImages || []).slice();
-            const mpList = (state.refImagesMp || []).slice();
-            const [movedImg] = list.splice(from, 1);
-            list.splice(i, 0, movedImg);
-            const [movedMp] = mpList.splice(from, 1);
-            mpList.splice(i, 0, movedMp);
-            state.refImages = list.slice(0, 9);
-            state.refImagesMp = mpList.slice(0, 9);
-            ctx.persist(); render();
-          });
-        }
-        grid.appendChild(cell);
-      }
-      kids.push(label(`Images (${refs.length}/9)`), grid);
-      kids.push(el("div", { text: "MP = megapixels sent to the model for that image (0 = send as uploaded, no resize).",
-        style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
-      kids.push(row([col([label("Reference size"), select(
-        [{ value: "match", label: "match — scale to output area (faster)" },
-         { value: "max",   label: "max — 2048px short edge (best identity, slower)" }],
-        state.refImageSize || "match", v => { state.refImageSize = v; ctx.persist(); })])]));
-    }
-
-    if (types.videos) {
-      const vids = state.refVideos || (state.refVideos = []);
-      kids.push(label(`Videos (${vids.filter(v => v.file).length}/3)`));
-      if (ctx.availability && Object.keys(ctx.availability).length && !ctx.availability.VHS_LoadVideo) {
-        kids.push(el("div", { html: "⚠ <code>VHS_LoadVideo</code> (VideoHelperSuite) is not installed — reference videos are skipped.",
-          style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
-      }
-      // Same compact tiles Prompt Edit uses: a thumbnail you can preview, then the
-      // transport and trim under it. The old stacked forms had no preview at all and each
-      // one was taller than the whole image grid.
-      kids.push(buildClipMediaSlots("video", vids, ctx, render, onPick => (ctx.pickVideoFromGallery || openVideoGalleryPicker)(onPick), state.missingAssets));
-      kids.push(el("div", { html: "Frames are pulled at 24fps between <b>in</b> and <b>out</b>; the model was trained on ~2-15s references.",
-        style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
-    }
-
-    if (types.audios) {
-      const auds = state.refAudios || (state.refAudios = []);
-      kids.push(label(`Audios (${auds.filter(a => a.file).length}/3)`));
-      if (ctx.availability && Object.keys(ctx.availability).length && !ctx.availability.TrimAudioDuration) {
-        kids.push(el("div", { html: "⚠ <code>TrimAudioDuration</code> missing — audio is used whole, in/out is ignored.",
-          style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
-      }
-      kids.push(buildClipMediaSlots("audio", auds, ctx, render, (onPick) => openAudioGalleryPicker(onPick), state.missingAssets));
-    }
-
-    kids.push(el("div", { html: "Prompt tags follow input order per type: <code>&lt;Picture i&gt;</code> · "
-      + "<code>&lt;Video k&gt;</code> · <code>&lt;Audio j&gt;</code>.",
-      style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
-    wrap.appendChild(panel(kids));
-
-    // file lists come from the loader nodes' own combos — fetch once, then re-render
-    if (!mediaLoaded && (types.videos || types.audios)) {
-      mediaLoaded = true;
-      getMediaFiles().then(f => { mediaFiles = f; render(); }).catch(() => {});
-    }
   }
 
   ctx._rerenderImages = render;

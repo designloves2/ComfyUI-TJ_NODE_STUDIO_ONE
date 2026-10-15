@@ -223,11 +223,6 @@ export async function uploadImage(file) {
   return d.name;
 }
 
-export async function getGallery({ offset = 0, limit = 20, subfolder = SUBFOLDER, favonly = false } = {}) {
-  const r = await api.fetchApi(`${API}/gallery?offset=${offset}&limit=${limit}&subfolder=${encodeURIComponent(subfolder)}&favonly=${favonly ? 1 : 0}`);
-  return r.json();
-}
-
 /** Clips written by this node, newest first (the shared gallery only lists PNGs). */
 export async function listVideos(subfolder, { offset = 0, limit = 120 } = {}) {
   const r = await api.fetchApi(`${API}/videos?offset=${offset}&limit=${limit}&subfolder=${encodeURIComponent(subfolder || SUBFOLDER)}`);
@@ -286,15 +281,6 @@ export async function stripAudioSuffix(filename, subfolder) {
     const d = await r.json();
     return d.ok ? { filename: newFilename, subfolder } : { filename, subfolder };
   } catch { return { filename, subfolder }; }
-}
-
-export async function openImageFolder(filename, subfolder) {
-  const r = await api.fetchApi(`${API}/open_folder`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ filename, subfolder }),
-  });
-  return r.json();
 }
 
 // Copy a generated frame back into ComfyUI's input/ so the next clip can LoadImage it.
@@ -392,17 +378,6 @@ export async function getSystemPrompt(name = "minimax") {
   } catch {
     return { ok: false, instruction: "" };
   }
-}
-
-export async function enhancePrompt(payload) {
-  const r = await api.fetchApi(`${API}/llm/enhance`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const d = await r.json();
-  if (!d.ok) throw new Error(d.error || "enhance failed");
-  return d;
 }
 
 // Trigger words baked into a LoRA's safetensors header, so a freshly picked LoRA can
@@ -818,14 +793,13 @@ export async function analyzeImageLlama(imageB64, ggufModel, mmprojFile, customI
  *  Ambient sound + Music) got cut off mid-sentence at 2000 in testing — a truncated
  *  brief is exactly as unusable as an empty one, so this needs real headroom, not just
  *  enough to avoid an error. */
-export async function writeBriefLlama(userPrompt, ggufModel, nCtx, maxTokens) {
+export async function writeBriefLlama(systemPrompt, userPrompt, ggufModel, nCtx, maxTokens) {
   const r = await api.fetchApi("/tj_studio_one/llm/enhance", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      prompt: userPrompt, backend: "local",
+      prompt: userPrompt, system_override: systemPrompt, backend: "local",
       gguf_model: ggufModel || "",
       n_ctx: nCtx || 16384,
-      model_format: "Minimax H3 (Video)",
       purpose: "Video",
       max_tokens: maxTokens || 4096,
     }),

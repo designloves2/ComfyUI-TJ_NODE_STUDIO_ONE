@@ -7,7 +7,7 @@
 //
 // Optional third-party nodes are gated on `avail` (from /ltx25_one/node_availability):
 // a missing pack disables that one feature rather than failing the whole prompt.
-import { SUBFOLDER, FPS, DEFAULT_FRAMES, resolveResolution, computeRtxTarget, effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, turboLoraForMode, pddFileForMode, blockCacheBlockedReason, h3OptimizerBlockedReason, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES } from "./core_ltx25.js";
+import { SUBFOLDER, FPS, DEFAULT_FRAMES, emptyTimeline, resolveResolution, computeRtxTarget } from "./core_ltx25.js";
 
 // Builds the RTXVideoSuperResolution node (+ an optional ImageCrop node ahead of it for
 // the "wh" size mode's forced crop, per computeRtxTarget) and returns the final image
@@ -33,7 +33,6 @@ function buildRtxNode(g, ids, images, state, srcW, srcH) {
     : { method: "rtx", width: t.width, height: t.height, quality: state.rtxQuality || "ULTRA" };
   return { images: [ids.rtx, 0], upscaleUsed };
 }
-import { matchPreset } from "./presets_ltx25.js";
 
 const N = {
   unet:   "MM:unet",
@@ -204,408 +203,6 @@ function flashvsrParamsFromState(state) {
 }
 
 /**
- * Wire the lock, if it applies. Returns true when the sampler should read from it.
- *
- * The relay renders one clip per prompt, so each clip has to be handed *its own slice*
- * of the track — feeding the whole file to every clip would repeat the same seconds N
- * times in the stitched result. The slice is cut with TrimAudioDuration, the same node
- * the reference-audio inputs already use.
- */
-function buildAudioLock(g, state, avail, clipIndex, frames) {
-  if (!state.audioLock) return false;
-  // Say what's wrong up front rather than silently rendering without the lock — a run
-  // that quietly ignores it looks like the lock simply doesn't work.
-  if (!has(avail, "TJ_H3_AudioLock"))
-    throw new Error("Audio lock needs the TJ_H3_AudioLock node — install the TJ_NODE pack, or switch the lock off.");
-  if (!state.lockAudioFile)
-    throw new Error("Audio lock is on but no audio file is selected — pick one under Lock audio in the left panel.");
-
-  const clipSeconds = framesToSeconds(frames);
-  const startSec = clipIndex * clipSeconds;
-
-  g[N.lockAud] = { class_type: "LoadAudio", inputs: { audio: state.lockAudioFile } };
-  let audioLink = [N.lockAud, 0];
-
-  // Without the trimmer every clip would lock onto the opening seconds of the track.
-  if (has(avail, "TrimAudioDuration")) {
-    g[N.lockAudTrim] = { class_type: "TrimAudioDuration", inputs: {
-      audio: audioLink, start_index: startSec, duration: clipSeconds,
-    }};
-    audioLink = [N.lockAudTrim, 0];
-  }
-
-  g[N.audioLock] = { class_type: "TJ_H3_AudioLock", inputs: {
-    av_latent: [N.cond, 1],
-    audio:     audioLink,
-    audio_vae: [N.vaeA, 0],
-    mode:      state.audioLockMode || "lock",
-    strength:  state.audioLockStrength ?? 0.5,
-    fit:       state.audioLockFit || "pad_silence",
-    // TJ_NODE's wireless Set/Get widgets are declared `required`, so an API graph that
-    // omits them is rejected outright with required_input_missing.
-    get_name_av_latent: "(none)",
-    get_name_audio:     "(none)",
-    get_name_audio_vae: "(none)",
-    auto_set: false,
-  }};
-  return true;
-}
-
-/**
- * One-Take (latent continuation, TJ_NODE): the sampled latent from the previous clip's
- * SamplerCustomAdvanced feeds straight into this clip's head, no VAE round trip. The
- * relay submits one queue per clip (so the model can be unloaded between them), which
- * means ComfyUI holds no tensor state across submissions — the previous clip's latent
- * has to round-trip through a disk checkpoint (TJ_H3_SaveLatentCheckpoint /
- * TJ_H3_LoadLatentCheckpoint) rather than being wired directly.
- *
- * Returns the latent link the sampler should read from — either the continuation node's
- * output (clip 2+) or `defaultLatent` unchanged (clip 1, nothing to continue from yet).
- */
-function buildOneTake(g, state, avail, clipIndex, prevCheckpointName, defaultLatent) {
-  if (state.continuityMode !== "onetake") return defaultLatent;
-  if (!has(avail, "TJ_H3_LatentContinuation"))
-    throw new Error("One-Take needs the TJ_H3_LatentContinuation node — install/update the TJ_NODE pack, or switch Continuity to something else.");
-  if (clipIndex === 0 || !prevCheckpointName) return defaultLatent;   // nothing to continue from yet
-  if (!has(avail, "TJ_H3_LoadLatentCheckpoint"))
-    throw new Error("One-Take needs the TJ_H3_LoadLatentCheckpoint node — install/update the TJ_NODE pack.");
-
-  g[N.chkLoad] = { class_type: "TJ_H3_LoadLatentCheckpoint", inputs: {
-    checkpoint_name: prevCheckpointName,
-    // Required by TJ_NODE's node def even though it has a widget default — API-submitted
-    // graphs must always spell out required inputs explicitly. We're past clipIndex 0 here,
-    // so a missing checkpoint IS a real error and strict=true is the right value.
-    strict: true,
-  }};
-  g[N.continuation] = { class_type: "TJ_H3_LatentContinuation", inputs: {
-    overlap_frames: ONE_TAKE_OVERLAP_FRAMES,
-    lock_audio: !!state.oneTakeLockAudio,
-    prev_latent: [N.chkLoad, 0],
-    target_latent: defaultLatent,
-  }};
-  return [N.continuation, 0];
-}
-
-/** Persist this clip's sampled (undecoded) latent so the next clip's queue submission
- * can load it back for One-Take — see buildOneTake above for why this round-trips
- * through disk instead of an in-memory link. */
-function saveOneTakeCheckpoint(g, state, avail, checkpointName, latent = [N.sampler, 0]) {
-  if (state.continuityMode !== "onetake" || !checkpointName) return;
-  if (!has(avail, "TJ_H3_SaveLatentCheckpoint")) return;   // buildOneTake already threw if this run needed loading; saving is best-effort for the *next* clip
-  g[N.chkSave] = { class_type: "TJ_H3_SaveLatentCheckpoint", inputs: {
-    latent,
-    checkpoint_name: checkpointName,
-  }};
-}
-
-/**
- * 7+1 stage 2. The stage-1 latent's video part goes up to the final size and the last sigma
- * interval refines it on a model chain rebuilt for that one step: same UNET, user LoRAs and
- * turbo LoRA, then H3 Memory Optimization and Sol-Attn block-sparse attention with fixed
- * values (the bigger latent is what makes them necessary). The conditioning is stage 1's.
- * Returns the final latent link.
- */
-function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio) {
-  for (const n of ["MinimaxH3LatentUpscaler3D", "H3MemoryOptimization", "BlockSparseAttention"])
-    if (!has(avail, n)) throw new Error(`7+1 hi-res finish needs ${n} — install it, or switch 7+1 off.`);
-
-  g[N.hrSep] = { class_type: "LTXVSeparateAVLatent", inputs: { av_latent: [N.sampler, 1] } };
-  g[N.hrUp] = { class_type: "MinimaxH3LatentUpscaler3D", inputs: {
-    latent: [N.hrSep, 0],
-    model_name: "minimax_h3_latent_upscaler_3d_bf16.safetensors",
-    mode: "target dimensions", "mode.width": hires.final.width, "mode.height": hires.final.height,
-    align: 32, enable_temporal_chunking: true, force_unload: true, device: "cuda", precision: "fp16",
-  }};
-  g[N.hrCat] = { class_type: "LTXVConcatAVLatent", inputs: {
-    video_latent: [N.hrUp, 0], audio_latent: [N.hrSep, 1],
-  }};
-  let latent = [N.hrCat, 0];
-  // The separate/concat round trip drops the lock's denoise mask, so lock the same audio again.
-  if (lockAudio) {
-    g[N.hrLock] = { class_type: "TJ_H3_AudioLock", inputs: { ...g[N.audioLock].inputs, av_latent: latent } };
-    latent = [N.hrLock, 0];
-  }
-
-  let m = [N.unet, 0];
-  (state.loras || []).forEach((lora, i) => {
-    if (!lora?.name || lora.name === "none" || lora.enabled === false) return;
-    const strength = parseFloat(lora.strength ?? 1.0);
-    if (!(strength > 0)) return;
-    g[N.hrLora(i)] = { class_type: "LoraLoaderModelOnly", inputs: { model: m, lora_name: lora.name, strength_model: strength } };
-    m = [N.hrLora(i), 0];
-  });
-  g[N.hrPdd] = { class_type: "LoraLoaderModelOnly", inputs: {
-    model: m, lora_name: pddFileForMode(state), strength_model: state.pddLoraStrength ?? 1.0,
-  }};
-  g[N.hrShift] = { class_type: "MiniMaxH3SigmaShift", inputs: { model: [N.hrPdd, 0], shift_video: 12, shift_audio: 3 } };
-  g[N.hrMem] = { class_type: "H3MemoryOptimization", inputs: {
-    model: [N.hrShift, 0],
-    fused_qkv: "auto", preserve_precision: true, embedding_memory_mode: "Auto",
-    mlp_memory: "auto", chunk_rows: Math.round(state.hiresChunkRows ?? 2048), precision_mode: "Preserve native",
-    qkv_streaming_mode: "Forced", kitchen_v_memory_mode: "Lower VRAM (slower)",
-  }};
-  g[N.hrSparse] = { class_type: "BlockSparseAttention", inputs: {
-    model: [N.hrMem, 0],
-    selection: "sol-attn", "selection.tau": 1.3,
-    start_percent: 0.2, end_percent: 1, dense_blocks: "",
-    min_tokens: 12288, extra_tokens: 256, sink_conditioning: "exact_kv_and_rows", verbose: false,
-  }};
-
-  g[N.hrGuider] = { class_type: "BasicGuider", inputs: { model: [N.hrSparse, 0], conditioning: condLink } };
-  g[N.hrSampler] = { class_type: "SamplerCustomAdvanced", inputs: {
-    noise: [N.noise, 0], guider: [N.hrGuider, 0], sampler: [N.sampSel, 0],
-    sigmas: lowSigmas, latent_image: latent,
-  }};
-  return [N.hrSampler, 0];
-}
-
-function requireModels(state) {
-  const mode = state.generationMode || "t2v";
-  const unet = mode === "reference" ? state.unetReference : state.unetFirstLast;
-  if (!unet || unet === "none")
-    throw new Error(`No ${mode === "reference" ? "Reference" : "First/Last"} UNET selected — open ⚙ Settings → Models.`);
-  if (!state.clipName || state.clipName === "none")
-    throw new Error("No text encoder selected — open ⚙ Settings → Models.");
-  if (!state.vaeVideo || state.vaeVideo === "none")
-    throw new Error("No video VAE selected — open ⚙ Settings → Models.");
-  if (!state.vaeAudio || state.vaeAudio === "none")
-    throw new Error("No audio VAE selected — open ⚙ Settings → Models.");
-  return unet;
-}
-
-function unetNode(name) {
-  if ((name || "").toLowerCase().endsWith(".gguf"))
-    return { class_type: "UnetLoaderGGUF", inputs: { unet_name: name } };
-  return { class_type: "UNETLoader", inputs: { unet_name: name, weight_dtype: "default" } };
-}
-
-/** Model patch chain, in the reference workflow's order. Returns the final MODEL link. */
-function buildModelChain(g, state, avail) {
-  const unet = requireModels(state);
-  g[N.unet] = unetNode(unet);
-  let m = [N.unet, 0];
-
-  // ── attention backend (transformer_options override slot) ─────────────────
-  // Exactly one of these may be installed: they all write the same
-  // `optimized_attention_override` key (CK writes the sibling `optimized_attention`),
-  // and the last writer silently wins. The UI offers them as one dropdown for that
-  // reason — stacking two used to look enabled while only one actually ran.
-  //
-  // SLA is deliberately NOT placed here even though it claims the same slot: it wants
-  // to be the last patch before the sampler, so it is applied in applySla() further
-  // down, after the preview wrapper.
-  const attn = state.attnBackend || "none";
-  if (attn === "ck" && has(avail, "ModelAttentionBackend")) {
-    g[N.ckAttn] = { class_type: "ModelAttentionBackend", inputs: {
-      model: m,
-      attention: state.ckAttentionBackend === "pytorch" ? "pytorch attention" : "comfy kitchen attention",
-    }};
-    m = [N.ckAttn, 0];
-  } else if (attn === "sage" && has(avail, "PathchSageAttentionKJ")) {
-    g[N.sage] = { class_type: "PathchSageAttentionKJ", inputs: {
-      model: m, sage_attention: state.sageAttnMode || "auto",
-    }};
-    m = [N.sage, 0];
-  } else if (attn === "solattn_kijai" && has(avail, "SolAttnPatch")) {
-    g[N.sol] = { class_type: "SolAttnPatch", inputs: {
-      model: m,
-      tau: state.solTau ?? 1.3,
-      start_percent: state.solStart ?? 0.2,
-      end_percent:   state.solEnd ?? 0.9,
-      min_tokens:    state.solMinTokens ?? 4096,
-      int8_qk: true, sink_conditioning: "exact_kv_and_rows",
-      morton: false, morton_curve: "2d_frame",
-      int8_pv: true, verbose: false, use_tma: false, dense_blocks: "",
-    }};
-    m = [N.sol, 0];
-  }
-
-  // ── H3 attention forward (blocks[i].attn.forward object patch) ────────────
-  // A different layer from the override above, so it combines with it. Order matters
-  // for the Saganaki22 node specifically: it adopts whatever already patched
-  // attn.forward as its own fallback for calls its kernel can't take, which is how
-  // "MemEff Sage + Sol" ends up being a working stack rather than a collision — so
-  // Sage has to be installed first.
-  const attnFwd = state.attnForward || "none";
-  if ((attnFwd === "memeff_sage" || attnFwd === "solattn_sag")
-      && has(avail, "MiniMaxH3MemoryEfficientSageAttentionPatch")
-      && (attnFwd === "memeff_sage" || state.solSagAdoptSage !== false)) {
-    g[N.memSage] = { class_type: "MiniMaxH3MemoryEfficientSageAttentionPatch", inputs: { model: m } };
-    m = [N.memSage, 0];
-  }
-  if (attnFwd === "solattn_sag" && has(avail, "MiniMaxH3ScheduledSolAttentionPatch")) {
-    g[N.solSag] = { class_type: "MiniMaxH3ScheduledSolAttentionPatch", inputs: {
-      model: m,
-      enabled: true,
-      tau_start:     state.solSagTauStart ?? 1.3,
-      tau_end:       state.solSagTauEnd ?? 0.8,
-      curve:         state.solSagCurve || "linear",
-      min_tokens:    Math.round(state.solSagMinTokens ?? 4096),
-      strict:        !!state.solSagStrict,
-      dense_percent: state.solSagDensePercent ?? 0.0,
-      thresh_type:   state.solSagThreshType || "diag",
-      int8_qk:       !!state.solSagInt8Qk,
-      int8_pv:       !!state.solSagInt8Pv,
-      sink_conditioning: state.solSagSinkCond || "exact_kv",
-      dense_blocks:  state.solSagDenseBlocks || "",
-    }};
-    m = [N.solSag, 0];
-  }
-  if (state.useTorchPatch && has(avail, "ModelPatchTorchSettings")) {
-    g[N.torch] = { class_type: "ModelPatchTorchSettings", inputs: {
-      model: m, enable_fp16_accumulation: state.fp16Accum !== false,
-    }};
-    m = [N.torch, 0];
-  }
-
-  // PDD's heads are trained against a 12/3 shift and its wrapper refuses anything else —
-  // a hard error, but one that arrives minutes into sampling. The shift is part of the
-  // same trained contract as the sigmas and the sampler, so pin it here rather than let a
-  // changed slider turn into a failed render.
-  const pddShift = effectiveTurbo(state, avail).mode === "pdd";
-  g[N.shift] = { class_type: "MiniMaxH3SigmaShift", inputs: {
-    model: m,
-    shift_video: pddShift ? 12 : (state.shiftVideo ?? 12),
-    shift_audio: pddShift ? 3  : (state.shiftAudio ?? 3),
-  }};
-  m = [N.shift, 0];
-
-  // User LoRA chain (the reference workflow had LoraManager wired here, outside the
-  // subgraph; keeping it inline avoids the model round-trip that would be a graph cycle).
-  (state.loras || []).forEach((lora, i) => {
-    if (!lora?.name || lora.name === "none" || lora.enabled === false) return;
-    const strength = parseFloat(lora.strength ?? 1.0);
-    if (!(strength > 0)) return;
-    const id = `MM:lora${i}`;
-    g[id] = { class_type: "LoraLoaderModelOnly", inputs: {
-      model: m, lora_name: lora.name, strength_model: strength,
-    }};
-    m = [id, 0];
-  });
-
-  // ── turbo (weights) ───────────────────────────────────────────────────────
-  // Goes after the user LoRA chain so a turbo LoRA sits closest to the sampler, and
-  // before the caches for the same reason the caches sit before Spectrum: each layer
-  // wraps the one above it.
-  const turbo = effectiveTurbo(state, avail).mode;
-  if (turbo === "larryvrh" && has(avail, "MiniMaxH3TurboLoRA")) {
-    g[N.turbo] = { class_type: "MiniMaxH3TurboLoRA", inputs: {
-      model: m, lora_name: turboLoraForMode(state),
-      strength: state.turboLoraStrength ?? 1.0,
-      low_vram: !!state.turboLoraLowVram,
-    }};
-    m = [N.turbo, 0];
-  } else if (turbo === "lightx2v") {
-    // An ordinary LoRA — the speedup comes from the SLA kernel it was distilled
-    // against, which applySla() installs later.
-    g[N.slaTurboLora] = { class_type: "LoraLoaderModelOnly", inputs: {
-      model: m, lora_name: state.slaTurboLora,
-      strength_model: state.slaTurboStrength ?? 1.0,
-    }};
-    m = [N.slaTurboLora, 0];
-  } else if (turbo === "pdd") {
-    // Core-native since ComfyUI v0.35.0 (#15908 "Support PDD LoRA"). The Acc checkpoint —
-    // the ComfyUI-converted one, not the raw alibaba-pai file, whose DiffSynth key names
-    // no core loader maps — is an ordinary model-only LoRA that expands video_out / audio_out
-    // into an N-interval head bank (a shape-changing patch, which core's model_patcher only
-    // learned to allow in that same PR). FinalLayer.forward detects the bank from the weight
-    // shape and, per step, picks the head(s) spanning that step's sigma range off the
-    // sampler's own schedule (transformer_options["sample_sigmas"]) — so there is no apply
-    // node, no emitted sigmas, no on-grid contract: a plain BasicScheduler at the distilled
-    // step count feeds it (see the sampler wiring below). Needs core >= v0.35.0.
-    g[N.pdd] = { class_type: "LoraLoaderModelOnly", inputs: {
-      model: m,
-      lora_name: pddFileForMode(state),
-      strength_model: state.pddLoraStrength ?? 1.0,
-    }};
-    m = [N.pdd, 0];
-  }
-
-  // ── block-output cache ────────────────────────────────────────────────────
-  // FirstBlockCache reuses block outputs across steps. A turbo schedule rules it out
-  // entirely — a handful of steps never reaches the threshold it reuses at. The panel
-  // already refuses the combination and says so, but it can only do that once it has
-  // rendered; a graph built from state that has not been through it would otherwise carry
-  // a cache the run was never meant to have, and record it in the clip's metadata as
-  // though it had been chosen. Enforce it where the graph is actually made.
-  const cache = blockCacheBlockedReason(state.blockCache || "none", turbo)
-    ? "none" : (state.blockCache || "none");
-  if (cache === "fbcache" && has(avail, "ApplyMiniMaxH3FirstBlockCache")) {
-    g[N.fbcache] = { class_type: "ApplyMiniMaxH3FirstBlockCache", inputs: {
-      model: m,
-      mode: state.fbcMode || "H3 Fast — 0.10 / max 2",
-      threshold: state.fbcThreshold ?? 0.10,
-      start_percent: state.fbcStartPercent ?? 0.10,
-      end_percent: state.fbcEndPercent ?? 0.95,
-      max_consecutive_hits: state.fbcMaxHits ?? 2,
-      temporal_guard: !!state.fbcTemporalGuard,
-    }};
-    m = [N.fbcache, 0];
-  }
-
-  // ── H3-Optimizations (Zironic): VRAM + optional sparse, backend-preserving ─
-  // Unlike the KJ forward patch, H3 Memory Optimization does NOT replace the blocks'
-  // attention — it wraps the selected dense backend (sage / comfy kitchen / stock) with
-  // chunked QKV/MLP/FinalLayer and early embedding release, so it is how you get a
-  // memory-efficient CK. Its nodes are order-independent and reconcile at the
-  // prepare-sampling boundary, so placement here (after the caches, inside Spectrum's
-  // wrapper) is safe. The Sparse stage is gated exactly like the sparse backends.
-  const h3opt = state.h3Optimizer || "none";
-  if ((h3opt === "memory" || h3opt === "memory_sparse") && has(avail, "H3MemoryOptimization")) {
-    g[N.h3mem] = { class_type: "H3MemoryOptimization", inputs: {
-      model: m,
-      // Legacy serialized slots — ignored by execution but kept as required inputs.
-      fused_qkv: "auto",
-      preserve_precision: true,
-      embedding_memory_mode: "Auto",
-      // Authoritative controls.
-      mlp_memory: "auto",
-      chunk_rows: Math.round(state.h3MemChunkRows ?? 4096),
-      precision_mode: state.h3MemPrecision || "Auto",
-      qkv_streaming_mode: state.h3MemQkvStreaming || "Auto",
-      kitchen_v_memory_mode: state.h3MemLowVram ? "Lower VRAM (slower)" : "Standard",
-    }};
-    m = [N.h3mem, 0];
-  }
-  if (h3opt === "memory_sparse"
-      && !h3OptimizerBlockedReason("memory_sparse", turbo, state.attnBackend, state.attnForward)
-      && has(avail, "H3SparseAttention")) {
-    g[N.h3sparse] = { class_type: "H3SparseAttention", inputs: {
-      model: m,
-      video_budget: state.h3SparseBudget ?? 0.15,
-      denser_early_late_steps: state.h3SparseDenserEdges !== false,
-      layer_video_budgets: state.h3SparseLayerBudgets || "",
-    }};
-    m = [N.h3sparse, 0];
-  }
-
-  // ── Spectrum (latent-level step forecasting) ──────────────────────────────
-  // Independent of the caches above: those decide whether to recompute blocks *within*
-  // a step, Spectrum decides whether to run the model for a step at all. Its wrapper
-  // sits outside theirs, so the two compose instead of competing.
-  if (state.useSpectrum && has(avail, "SpectrumApplyMiniMaxH3")) {
-    g[N.spectrum] = { class_type: "SpectrumApplyMiniMaxH3", inputs: {
-      model: m,
-      enabled: true,
-      blend_weight:      state.specBlendWeight ?? 0.5,
-      degree:            Math.round(state.specDegree ?? 1),
-      ridge_lambda:      state.specRidgeLambda ?? 0.1,
-      window_size:       state.specWindowSize ?? 2.0,
-      flex_window:       state.specFlexWindow ?? 0.75,
-      warmup_steps:      Math.round(state.specWarmupSteps ?? 1),
-      tail_actual_steps: Math.round(state.specTailSteps ?? 1),
-      max_history:       Math.round(state.specMaxHistory ?? 8),
-      debug: false,
-      history_storage: state.specHistoryStore || "system_ram",
-      bootstrap_first_forecast: true,
-    }};
-    m = [N.spectrum, 0];
-  }
-
-  return m;
-}
-
-/**
  * Live sampling preview. ModelPreviewOverrideKJ wraps the model and streams decoded frames
  * to the frontend over the `kj_preview_override` socket event.
  *
@@ -635,170 +232,6 @@ function applyPreview(g, state, avail, modelLink, nodeId) {
   return [key, 0];
 }
 
-// H3 SLA Attention wants to be last before the sampler (its own README: "place it after
-// your LoRA loader, last before the sampler"), so it goes after preview, not inside
-// buildModelChain. Enabling it lives in Settings; the node's own `enabled` bypass is the
-// left-panel per-run checkbox, so the node stays in the graph either way once turned on
-// in Settings — flipping the left-panel box just toggles sparse vs dense passthrough.
-// Fuses H3's segmented AdaLN scale/shift and gated residual updates into Triton
-// kernels. It patches blocks[i].forward, a layer nothing else here touches, and it
-// still *calls* block.adaln_proj() rather than reading its weights — so a turbo LoRA's
-// AdaLN injection survives it. That makes this safe to leave on with any combination
-// of the axes above.
-function applyFusedModulation(g, state, avail, modelLink) {
-  if (!state.useFusedModulation || !has(avail, "MiniMaxH3FusedModulation")) return modelLink;
-  g[N.fusedMod] = { class_type: "MiniMaxH3FusedModulation", inputs: {
-    model: modelLink, enabled: true,
-  }};
-  return [N.fusedMod, 0];
-}
-
-function applySla(g, state, avail, modelLink) {
-  // Selected either as the attention backend outright, or implied by the lightx2v
-  // turbo LoRA, which is worthless without it.
-  const wantSla = state.attnBackend === "sla" || state.turboMode === "lightx2v";
-  if (!wantSla || !has(avail, "H3SLAAttention")) return modelLink;
-  g[N.sla] = { class_type: "H3SLAAttention", inputs: {
-    model: modelLink,
-    sparsity_ratio: state.slaSparsity ?? 0.90,
-    block_size: state.slaBlockSize || "64",
-    min_seq_len: state.slaMinSeqLen ?? 8192,
-    dense_last_steps: state.slaDenseLastSteps ?? 0,
-    protect_audio: state.slaProtectAudio !== false,
-    enabled: state.slaRunEnabled !== false,
-  }};
-  return [N.sla, 0];
-}
-
-// Per-card megapixel override for a keyframe/reference image — 0 (or unset) means "send
-// as uploaded, no resize". ImageScaleToTotalPixels is a ComfyUI core node, so this needs
-// no availability gate.
-function resizeToMp(g, key, imageLink, mp) {
-  if (!(mp > 0)) return imageLink;
-  g[key] = { class_type: "ImageScaleToTotalPixels", inputs: {
-    image: imageLink, upscale_method: "lanczos", megapixels: mp, resolution_steps: 1,
-  }};
-  return [key, 0];
-}
-
-function buildConditioning(g, state, promptText, width, height, frames, opts, avail, key = N.cond) {
-  const mode = state.generationMode || "t2v";
-  const { firstFrame, lastFrame, refImages } = opts || {};
-
-  if (mode === "reference") {
-    // A clip that uses library assets / a project: TJ_H3Reference loads and orders them itself
-    // (images, videos with their soundtrack, audio) and has the same outputs as the core node,
-    // so nothing downstream changes. The file slots are not used for this clip.
-    const ref = state.assetRef;
-    if (ref && (ref.project || (ref.ids || []).length)) {
-      const libInputs = {
-        clip: [N.clip, 0], vae: [N.vaeV, 0], audio_vae: [N.vaeA, 0],
-        prompt: promptText, width, height, length: frames,
-        ref_image_size: state.refImageSize || "match",
-        match_check: "warn",
-      };
-      if (ref.project) {
-        libInputs.mode = "project";
-        libInputs.project = String(ref.project);
-      } else {
-        const ids = ref.ids.slice(0, 15);
-        libInputs.mode = "assets";
-        libInputs.asset_count = ids.length;
-        ids.forEach((id, i) => { libInputs[`asset_${i + 1}`] = String(id); });
-      }
-      g[key] = { class_type: "TJ_H3Reference", inputs: libInputs };
-      return;
-    }
-    const inputs = {
-      clip: [N.clip, 0], vae: [N.vaeV, 0], audio_vae: [N.vaeA, 0],
-      prompt: promptText, width, height, length: frames,
-      ref_image_size: state.refImageSize || "match",
-    };
-    // Ref2VA has no first_frame input. Feeding a previous clip's final frame in here as
-    // an extra reference was measured and does nothing for continuity, so the relay
-    // switches continued clips to FL2VA instead and never sends a frame this way.
-    (refImages || []).slice(0, 9).forEach((name, i) => {
-      if (!name) return;
-      g[N.ref(i)] = { class_type: "LoadImage", inputs: { image: name } };
-      let link = resizeToMp(g, N.refResize(i), [N.ref(i), 0], (state.refImagesMp || [])[i]);
-      // Autogrow inputs are addressed with the dotted path the schema expands to.
-      inputs[`ref_images.ref_image_${i}`] = link;
-    });
-
-    // Reference videos. VHS_LoadVideo does the whole job in one node: force_rate pins
-    // the 24fps the model expects, and skip/cap are the in/out points in frames. Its
-    // AUDIO output is the same clip's soundtrack, which the model pairs by index.
-    if (has(avail, "VHS_LoadVideo")) {
-      (state.refVideos || []).slice(0, 3).forEach((v, i) => {
-        if (!v || !v.file) return;
-        const start = Math.max(0, Number(v.start) || 0);
-        const end   = Math.max(start, Number(v.end) || 0);
-        const skip  = Math.round(start * FPS);
-        const cap   = Math.max(0, Math.round((end - start) * FPS));   // 0 = to the end
-        g[N.refVid(i)] = { class_type: "VHS_LoadVideo", inputs: {
-          video: v.file,
-          force_rate: FPS,
-          custom_width: 0, custom_height: 0,
-          frame_load_cap: cap,
-          skip_first_frames: skip,
-          select_every_nth: 1,
-        }};
-        // Downscale to v.mp megapixels (never upscale: skipped when the probed source is already
-        // smaller). Without this the video keeps its own size and every frame becomes tokens.
-        const tooBig = !v.srcW || !v.srcH || v.srcW * v.srcH > v.mp * 1e6;
-        inputs[`ref_videos.ref_video_${i}`] = v.mp > 0 && tooBig
-          ? resizeToMp(g, N.refVidResize(i), [N.refVid(i), 0], v.mp) : [N.refVid(i), 0];
-        if (v.withAudio !== false) {
-          inputs[`ref_video_audios.ref_video_audio_${i}`] = [N.refVid(i), 2];
-        }
-      });
-    }
-
-    // Standalone reference audio, trimmed to the requested window.
-    (state.refAudios || []).slice(0, 3).forEach((a, i) => {
-      if (!a || !a.file) return;
-      g[N.refAud(i)] = { class_type: "LoadAudio", inputs: { audio: a.file } };
-      let link = [N.refAud(i), 0];
-      const start = Math.max(0, Number(a.start) || 0);
-      const end   = Math.max(start, Number(a.end) || 0);
-      const dur   = end - start;
-      if ((start > 0 || dur > 0) && has(avail, "TrimAudioDuration")) {
-        g[N.refAudTrim(i)] = { class_type: "TrimAudioDuration", inputs: {
-          audio: link, start_index: start, duration: dur > 0 ? dur : 60.0,
-        }};
-        link = [N.refAudTrim(i), 0];
-      }
-      inputs[`ref_audios.ref_audio_${i}`] = link;
-    });
-
-    g[key] = { class_type: "MiniMaxH3ReferenceToVideo", inputs };
-    return;
-  }
-
-  // t2v and firstlast share MiniMaxH3ImageToVideo; the keyframes are optional.
-  const inputs = {
-    clip: [N.clip, 0], vae: [N.vaeV, 0],
-    prompt: promptText, width, height, length: frames,
-  };
-  // Library First / Last frames: TJ_H3ImageToVideo wraps the same core node and takes an
-  // asset id per frame; a frame without an asset still comes from its file as before.
-  const lib = mode === "firstlast" ? state.assetRef : null;
-  const libFirst = lib?.first || null, libLast = lib?.last || null;
-  if (mode === "firstlast") {
-    if (libFirst) inputs.first_asset = String(libFirst);
-    else if (firstFrame) {
-      g[N.loadFirst] = { class_type: "LoadImage", inputs: { image: firstFrame } };
-      inputs.first_frame = resizeToMp(g, N.loadFirstResize, [N.loadFirst, 0], state.firstFrameMp);
-    }
-    if (libLast) inputs.last_asset = String(libLast);
-    else if (lastFrame) {
-      g[N.loadLast] = { class_type: "LoadImage", inputs: { image: lastFrame } };
-      inputs.last_frame = resizeToMp(g, N.loadLastResize, [N.loadLast, 0], state.lastFrameMp);
-    }
-  }
-  g[key] = { class_type: libFirst || libLast ? "TJ_H3ImageToVideo" : "MiniMaxH3ImageToVideo", inputs };
-}
-
 /**
  * Build one clip's graph.
  *
@@ -810,7 +243,8 @@ function buildConditioning(g, state, promptText, width, height, frames, opts, av
  */
 export function buildClipGraph(state, avail, opts = {}) {
   const {
-    nodeId, promptText, seed, clipIndex = 0, saveLastFrame = true, saveTailPreviews = true,
+    nodeId, promptText, seed, clipIndex = 0, saveLastFrame = true, saveTailPreviews = true, dir = null,
+    firstFrame = null, lastFrame = null,
   } = opts;
 
   const frames = state.clipFrames || DEFAULT_FRAMES;
@@ -863,13 +297,19 @@ export function buildClipGraph(state, avail, opts = {}) {
   // ── Director: prompt, empty latents, guides ────────────────
   const fullPrompt = String(promptText || "").trim();
   const secs = frames / FPS;
+  // The clip's own segment timeline (edited in Prompt Edit). One made for another clip length is
+  // refreshed by the caller before the graph is built.
+  const tl = withAnchorFrames(dir && dir.frames === frames ? dir.widgets : {}, frames, firstFrame, lastFrame);
   g[N.dir] = { class_type: "LTXDirectorTJ25", inputs: {
     model, clip: [N.clip, 0], audio_vae: [N.vaeA, 0], vae: [N.vaeV, 0],
     start_second: 0, end_second: secs, duration_seconds: secs, start_frame: 0, end_frame: frames, duration_frames: frames,
-    timeline_data: directorTimeline(fullPrompt, frames), local_prompts: "", segment_lengths: "", epsilon: 0.001, guide_strength: "",
-    global_prompt: fullPrompt, use_custom_audio: false, use_custom_motion: false, inpaint_audio: true, frame_rate: FPS,
+    timeline_data: directorTimeline(fullPrompt, frames, tl.timeline_data),
+    local_prompts: tl.local_prompts ?? "", segment_lengths: tl.segment_lengths ?? "", epsilon: tl.epsilon ?? 0.001,
+    guide_strength: tl.guide_strength ?? "",
+    global_prompt: fullPrompt, use_custom_audio: tl.use_custom_audio ?? false, use_custom_motion: tl.use_custom_motion ?? false,
+    inpaint_audio: tl.inpaint_audio ?? true, frame_rate: FPS,
     display_mode: "seconds", custom_width: outW, custom_height: outH, resize_method: "stretch to fit",
-    divisible_by: 32, img_compression: 18, override_audio: false, reference_strength: 1.0,
+    divisible_by: 32, img_compression: 18, override_audio: tl.override_audio ?? false, reference_strength: 1.0,
   }};
   g[N.dirZero] = { class_type: "ConditioningZeroOut", inputs: { conditioning: [N.dir, 2] } };
   g[N.cond] = { class_type: "LTXVConditioning", inputs: { positive: [N.dir, 1], negative: [N.dirZero, 0], frame_rate: [N.dir, 7] } };
@@ -966,10 +406,9 @@ export function buildClipGraph(state, avail, opts = {}) {
   // dozens of clips that differ only in settings, and reading them back one sidecar at a
   // time to find out which is which is the slow way. A run that matches nothing is left
   // untagged rather than labelled something misleading.
-  const presetTag = (matchPreset(state) || {}).id;
   saveVideoNode(g, { video: N.video, save: N.save }, images,
     lockAudio ? [N.audioLock, 1] : [N.decodeA, 0], FPS,
-    `${folder}/${stem}_clip${clipTag}${presetTag ? `_preset${presetTag}` : ""}`, avail);
+    `${folder}/${stem}_clip${clipTag}`, avail);
 
   // "Save the un-processed clip too" — a second file straight off the decode, before
   // deblur/upscale touched it. Only worth writing when something actually ran; the run
@@ -979,7 +418,7 @@ export function buildClipGraph(state, avail, opts = {}) {
   if (saveRawToo) {
     saveVideoNode(g, { video: N.videoRaw, save: N.saveRaw }, preProcImages,
       lockAudio ? [N.audioLock, 1] : [N.decodeA, 0], FPS,
-      `${folder}/${stem}_clip${clipTag}${presetTag ? `_preset${presetTag}` : ""}_raw`, avail);
+      `${folder}/${stem}_clip${clipTag}_raw`, avail);
   }
 
   // Final frame is saved as a PNG so the next clip can continue from it (and so the node
@@ -1019,17 +458,46 @@ export function buildClipGraph(state, avail, opts = {}) {
   } };
 }
 
-/** The Director's timeline JSON for a clip that has only its prompt (no image / audio segments). */
-function directorTimeline(prompt, frames) {
-  return JSON.stringify({
-    mainTrackEnabled: true, audioTrackEnabled: true, motionTrackEnabled: true, propHeight: 90, globalPropHeight: 60,
-    showFilenames: true, showPromptZones: true, overrideAudio: false, inpaint_audio: true, global_prompt: prompt,
-    retake_global_prompt: "", retakeMode: false, retakeStart: 24, retakeLength: 48, retakePrompt: "", retakeStrength: 1,
-    retakeVideo: null, normalStartFrame: 0, normalDurationFrames: frames, reference_mode: "OFF", disable_prompt_relay: true,
-    msr_prefix_frames: 41, analyzeProvider: "ollama", analyzeBaseUrl: "", analyzeModel: "",
-    characters: [{ images: [], description: "" }, { images: [], description: "" }, { images: [], description: "" }],
-    segments: [], motionSegments: [], audioSegments: [],
+const ANCHOR_LEN = 24;
+
+/**
+ * A first / last frame given to the clip (the panel's First/Last images, a library asset, or the previous
+ * clip's last frame when Continuity chains) joins the clip's timeline as an image segment - unless the
+ * timeline already pins an image there. The Director reads guide strengths in segment order, so a new
+ * segment gets the default strength in the same place.
+ */
+function withAnchorFrames(widgets, frames, firstFrame, lastFrame) {
+  if (!firstFrame && !lastFrame) return widgets;
+  let tl;
+  try { tl = JSON.parse(widgets.timeline_data || "{}"); } catch { tl = {}; }
+  if (!tl || typeof tl !== "object") tl = {};
+  const segs = Array.isArray(tl.segments) ? tl.segments.slice() : [];
+  const isImg = (s) => (s.type || "image") === "image" || s.type === "video";
+  const hasFirst = segs.some(s => isImg(s) && !s.isEndFrame && (s.start || 0) <= 0 && (s.imageFile || s.imageB64));
+  const hasLast = segs.some(s => isImg(s) && s.isEndFrame && (s.imageFile || s.imageB64));
+  const add = (file, key, last) => ({
+    id: `tj-${key}-${clipKey++}`, start: last ? Math.max(0, frames - ANCHOR_LEN) : 0, length: ANCHOR_LEN, prompt: "",
+    type: "image", isAnchor: false, imageFile: file, imageB64: "", isEndFrame: last,
   });
+  const strengths = String(widgets.guide_strength || "").split(",").map(x => x.trim()).filter(Boolean);
+  const order = () => segs.filter(s => isImg(s) && (s.imageFile || s.imageB64)).sort((a, b) => (a.start || 0) - (b.start || 0));
+  const insertStrength = (seg) => {
+    if (!strengths.length) return;
+    const at = order().indexOf(seg);
+    strengths.splice(Math.max(0, at), 0, "1.00");
+  };
+  if (firstFrame && !hasFirst) { const s = add(firstFrame, "first", false); segs.push(s); insertStrength(s); }
+  if (lastFrame && !hasLast) { const s = add(lastFrame, "last", true); segs.push(s); insertStrength(s); }
+  tl.segments = segs;
+  return { ...widgets, timeline_data: JSON.stringify(tl), guide_strength: strengths.join(",") };
+}
+let clipKey = 0;
+
+/** The Director's timeline JSON for a clip: its own segments when it has them, else just the prompt. */
+function directorTimeline(prompt, frames, saved) {
+  let tl = null;
+  try { tl = saved ? JSON.parse(saved) : null; } catch { tl = null; }
+  return JSON.stringify(tl && typeof tl === "object" ? { ...tl, global_prompt: prompt } : emptyTimeline(prompt, frames));
 }
 
 export const NODE_IDS = N;
@@ -1234,243 +702,6 @@ export function buildLtxUpscaleGraph(state, avail, opts = {}) {
     scheduler: state.ltxScheduler || "simple", seed, source: sourceFile, fps,
     loras: usedLoras, deblur: deblurUsed, upscale: upscaleUsed,
     videoNode: L.save, lastFrameNode: null,
-  } };
-}
-
-// ── H3 Face Refine ────────────────────────────────────────────────────────────
-// Post-process pass over a finished/uploaded H3 clip: tracks a small/distant face per
-// frame, crops it to fill a canvas, re-renders it through H3 as real img2img (via
-// ComfyUI-H3-FaceRefine's H3InjectVideoLatent — H3's own nodes have no img2img path),
-// then stitches the result back with colour match + feathering. See
-// SPEC_MINIMAX_H3_FACE_REFINE.md. Reuses H3's OWN unet/clip/vae (buildModelChain /
-// buildConditioning, same code path as Reference mode) — NOT a separate model set like
-// LTX Upscale. Our own TJ_H3_AudioLock stands in for the pack's own
-// MiniMaxH3NativeAudioLock (spec §4/§9-2: H3PerFrameDenoise doesn't depend on that node's
-// side effects, only on the noise_mask shape ours already produces).
-const FR = {
-  load:    "FR:load",
-  select:  "FR:select",      // H3FaceSelect — Manual Select only
-  track:   "FR:track",
-  inject:  "FR:inject",
-  denoise: "FR:denoise",
-  stitch:  "FR:stitch",
-  video:   "FR:video",
-  save:    "FR:save",
-  lora:    (i) => `FR:lora${i}`,   // Face Refine's own LoRA chain — see §17, never state.loras
-};
-
-export function buildFaceRefineGraph(state, avail, opts = {}) {
-  const { nodeId, sourceFile, promptText, seed, refImages, confirmedPickOverride } = opts;
-  if (!sourceFile) throw new Error("Face Refine: pick a source clip (gallery or upload).");
-  if (!state.faceDetector || state.faceDetector === "none")
-    throw new Error("Face Refine: set a face detector in ⚙ Settings → Models — Face Refine.");
-  const isManual = state.frSelect === "manual";
-  // Chain runs (multi-person, §12) pass a per-step pick here instead of reading the
-  // single frConfirmedPick — each step is its own single-subject H3FaceSelect run over
-  // whatever the previous step produced.
-  const confirmedPick = confirmedPickOverride ?? state.frConfirmedPick;
-  if (isManual && !String(confirmedPick || "").trim())
-    throw new Error("Face Refine: pick a face for every shot first (Pick Faces button) — select is set to Manual.");
-
-  const g = {};
-  const folder = (state.saveSubfolder || SUBFOLDER).replace(/\\/g, "/");
-  const stem = state.filenamePrefix || "MMH3";
-  const cutMode = state.frCutDetection ? "auto (pyscenedetect)" : "none";
-
-  // ── source + (optional) manual face pick ────────────────────────────────────
-  // H3FaceSelect replaces the plain video loader when Manual Select is on: it detects
-  // once, up front, and hands its boxes to the tracker via face_pick so the tracker does
-  // not repeat the detection pass. Ranking-rule modes (largest_face etc.) skip this node
-  // entirely — the tracker does its own detection using `select` directly.
-  let imagesLink, audioLink, facePickLink = null;
-  if (isManual && has(avail, "H3FaceSelect")) {
-    g[FR.select] = { class_type: "H3FaceSelect", inputs: {
-      video: sourceFile, detector: state.faceDetector, confidence: state.frConfidence ?? 0.35,
-      select: "manual", select_index: 0, confirmed_pick: confirmedPick || "",
-      cut_detection: cutMode, cut_threshold: state.frCutThreshold ?? 3.0,
-      skip_first_frames: 0, frame_load_cap: 0, select_every_nth: 1,
-    }};
-    imagesLink = [FR.select, 0]; audioLink = [FR.select, 1]; facePickLink = [FR.select, 2];
-  } else {
-    g[FR.load] = { class_type: "VHS_LoadVideo", inputs: {
-      video: sourceFile, force_rate: 0, custom_width: 0, custom_height: 0,
-      frame_load_cap: 0, skip_first_frames: 0, select_every_nth: 1, format: "AnimateDiff",
-    }};
-    imagesLink = [FR.load, 0]; audioLink = [FR.load, 2];
-  }
-
-  // ── track + crop ─────────────────────────────────────────────────────────────
-  const trackInputs = {
-    images: imagesLink, detector: state.faceDetector, confidence: state.frConfidence ?? 0.35,
-    crop_factor: state.frCropFactor ?? 2.5,
-    canvas_width: state.frCanvasWidth ?? 768, canvas_height: state.frCanvasHeight ?? 768,
-    canvas_mode: state.frCanvasMode || "auto_capped_768",
-    smooth_window: state.frSmoothWindow ?? 21, size_smooth_window: 51,
-    smooth_method: "gaussian", size_mode: "per_frame",
-    identity_track: state.frIdentityTrack !== false,
-    // 0.45 (not the pack's own stock 0.28) - see core_ltx25.js's frIdentityThreshold
-    // default and SPEC_MINIMAX_H3_FACE_REFINE.md sec 19/20 for why 0.28 let continuity
-    // tracking drift onto the wrong person uncorrected.
-    identity_threshold: state.frIdentityThreshold ?? 0.45,
-    fallback_detector: state.faceFallbackDetector || "none",
-  };
-  if (facePickLink) {
-    trackInputs.face_pick = facePickLink;   // detection already done by H3FaceSelect
-  } else {
-    trackInputs.select = state.frSelect || "largest_face";
-    trackInputs.cut_detection = cutMode;
-    trackInputs.cut_threshold = state.frCutThreshold ?? 3.0;
-  }
-  if (state.frIdentityModel) trackInputs.identity_model = state.frIdentityModel;
-  g[FR.track] = { class_type: "H3FaceTrackCrop", inputs: trackInputs };
-  // RETURN_NAMES = (crops, transform, preview, report, canvas_w, canvas_h, frame_count)
-  const canvasW = [FR.track, 4], canvasH = [FR.track, 5], frameCount = [FR.track, 6];
-  const cropsLink = [FR.track, 0], transformLink = [FR.track, 1];
-
-  // ── loaders + model chain ─────────────────────────────────────────────────────
-  // Face Refine always conditions like Reference mode (refs + prompt, no first/last
-  // keyframes), so buildModelChain/buildConditioning are called with generationMode
-  // coerced to "reference" for this call only — requireModels() picks unetReference.
-  // frUseCustomModel (§15) swaps in Face Refine's OWN unet/clip file (GGUF-aware) instead
-  // of reusing H3's Reference model — same turbo/attention/cache pipeline either way,
-  // only the loaded file changes.
-  const useCustomModel = !!state.frUseCustomModel;
-  const unetFile = useCustomModel ? state.frUnet : state.unetReference;
-  const clipFile = useCustomModel ? state.frClip : state.clipName;
-  if (useCustomModel && (!unetFile || unetFile === "none"))
-    throw new Error("Face Refine: set its own UNET in ⚙ Settings → FaceRefine Model (or turn off 'use a separate model').");
-  if (useCustomModel && (!clipFile || clipFile === "none"))
-    throw new Error("Face Refine: set its own text encoder in ⚙ Settings → FaceRefine Model (or turn off 'use a separate model').");
-  const refState = { ...state, generationMode: "reference", unetReference: unetFile };
-  // Face Refine's OWN turbo settings — the same choices as the main Turbo section (None / Turbo LoRA
-  // (Basic) / larryvrh / SLA), independent of the main render's. refState is a shallow copy, so the
-  // real `state` is untouched; Face Refine always runs Reference-style, hence the Reference LoRA slots.
-  refState.turboMode = state.frTurboMode || "none";
-  refState.pddFileReference = state.frPddFile;
-  refState.pddNfe = state.frPddNfe;
-  refState.pddLoraStrength = state.frPddLoraStrength;
-  refState.turboLoraReference = state.frTurboLora;
-  refState.turboLoraStrength = state.frTurboLoraStrength;
-  refState.turboSteps = state.frTurboSteps;
-  refState.turboLoraLowVram = state.frTurboLoraLowVram;
-  refState.slaTurboLora = state.frSlaTurboLora;
-  refState.slaTurboStrength = state.frSlaTurboStrength;
-  refState.slaTurboSteps = state.frSlaTurboSteps;
-  refState.hiresFinish = false;   // 7+1 is a clip-render mode
-  const modelLink0 = buildModelChain(g, refState, avail);
-  g[N.clip] = String(clipFile || "").toLowerCase().endsWith(".gguf")
-    ? { class_type: "CLIPLoaderGGUF", inputs: { clip_name: clipFile, type: "minimax" } }
-    : { class_type: "CLIPLoader", inputs: { clip_name: clipFile, type: "minimax", device: "default" } };
-  g[N.vaeV] = { class_type: "VAELoader", inputs: { vae_name: state.vaeVideo } };
-  g[N.vaeA] = { class_type: "VAELoader", inputs: { vae_name: state.vaeAudio } };
-
-  // ── Face Refine's OWN LoRA chain (e.g. a face-detail LoRA) — never state.loras, which
-  // buildModelChain already applied above for the main render's own LoRA list. Same
-  // pattern as LTX Upscale's ltxLoras: its own list, applied after the shared chain so it
-  // sits closest to the sampler. ──
-  let modelLoraLink = modelLink0;
-  (state.frLoras || []).forEach((lora, i) => {
-    if (!lora?.name || lora.name === "none" || lora.enabled === false) return;
-    const s = parseFloat(lora.strength ?? 1.0);
-    if (!(s > 0)) return;
-    g[FR.lora(i)] = { class_type: "LoraLoaderModelOnly", inputs: { model: modelLoraLink, lora_name: lora.name, strength_model: s } };
-    modelLoraLink = [FR.lora(i), 0];
-  });
-
-  const modelLink1 = applyFusedModulation(g, refState, avail, modelLoraLink);
-  // Live sampling preview — same ModelPreviewOverrideKJ + previewNodeKey(nodeId) wiring
-  // buildClipGraph uses, so Face Refine streams into the same preview box every other
-  // mode already shows.
-  const modelLink2 = applyPreview(g, refState, avail, modelLink1, nodeId);
-  const modelLink = applySla(g, refState, avail, modelLink2);
-
-  // ── conditioning — width/height/length come from the TRACKER's outputs (links, not
-  // literals): canvas_mode "auto_*" only knows the real size once the crop is built, so
-  // guessing a JS number here would disagree with what the sampler actually gets. ──
-  buildConditioning(g, refState, String(promptText || "").trim(), canvasW, canvasH, frameCount,
-    { refImages: refImages ?? state.refImages }, avail);
-
-  // ── img2img: encode the tracked crops into the video stream (H3 has no stock path) ──
-  g[FR.inject] = { class_type: "H3InjectVideoLatent", inputs: {
-    av_latent: [N.cond, 1], images: cropsLink, vae: [N.vaeV, 0],
-  }};
-
-  // ── audio lock — our own node, see the module doc-comment above for why ──────
-  g[N.audioLock] = { class_type: "TJ_H3_AudioLock", inputs: {
-    av_latent: [FR.inject, 0], audio: audioLink, audio_vae: [N.vaeA, 0],
-    mode: "lock", strength: 0.5, fit: "pad_silence",
-    get_name_av_latent: "(none)", get_name_audio: "(none)", get_name_audio_vae: "(none)",
-    auto_set: false,
-  }};
-
-  // ── per-frame denoise: small face = strong pass, large face = gentle ─────────
-  g[FR.denoise] = { class_type: "H3PerFrameDenoise", inputs: {
-    model: modelLink, av_latent: [N.audioLock, 0], transform: transformLink,
-    denoise_multiplier_small_face: state.frDenoiseMulSmall ?? 1.0,
-    denoise_multiplier_large_face: state.frDenoiseMulLarge ?? 0.35,
-    scale_mode: "absolute_px",
-    face_px_small: state.frFacePxSmall ?? 30.0, face_px_large: state.frFacePxLarge ?? 120.0,
-    gamma: 1.0, smooth_frames: 9,
-  }};
-  // RETURN_NAMES = (av_latent, report, model) — this model MUST reach the sampler, not
-  // modelLink: the two changes it makes are to the MODEL, not the latent (spec §4/§3).
-  const denoisedModel = [FR.denoise, 2];
-
-  // ── sample ─────────────────────────────────────────────────────────────────
-  // buildModelChain already patched the turbo LoRA into modelLink0 (if one's active in
-  // Settings) — but a turbo accelerator needs its OWN step count / sampler to mean
-  // anything (PDD's head bank is trained for its exact NFE grid, larryvrh needs its
-  // dedicated sampler node), so those have to follow it here too, exactly like
-  // buildClipGraph does. frSteps/frSampler only apply when no turbo is active — with one
-  // on, effectiveSteps() overrides them (frDenoise still trims the resulting schedule).
-  const turboMode = effectiveTurbo(refState, avail).mode;
-  const useTurboSampler = turboMode === "larryvrh" && has(avail, "MiniMaxH3TurboSampler");
-  const steps = turboMode === "none" ? Math.max(1, Math.round(state.frSteps ?? 8)) : effectiveSteps(refState, avail);
-
-  const useSeed = state.seedMode === "randomize"
-    ? Math.floor(Math.random() * 1e15) : (seed ?? state.seed ?? 0);
-  g[N.noise] = { class_type: "RandomNoise", inputs: { noise_seed: useSeed } };
-  if (useTurboSampler) {
-    g[N.sampSel] = { class_type: "MiniMaxH3TurboSampler", inputs: {} };
-  } else if (turboMode === "pdd") {
-    g[N.sampSel] = { class_type: "KSamplerSelect", inputs: { sampler_name: "euler" } };
-  } else {
-    g[N.sampSel] = { class_type: "KSamplerSelect", inputs: { sampler_name: state.frSampler || "euler" } };
-  }
-  g[N.sched] = { class_type: "BasicScheduler", inputs: {
-    model: denoisedModel, scheduler: state.frScheduler || "simple",
-    steps, denoise: state.frDenoise ?? 0.40,
-  }};
-  let condLink = [N.cond, 0];
-  if (has(avail, "TJ_FreeTextEncoderVRAM")) {
-    g[N.freeClipVram] = { class_type: "TJ_FreeTextEncoderVRAM", inputs: { clip: [N.clip, 0], trigger: condLink } };
-    condLink = [N.freeClipVram, 0];
-  }
-  g[N.guider] = { class_type: "BasicGuider", inputs: { model: denoisedModel, conditioning: condLink } };
-  g[N.sampler] = { class_type: "SamplerCustomAdvanced", inputs: {
-    noise: [N.noise, 0], guider: [N.guider, 0], sampler: [N.sampSel, 0], sigmas: [N.sched, 0],
-    latent_image: [FR.denoise, 0],
-  }};
-  g[N.decode] = { class_type: "VAEDecode", inputs: { samples: [N.sampler, 0], vae: [N.vaeV, 0] } };
-
-  // ── stitch the refined crop back onto the original frames, then save ─────────
-  g[FR.stitch] = { class_type: "H3FaceStitch", inputs: {
-    base_images: imagesLink, refined_crops: [N.decode, 0], transform: transformLink,
-    paste_region: state.frPasteRegion || "face_only",
-    mask_dilation: 16, feather: state.frFeather ?? 6,
-    colour_match: state.frColourMatch ?? 1.0, blend: state.frBlend ?? 1.0,
-    undetected_frames: state.frUndetected || "fade_out",
-  }};
-
-  saveVideoNode(g, { video: FR.video, save: FR.save }, [FR.stitch, 0], [N.audioLock, 1], FPS,
-    `${folder}/${stem}_FACEREFINE`, avail);
-
-  const usedLoras = (state.frLoras || []).filter(l => l?.name && l.name !== "none" && l.enabled !== false)
-    .map(l => ({ name: l.name, strength: l.strength ?? 1.0 }));
-  return { graph: g, meta: {
-    faceRefine: true, source: sourceFile, select: state.frSelect,
-    denoise: state.frDenoise ?? 0.40, steps, turboMode, loras: usedLoras,
-    seed: useSeed, videoNode: FR.save, lastFrameNode: null,
   } };
 }
 
@@ -2032,220 +1263,6 @@ export function buildPostprocessGraph(opts, avail) {
   return { graph: g, saveNode: PPX.save, usedSteps, upscaleUsedInfo };
 }
 
-// ── Image Generator (T2I / Reference to Image) ──────────────────────────────────────
-//
-// Not a separate image model — the same H3 video pipeline (MiniMaxH3ImageToVideo /
-// MiniMaxH3ReferenceToVideo) run at a short fixed length (8 frames) and read back as a
-// single still. Mirrors the reference workflow the user supplied
-// ("MiniMax-H3-Image-Generation.json"): a cheap first pass at the "preview" resolution,
-// then — only for a real (non-preview) run — a second pass through
-// MinimaxH3LatentUpscaler3D up to the "final" resolution, refining that upscaled latent
-// with one of the reference workflow's own fixed sigma schedules (3/4/5 step, user-
-// selectable) — independent of Turbo, since that pass refines an already-upscaled latent
-// rather than sampling from scratch. A user-facing Turbo switch (off by default) optionally
-// patches in one LoRA for the FIRST pass only — separate slots for T2I/Ref2I, same
-// reasoning as the main pipeline's own turboLora/turboLoraReference split, since a turbo
-// LoRA is trained against one base model. The user-facing Steps field only ever sets the
-// first pass's step count. This is still its own small pipeline plus up to 3 user LoRA
-// slots, not the main pipeline's turbo/accelerator stack (no attention backend, etc.).
-const IMG = {
-  unet: "IMG:unet", sage: "IMG:sage", memSage: "IMG:mem_sage",
-  lora: (i) => `IMG:lora_${i}`,
-  turboLora: "IMG:turbo_lora",
-  clip: "IMG:clip", vaeV: "IMG:vae_video",
-  ref: (i) => `IMG:ref_image_${i}`,
-  cond: "IMG:cond", fizLatent: "IMG:fizgig_latent",
-  noise: "IMG:noise", sampSel1: "IMG:sampler_sel1", sched: "IMG:scheduler",
-  guider1: "IMG:guider1", sampler1: "IMG:sampler1",
-  sepAV: "IMG:sep_av", latentUp: "IMG:latent_up", concatAV: "IMG:concat_av",
-  sampSel2: "IMG:sampler_sel2", guider2: "IMG:guider2", sigmas2: "IMG:sigmas2", sampler2: "IMG:sampler2",
-  decode: "IMG:decode", frame: "IMG:frame", save: "IMG:save",
-};
-
-// The reference workflow's own fixed second-pass schedules, by step count — user-selectable
-// (3/4/5), not derived: each is its own hand-tuned sigma curve, not a subdivision of the
-// others.
-export const IMG_PASS2_SIGMAS_BY_STEPS = {
-  3: "0.9035, 0.6316, 0.3158, 0.0000",
-  4: "0.9035, 0.8000, 0.6316, 0.3158, 0.0000",
-  5: "0.9231, 0.8780, 0.8000, 0.6316, 0.3158, 0.0000",
-};
-// Frame count for the short clip a still is read back from — fixed, not user-facing (the
-// reference workflow's own PrimitiveInt value); ImageFromBatch's batch_index below always
-// matches it, so this is the one place both must agree if it's ever changed.
-const IMG_LENGTH = 8;
-
-function buildImageLoraChain(g, state, modelLink) {
-  const loras = Array.isArray(state.imgLoras) ? state.imgLoras : [];
-  let link = modelLink;
-  loras.slice(0, 3).forEach((l, i) => {
-    if (!l || l.enabled === false || !l.name || l.name === "none") return;
-    g[IMG.lora(i)] = { class_type: "LoraLoaderModelOnly", inputs: {
-      lora_name: l.name, strength_model: l.strength ?? 1.0, model: link,
-    }};
-    link = [IMG.lora(i), 0];
-  });
-  return link;
-}
-
-/**
- * @param opts.subMode  "t2i" | "ref2i"
- * @param opts.final    false = preview pass only (decode the cheap first pass, don't
- *                      save real metadata); true = full run (adds the latent-upscale
- *                      second pass, decodes at the final resolution, saves for real)
- * @param opts.refImages up to 9 filenames already in ComfyUI's input/ (ref2i only) —
- *                        same ref_images.ref_image_N shape as the main Reference to
- *                        Video mode, images only (no ref videos/audios)
- * @param opts.refImageSize "match" | "max" (ref2va's own ref_image_size option)
- * @param opts.prompt   plain string — MiniMaxH3ImageToVideo/ReferenceToVideo encode text
- *                      themselves, no separate CLIPTextEncode
- * @param opts.seed, opts.previewRes {width,height}, opts.finalRes {width,height}
- * @param opts.filenamePrefix
- * @param opts.steps        first-pass step count only; default 20 (a plain, non-turbo
- *                          render needs 20+ steps — turbo LoRAs are trained for far fewer,
- *                          typically 3/4/8 depending on the LoRA).
- * @param opts.secondPassSteps  3 | 4 | 5 (default 3) — which of the reference workflow's
- *                          own fixed sigma schedules (IMG_PASS2_SIGMAS_BY_STEPS) the
- *                          latent-upscale second pass uses. Independent of opts.steps and
- *                          opts.turboOn — these are hand-tuned curves, not derived.
- * @param opts.turboOn      false (default) = no LoRA on the first pass
- * @param opts.turboLora, opts.turboLoraStrength  ignored unless opts.turboOn
- * @param opts.savePreview  false (default) = a !final run's still goes to PreviewImage
- *                          (ComfyUI's temp/ folder, not the output gallery) instead of
- *                          SaveImage; ignored when opts.final is true (always saved)
- * @param opts.latentMode   "basic" (default) = the 8-frame clip latent read back as a still,
- *                          preview pass then latent-upscale + 2nd pass; "fizgig" =
- *                          shootthesound/ComfyUI-Fizgig-H3-Still's true one-frame latent and
- *                          its own decode, one single pass at the resolution being rendered
- *                          (preview res for a preview, final res for a real run — no 2nd pass)
- */
-export function buildImageGenGraph(state, avail, opts) {
-  const { subMode, final, refImages, refImageSize, prompt, seed, previewRes, finalRes, filenamePrefix,
-          steps, secondPassSteps, turboOn, turboLora, turboLoraStrength, savePreview } = opts;
-  const fizgig = opts.latentMode === "fizgig";
-  if (fizgig && !(has(avail, "FizgigH3StillLatent") && has(avail, "FizgigH3StillDecode")))
-    throw new Error("Use Fizgig Latent needs ComfyUI-Fizgig-H3-Still (github.com/shootthesound/ComfyUI-Fizgig-H3-Still) — install it and restart ComfyUI, or switch to Use Basic Latent.");
-  const renderRes = fizgig && final ? finalRes : previewRes;
-  const refList = (refImages || []).filter(Boolean).slice(0, 9);
-  if (subMode === "ref2i" && !refList.length) throw new Error("Reference to Image needs at least one reference image.");
-  const g = {};
-
-  const unetName = subMode === "ref2i" ? state.unetReference : state.unetFirstLast;
-  if (!unetName || unetName === "none") throw new Error(
-    `${subMode === "ref2i" ? "Reference" : "First/Last"} UNET is not set — check ⚙ Settings → Models.`);
-  g[IMG.unet] = { class_type: "UNETLoader", inputs: { unet_name: unetName, weight_dtype: "default" } };
-  let model = [IMG.unet, 0];
-
-  if (has(avail, "PathchSageAttentionKJ")) {
-    g[IMG.sage] = { class_type: "PathchSageAttentionKJ", inputs: { sage_attention: "auto", allow_compile: true, model } };
-    model = [IMG.sage, 0];
-  }
-  if (has(avail, "MiniMaxH3MemoryEfficientSageAttentionPatch")) {
-    g[IMG.memSage] = { class_type: "MiniMaxH3MemoryEfficientSageAttentionPatch", inputs: { model } };
-    model = [IMG.memSage, 0];
-  }
-  model = buildImageLoraChain(g, state, model);
-
-  // Turbo LoRA — user-selectable, off by default (goes after the user LoRA chain so it
-  // sits closest to the sampler, same ordering the main pipeline's own turbo LoRA uses).
-  if (turboOn && turboLora && turboLora !== "none") {
-    g[IMG.turboLora] = { class_type: "LoraLoaderModelOnly", inputs: {
-      model, lora_name: turboLora, strength_model: turboLoraStrength ?? 1.0,
-    }};
-    model = [IMG.turboLora, 0];
-  }
-
-  g[IMG.clip] = { class_type: "CLIPLoader", inputs: { clip_name: state.clipName, type: "minimax", device: "default" } };
-  g[IMG.vaeV] = { class_type: "VAELoader", inputs: { vae_name: state.vaeVideo } };
-
-  const condInputs = {
-    clip: [IMG.clip, 0], vae: [IMG.vaeV, 0],
-    prompt, width: renderRes.width, height: renderRes.height, length: IMG_LENGTH,
-  };
-  if (subMode === "ref2i") {
-    condInputs.ref_image_size = refImageSize || "max";
-    refList.forEach((name, i) => {
-      g[IMG.ref(i)] = { class_type: "LoadImage", inputs: { image: name } };
-      condInputs[`ref_images.ref_image_${i}`] = [IMG.ref(i), 0];
-    });
-    g[IMG.cond] = { class_type: "MiniMaxH3ReferenceToVideo", inputs: condInputs };
-  } else {
-    g[IMG.cond] = { class_type: "MiniMaxH3ImageToVideo", inputs: condInputs };
-  }
-
-  // The conditioning node's own LATENT output stays unconnected in Fizgig mode — only its
-  // conditioning is used; the one-frame latent comes from the Fizgig node at the same size.
-  let startLatent = [IMG.cond, 1];
-  if (fizgig) {
-    g[IMG.fizLatent] = { class_type: "FizgigH3StillLatent", inputs: {
-      width: renderRes.width, height: renderRes.height, batch_size: 1,
-    }};
-    startLatent = [IMG.fizLatent, 0];
-  }
-
-  const stepCount = Math.max(1, Math.round(steps ?? 20));
-  g[IMG.noise] = { class_type: "RandomNoise", inputs: { noise_seed: seed ?? 0 } };
-  g[IMG.sampSel1] = { class_type: "KSamplerSelect", inputs: { sampler_name: "euler" } };
-  g[IMG.sched] = { class_type: "BasicScheduler", inputs: { scheduler: "simple", steps: stepCount, denoise: 1, model } };
-  g[IMG.guider1] = { class_type: "BasicGuider", inputs: { model, conditioning: [IMG.cond, 0] } };
-  g[IMG.sampler1] = { class_type: "SamplerCustomAdvanced", inputs: {
-    noise: [IMG.noise, 0], guider: [IMG.guider1, 0], sampler: [IMG.sampSel1, 0],
-    sigmas: [IMG.sched, 0], latent_image: startLatent,
-  }};
-
-  let decodeSamples;
-  if (fizgig || !final) {
-    // Preview: decode the cheap first pass directly, at the preview resolution.
-    decodeSamples = [IMG.sampler1, 0];
-  } else {
-    // Real run: latent-upscale the first pass's video component up to the final
-    // resolution, re-attach its (unused) audio component, and run the fixed 3-step
-    // second pass — exactly the reference workflow's own two-pass shape.
-    if (!has(avail, "MinimaxH3LatentUpscaler3D")) throw new Error("MinimaxH3LatentUpscaler3D is not installed.");
-    g[IMG.sepAV] = { class_type: "LTXVSeparateAVLatent", inputs: { av_latent: [IMG.sampler1, 1] } };
-    g[IMG.latentUp] = { class_type: "MinimaxH3LatentUpscaler3D", inputs: {
-      model_name: "minimax_h3_latent_upscaler_3d_bf16.safetensors",
-      mode: "target dimensions", "mode.width": finalRes.width, "mode.height": finalRes.height,
-      align: 32, enable_temporal_chunking: true, force_unload: true, device: "cuda", precision: "fp16",
-      latent: [IMG.sepAV, 0],
-    }};
-    g[IMG.concatAV] = { class_type: "LTXVConcatAVLatent", inputs: {
-      video_latent: [IMG.latentUp, 0], audio_latent: [IMG.sepAV, 1],
-    }};
-    g[IMG.sampSel2] = { class_type: "KSamplerSelect", inputs: { sampler_name: "euler" } };
-    g[IMG.guider2] = { class_type: "BasicGuider", inputs: { model, conditioning: [IMG.cond, 0] } };
-    // One of the reference workflow's own fixed sigma schedules — the second pass refines
-    // an already-upscaled latent, not a from-scratch sample, so it doesn't need (and
-    // Turbo on/off doesn't change) the first pass's own step count.
-    const pass2Sigmas = IMG_PASS2_SIGMAS_BY_STEPS[secondPassSteps] || IMG_PASS2_SIGMAS_BY_STEPS[3];
-    g[IMG.sigmas2] = { class_type: "ManualSigmas", inputs: { sigmas: pass2Sigmas } };
-    g[IMG.sampler2] = { class_type: "SamplerCustomAdvanced", inputs: {
-      noise: [IMG.noise, 0], guider: [IMG.guider2, 0], sampler: [IMG.sampSel2, 0],
-      sigmas: [IMG.sigmas2, 0], latent_image: [IMG.concatAV, 0],
-    }};
-    decodeSamples = [IMG.sampler2, 0];
-  }
-
-  // A Fizgig still is already one frame — nothing to pick out of a clip.
-  let stillImage;
-  if (fizgig) {
-    g[IMG.decode] = { class_type: "FizgigH3StillDecode", inputs: { samples: decodeSamples, vae: [IMG.vaeV, 0] } };
-    stillImage = [IMG.decode, 0];
-  } else {
-    g[IMG.decode] = { class_type: "VAEDecode", inputs: { samples: decodeSamples, vae: [IMG.vaeV, 0] } };
-    g[IMG.frame] = { class_type: "ImageFromBatch", inputs: { batch_index: IMG_LENGTH, length: 1, image: [IMG.decode, 0] } };
-    stillImage = [IMG.frame, 0];
-  }
-  // A preview the user hasn't opted to keep goes to PreviewImage (ComfyUI's own temp/
-  // folder) instead of SaveImage, so it never lands in the output folder the H3 image
-  // gallery scans — nothing to clean up afterward. A real (final) run always saves.
-  g[IMG.save] = (final || savePreview)
-    ? { class_type: "SaveImage", inputs: { filename_prefix: filenamePrefix, images: stillImage } }
-    : { class_type: "PreviewImage", inputs: { images: stillImage } };
-
-  return { graph: g, saveNode: IMG.save };
-}
-
 // ── H3 image gallery post-process (Deblur + RTX VSR only) ───────────────────────────
 //
 // The dedicated H3 image gallery keeps only Deblur/RTX VSR from the video gallery's
@@ -2287,219 +1304,3 @@ export function buildImageUpscaleGraph(opts, avail) {
   return { graph: g, saveNode: IMGPP.save };
 }
 
-// ── Character Sheet ──────────────────────────────────────────────────────────────────
-//
-// Two separate graphs, deliberately: the H3 render (124-frame ref2va turnaround) is the
-// expensive part and only needs to run once; picking different frames for the sheet's 8
-// cells afterward (the user's own edit loop — pick a shot, scrub the raw video, replace,
-// repeat) re-runs only the cheap grid-assembly graph against the ALREADY-SAVED video, not
-// the whole render again.
-const CS = {
-  unet: "CS:unet", sage: "CS:sage", memSage: "CS:mem_sage",
-  lora: (i) => `CS:lora_${i}`,
-  shift: "CS:shift",
-  clip: "CS:clip", vaeV: "CS:vae_video",
-  ref: (i) => `CS:ref_image_${i}`,
-  cond: "CS:cond",
-  noise: "CS:noise", sampSel: "CS:sampler_sel", sched: "CS:scheduler",
-  guider: "CS:guider", sampler: "CS:sampler",
-  sepAV: "CS:sep_av", latentUp: "CS:latent_up", concatAV: "CS:concat_av",
-  sampSel2: "CS:sampler_sel2", guider2: "CS:guider2", sigmas2: "CS:sigmas2", sampler2: "CS:sampler2",
-  decode: "CS:decode", deblur: "CS:deblur", rtxCrop: "CS:rtx_crop", rtx: "CS:rtx", rtxDown: "CS:rtx_downsize",
-  video: "CS:video", save: "CS:save",
-};
-// Frame count for the 8-shot turnaround — fixed by the reference workflow's own timed
-// prompt (each [Shot N] At MM:SS.mmm marker assumes this exact length/fps).
-export const CHARSHEET_FRAMES = 124;
-// The reference workflow's own 8 frame picks (indices into the 124-frame render) — the
-// grid graph's default before the user replaces any of them one at a time.
-export const CHARSHEET_DEFAULT_FRAME_INDICES = [7, 22, 37, 52, 67, 82, 107, 118];
-
-/**
- * The H3 render only — ref2va at CHARSHEET_FRAMES length, sigma-shifted, up to 3 user
- * LoRAs, optional Deblur/RTX VSR on the decoded frames, saved as a plain video (no audio
- * — a character sheet has no dialogue to preserve) to its own folder so the frame-picking
- * UI and the grid graph below can both come back to it later.
- *
- * @param opts.refImages   1-9 filenames already in ComfyUI's input/
- * @param opts.refImageSize "match" | "max"
- * @param opts.prompt      the Character Sheet system/edited prompt (plain string)
- * @param opts.deblur      "none" | "LOW" | "MEDIUM" | "HIGH" | "ULTRA"
- * @param opts.rtx         null, or { rtxSizeMode, rtxScale, ..., rtxQuality } — see
- *                         buildImageUpscaleGraph's own opts.rtx for the same shape
- * @param opts.rtxSupersample after RTX VSR, resize back down to width/height instead of
- *                         leaving the clip at the upscaled size — "RTX VSR for
- *                         supersampling" in the reference workflow: a cleaner-detail
- *                         same-size result rather than an actually-larger one.
- * @param opts.useLatentUpscale when true, renders a cheap first pass at firstPassRes
- *                         then latent-upscales to width/height for the real decode
- *                         (reference workflow's own "Use Latent Upscale" + "First Pass
- *                         Wanted Ratio" — that ratio is just the first pass's megapixel
- *                         count, so firstPassRes is computed the same way
- *                         buildImageGenGraph's own previewRes is: resolveResolution at
- *                         that MP value); false renders straight at width/height.
- * @param opts.firstPassRes {width,height} — only read when useLatentUpscale is true
- * @param opts.secondPassSteps 3 | 4 | 5 (default 3) — only read when useLatentUpscale is
- *                         true; which of IMG_PASS2_SIGMAS_BY_STEPS the second pass uses.
- * @param opts.width/height render (final) resolution; opts.seed; opts.filenamePrefix
- */
-export function buildCharacterSheetVideoGraph(state, avail, opts) {
-  const { refImages, refImageSize, prompt, deblur = "none", rtx = null, rtxSupersample = false,
-          useLatentUpscale = false, firstPassRes, secondPassSteps, width, height, seed, filenamePrefix } = opts;
-  const refList = (refImages || []).filter(Boolean).slice(0, 9);
-  if (!refList.length) throw new Error("Character Sheet needs at least one reference image.");
-  if (!state.unetReference || state.unetReference === "none")
-    throw new Error("Reference UNET is not set — check ⚙ Settings → Models.");
-  const g = {};
-
-  g[CS.unet] = { class_type: "UNETLoader", inputs: { unet_name: state.unetReference, weight_dtype: "default" } };
-  let model = [CS.unet, 0];
-  if (has(avail, "PathchSageAttentionKJ")) {
-    g[CS.sage] = { class_type: "PathchSageAttentionKJ", inputs: { sage_attention: "auto", allow_compile: false, model } };
-    model = [CS.sage, 0];
-  }
-  if (has(avail, "MiniMaxH3MemoryEfficientSageAttentionPatch")) {
-    g[CS.memSage] = { class_type: "MiniMaxH3MemoryEfficientSageAttentionPatch", inputs: { model } };
-    model = [CS.memSage, 0];
-  }
-  model = buildImageLoraChain(g, state, model);
-  g[CS.shift] = { class_type: "MiniMaxH3SigmaShift", inputs: { model, shift_video: 12, shift_audio: 3 } };
-  model = [CS.shift, 0];
-
-  g[CS.clip] = { class_type: "CLIPLoader", inputs: { clip_name: state.clipName, type: "minimax", device: "default" } };
-  g[CS.vaeV] = { class_type: "VAELoader", inputs: { vae_name: state.vaeVideo } };
-
-  const passRes = useLatentUpscale && firstPassRes ? firstPassRes : { width, height };
-  const condInputs = {
-    clip: [CS.clip, 0], vae: [CS.vaeV, 0],
-    prompt, width: passRes.width, height: passRes.height, length: CHARSHEET_FRAMES, ref_image_size: refImageSize || "max",
-  };
-  refList.forEach((name, i) => {
-    g[CS.ref(i)] = { class_type: "LoadImage", inputs: { image: name } };
-    condInputs[`ref_images.ref_image_${i}`] = [CS.ref(i), 0];
-  });
-  g[CS.cond] = { class_type: "MiniMaxH3ReferenceToVideo", inputs: condInputs };
-
-  g[CS.noise] = { class_type: "RandomNoise", inputs: { noise_seed: seed ?? 0 } };
-  g[CS.sampSel] = { class_type: "KSamplerSelect", inputs: { sampler_name: "euler" } };
-  g[CS.sched] = { class_type: "BasicScheduler", inputs: { scheduler: "simple", steps: 8, denoise: 1, model } };
-  g[CS.guider] = { class_type: "BasicGuider", inputs: { model, conditioning: [CS.cond, 0] } };
-  g[CS.sampler] = { class_type: "SamplerCustomAdvanced", inputs: {
-    noise: [CS.noise, 0], guider: [CS.guider, 0], sampler: [CS.sampSel, 0],
-    sigmas: [CS.sched, 0], latent_image: [CS.cond, 1],
-  }};
-
-  let decodeSamples = [CS.sampler, 0];
-  if (useLatentUpscale) {
-    if (!has(avail, "MinimaxH3LatentUpscaler3D")) throw new Error("MinimaxH3LatentUpscaler3D is not installed.");
-    g[CS.sepAV] = { class_type: "LTXVSeparateAVLatent", inputs: { av_latent: [CS.sampler, 1] } };
-    g[CS.latentUp] = { class_type: "MinimaxH3LatentUpscaler3D", inputs: {
-      model_name: "minimax_h3_latent_upscaler_3d_bf16.safetensors",
-      mode: "target dimensions", "mode.width": width, "mode.height": height,
-      align: 32, enable_temporal_chunking: true, force_unload: true, device: "cuda", precision: "fp16",
-      latent: [CS.sepAV, 0],
-    }};
-    g[CS.concatAV] = { class_type: "LTXVConcatAVLatent", inputs: { video_latent: [CS.latentUp, 0], audio_latent: [CS.sepAV, 1] } };
-    g[CS.sampSel2] = { class_type: "KSamplerSelect", inputs: { sampler_name: "euler" } };
-    g[CS.guider2] = { class_type: "BasicGuider", inputs: { model, conditioning: [CS.cond, 0] } };
-    g[CS.sigmas2] = { class_type: "ManualSigmas", inputs: {
-      sigmas: IMG_PASS2_SIGMAS_BY_STEPS[secondPassSteps] || IMG_PASS2_SIGMAS_BY_STEPS[3],
-    }};
-    g[CS.sampler2] = { class_type: "SamplerCustomAdvanced", inputs: {
-      noise: [CS.noise, 0], guider: [CS.guider2, 0], sampler: [CS.sampSel2, 0],
-      sigmas: [CS.sigmas2, 0], latent_image: [CS.concatAV, 0],
-    }};
-    decodeSamples = [CS.sampler2, 0];
-  }
-  g[CS.decode] = { class_type: "VAEDecode", inputs: { samples: decodeSamples, vae: [CS.vaeV, 0] } };
-  let images = [CS.decode, 0];
-
-  if (deblur && deblur !== "none") {
-    if (!has(avail, "TJ_RTXDeblur")) throw new Error("RTX Deblur (TJ_RTXDeblur) is not installed.");
-    g[CS.deblur] = { class_type: "TJ_RTXDeblur", inputs: { images, strength: deblur } };
-    images = [CS.deblur, 0];
-  }
-  if (rtx) {
-    if (!has(avail, "RTXVideoSuperResolution")) throw new Error("RTXVideoSuperResolution is not installed.");
-    const r = buildRtxNode(g, { crop: CS.rtxCrop, rtx: CS.rtx }, images, rtx, width, height);
-    images = r.images;
-    if (rtxSupersample) {
-      g[CS.rtxDown] = { class_type: "ImageScale", inputs: { image: images, upscale_method: "lanczos", width, height, crop: "center" } };
-      images = [CS.rtxDown, 0];
-    }
-  }
-
-  // No audio track — a character sheet has no dialogue to carry, and VHS_VideoCombine's
-  // audio input is optional.
-  if (has(avail, "VHS_VideoCombine")) {
-    g[CS.save] = { class_type: "VHS_VideoCombine", inputs: {
-      images, frame_rate: FPS, loop_count: 0, filename_prefix: filenamePrefix,
-      format: "video/nvenc_h264-mp4", pingpong: false, save_output: true,
-    }};
-  } else {
-    g[CS.video] = { class_type: "CreateVideo", inputs: { images, fps: FPS } };
-    g[CS.save] = { class_type: "SaveVideo", inputs: { video: [CS.video, 0], filename_prefix: filenamePrefix, format: "auto", codec: "auto" } };
-  }
-  return { graph: g, saveNode: CS.save };
-}
-
-const CSG = {
-  load: "CSG:load", ref: "CSG:ref", refResize: "CSG:ref_resize",
-  frame: (i) => `CSG:frame_${i}`,
-  frameSave: (i) => `CSG:frame_save_${i}`,
-  batch: "CSG:batch", grid: "CSG:grid", scaleMax: "CSG:scale_max", save: "CSG:save",
-};
-
-/**
- * Assemble (or re-assemble) the sheet image from an already-rendered Character Sheet
- * video — the reference photo as cell 0, then one frame per index in `frameIndices` (8 by
- * default) as cells 1-N, in a 3-column grid. Cheap and fast: no H3 model touched.
- *
- * @param opts.videoFile    the raw sheet video, already in ComfyUI's input/
- * @param opts.refImage     the reference photo, already in ComfyUI's input/ (cell 0)
- * @param opts.frameIndices up to 8 frame numbers (0-based) into the video
- * @param opts.cellWidth/cellHeight the render resolution every cell is padded/scaled to
- * @param opts.maxDimension final ImageScaleToMaxDimension cap (default 2048, matches the
- *                          reference workflow's own SheetMaxSize)
- * @param opts.saveEachFrames when true, also SaveImage each of the 8 picked frames on
- *                          their own (reference workflow's own "Save Each Frames")
- * @param opts.folder/opts.stem/opts.filenamePrefix
- */
-export function buildCharacterSheetGridGraph(opts, avail) {
-  const { videoFile, refImage, frameIndices, cellWidth, cellHeight, maxDimension = 2048,
-          saveEachFrames = false, framesFilenamePrefix, filenamePrefix } = opts;
-  const indices = (frameIndices && frameIndices.length ? frameIndices : CHARSHEET_DEFAULT_FRAME_INDICES).slice(0, 8);
-  for (const n of ["BatchImagesNode", "ImageGrid", "ImageScaleToMaxDimension"]) {
-    if (!has(avail, n)) throw new Error(`${n} is not installed.`);
-  }
-  const g = {};
-
-  g[CSG.load] = { class_type: "VHS_LoadVideo", inputs: {
-    video: videoFile, force_rate: 0, custom_width: 0, custom_height: 0,
-    frame_load_cap: 0, skip_first_frames: 0, select_every_nth: 1,
-  }};
-  g[CSG.ref] = { class_type: "LoadImage", inputs: { image: refImage } };
-  g[CSG.refResize] = { class_type: "ImageScale", inputs: {
-    image: [CSG.ref, 0], upscale_method: "lanczos", width: cellWidth, height: cellHeight, crop: "center",
-  }};
-
-  const batchInputs = { "images.image0": [CSG.refResize, 0] };
-  indices.forEach((idx, i) => {
-    g[CSG.frame(i)] = { class_type: "ImageFromBatch", inputs: { batch_index: idx, length: 1, image: [CSG.load, 0] } };
-    batchInputs[`images.image${i + 1}`] = [CSG.frame(i), 0];
-    if (saveEachFrames) {
-      g[CSG.frameSave(i)] = { class_type: "SaveImage", inputs: {
-        filename_prefix: `${framesFilenamePrefix || filenamePrefix}_shot${i + 1}`, images: [CSG.frame(i), 0],
-      }};
-    }
-  });
-  g[CSG.batch] = { class_type: "BatchImagesNode", inputs: batchInputs };
-  g[CSG.grid] = { class_type: "ImageGrid", inputs: {
-    columns: 3, cell_width: cellWidth, cell_height: cellHeight, padding: 8, images: [CSG.batch, 0],
-  }};
-  g[CSG.scaleMax] = { class_type: "ImageScaleToMaxDimension", inputs: {
-    upscale_method: "area", largest_size: maxDimension, image: [CSG.grid, 0],
-  }};
-  g[CSG.save] = { class_type: "SaveImage", inputs: { filename_prefix: filenamePrefix, images: [CSG.scaleMax, 0] } };
-  return { graph: g, saveNode: CSG.save };
-}

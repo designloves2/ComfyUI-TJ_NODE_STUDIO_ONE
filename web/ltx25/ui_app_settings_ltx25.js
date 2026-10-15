@@ -2,7 +2,7 @@
 // Tabs: Models · Sampling · Preview · Output. Everything here is set once and reused
 // by every clip; per-run choices live in the node's left panel instead.
 import { C, BRAND, el, clear, SUBFOLDER } from "./core_ltx25.js";
-import { panel, label, button, select, numberField, row, col } from "../klein/ui_common.js";
+import { panel, label, button, numberField, row, col } from "../klein/ui_common.js";
 import { getModels, getConfig, saveConfig, getNodeAvailability, listVideos, getTempSize, clearTempFiles } from "./api_ltx25.js";
 import { customLLMControls } from "../shared/custom_llm_controls.js";
 import { mountLLMSettingsSection } from "../shared/llm_panel.js";
@@ -177,69 +177,6 @@ export function createSettingsOverlay(state, ctx) {
       try { await refreshModels(); } finally { upscaleRefreshBtn.textContent = "↻ Refresh Models"; }
     });
     wrap.appendChild(upscaleRefreshBtn);
-    wrap.appendChild(packStatusPanel());
-    return wrap;
-  }
-
-  // ── FaceRefine Model — face detectors + optional separate unet/clip (§15) ───
-  function faceRefineModelTab() {
-    const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } });
-    const diff = ["none", ...(modelData.diffusion_models || []).filter(x => x !== "none")];
-    const teAll = ["none", ...(modelData.text_encoders_all || modelData.text_encoders || []).filter(x => x !== "none")];
-    const fdList = ["none", ...(modelData.face_detectors || []).filter(x => x !== "none")];
-    const ffList = ["none", ...(modelData.face_fallback_detectors || []).filter(x => x !== "none")];
-    const samList = ["none", ...(modelData.sam_models || []).filter(x => x !== "none")];
-    const cvList  = ["none", ...(modelData.clip_vision || []).filter(x => x !== "none")];
-
-    const useCustomChk = checkbox("Use a separate model for Face Refine (unchecked = share H3's Reference unet/clip above)",
-      state.frUseCustomModel, v => { state.frUseCustomModel = v; ctx.persist(); ctx.refreshModes?.(); renderBody(); });
-
-    const kids = [
-      label("H3 Face Refine — post-process pass on a finished clip (re-renders a small/distant face)"),
-      useCustomChk,
-    ];
-    if (state.frUseCustomModel) {
-      const fuSel = searchableSelect(diff, state.frUnet || "none",
-        v => { state.frUnet = v === "none" ? "" : v; ctx.persist(); ctx.refreshModes?.(); });
-      const fcSel = searchableSelect(teAll, state.frClip || "none",
-        v => { state.frClip = v === "none" ? "" : v; ctx.persist(); ctx.refreshModes?.(); });
-      kids.push(
-        row([col([label("Face Refine UNET (.gguf or .safetensors)"), fuSel.el]),
-             col([label("Face Refine text encoder (.gguf or .safetensors)"), fcSel.el])]),
-        el("div", { text: "Runs on its OWN model instead of H3's Reference unet/clip — e.g. a lighter/faster "
-          + "GGUF quant just for the refine pass. Video/audio VAE are always shared with H3 (above).",
-          style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-      );
-    } else {
-      kids.push(el("div", { text: "Runs H3's own unet/text-encoder/VAE from the H3 Model tab (Reference mode's UNET).",
-        style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
-    }
-
-    const fdSel = searchableSelect(fdList, state.faceDetector || "none",
-      v => { state.faceDetector = v === "none" ? "" : v; ctx.persist(); ctx.refreshModes?.(); });
-    const ffSel = searchableSelect(ffList, state.faceFallbackDetector || "none",
-      v => { state.faceFallbackDetector = v; ctx.persist(); });
-    const samSel = searchableSelect(samList, state.faceSamModel || "none",
-      v => { state.faceSamModel = v; ctx.persist(); });
-    const cvSel = searchableSelect(cvList, state.faceIdentityClipVision || "none",
-      v => { state.faceIdentityClipVision = v; ctx.persist(); });
-    kids.push(
-      row([col([label("Face detector (required)"), fdSel.el]),
-           col([label("Fallback detector (optional — body/person model)"), ffSel.el])]),
-      row([col([label("SAM model (optional — face-shaped mask)"), samSel.el]),
-           col([label("Identity CLIP Vision (optional — identity_model=clip_vision)"), cvSel.el])]),
-      el("div", { html: "Files: face detector → <code>models/ultralytics/bbox/</code> (e.g. face_yolov8m.pt from "
-        + "Bingsu/adetailer) · fallback → <code>models/ultralytics/segm/</code> · SAM → "
-        + "<code>models/sams/</code> · CLIP Vision → <code>models/clip_vision/</code>. Manual Select "
-        + "(Pick Faces) and Impact Pack are not required for the basic ranking-rule modes.",
-        style: { fontSize: "10px", color: C.muted, lineHeight: "1.6" } }),
-    );
-    wrap.appendChild(panel(kids));
-    const frRefreshBtn = button("↻ Refresh Models", async () => {
-      frRefreshBtn.textContent = "Loading…";
-      try { await refreshModels(); } finally { frRefreshBtn.textContent = "↻ Refresh Models"; }
-    });
-    wrap.appendChild(frRefreshBtn);
     wrap.appendChild(packStatusPanel());
     return wrap;
   }

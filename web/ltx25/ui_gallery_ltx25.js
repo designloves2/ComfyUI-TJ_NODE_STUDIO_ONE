@@ -3,13 +3,14 @@
 // The node's results are videos, so the shared PNG gallery doesn't apply: this lists the
 // mp4s written into the output subfolder and plays them full screen with the keyboard
 // shortcuts you'd expect from a review pass.
-import { composeStitchedPrompt, C, BRAND, el, clear, SUBFOLDER, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES,
-         UPSCALE_MODES, FLASHVSR_MODELS, FLASHVSR_MODES, FPS, computeRtxTarget } from "./core_ltx25.js";
+import { composeStitchedPrompt, C, BRAND, el, clear, SUBFOLDER, framesToSeconds, UPSCALE_MODES, FLASHVSR_MODELS, FLASHVSR_MODES, FPS, computeRtxTarget } from "./core_ltx25.js";
 import { button, select, numberField } from "../klein/ui_common.js";
 import { galleryPageSize, fetchFirst, mergeUnique, loadMoreButton } from "../shared/gallery_more.js";
-import { listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage, getMediaFiles,
-         copyOutputToInput, discardInputCopy, getVideoInfo, queuePrompt, waitForHistory, historyEntry,
-         getClipLastFrame, getSystemPrompt, analyzeImagesNative, writeBriefNative } from "./api_ltx25.js";
+import {
+  listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage, getMediaFiles, copyOutputToInput, discardInputCopy, getVideoInfo,
+  queuePrompt, waitForHistory, historyEntry, getClipLastFrame
+} from "./api_ltx25.js";
+import { LTX_NEXT_SYSTEM } from "./prompts_ltx25.js";
 import { buildUpscaleGraph, buildInterpolateGraph, buildResizeGraph, flashvsrUsed } from "./graph_builder_ltx25.js";
 import { attachSensitiveToggle, makeSensitiveControl, mediaKey, isBlurred, isSensitive, setSensitive, wireRevealButton } from "../shared/ui_sensitive_media.js";
 
@@ -22,9 +23,6 @@ const STITCH_MAX = 10;
 // 스티치가 구분이 잘 안됨").
 const STITCH_COLOR = "#e0a530";
 const HIRES_COLOR = "#ffb3d1";   // clips made with the 7+1 hi-res finish
-
-// Overlap (39) plus four frames of guard — see the note on the trim field below.
-const DEFAULT_STITCH_TRIM_FRAMES = ONE_TAKE_OVERLAP_FRAMES + 4;
 
 // Named aspect ratios a real render is actually likely to land on — an exact GCD
 // reduction of e.g. 1344x768 gives an ugly "7:6", not the "16:9"-shaped label a person
@@ -74,12 +72,10 @@ function buildInfoLines(v) {
   if (m.frames) lines.push(`${m.frames} frames${m.fps ? ` @ ${Math.round(m.fps)}fps` : ""}`);
   if (m.steps) lines.push(`${m.steps} steps`);
   if (m.sampler) lines.push(String(m.sampler));
-  if (m.accel) lines.push(`accel: ${m.accel}`);
   if (m.elapsedSec != null) {
     const s = Math.round(m.elapsedSec);
     lines.push(`took ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`);
   }
-  if (m.turboLora) lines.push(`turbo LoRA: ${String(m.turboLora).split(/[\\/]/).pop()} (${m.turboLoraStrength ?? 1})`);
   (m.loras || []).filter(l => l && l.name && l.name !== "none").forEach(l => {
     lines.push(`${l.enabled === false ? "lora (off): " : "lora: "}${String(l.name).split(/[\\/]/).pop()} (${l.strength ?? 1})`);
   });
@@ -116,7 +112,7 @@ export function createGalleryOverlay(state, ctx) {
 
   let videos = [];
   let videoTotal = 0;      // what the folder holds; `videos` is only the part loaded so far
-  // "all" | "stitched" | "ltxupscale" | "facerefine" | "deblur" | "rtxvsr" — replaces the
+  // "all" | "original" | "stitched" | "deblur" | "rtxvsr" | "flashvsr" — replaces the
   // old binary "★ stitched only" toggle with a proper filter (user: "필터 범위를 늘려서
   // 드롭다운 방식으로 All(기본값)/스티치드/LTX Upscale/Face Refine/RTX Deblur/RTX VSR").
   let galleryFilter = "all";
@@ -126,8 +122,6 @@ export function createGalleryOverlay(state, ctx) {
     // interpolate mark. User: "아무것도 적용안된 원본 영상만."
     { value: "original", label: "Original" },
     { value: "stitched", label: "Stitched" },
-    { value: "ltxupscale", label: "LTX Upscale" },
-    { value: "facerefine", label: "Face Refine" },
     { value: "deblur", label: "RTX Deblur" },
     { value: "rtxvsr", label: "RTX VSR" },
     { value: "flashvsr", label: "FlashVSR" },
@@ -135,11 +129,9 @@ export function createGalleryOverlay(state, ctx) {
   function matchesGalleryFilter(v) {
     const m = v.meta || {};
     switch (galleryFilter) {
-      case "original":   return !v.is_full && m.mode !== "ltxupscale" && m.mode !== "facerefine"
+      case "original":   return !v.is_full
         && !(m.deblur && m.deblur !== "none") && !m.upscale && !m.interpolate;
       case "stitched":   return !!v.is_full;
-      case "ltxupscale": return m.mode === "ltxupscale";
-      case "facerefine": return m.mode === "facerefine";
       case "deblur":     return !!(m.deblur && m.deblur !== "none");
       case "rtxvsr":     return !!(m.upscale && m.upscale.method === "rtx");
       case "flashvsr":   return !!(m.upscale && m.upscale.method === "flashvsr");
@@ -341,54 +333,20 @@ export function createGalleryOverlay(state, ctx) {
   }});
   stitchClearBtn.addEventListener("click", () => { stitchOrder = []; oneTakeUserSet = false; renderGrid(); });
 
-  // Clips rendered by Continuity: One-Take share `overlap` seconds at every boundary by
-  // construction (each clip's head is the previous clip's tail — see
-  // TJ_H3_LatentContinuation), so a plain concat would show that stretch twice. Each such
-  // clip carries meta.onetake from the run that made it, so this auto-checks when every
-  // picked clip agrees — but stays a manual override either way, since a user might mix
-  // clips from a run made before this flag existed.
+  // Clips made with Last Frame Chain open on the previous clip's last frame, so a plain join would show that frame
+  // twice. Each such clip carries meta.chained, so this auto-checks when every picked clip agrees; it stays a
+  // manual override either way.
   const oneTakeLabel = el("label", { style: {
     display: "flex", alignItems: "center", gap: "5px", fontSize: "10.5px", color: C.text, cursor: "pointer",
   }});
   const oneTakeCb = el("input", { type: "checkbox" });
   oneTakeCb.style.cursor = "pointer";
   let oneTakeUserSet = false;
-  oneTakeCb.addEventListener("change", () => { oneTakeUserSet = true; });
-  oneTakeLabel.append(oneTakeCb, el("span", { text: "One-Take (trim)" }));
-
-  // How many frames to drop from the head of every clip after the first.
-  //
-  // The overlap itself is 39 frames, but trimming exactly that leaves the artefact that
-  // sits right on the seam: the carried latent is spliced in hard, with no feathering, so
-  // the VAE produces a few frames of colour breakup where it meets freshly sampled
-  // content. Measured on a matched pair at 0.2MP (same seed, same prompt, only the
-  // accelerators differing), the frame-to-frame colour jump peaked at 184x baseline with
-  // Spectrum + FirstBlockCache on and still 50x with every accelerator off — so the
-  // accelerators amplify it roughly threefold but are not the cause. The breakup spans
-  // frames 39-42 consistently, hence 43 as the default here: overlap plus four frames of
-  // guard. Editable because the artefact's length varies a little with the material, and
-  // because a run stitched by hand is exactly where you would want to tune it.
-  const trimLabel = el("label", { style: {
-    display: "flex", alignItems: "center", gap: "4px", fontSize: "10.5px", color: C.text,
-  }});
-  const trimIn = el("input", { type: "number", min: "0", max: "240", step: "1", style: {
-    width: "48px", boxSizing: "border-box", background: C.bg2, color: C.text,
-    border: `1px solid ${C.border}`, borderRadius: "5px", padding: "3px 4px",
-    fontSize: "10.5px", fontFamily: "inherit", outline: "none",
-  }});
-  trimIn.value = String(state.stitchTrimFrames ?? DEFAULT_STITCH_TRIM_FRAMES);
-  trimIn.title = "Frames trimmed from the head of every clip after the first.\n"
-    + `${ONE_TAKE_OVERLAP_FRAMES} = the overlap alone; the default adds a few frames of guard `
-    + "because the seam itself shows some colour breakup.";
-  trimIn.addEventListener("input", () => {
-    state.stitchTrimFrames = Math.max(0, Math.round(parseFloat(trimIn.value) || 0));
-    ctx.persist?.();
-    refreshStitchBar();
-  });
-  trimLabel.append(el("span", { text: "trim" }), trimIn, el("span", { text: "f", style: { color: C.muted } }));
+  oneTakeCb.addEventListener("change", () => { oneTakeUserSet = true; refreshStitchBar(); });
+  oneTakeLabel.append(oneTakeCb, el("span", { text: "Chained (trim repeated frame)" }));
 
   const stitchGoBtn = button("🔗 Combine", () => runStitch(), "primary");
-  stitchBar.append(stitchInfo, oneTakeLabel, trimLabel, stitchClearBtn, stitchGoBtn);
+  stitchBar.append(stitchInfo, oneTakeLabel, stitchClearBtn, stitchGoBtn);
 
   // ── post-processing bars ────────────────────────────────────────────────────────
   //
@@ -823,7 +781,7 @@ export function createGalleryOverlay(state, ctx) {
   // job is stashed on queue and picked up again when the gallery next opens — the same
   // reattach the main render uses. Chunked jobs aren't resumable (the slicing loop would
   // have to be replayed); the "keep this tab open" line covers those.
-  const POST_JOB_KEY = "mmh3_post_job";
+  const POST_JOB_KEY = "ltx25_post_job";
   const stashPostJob = (j) => { try { localStorage.setItem(POST_JOB_KEY, JSON.stringify(j)); } catch {} };
   const clearPostJob = () => { try { localStorage.removeItem(POST_JOB_KEY); } catch {} };
 
@@ -1211,7 +1169,7 @@ export function createGalleryOverlay(state, ctx) {
     const total = known.every(s => s != null) ? known.reduce((a, b) => a + b, 0) : null;
     const sizes = new Set(picked.map(v => `${v.meta?.w || "?"}x${v.meta?.h || "?"}`));
 
-    if (!oneTakeUserSet) oneTakeCb.checked = picked.length > 0 && picked.every(v => v.meta?.onetake === true);
+    if (!oneTakeUserSet) oneTakeCb.checked = picked.length > 0 && picked.every(v => v.meta?.chained === true);
 
     let text = `${picked.length} / ${STITCH_MAX} selected`;
     if (picked.length >= STITCH_MAX) text += " · longer edits need a real video editor";
@@ -1227,25 +1185,21 @@ export function createGalleryOverlay(state, ctx) {
     stitchGoBtn.style.opacity = picked.length < 2 ? "0.5" : "1";
   }
 
-  // Frames are the unit that matters here (the artefact is N frames wide), but the
-  // stitch API takes seconds — convert once, in one place.
-  function trimSeconds() {
-    const f = Math.max(0, Math.round(state.stitchTrimFrames ?? DEFAULT_STITCH_TRIM_FRAMES));
-    return framesToSeconds(f);
-  }
+  // The repeated first frame of a chained clip, in seconds (the stitch API takes seconds).
+  function trimSeconds() { return 1 / 24; }
 
   async function runStitch() {
     const picked = stitchOrder.map(k => videos.find(v => vKey(v) === k)).filter(Boolean);
     if (picked.length < 2) return;
     stitchGoBtn.disabled = true;
     const overlapSec = oneTakeCb.checked ? trimSeconds() : null;
-    stitchInfo.textContent = `Stitching ${picked.length} clips${overlapSec ? ` (One-Take, ${overlapSec.toFixed(3)}s overlap trimmed)` : ""}…`;
+    stitchInfo.textContent = `Stitching ${picked.length} clips${overlapSec ? " (repeated frames trimmed)" : ""}…`;
     try {
       const folder = (state.saveSubfolder || SUBFOLDER).replace(/\\/g, "/");
       const audioOverride = audioOverrideOn && audioOverrideFile ? { filename: audioOverrideFile, start: audioOverrideStart } : null;
       const out = await stitchClips(
         picked.map(v => ({ filename: v.filename, subfolder: v.subfolder || "" })),
-        `${folder}/${state.filenamePrefix || "MMH3"}_full`, null, overlapSec, audioOverride,
+        `${folder}/${state.filenamePrefix || "LTX25"}_full`, null, overlapSec, audioOverride,
       );
       const known = picked.map(v => v.meta?.frames ? framesToSeconds(v.meta.frames) : null);
       const rawTotal = known.every(s => s != null) ? known.reduce((a, b) => a + b, 0) : null;
@@ -1254,13 +1208,13 @@ export function createGalleryOverlay(state, ctx) {
       // axis - rather than writing a thin record: the stitched file is the same run, and
       // without this Reuse cannot rebuild the settings that produced it. `frames` is
       // dropped because it is per-clip; durationSeconds describes the joined file.
-      const base = picked[0]?.meta ? { ...picked[0].meta } : { v: 1, node: "minimax_h3" };
+      const base = picked[0]?.meta ? { ...picked[0].meta } : { v: 2, node: "ltx25" };
       delete base.frames;
       await saveMeta(out.filename, out.subfolder || "", {
         ...base,
         prompt: composeStitchedPrompt(picked.map(v => v.prompt || "")),
         prompts: picked.map(v => v.prompt || ""),
-        clips: picked.length, stitched: true, onetake: !!overlapSec,
+        clips: picked.length, stitched: true, chained: !!overlapSec,
         created: Date.now(), durationSeconds,
       });
       ctx.showPopup?.(`Stitched ${picked.length} clips → ${out.filename}`, false);
@@ -1536,13 +1490,11 @@ export function createGalleryOverlay(state, ctx) {
 
       // Post-decode frame ops, bottom-left — set the same way whether the pass ran inline
       // at generation time (buildClipGraph meta) or afterward from this gallery
-      // (writePostMeta). Ⓛ = LTX 2.5 Upscale, Ⓕ = H3 Face Refine, ⇪ = upscaled,
+      // (writePostMeta). ⇪ = upscaled,
       // ✧ = deblurred, ⇄ = interpolated; any can show, in that order.
       {
         const m = v.meta || {};
         const marks = [];
-        if (m.mode === "ltxupscale") marks.push(["Ⓛ", `LTX 2.5 Upscale${m.segments > 1 ? ` — ${m.segments} segments stitched` : ""}`]);
-        if (m.mode === "facerefine") marks.push(["Ⓕ", `H3 Face Refine${(m.faceRefine?.chainPicks?.length > 1) ? ` — ${m.faceRefine.chainPicks.length}-person chain` : ""}`]);
         if (m.upscale) marks.push(m.upscale.method === "flashvsr"
           ? ["◮", `Upscaled — FlashVSR VSR ×${m.upscale.scale} (${m.upscale.tileSize}px tiles`
               + `${m.upscale.mode ? `, ${m.upscale.mode}` : ""})`]
@@ -1802,23 +1754,21 @@ export function createGalleryOverlay(state, ctx) {
 
   // ── Extend — one continuation clip from this clip's last frame, auto-stitched ──
   async function extendBrief(seedFrame, rough) {
-    let sys = "";
-    try { sys = (await getSystemPrompt("minimax")).instruction || ""; } catch {}
     let vision = "";
-    if (state.nativeVisionClip) {
-      try {
-        vision = (await analyzeImagesNative(state.nativeVisionClip, [seedFrame],
-          "Describe this frame factually and concisely. It is the final frame of a video clip "
-          + "and the starting point for what happens next.")).trim();
-      } catch {}
+    if (ctx.visionReady?.()) {
+      try { vision = await ctx.describeImages([seedFrame]); } catch { /* the plain request still works */ }
     }
-    const user = (vision ? `The clip so far ends on this frame:\n${vision}\n\n` : "")
+    const user = (vision ? `The clip so far ends on this frame:
+${vision}
+
+` : "")
       + `Continue the same shot. What happens next: ${rough}`;
-    return (await writeBriefNative(state.nativeBriefClip, sys, user)).trim();
+    return await ctx.callBrief(LTX_NEXT_SYSTEM, user);
   }
 
   function openExtendPopup(clip, sourcePrompt) {
-    if (!state.nativeBriefClip) { ctx.showPopup?.("Set a brief CLIP in ⚙ Settings → Models first.", true); return; }
+    const problem = ctx.briefProblem?.();
+    if (problem) { ctx.showPopup?.(problem, true); return; }
     let seedFrame = null, mode = "review", reviewed = false, busy = false;
 
     const thumb = el("img", { style: {

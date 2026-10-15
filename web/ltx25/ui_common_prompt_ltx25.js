@@ -14,8 +14,8 @@ export function createCommonPromptOverlay(state, ctx, onApply) {
   }});
 
   const hdr = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" } });
-  hdr.appendChild(el("div", { text: "🧩 Common Prompt", style: { color: "#fff", fontSize: "14px", fontWeight: "700" } }));
-  hdr.appendChild(el("div", { text: "sent with every clip", style: { fontSize: "10.5px", color: C.muted, flex: "1" } }));
+  hdr.appendChild(el("div", { text: "🌐 Global Prompt", style: { color: "#fff", fontSize: "14px", fontWeight: "700" } }));
+  hdr.appendChild(el("div", { text: "the scene, style and sound shared by every clip", style: { fontSize: "10.5px", color: C.muted, flex: "1" } }));
   hdr.appendChild(button("✕ Close", () => hide(), "danger"));
 
   function field(titleText, hintHTML, get, set) {
@@ -38,33 +38,29 @@ export function createCommonPromptOverlay(state, ctx, onApply) {
     return { wrap, ta };
   }
 
-  const headerF = field("HEADER — style & opening",
-    "visual style, grade, lens, opening composition",
+  const headerF = field("GLOBAL PROMPT",
+    "visual style, scene, lighting, camera, ambient sound and music",
     () => state.promptHeader, v => state.promptHeader = v);
-  const footerF = field("TAIL — sound & music",
-    "<code>Ambient sound:</code> … / <code>Music:</code> …",
-    () => state.promptFooter, v => state.promptFooter = v);
 
   const body = el("div", { style: { flex: "1", display: "flex", gap: "10px", minHeight: "0" } });
-  body.append(headerF.wrap, footerF.wrap);
+  body.append(headerF.wrap);
 
   const foot = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" } });
   const tag = el("div", { style: { fontSize: "10.5px", color: C.muted, flex: "1" } });
-  const clearBtn = el("button", { type: "button", text: "Clear both", style: {
+  const clearBtn = el("button", { type: "button", text: "Clear", style: {
     cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "6px 12px",
     borderRadius: "6px", background: C.bg2, color: C.muted, border: `1px solid ${C.border}`,
   }});
   clearBtn.addEventListener("click", () => {
-    state.promptHeader = ""; state.promptFooter = "";
-    headerF.ta.value = ""; footerF.ta.value = "";
+    state.promptHeader = "";
+    headerF.ta.value = "";
     ctx.persist(); refreshTag(); onApply?.();
   });
   foot.append(clearBtn, tag, button("✓ Done", () => hide(), "primary"));
 
   function refreshTag() {
-    const h = (state.promptHeader || "").length, f = (state.promptFooter || "").length;
     const full = composeClipPrompt(state, 0).length;
-    tag.textContent = `header ${h} + tail ${f} chars · clip 1 sends ${full} chars in total`;
+    tag.textContent = `${(state.promptHeader || "").length} chars · clip 1 sends ${full} chars in total`;
   }
 
   function hide() { ov.style.display = "none"; onApply?.(); }
@@ -74,7 +70,6 @@ export function createCommonPromptOverlay(state, ctx, onApply) {
     el: ov,
     show() {
       headerF.ta.value = state.promptHeader || "";
-      footerF.ta.value = state.promptFooter || "";
       refreshTag();
       ov.style.display = "flex";
       setTimeout(() => headerF.ta.focus(), 50);

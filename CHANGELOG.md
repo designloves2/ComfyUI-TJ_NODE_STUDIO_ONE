@@ -2,6 +2,25 @@
 
 ---
 
+## v1.41.0
+
+### New: LTX 2.5 ONE STUDIO (TJ) — GPL-3.0
+- A ONE STUDIO node for LTX 2.5, built on **copied code** of CGlide's LTX-2.5-Director (itself a fork of WhatDreamsCost's LTX Director, both GPL-3.0), not a dependency.
+  **The package is now licensed GPL-3.0** (the earlier MIT terms are in `LICENSE-MIT`; see `THIRD_PARTY_NOTICES.md`).
+- The H3 studio's UI, reused for LTX: settings (one LTX model, latent upscaler, distilled-LoRA switch for non-distilled models, LLM / Image LLM,
+  Preview, Output), left panel (Canvas, Clip length, Images, LoRA, Upscale, Continuity, Sampling), gallery with Extend / Reuse, Postprocess, Asset tab.
+- Generation is the reference two-stage chain (half-size stage 1, 2x latent upscale, stage 2), live preview, audio, per-clip files.
+- **Segment timeline**: Prompt Edit hosts the Director's timeline editor per clip (image / text / audio / IC-video segments, prompt relay). Images can be
+  added from files, any gallery or the Asset Library. The bottom prompt area shows each clip's global prompt and a thin timeline bar.
+- **Prompt Write** plans every clip (global prompt, clip prompt, timed segment prompts) from your brief with the LTX-2.5 prompt guide and applies it to the
+  timelines after a review; **Prompt Refine** rewrites the selected segment. Own prompt-set folder (`prompt_sets_ltx25`) and settings file (`config_ltx25.json`,
+  seeded from the H3 LLM settings the first time).
+- **Continue**: Last Frame Chain starts each clip from the previous clip's last frame and joins a finished run with the repeated frame trimmed.
+- Node keys `*TJ25` (`ltx25_studio_backend/director/`, GPL-3.0 only) — never copy these files into a non-GPL project.
+
+### Changes
+- `/tj_studio_one/llm/enhance` accepts `system_override`; the H3 helper routes are also served under `/ltx25_one/*`; the video list handler is shared.
+
 ## v1.40.2
 
 ### Fixes (found with a real 4-clip One-Take run: skydiver, OpenRouter, 7+1)

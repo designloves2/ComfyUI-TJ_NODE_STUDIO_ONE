@@ -15,53 +15,32 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import {
-  C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, SUBFOLDER, TEMP_PREVIEW_SUBFOLDER,
-  el, clear, loadState, saveState, lastUsedAt, defaultState, randomSeed,
-  CLIP_LENGTHS, ASPECTS, UPSCALE_MODES, FLASHVSR_MODELS, FLASHVSR_MODES, SAMPLERS, SCHEDULERS,
-  TURBO_MODES, ATTN_BACKENDS, ATTN_FORWARDS, BLOCK_CACHES, H3_OPTIMIZERS, FBC_MODES,
-  attnBlockedReason, attnForwardBlockedReason, attnForwardOverlapNote, blockCacheBlockedReason,
-  h3OptimizerBlockedReason, h3OptimizerOverlapNote,
-  effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, migrateLegacyAccel,
-  continuityModesFor, generationModesFor, configIssues, ltxUpscaleReady, ltxUpscaleMissing,
-  faceRefineReady, faceRefineMissing, postprocessReady, IMAGE_GEN_MODES, imageGenSubModeReady,
-  CHARSHEET_PROMPT_TEMPLATE,
-  clipPlan, formatDuration, formatClock, framesToSeconds, alignFrameCount, FPS, ONE_TAKE_OVERLAP_FRAMES, resolveResolution,
-  parseBrief, groupShots, composeClipPrompt, composeStitchedPrompt,
-  turboLoraForMode, pddFileForMode, clipAssets, flLibrarySource, clipFramesFor, clipSecondsFor, normalizeAssetRef, explainGenerationError,
-  promptText, promptFirstFrame, promptEnabled, activePrompts, buildAgentJob,
+  C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, SUBFOLDER, TEMP_PREVIEW_SUBFOLDER, el, clear, loadState, saveState, lastUsedAt, defaultState,
+  randomSeed, CLIP_LENGTHS, ASPECTS, UPSCALE_MODES, FLASHVSR_MODELS, FLASHVSR_MODES, attnBlockedReason, attnForwardBlockedReason,
+  blockCacheBlockedReason, h3OptimizerBlockedReason, hiresActive, migrateLegacyAccel, continuityModesFor, generationModesFor, configIssues,
+  clipPlan, formatDuration, formatClock, alignFrameCount, FPS, resolveResolution, composeClipPrompt, composeStitchedPrompt, clipAssets,
+  flLibrarySource, clipFramesFor, clipSecondsFor, normalizeAssetRef, explainGenerationError, promptText, promptFirstFrame, promptEnabled,
+  activePrompts
 } from "./ltx25/core_ltx25.js";
-import { downloadAgentJob, agentStamp } from "./shared/agent_job.js";
-import { panel, label, button, select, loraSelect, numberField, slider, row, col, modeBar, iconBtn, openVideoFullscreen }
-  from "./klein/ui_common.js";
+import { panel, label, button, select, loraSelect, numberField, row, col, modeBar, iconBtn, openVideoFullscreen } from "./klein/ui_common.js";
 import {
-  queuePrompt, waitForHistory, historyEntry, interrupt, freeMemory, setLastResult, stitchClips, getVideoInfo,
-  copyOutputToInput, getNodeAvailability, getModels, saveMeta, pickChainFrame, getLoraTriggers, deleteImage,
-  getMediaFiles, uploadMedia, getVramStats, listVideos,
-  saveConfig, analyzeImagesNative, analyzeImagesOpenRouter, writeBriefNative, writeBriefOpenRouter, getMediaInfo,
-  listPromptSets, getPromptSet, getClipLastFrame, analyzeImageLlama, writeBriefLlama,
-  analyzeImagesCustom, writeBriefCustom,
+  queuePrompt, waitForHistory, interrupt, freeMemory, setLastResult, stitchClips, getVideoInfo, copyOutputToInput, getNodeAvailability,
+  getModels, saveMeta, pickChainFrame, getLoraTriggers, getMediaFiles, uploadMedia, getVramStats, getMediaInfo, uploadImage
 } from "./ltx25/api_ltx25.js";
-import { buildClipGraph, buildLtxUpscaleGraph, buildFaceRefineGraph, buildPostprocessGraph, buildImageGenGraph,
-  buildCharacterSheetVideoGraph, buildCharacterSheetGridGraph, CHARSHEET_DEFAULT_FRAME_INDICES, CHARSHEET_FRAMES,
-  NODE_IDS, previewNodeKey } from "./ltx25/graph_builder_ltx25.js";
-import { PIPELINE_PRESETS, allPresets, captureAxes, matchPreset, applyPreset } from "./ltx25/presets_ltx25.js";
-import { createPresetDialogs } from "./ltx25/ui_presets_ltx25.js";
+import { buildClipGraph, buildPostprocessGraph, NODE_IDS, previewNodeKey } from "./ltx25/graph_builder_ltx25.js";
 import { createSettingsOverlay } from "./ltx25/ui_app_settings_ltx25.js";
-import { mountImagePanel, imageSlot } from "./ltx25/ui_images_ltx25.js";
-import { attachLLMPanel } from "./shared/llm_panel.js";
+import { mountImagePanel } from "./ltx25/ui_images_ltx25.js";
 import { mountAssetBrowser } from "./shared/reflib_browser.js";
 import { assetRefActive } from "./shared/reflib_refpanel.js";
 import { libraryRefFor, libraryContextCached } from "./shared/reflib_llm.js";
 import { attachAtComplete } from "./shared/reflib_at.js";
+import { reflib } from "./shared/reflib_api.js";
 import { createPromptEditOverlay } from "./ltx25/ui_prompt_edit_ltx25.js";
-import { createTemplateOverlay } from "./klein/ui_prompt_templates.js";
 import { createCommonPromptOverlay } from "./ltx25/ui_common_prompt_ltx25.js";
 import { createGalleryOverlay } from "./ltx25/ui_gallery_ltx25.js";
-import { createImageGalleryOverlay } from "./ltx25/ui_gallery_ltx25_images.js";
 import { resolvePipeOverrides, applyOverridesTemp } from "./shared/promptdb_pipe.js";
 import { attachNodeState, restoreNodeState } from "./shared/node_state.js";
 import { createNodeFullscreen } from "./shared/node_fullscreen.js";
-import { openAudioGalleryPicker } from "./shared/ui_audio_gallery_picker.js";
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 const TOPBAR_H   = 40;
@@ -117,13 +96,6 @@ app.registerExtension({
         normalize: (raw) => { const s = defaultState(raw); migrateLegacyAccel(s); return s; },
         rerender: () => self._ltx25Repaint?.(),
       });
-      // Install-level defaults — beyond the per-node/per-workflow `persist()`, these also
-      // round-trip through the shared backend config (saveConfig/getConfig), so a freshly
-      // dropped node (or one on a different workflow) starts with the *last value used
-      // anywhere*, not just "unset". Same mechanism the main pipeline's own turboLora/
-      // turboLoraReference already use.
-      const rememberLora = (patch) => { persist(); saveConfig(patch).catch(() => {}); };
-
       if (!document.getElementById("ltx25-styles")) {
         const s = document.createElement("style"); s.id = "ltx25-styles";
         s.textContent = `@keyframes ltx25-spin{to{transform:rotate(360deg)}}`
@@ -179,6 +151,23 @@ app.registerExtension({
       }
       ctx.showPopup = showPopup;
 
+      // A First / Last frame picked from the Asset Library is a library asset; the Director reads files from the
+      // input folder, so each one is copied there once (and remembered by id).
+      const assetFiles = new Map();
+      ctx.assetFrameFiles = async (ref) => {
+        const toFile = async (id) => {
+          if (!id) return null;
+          if (assetFiles.has(id)) return assetFiles.get(id);
+          const d = await reflib.detail(id);
+          if (!d.ok) throw new Error(`Library asset #${id} was not found.`);
+          const blob = await (await fetch(reflib.fileUrl(d.asset))).blob();
+          const name = await uploadImage(new File([blob], `asset_${id}_${d.asset.name || "image"}.png`.replace(/[^\w.\-]+/g, "_"), { type: blob.type || "image/png" }));
+          assetFiles.set(id, name);
+          return name;
+        };
+        return { first: await toFile(ref.first), last: await toFile(ref.last) };
+      };
+
       // ── topbar ──────────────────────────────────────────────────────────────
       const topBar = el("div", { style: { display: "flex", alignItems: "center", gap: "6px", height: `${TOPBAR_H}px`, marginBottom: `${PAD}px`, flexShrink: "0" } });
       const pillsWrap = el("div", { style: { flex: "1" } });
@@ -228,7 +217,7 @@ app.registerExtension({
           warnTag.style.display = "none";
         }
       }
-      let settingsOv, helpOv, promptEditOv, galleryOv, imageGalleryOv, commonOv, presetDlgs;
+      let settingsOv, helpOv, promptEditOv, galleryOv, commonOv;
       topBar.appendChild(pillsWrap);
       topBar.appendChild(warnTag);
       topBar.appendChild(iconBtn("🗑", "Unload models / free VRAM", async () => {
@@ -236,7 +225,6 @@ app.registerExtension({
       }));
       topBar.appendChild(iconBtn("⚙", "Settings", () => settingsOv?.show()));
       topBar.appendChild(iconBtn("🖼", "Gallery — clips and stitched videos", () => galleryOv?.show()));
-      topBar.appendChild(iconBtn("🎨", "Image Gallery — Image Generator's own outputs", () => imageGalleryOv?.show()));
       // Fills the monitor with this node alone, scaled but proportional. The button is the
       // only way back out, and it inverts to white-on-black while the view is open so the
       // mode is obvious at a glance.
@@ -353,33 +341,6 @@ app.registerExtension({
       }});
       const placeholder = el("div", { style: { color: C.muted, fontSize: "12px", textAlign: "center", lineHeight: "1.7" } });
       placeholder.innerHTML = "▶ Generate to render the first clip<br><span style='font-size:10px'>live sampling frames appear here</span>";
-      // Face Refine's model-load + detection/tracking pass (H3FaceSelect/H3FaceTrackCrop)
-      // runs BEFORE sampling starts and streams no live-preview frames of its own — from the
-      // frontend it's just silent time, with only the small left-aligned status-strip text
-      // saying so. That read as "is it even doing anything?", so this sits centered and
-      // large in the preview box for that whole stretch. Kept generic ("Preparing
-      // generation…", not "Detecting faces…") because that stretch also covers plain model
-      // loading, not just face tracking — a user seeing "detecting faces" while the model is
-      // still loading assumed it belonged only inside the Pick Faces popup. Hidden the
-      // moment ANY real sampling activity appears — either the numeric step-progress
-      // callback (runFaceRefine's prog()) or a live preview frame (showPreviewFrame()),
-      // since a preview frame can arrive over its own websocket message ahead of the first
-      // progress callback and previously left the banner showing next to the image.
-      // Both banners below sit on their own full-cover layer over whatever is already in
-      // the preview box (a finished clip's resultVid included) — previewBox is a flex
-      // container, so a plain block/text child of it competes for row space with
-      // whatever ELSE is visible there and gets squeezed to one side the moment a video
-      // becomes visible next to it (reported: text centered while nothing was playing,
-      // then shoved left once the preview video loaded in). `position:absolute; inset:0`
-      // takes them out of that flex flow entirely, and the dim background is what makes
-      // this read as a real "busy" overlay rather than another sibling on the canvas.
-      const frDetectBanner = el("div", { text: "⏳ Preparing generation…", style: {
-        display: "none", position: "absolute", inset: "0", zIndex: "5",
-        alignItems: "center", justifyContent: "center", textAlign: "center",
-        background: "rgba(0,0,0,0.6)", padding: "0 16px",
-        color: "#b57bff", fontSize: "18px", fontWeight: "700",
-        textShadow: "0 0 12px rgba(181,123,255,0.5)",
-      }});
       // FlashVSR runs no live sampling preview of its own either — it's a tiled
       // post-process pass over the already-sampled frames, minutes long, with the same
       // "is it doing anything?" problem frDetectBanner solves for Face Refine's
@@ -440,7 +401,7 @@ app.registerExtension({
         color: "#fff", border: "none", borderRadius: "4px", width: "22px", height: "22px",
         cursor: "pointer", fontSize: "12px", padding: "0", display: "none",
       }});
-      previewBox.append(placeholder, frDetectBanner, fvsrBanner, hiresBanner, busyBanner, previewImg, previewVid, resultVid, badge, fsBtn, compareBtn);
+      previewBox.append(placeholder, fvsrBanner, hiresBanner, busyBanner, previewImg, previewVid, resultVid, badge, fsBtn, compareBtn);
 
       let lastResultURL = null;
       // Captured in showResultVideo() at the moment a result becomes the shown preview —
@@ -863,7 +824,6 @@ app.registerExtension({
         // runFaceRefine) - so if a preview frame lands first, the banner and the live image
         // showed at once, squeezing each other sideways. Any preview frame means sampling
         // has visibly started, so always clear it here too.
-        frDetectBanner.style.display = "none";
         // Same bug as resetPreview originally had, other direction: hiding resultVid
         // here doesn't stop it. If the user pressed play on clip N's finished result and
         // the next clip's live preview then takes over this box, clip N kept playing in
@@ -906,7 +866,7 @@ app.registerExtension({
         lastResultURL = url;
         modeResultCache[resultModeKey()] = { kind: "image", url, final };
         if (final) previewLocked = true;
-        placeholder.style.display = "none"; frDetectBanner.style.display = "none"; fvsrBanner.style.display = "none"; hiresBanner.style.display = "none";
+        placeholder.style.display = "none"; fvsrBanner.style.display = "none"; hiresBanner.style.display = "none";
         hideBusyBanner();
         try { previewVid.pause(); } catch {}
         previewVid.style.display = "none";
@@ -920,7 +880,6 @@ app.registerExtension({
         modeResultCache[resultModeKey()] = { kind: "video", url, final, compareRange };
         if (final) previewLocked = true;
         placeholder.style.display = "none";
-        frDetectBanner.style.display = "none";
         fvsrBanner.style.display = "none"; hiresBanner.style.display = "none";
         hideBusyBanner();
         previewImg.style.display = "none";
@@ -949,7 +908,6 @@ app.registerExtension({
         lastCompareSource = null;
         lastCompareRange = null;
         placeholder.style.display = "block";
-        frDetectBanner.style.display = "none";
         hideBusyBanner();
         previewImg.style.display = "none";
         previewVid.style.display = "none";
@@ -1084,38 +1042,9 @@ app.registerExtension({
       const promptTitle = el("div", { text: "PROMPTS", style: { color: C.muted, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.04em" } });
       const promptCount = el("span", { style: { color: C.muted, fontSize: "10px" } });
       promptHdr.append(promptTitle, promptCount);
-      // Insert-at-cursor tags — <Picture N>, <Subject N>, <Shot N> — into whichever clip
-      // textarea below was last focused. "N" is inserted literally; the user replaces it
-      // with the actual number themselves.
       let lastFocusedPromptTA = null;
-      function insertTagAtCursor(ta, tag) {
-        const s = ta.selectionStart ?? ta.value.length;
-        const e = ta.selectionEnd ?? ta.value.length;
-        const token = `<${tag} N>`;
-        ta.value = ta.value.slice(0, s) + token + ta.value.slice(e);
-        ta.focus();
-        ta.setSelectionRange(s + token.length, s + token.length);
-        ta.dispatchEvent(new Event("input", { bubbles: true }));
-      }
-      const tagBtnRow = el("div", { style: { display: "flex", gap: "4px", marginLeft: "auto" } },
-        ["Picture", "Subject", "Shot"].map(tag => {
-          const b = el("button", { type: "button", text: tag, title: `Insert <${tag} N> into the last-focused clip prompt`, style: {
-            cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "3px 8px",
-            borderRadius: "5px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
-          }});
-          // mousedown steals focus from the clip textarea before click fires, collapsing
-          // its selection to the end — preventDefault keeps it focused throughout.
-          b.addEventListener("mousedown", (e) => e.preventDefault());
-          b.addEventListener("click", () => {
-            const ta = lastFocusedPromptTA;
-            if (!ta) { ctx.showPopup?.("Click into a clip's prompt field first.", true); return; }
-            insertTagAtCursor(ta, tag);
-          });
-          return b;
-        }));
-      promptHdr.appendChild(tagBtnRow);
 
-      const commonBtn = el("button", { type: "button", text: "🧩 Common", title: "Edit the header / sound-music text shared by every clip", style: {
+      const commonBtn = el("button", { type: "button", text: "🌐 Global", title: "Edit the global prompt shared by every clip", style: {
         cursor: "pointer", fontFamily: "inherit", fontSize: "10px",
         padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text,
         border: `1px solid ${C.border}`,
@@ -1151,65 +1080,9 @@ app.registerExtension({
         padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text,
         border: `1px solid ${BRAND}`, fontWeight: "600", marginLeft: "auto",
       }});
-      editBtn.addEventListener("click", () => {
-        if (state.generationMode === "ltxupscale") { openLtxPromptEdit(); return; }
-        if (state.generationMode === "facerefine") { openFaceRefinePromptEdit(); return; }
-        if (state.generationMode === "imagegen" && state.imageGenMode !== "charsheet") {
-          imgPxTA.value = state.imgPrompt || "";
-          imgPromptExpandOv.show();
-          return;
-        }
-        promptEditOv?.show();
-      });
+      editBtn.addEventListener("click", () => promptEditOv?.show());
       promptHdr.appendChild(editBtn);
 
-      // Image Generator's prompt templates (T2I / Ref2I) — the same 📋 panel the other
-      // image nodes have, with this node's own pool; opened by templateOv (mounted below).
-      const tplBtn = el("button", { type: "button", text: "📋 Templates", title: "Prompt templates and tag presets", style: {
-        cursor: "pointer", fontFamily: "inherit", fontSize: "10px", display: "none",
-        padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text,
-        border: `1px solid ${BRAND}`, fontWeight: "600",
-      }});
-      tplBtn.addEventListener("click", () => imgTemplateOv?.show());
-      promptHdr.appendChild(tplBtn);
-      let imgTemplateOv = null;
-
-      // Character Sheet's own pair, same slot/size as writeBtn/editBtn above — occupies
-      // that spot instead of a separate row under the textarea (user: "기존 ✨ Prompt
-      // Write 📝 Prompt Edit가 있던 자리와 사이즈 동일하게").
-      const sysPromptSaveBtn = el("button", { type: "button", text: "💾 System Prompt Save", title: "Save the current box contents as the system prompt", style: {
-        cursor: "pointer", fontFamily: "inherit", fontSize: "10px", display: "none",
-        padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text,
-        border: `1px solid ${BRAND}`, fontWeight: "600", marginLeft: "auto",
-      }});
-      sysPromptSaveBtn.addEventListener("click", () => {
-        const overwriting = !!state.charSheetSystemPrompt;
-        if (!window.confirm(overwriting
-          ? "This replaces the saved system prompt with the current box contents. Continue?"
-          : "Save the current box contents as the system prompt (used whenever Reset is pressed, or a new session opens Character Sheet for the first time)?")) return;
-        const ta = promptList.querySelector("textarea");
-        state.charSheetSystemPrompt = ta ? ta.value : (state.charSheetPrompt || "");
-        persist();
-        saveConfig({ charsheet_system_prompt: state.charSheetSystemPrompt });
-        showPopup("System prompt saved.", false);
-      });
-      promptHdr.appendChild(sysPromptSaveBtn);
-
-      const sysPromptResetBtn = el("button", { type: "button", text: "↺ System Prompt Reset", title: "Discard edits and reload the saved system prompt", style: {
-        cursor: "pointer", fontFamily: "inherit", fontSize: "10px", display: "none",
-        padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text,
-        border: `1px solid ${C.border}`,
-      }});
-      sysPromptResetBtn.addEventListener("click", () => {
-        state.charSheetPrompt = state.charSheetSystemPrompt || CHARSHEET_PROMPT_TEMPLATE;
-        persist(); renderPrompts();
-      });
-      promptHdr.appendChild(sysPromptResetBtn);
-
-      const splitBtn = el("button", { type: "button", text: "✂ Split into clips", title: "Split this brief into one prompt per clip", style: {
-        cursor: "pointer", fontFamily: "inherit", fontSize: "10px",
-        padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
-      }});
       const addBtn = el("button", { type: "button", text: "+", title: "Add a clip prompt", style: {
         cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "3px 9px",
         borderRadius: "5px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
@@ -1219,7 +1092,7 @@ app.registerExtension({
         borderRadius: "5px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
       }});
       resetTAHBtn.addEventListener("click", () => resetPromptTAHeights());
-      promptHdr.append(splitBtn, addBtn, resetTAHBtn);
+      promptHdr.append(addBtn, resetTAHBtn);
 
       const promptList = el("div", { style: { flex: "1", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px" } });
       promptList.className = "ltx25-lp";
@@ -1358,46 +1231,37 @@ app.registerExtension({
         promptTAs.forEach(ta => { ta.style.height = `${promptTaH}px`; });
         syncingPromptTAHeights = false;
       }
+      // A thin, read-only view of the clip's segment timeline; the segments are edited in Prompt Edit.
+      function miniBar(p, i) {
+        const frames = clipFramesFor(state, i);
+        let tl = {};
+        try { tl = JSON.parse(p.dir?.widgets?.timeline_data || "{}"); } catch { tl = {}; }
+        const bar = el("div", { title: "Segment timeline — click to edit it in Prompt Edit", style: {
+          position: "relative", height: "14px", background: C.bg1, border: `1px solid ${C.border}`,
+          borderRadius: "4px", overflow: "hidden", cursor: "pointer" } });
+        const place = (seg, style) => {
+          const left = Math.max(0, seg.start || 0) / frames * 100;
+          const width = Math.max(0.8, Math.min(frames - (seg.start || 0), seg.length || 0) / frames * 100);
+          bar.appendChild(el("div", { title: `${seg.type || "audio"} · frames ${Math.round(seg.start || 0)}–${Math.round((seg.start || 0) + (seg.length || 0))}`,
+            style: { position: "absolute", left: `${left}%`, width: `${width}%`, ...style } }));
+        };
+        const kind = { image: BRAND, text: "#4aa3ff", video: "#e0a530" };
+        (tl.segments || []).forEach(s => place(s, { top: "0", height: "9px", background: kind[s.type] || BRAND, opacity: "0.85", borderRadius: "2px" }));
+        (tl.audioSegments || []).forEach(s => place(s, { bottom: "0", height: "4px", background: C.ok, borderRadius: "2px" }));
+        bar.addEventListener("click", () => promptEditOv?.show(i));
+        return bar;
+      }
       function renderPrompts() {
         promptTAObservers.forEach(ro => ro.disconnect());
         promptTAObservers = []; promptTAs = [];
         clear(promptList);
-        const isLtx = state.generationMode === "ltxupscale";
-        const isFaceRefine = state.generationMode === "facerefine";
+        // Postprocess needs no prompt at all - every control lives in the left panel's accordion, so this area
+        // just says so instead of showing an empty box.
         const isPostprocess = state.generationMode === "postprocess";
-        const isImageGen = state.generationMode === "imagegen";
-        // The bottom prompt area is per-mode: the H3 shot list, or (LTX Upscale / Face
-        // Refine / Image Generator) one plain prompt box down here — same spot every mode
-        // uses, not the left panel. Common / Split / Add are H3-only. Postprocess needs no
-        // prompt at all — every control lives in the left panel's accordion, so this area
-        // just says so instead of showing an empty/irrelevant box.
-        const hideShotControls = isLtx || isFaceRefine || isPostprocess || isImageGen;
-        commonBtn.style.display  = hideShotControls ? "none" : "";
-        splitBtn.style.display   = hideShotControls ? "none" : "";
-        addBtn.style.display     = hideShotControls ? "none" : "";
-        resetTAHBtn.style.display = hideShotControls ? "none" : "";
-        // Picture/Subject/Shot tag-inserters and Refine/Prompt Write/Prompt Edit all act
-        // on the H3 shot list's per-clip textareas (lastFocusedPromptTA/clip index) — none
-        // of that exists in Image Generator's single plain prompt box, so they were dead
-        // weight left visible there (user: "Picture Subject Shot 🔧 Refine ✨ Prompt Write
-        // 📝 Prompt Edit 이거는 지우고").
-        // Postprocess has no prompt at all, so these three are hidden there too.
-        tagBtnRow.style.display = isImageGen || isPostprocess ? "none" : "";
-        refineBtn.style.display = isImageGen || isPostprocess ? "none" : "";
-        writeBtn.style.display  = isImageGen || isPostprocess ? "none" : "";
-        const isCharSheetHdr = isImageGen && state.imageGenMode === "charsheet";
-        // editBtn is repurposed as t2i/ref2i's own "🔍 Prompt Edit" (see its onclick's
-        // imagegen branch) — only truly hidden for Character Sheet, which uses
-        // sysPromptSaveBtn/ResetBtn in this same slot instead.
-        editBtn.style.display = isCharSheetHdr || isPostprocess ? "none" : "";
-        tplBtn.style.display = isImageGen && !isCharSheetHdr ? "" : "none";
-        sysPromptSaveBtn.style.display  = isCharSheetHdr ? "" : "none";
-        sysPromptResetBtn.style.display = isCharSheetHdr ? "" : "none";
-        promptTitle.textContent = isLtx ? "UPSCALE PROMPT" : isFaceRefine ? "FACE REFINE PROMPT"
-          : isPostprocess ? "POSTPROCESS" : isImageGen ? "IMAGE PROMPT" : "PROMPTS";
-        promptList.style.gap = hideShotControls ? "6px" : "4px";
-        if (isLtx) { renderLtxPrompt(); return; }
-        if (isFaceRefine) { renderFaceRefinePrompt(); return; }
+        commonBtn.style.display = refineBtn.style.display = writeBtn.style.display = editBtn.style.display = isPostprocess ? "none" : "";
+        addBtn.style.display = resetTAHBtn.style.display = isPostprocess ? "none" : "";
+        promptTitle.textContent = isPostprocess ? "POSTPROCESS" : "PROMPTS";
+        promptList.style.gap = "4px";
         if (isPostprocess) {
           promptList.appendChild(el("div", {
             text: "No prompt needed — pick a source clip and the effects to chain in the left panel, then hit Preview.",
@@ -1405,7 +1269,6 @@ app.registerExtension({
           }));
           return;
         }
-        if (isImageGen) { renderImageGenPrompt(); return; }
         const plan = currentPlan();
         const onCount = state.prompts.filter(p => promptEnabled(p)).length;
         promptCount.textContent = `(${plan.promptCount} prompt${plan.promptCount > 1 ? "s" : ""} · ${onCount} on → ${plan.count} clip${plan.count > 1 ? "s" : ""} · ${plan.actualSeconds.toFixed(2)}s)`;
@@ -1427,20 +1290,8 @@ app.registerExtension({
             persist(); refreshPlan();
           });
           sideCol.appendChild(cb);
-          const jsonBtn = el("button", {
-            type: "button", text: "⬇", title: "Download this clip as a job.json for the h3-headless Hermes agent",
-            style: { cursor: "pointer", background: "transparent", color: C.muted, border: "none", fontSize: "11px", padding: "0" },
-          });
-          jsonBtn.addEventListener("click", () => {
-            const presetName = (matchPreset(state, state.userPresets) || matchPreset(state) || {}).label ?? null;
-            const job = buildAgentJob(state, i, presetName);
-            const seed = state.seedPerClip ? ((state.seed ?? 0) + i) % Number.MAX_SAFE_INTEGER : state.seed ?? 0;
-            downloadAgentJob("h3", job, `MMH3_${job.mode}_${agentStamp()}_${seed}_${i + 1}.json`);
-          });
-          sideCol.appendChild(jsonBtn);
-
-          const ta = el("textarea", { placeholder: i === 0 ? "Describe the shot…" : "(blank = reuse the previous prompt)", style: {
-            flex: "1", minHeight: "120px", boxSizing: "border-box", background: C.bg2, color: C.text,
+          const ta = el("textarea", { placeholder: i === 0 ? "Global prompt — the scene, camera and sound of this clip" : "(blank = reuse the previous prompt)", style: {
+            flex: "1", minHeight: "86px", boxSizing: "border-box", background: C.bg2, color: C.text,
             border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px",
             fontSize: "12px", fontFamily: "inherit", outline: "none", resize: "vertical",
           }});
@@ -1466,583 +1317,14 @@ app.registerExtension({
             else state.prompts.splice(i, 1);
             persist(); refreshPlan();
           });
-          line.append(sideCol, ta, del);
+          line.append(sideCol, el("div", { style: { flex: "1", minWidth: "0", display: "flex", flexDirection: "column", gap: "3px" } }, [ta, miniBar(p, i)]), del);
           promptList.appendChild(line);
         });
       }
-      // ── LTX Upscale — bottom prompt area (replaces the H3 shot list in this mode) ──
-      // One prompt + one negative, and a ✨ that reads the source clip's first frame and
-      // writes a matching prompt. The refine follows the prompt closely at low denoise, so
-      // "matches the original" is the whole job — for a gallery pick we already have the
-      // clip's saved prompt; for an upload the vision model reconstructs one.
-      let _ltxBusy = false;
-      async function grabSampleFrames() {
-        // client-side: sample several frames spread across the clip (not just frame 0) and
-        // upload each as a PNG — one frame alone can't show action or camera movement, and
-        // the LTX-2.5 prompt format needs both. Roughly 1.5 frames/sec of clip, clamped so
-        // a short clip still gets a minimum spread and a long one doesn't balloon the
-        // vision call — LTX Upscale's own ceiling is ~8s/pass anyway.
-        if (!state.ltxSource) throw new Error("No source clip.");
-        const v = document.createElement("video");
-        v.src = `/view?filename=${encodeURIComponent(state.ltxSource)}&type=input`;
-        v.muted = true; v.crossOrigin = "anonymous";
-        await new Promise((res, rej) => {
-          v.addEventListener("loadeddata", res, { once: true });
-          v.addEventListener("error", () => rej(new Error("Could not read the source video.")), { once: true });
-          setTimeout(() => rej(new Error("Source video load timed out.")), 15000);
-        });
-        const dur = Math.max(0.1, v.duration || 0);
-        const count = Math.min(10, Math.max(3, Math.round(dur * 1.5)));
-        const cv = document.createElement("canvas");
-        cv.width = v.videoWidth || 1024; cv.height = v.videoHeight || 576;
-        const ctx2d = cv.getContext("2d");
-        const files = [];
-        for (let i = 0; i < count; i++) {
-          // spread across the clip, never quite touching either edge (encode padding / black frames)
-          const t = Math.min(dur - 0.05, Math.max(0.05, (dur * (i + 0.5)) / count));
-          try { v.currentTime = t; await new Promise(r => v.addEventListener("seeked", r, { once: true })); } catch {}
-          ctx2d.drawImage(v, 0, 0, cv.width, cv.height);
-          const blob = await new Promise(r => cv.toBlob(r, "image/png"));
-          files.push(await uploadMedia(new File([blob], `ltx_srcframe_${Date.now()}_${i}.png`, { type: "image/png" })));
-        }
-        return files;
-      }
-      // The ✨ vision setup, its own — not shared with H3. Configured in Settings.
-      function ltxVisionLabel() {
-        const backend = state.ltxVisionBackend || "native";
-        if (backend === "openrouter")
-          return `OpenRouter · ${(state.ltxVisionOrModel || "(model not set)").split("/").pop()}`;
-        if (backend === "llamagguf")
-          return `Llama GGUF · ${(state.ltxLlamaModel || "(model not set)").split(/[\\/]/).pop()}`;
-        if (backend === "custom")
-          return `Custom · ${state.ltxCustomModel || "(model not set)"}`;
-        return `native CLIP · ${(state.ltxVisionClip || "(clip not set)").split(/[\\/]/).pop()}`;
-      }
-      const ltxCustomEp = () => ({ baseUrl: state.ltxCustomBase, model: state.ltxCustomModel, context: state.ltxCustomCtx, role: "ltx" });
-      const ltxCustomMissing = () => !(state.ltxCustomBase && state.ltxCustomModel);
-      // Same megapixel cap the Prompt Edit panel's Llama GGUF vision path uses, client-side
-      // since there's no server hop for this call to do it in.
-      async function ltxFilenameToB64(filename) {
-        const resp = await fetch(`/view?filename=${encodeURIComponent(filename)}&type=input`);
-        const blob = await resp.blob();
-        const bitmap = await createImageBitmap(blob);
-        const targetPixels = 1024 * 1024;
-        const scale = Math.min(1, Math.sqrt(targetPixels / (bitmap.width * bitmap.height)));
-        const w = Math.max(1, Math.round(bitmap.width * scale));
-        const h = Math.max(1, Math.round(bitmap.height * scale));
-        const canvas = document.createElement("canvas");
-        canvas.width = w; canvas.height = h;
-        canvas.getContext("2d").drawImage(bitmap, 0, 0, w, h);
-        return canvas.toDataURL("image/jpeg", 0.92).split(",")[1] || "";
-      }
-      async function ltxWritePrompt() {
-        if (_ltxBusy) return;
-        if (!state.ltxSource) { showPopup("Pick a source clip first.", true); return; }
-        const backend = state.ltxVisionBackend || "native";
-        if (backend === "openrouter" && !(state.ltxVisionOrModel || "").trim()) {
-          showPopup("Set the OpenRouter vision model in ⚙ Settings → Models → LTX Upscale.", true); return;
-        }
-        if (backend === "llamagguf" && !(state.ltxLlamaModel || "").trim()) {
-          showPopup("Set the Llama GGUF model in ⚙ Settings → LLM Setting → LTX Upscale.", true); return;
-        }
-        if (backend === "custom" && ltxCustomMissing()) {
-          showPopup("Connect Custom (LTX Upscale) needs an API base URL and a model ID - set them in ⚙ Settings → LLM Setting → LTX Upscale.", true); return;
-        }
-        if (backend === "native" && !(state.ltxVisionClip || "").trim()) {
-          showPopup("Set the native vision CLIP in ⚙ Settings → Models → LTX Upscale (or switch that backend to OpenRouter).", true); return;
-        }
-        _ltxBusy = true; renderPrompts();
-        try {
-          const frames = await grabSampleFrames();
-          const instr = (state.ltxLlmPrompt || "").trim()
-            || "Describe this video frame as one text-to-image prompt matching exactly what is shown.";
-          let text;
-          if (backend === "openrouter") text = await analyzeImagesOpenRouter(frames, instr, state.ltxVisionOrModel);
-          else if (backend === "custom") text = await analyzeImagesCustom(frames, instr, ltxCustomEp());
-          else if (backend === "llamagguf") {
-            // The shared /tj_studio_one/llm/image_to_prompt route takes one image per call —
-            // same loop the Prompt Edit panel's own Llama GGUF vision path uses.
-            const lines = [];
-            for (const f of frames) {
-              const b64 = await ltxFilenameToB64(f);
-              lines.push(String(await analyzeImageLlama(b64, state.ltxLlamaModel, state.ltxLlamaMmproj, instr,
-                state.h3LlamaNCtx, state.h3LlamaMaxTokens) || "").trim());
-            }
-            text = lines.join("\n");
-          }
-          else text = await analyzeImagesNative(state.ltxVisionClip, frames, instr, "ltxv");
-          if (text && text.trim()) { state.ltxPrompt = text.trim(); persist(); showPopup(`Prompt written from ${frames.length} frames sampled across the clip.`, false); }
-          else showPopup("The vision model returned nothing — try again or write the prompt by hand.", true);
-        } catch (e) { showPopup(e.message, true); }
-        _ltxBusy = false; renderPrompts();
-      }
-      // "H3 → LTX 2.5" — a gallery clip's saved prompt is a MiniMax-H3 structured brief;
-      // rewrite it into a plain LTX-2.5 prompt. Text-only (no frame needed). Uses the same
-      // LTX Upscale LLM configured in Settings.
-      async function ltxConvertToLtx() {
-        if (_ltxBusy) return;
-        const src = String(state.ltxPrompt || "").trim();
-        if (!src) { showPopup("Nothing to convert — the prompt box is empty. Load a gallery clip or use ✨.", true); return; }
-        const backend = state.ltxVisionBackend || "native";
-        if (backend === "openrouter" && !(state.ltxVisionOrModel || "").trim()) {
-          showPopup("Set the OpenRouter model in ⚙ Settings → LLM Setting → LTX Upscale.", true); return;
-        }
-        if (backend === "llamagguf" && !(state.ltxLlamaModel || "").trim()) {
-          showPopup("Set the Llama GGUF model in ⚙ Settings → LLM Setting → LTX Upscale.", true); return;
-        }
-        if (backend === "custom" && ltxCustomMissing()) {
-          showPopup("Connect Custom (LTX Upscale) needs an API base URL and a model ID - set them in ⚙ Settings → LLM Setting → LTX Upscale.", true); return;
-        }
-        if (backend === "native" && !(state.ltxVisionClip || "").trim()) {
-          showPopup("Set the native LLM CLIP in ⚙ Settings → LLM Setting → LTX Upscale.", true); return;
-        }
-        _ltxBusy = true; renderPrompts();
-        try {
-          const sys = (state.ltxConvertPrompt || "").trim() || "Rewrite this MiniMax-H3 brief as one LTX-2.5 prompt paragraph.";
-          let text;
-          if (backend === "openrouter") text = await writeBriefOpenRouter(sys, src, state.ltxVisionOrModel);
-          else if (backend === "custom") text = await writeBriefCustom(sys, src, ltxCustomEp());
-          else if (backend === "llamagguf")
-            text = await writeBriefLlama(`${sys}\n\n${src}`, state.ltxLlamaModel, state.h3LlamaNCtx, state.h3LlamaMaxTokens);
-          else text = await writeBriefNative(state.ltxVisionClip, sys, src, "ltxv");
-          if (text && text.trim()) { state.ltxPrompt = text.trim(); persist(); showPopup("Converted the H3 brief to an LTX 2.5 prompt.", false); }
-          else showPopup("The model returned nothing — try again.", true);
-        } catch (e) { showPopup(e.message, true); }
-        _ltxBusy = false; renderPrompts();
-      }
-      function renderLtxPrompt() {
-        clear(promptList);
-        promptCount.textContent = state.ltxSource ? "" : "(no source clip)";
-        // Not flex:1 — promptList is a column flex container, so flex:1 there fights the
-        // native resize handle (same bug fixed for Image Generator's own prompt box).
-        const ta = el("textarea", {
-          placeholder: "Prompt for the refine pass — should match the source clip closely. Gallery picks auto-fill from the clip's saved prompt; ✨ writes one from an upload.",
-          style: { minHeight: "120px", width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
-                   border: `1px solid ${C.border}`, borderRadius: "6px", padding: "8px", fontSize: "12px",
-                   fontFamily: "inherit", outline: "none", resize: "vertical" },
-        });
-        ta.value = state.ltxPrompt || "";   // textarea content must be set as a property — el() only setAttribute()s
-        ta.addEventListener("input", () => { state.ltxPrompt = ta.value; persist(); });
-        ta.addEventListener("focus", () => ta.style.borderColor = BRAND);
-        ta.addEventListener("blur", () => ta.style.borderColor = C.border);
-        // While the LLM is writing, freeze the box so a stray keystroke can't be
-        // overwritten by the result landing.
-        if (_ltxBusy) {
-          ta.disabled = true;
-          ta.style.opacity = "0.6";
-          ta.value = "✨ LLM is writing the prompt from the source clip — please wait…";
-        }
-
-        const enh = el("button", { type: "button", text: _ltxBusy ? "✨ …" : "✨ Write from frame", style: {
-          cursor: _ltxBusy ? "wait" : "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 10px",
-          borderRadius: "6px", background: BRAND, color: "#fff", border: "none", fontWeight: "600",
-          opacity: (_ltxBusy || !state.ltxSource) ? "0.55" : "1",
-        }});
-        enh.disabled = _ltxBusy || !state.ltxSource;
-        enh.addEventListener("click", ltxWritePrompt);
-        const conv = el("button", { type: "button", text: "H3 → LTX 2.5", title: "Rewrite the current prompt (a MiniMax H3 brief) as an LTX 2.5 prompt", style: {
-          cursor: _ltxBusy ? "wait" : "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 10px",
-          borderRadius: "6px", background: C.bg3, color: C.text, border: `1px solid ${C.border}`,
-          opacity: (_ltxBusy || !String(state.ltxPrompt || "").trim()) ? "0.55" : "1",
-        }});
-        conv.disabled = _ltxBusy || !String(state.ltxPrompt || "").trim();
-        conv.addEventListener("click", ltxConvertToLtx);
-
-        const neg = el("input", { type: "text", value: state.ltxNegPrompt || "",
-          placeholder: "Negative (optional)", style: {
-          width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
-          border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px 8px", fontSize: "11px",
-          fontFamily: "inherit", outline: "none" } });
-        neg.addEventListener("input", () => { state.ltxNegPrompt = neg.value; persist(); });
-        if (_ltxBusy) neg.disabled = true;
-
-        const btnRow = el("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexShrink: "0", flexWrap: "wrap" } });
-        btnRow.append(enh, conv, el("div", { style: { flex: "1", minWidth: "0" } }),
-          el("div", { text: `LLM: ${ltxVisionLabel()}`, title: "Configured in ⚙ Settings → LLM Setting → LTX Upscale",
-            style: { fontSize: "10px", color: C.muted } }));
-
-        promptList.style.gap = "6px";
-        promptList.append(ta, neg, btnRow);
-        if (_ltxBusy) promptList.append(el("div", {
-          text: "⏳ Running the LLM — the prompt box is locked until it returns.",
-          style: { fontSize: "10px", color: BRAND, fontWeight: "600" } }));
-      }
-
-      // Image Generator's bottom prompt box — plain single textarea, no LLM helpers (v1).
-      // Character Sheet gets its own prompt field (state.charSheetPrompt), always
-      // pre-filled with the reference workflow's own structured prompt (subject_
-      // definitions/style_definitions/8-shot detailed_description) so the box never
-      // starts blank — still fully editable, this is just the starting value.
-      function renderImageGenPrompt() {
-        clear(promptList);
-        promptCount.textContent = "";
-        const isCharSheet = state.imageGenMode === "charsheet";
-        if (isCharSheet && !state.charSheetPrompt) { state.charSheetPrompt = CHARSHEET_PROMPT_TEMPLATE; persist(); }
-        // Deliberately NOT flex:1 — promptList is a column flex container, so flex:1
-        // there controls HEIGHT and fights the native resize handle on every re-layout
-        // (the shot-list textarea's own flex:1 is safe because ITS parent is a row flex
-        // container, where flex only affects width). minHeight alone plus resize:vertical
-        // is what actually lets the user drag it taller.
-        const ta = el("textarea", {
-          placeholder: "Describe the image…",
-          style: { minHeight: "120px", width: "100%", boxSizing: "border-box",
-                   background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
-                   borderRadius: "6px", padding: "8px", fontSize: "12px",
-                   fontFamily: "inherit", outline: "none", resize: "vertical" },
-        });
-        ta.value = isCharSheet ? (state.charSheetPrompt || "") : (state.imgPrompt || "");
-        ta.addEventListener("input", () => {
-          if (isCharSheet) state.charSheetPrompt = ta.value; else state.imgPrompt = ta.value;
-          persist();
-        });
-        ta.addEventListener("focus", () => ta.style.borderColor = BRAND);
-        ta.addEventListener("blur", () => ta.style.borderColor = C.border);
-        promptList.style.gap = "6px";
-        promptList.append(ta);
-        // t2i/ref2i's "🔍 Prompt Edit" (editBtn, in promptHdr) needs a live handle on
-        // whichever textarea is currently on screen — rebuilt every render, unlike
-        // Krea2's own mount-once box.
-        imgInlineTA = isCharSheet ? null : ta;
-        // Save/Reset for Character Sheet live in promptHdr (sysPromptSaveBtn/
-        // sysPromptResetBtn) — same slot writeBtn/editBtn use for every other mode —
-        // their visibility is synced from renderPrompts() alongside those.
-      }
-
-      // "Prompt Edit" in LTX mode → a modal: source video on top, prompt below.
-      // ✓ Apply keeps the edits (they are already bound live to state) and syncs the
-      // bottom area; ✕ Cancel reverts to the snapshot taken on open.
-      // A saved set's own promptHeader (common) + one shot's text + promptFooter (the
-      // sound/music tail) — the same three-part structure the main shot-list editor
-      // composes per clip (core_ltx25.js composeClipPrompt), but built directly from the
-      // LOADED set's own header/footer rather than the live state's — these two modes have
-      // no LoRA-trigger/suffix concept of their own, so only the three parts asked for.
-      function composeSetPrompt(setData, shotText) {
-        return [setData.promptHeader, shotText, setData.promptFooter]
-          .map(s => (s || "").trim()).filter(Boolean).join("\n\n");
-      }
-      // Multiple shots in one set → let the user pick which one becomes the single prompt,
-      // rather than silently always taking the first.
-      function pickShotFromSet(setData) {
-        return new Promise((resolve) => {
-          const shots = setData.prompts.map(p => (typeof p === "string" ? p : (p?.text || "")));
-          const overlay = el("div", { style: {
-            position: "fixed", inset: "0", background: "rgba(0,0,0,0.75)", zIndex: "100055",
-            display: "flex", alignItems: "center", justifyContent: "center", padding: "20px",
-          }});
-          const modal = el("div", { style: {
-            background: C.bg, border: `1px solid ${C.border}`, borderRadius: "10px",
-            width: "min(560px, 100%)", maxHeight: "80vh", overflowY: "auto", padding: "14px",
-            display: "flex", flexDirection: "column", gap: "8px", boxSizing: "border-box",
-          }});
-          modal.append(el("div", { text: `"${setData.name || ""}" has ${shots.length} shots — pick one`,
-            style: { fontSize: "13px", fontWeight: "700", color: C.text } }));
-          let settled = false;
-          const finish = (v) => { if (settled) return; settled = true; overlay.remove(); resolve(v); };
-          shots.forEach((t, i) => {
-            const item = el("button", { type: "button", style: {
-              textAlign: "left", cursor: "pointer", fontFamily: "inherit", fontSize: "12px",
-              padding: "8px 10px", borderRadius: "6px", background: C.bg2, color: C.text,
-              border: `1px solid ${C.border}`,
-            }});
-            item.append(
-              el("div", { text: `Shot ${i + 1}`, style: { fontSize: "10px", color: C.muted, marginBottom: "3px" } }),
-              el("div", { text: t.trim() || "(empty)", style: { whiteSpace: "pre-wrap" } }),
-            );
-            item.addEventListener("click", () => finish(t));
-            modal.appendChild(item);
-          });
-          modal.appendChild(el("button", { type: "button", text: "✕ Cancel", style: {
-            alignSelf: "flex-end", cursor: "pointer", fontFamily: "inherit", fontSize: "11px",
-            padding: "5px 10px", borderRadius: "6px", background: "transparent", color: C.err,
-            border: `1px solid ${C.border}`,
-          }, onclick: () => finish(null) }));
-          overlay.addEventListener("click", (e) => { if (e.target === overlay) finish(null); });
-          overlay.appendChild(modal);
-          document.body.appendChild(overlay);
-        });
-      }
-      // Shared "load a saved prompt preset" row for the LTX Upscale / Face Refine prompt-edit
-      // modals — a select of the same server-side prompt sets the main shot-list editor
-      // saves/loads (ui_prompt_edit_ltx25.js's Prompt Sets), but these two modes have one
-      // flat prompt, not a per-clip list. Loading composes header+shot+footer into a single
-      // prompt (composeSetPrompt) and drops everything else the set carries (images,
-      // ref video/audio) — per the user's explicit ask. A set with more than one shot pops
-      // pickShotFromSet() to choose which shot goes into that single prompt.
-      function promptPresetLoadRow(onLoad) {
-        const wrap = el("div", { style: { display: "flex", gap: "6px", alignItems: "center" } });
-        const sel = el("select", { style: {
-          flex: "1", minWidth: "0", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
-          borderRadius: "6px", padding: "5px 7px", fontSize: "11px", fontFamily: "inherit", outline: "none",
-        }});
-        const loadBtn = el("button", { type: "button", text: "📂 Load preset", title: "Load a saved prompt preset — composed as header + shot + sound/music, no images/refs", style: {
-          cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 10px", borderRadius: "6px",
-          background: C.bg2, color: C.text, border: `1px solid ${C.border}`, flexShrink: "0",
-        }});
-        listPromptSets().then(sets => {
-          clear(sel);
-          if (!sets.length) sel.appendChild(el("option", { text: "(no saved prompt presets)", value: "" }));
-          else sets.forEach(s => sel.appendChild(el("option", { text: `${s.name} · ${s.count}`, value: s.name })));
-        }).catch(() => { clear(sel); sel.appendChild(el("option", { text: "(failed to load)", value: "" })); });
-        loadBtn.addEventListener("click", async () => {
-          const name = sel.value;
-          if (!name) return;
-          try {
-            const s = await getPromptSet(name);
-            const shots = Array.isArray(s.prompts) ? s.prompts : [];
-            let shotText = "";
-            if (shots.length > 1) {
-              const picked = await pickShotFromSet({ ...s, name });
-              if (picked == null) return;   // cancelled
-              shotText = picked;
-            } else if (shots.length === 1) {
-              shotText = typeof shots[0] === "string" ? shots[0] : (shots[0]?.text || "");
-            }
-            onLoad(composeSetPrompt(s, shotText), name);
-          } catch (e) {
-            showPopup(`Load failed: ${e.message || e}`, true);
-          }
-        });
-        wrap.append(sel, loadBtn);
-        return wrap;
-      }
-
-      function openLtxPromptEdit() {
-        const snap = { p: state.ltxPrompt || "", n: state.ltxNegPrompt || "" };
-        const box = el("div", { style: {
-          background: "#0e0e0e", border: `1px solid ${C.border}`, borderRadius: "10px",
-          width: "760px", maxWidth: "94%", maxHeight: "90vh", display: "flex", flexDirection: "column",
-          overflow: "hidden", boxShadow: "0 16px 50px rgba(0,0,0,0.65)" } });
-        const head = el("div", { style: {
-          display: "flex", alignItems: "center", gap: "8px", padding: "10px 12px",
-          borderBottom: `1px solid ${C.border}`, flexShrink: "0" } },
-          [el("div", { text: "📝 Upscale prompt", style: { color: "#fff", fontSize: "13px", fontWeight: "700", flex: "1" } })]);
-        const ov = el("div", { style: {
-          position: "fixed", inset: "0", zIndex: "100050", display: "flex", alignItems: "center",
-          justifyContent: "center", background: "rgba(0,0,0,0.72)" } }, [box]);
-        const finish = (apply) => {
-          if (!apply) { state.ltxPrompt = snap.p; state.ltxNegPrompt = snap.n; }
-          persist(); ov.remove();
-          try { renderPrompts(); } catch (e) { console.warn("[MMH3] LTX prompt sync:", e); }
-        };
-        ov.addEventListener("mousedown", e => { if (e.target === ov) finish(true); });
-        head.appendChild(el("button", { type: "button", text: "✕ Cancel", style: {
-          cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "4px 10px", borderRadius: "6px",
-          background: "transparent", color: C.err, border: `1px solid ${C.border}` }, onclick: () => finish(false) }));
-
-        const body = el("div", { style: { display: "flex", flexDirection: "column", gap: "10px", padding: "12px", overflow: "auto" } });
-
-        // — source video on top —
-        if (state.ltxSource) {
-          const pv = el("video", { src: `/view?filename=${encodeURIComponent(state.ltxSource)}&type=input`,
-            controls: true, muted: true, loop: true, preload: "metadata",
-            style: { width: "100%", maxHeight: "300px", objectFit: "contain", borderRadius: "6px", background: "#000" } });
-          body.append(pv);
-          if (_ltxSrcInfo) body.append(el("div", {
-            text: `${_ltxSrcInfo.width}×${_ltxSrcInfo.height} · ${(_ltxSrcInfo.duration || 0).toFixed(2)}s · ${(_ltxSrcInfo.fps || 0).toFixed(2)} fps · ${_ltxSrcInfo.has_audio ? "audio" : "no audio"}`,
-            style: { fontSize: "10px", color: C.muted } }));
-        } else {
-          body.append(el("div", { text: "No source clip — pick one in the left panel.", style: { fontSize: "11px", color: C.warn } }));
-        }
-
-        // — LLM backend + model — changing it here also writes the Settings config
-        //   so the two stay in sync (Settings re-reads config each time it opens).
-        const llmWrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } });
-        const syncLlmCfg = () => saveConfig({
-          ltx_vision_backend: state.ltxVisionBackend || "native",
-          ltx_vision_clip:    state.ltxVisionClip    || "",
-          ltx_vision_or_model: state.ltxVisionOrModel || "",
-          ltx_custom_base:    state.ltxCustomBase    || "",
-          ltx_custom_model:   state.ltxCustomModel   || "",
-          ltx_custom_ctx:     state.ltxCustomCtx     ?? 0,
-        }).catch(() => {});
-        function renderLlmPicker() {
-          clear(llmWrap);
-          const backend = state.ltxVisionBackend || "native";
-          const bSel = select(
-            [{ value: "native", label: "Native CLIP (local)" }, { value: "openrouter", label: "OpenRouter (cloud)" },
-             { value: "custom", label: "Connect Custom" }],
-            backend, v => { state.ltxVisionBackend = v; persist(); syncLlmCfg(); renderLlmPicker(); llmLabel.textContent = `LLM: ${ltxVisionLabel()}`; });
-          let mSel;
-          if (backend === "custom") {
-            // The URL / key / context live in ⚙ Settings → LLM Setting → LTX Upscale; only the
-            // model id is quick to change here.
-            mSel = el("input", { type: "text", value: state.ltxCustomModel || "", placeholder: "model id (URL + key: Settings → LLM Setting)",
-              style: { width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
-                border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px", fontSize: "12px", fontFamily: "inherit", outline: "none" } });
-            mSel.addEventListener("change", () => { state.ltxCustomModel = mSel.value.trim(); persist(); syncLlmCfg(); llmLabel.textContent = `LLM: ${ltxVisionLabel()}`; });
-          } else if (backend === "openrouter") {
-            mSel = el("select", { style: { width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
-              border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px", fontSize: "12px", fontFamily: "inherit", outline: "none" } },
-              [el("option", { value: state.ltxVisionOrModel || "", text: state.ltxVisionOrModel || "loading models…" })]);
-            mSel.addEventListener("change", () => { state.ltxVisionOrModel = mSel.value; persist(); syncLlmCfg(); llmLabel.textContent = `LLM: ${ltxVisionLabel()}`; });
-            fetch("/music_one/openrouter_models").then(r => r.json()).then(d => {
-              const ms = d.models || []; clear(mSel);
-              if (!ms.length) mSel.appendChild(el("option", { value: "", text: "(no models — set the OpenRouter key in Settings)" }));
-              ms.forEach(m => mSel.appendChild(el("option", { value: m, text: m, ...(m === state.ltxVisionOrModel ? { selected: "selected" } : {}) })));
-              if (!state.ltxVisionOrModel && ms[0]) { state.ltxVisionOrModel = ms[0]; persist(); syncLlmCfg(); llmLabel.textContent = `LLM: ${ltxVisionLabel()}`; }
-            }).catch(() => {});
-          } else {
-            const te = ["none", ...((ctx.availableModels?.text_encoders_all || ctx.availableModels?.text_encoders || []).filter(x => x !== "none"))];
-            mSel = select(te.map(x => ({ value: x, label: x })), state.ltxVisionClip || "none",
-              v => { state.ltxVisionClip = v === "none" ? "" : v; persist(); syncLlmCfg(); llmLabel.textContent = `LLM: ${ltxVisionLabel()}`; });
-          }
-          llmWrap.append(row([
-            col([label("LLM backend"), bSel]),
-            col([label(backend === "openrouter" ? "OpenRouter model" : backend === "custom" ? "Model ID" : "Vision CLIP"), mSel]),
-          ]));
-        }
-
-        // — prompt below —
-        const bigTA = el("textarea", { style: {
-          width: "100%", minHeight: "200px", boxSizing: "border-box", background: C.bg2, color: C.text,
-          border: `1px solid ${C.border}`, borderRadius: "6px", padding: "10px", fontSize: "13px",
-          fontFamily: "inherit", outline: "none", resize: "vertical" } });
-        bigTA.value = state.ltxPrompt || "";   // textarea text is a property, not an attribute
-        bigTA.addEventListener("input", () => { state.ltxPrompt = bigTA.value; persist(); });
-        const bigNeg = el("input", { type: "text", value: state.ltxNegPrompt || "", placeholder: "Negative (optional)", style: {
-          width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
-          borderRadius: "6px", padding: "8px", fontSize: "12px", fontFamily: "inherit", outline: "none" } });
-        bigNeg.addEventListener("input", () => { state.ltxNegPrompt = bigNeg.value; persist(); });
-        const llmLabel = el("div", { text: `LLM: ${ltxVisionLabel()}`, style: { fontSize: "10px", color: C.muted, alignSelf: "center" } });
-        // Lock the prompt box while the LLM runs so a keystroke can't collide with the result.
-        const lockBig = (on, msg) => {
-          bigTA.disabled = on; bigNeg.disabled = on; enh2.disabled = on || !state.ltxSource;
-          conv2.disabled = on || !String(state.ltxPrompt || "").trim();
-          bigTA.style.opacity = on ? "0.6" : "1";
-          if (on) bigTA.value = msg || "✨ LLM is writing — please wait…";
-        };
-        const enh2 = button("✨ Write from frame", async () => {
-          lockBig(true, "✨ LLM is writing the prompt from the source clip's first frame…");
-          try { await ltxWritePrompt(); } finally { lockBig(false); bigTA.value = state.ltxPrompt || ""; renderLlmPicker(); }
-        }, "primary");
-        enh2.disabled = _ltxBusy || !state.ltxSource;
-        const conv2 = button("H3 → LTX 2.5", async () => {
-          lockBig(true, "🔄 Converting the H3 brief to an LTX 2.5 prompt…");
-          try { await ltxConvertToLtx(); } finally { lockBig(false); bigTA.value = state.ltxPrompt || ""; renderLlmPicker(); }
-        }, "default");
-        conv2.disabled = _ltxBusy || !String(state.ltxPrompt || "").trim();
-        renderLlmPicker();
-        const presetRow = promptPresetLoadRow((text, name) => {
-          state.ltxPrompt = text; bigTA.value = text; persist();
-          showPopup(`Loaded prompt from "${name}".`, false);
-        });
-        body.append(label("LLM"), llmWrap, label("Prompt"), presetRow, bigTA, label("Negative"), bigNeg,
-          row([enh2, conv2, el("div", { style: { flex: "1" } }), llmLabel]));
-
-        const foot = el("div", { style: {
-          display: "flex", gap: "8px", padding: "10px 12px", borderTop: `1px solid ${C.border}`, flexShrink: "0", justifyContent: "flex-end" } });
-        foot.append(
-          button("✕ Cancel", () => finish(false), "default"),
-          button("✓ Apply", () => finish(true), "primary"),
-        );
-
-        box.append(head, body, foot);
-        document.body.appendChild(ov);
-        bigTA.focus();
-      }
-
-      // Face Refine's bottom prompt strip — same spot every mode's prompt lives in, not
-      // the left panel (LTX Upscale's own pattern, moved here per user feedback: the left
-      // panel is for the source card + refine params, not the prompt text).
-      function renderFaceRefinePrompt() {
-        clear(promptList);
-        promptCount.textContent = state.frSource ? "" : "(no source clip)";
-        // Not flex:1 — same resize-handle fix as the LTX/Image Generator prompt boxes.
-        const ta = el("textarea", {
-          placeholder: "Describe the clip (character, scene) — helps H3 re-render the face consistently.",
-          style: { minHeight: "120px", width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
-                   border: `1px solid ${C.border}`, borderRadius: "6px", padding: "8px", fontSize: "12px",
-                   fontFamily: "inherit", outline: "none", resize: "vertical" },
-        });
-        ta.value = state.frPrompt || "";   // textarea content must be set as a property
-        ta.addEventListener("input", () => { state.frPrompt = ta.value; persist(); });
-        ta.addEventListener("focus", () => ta.style.borderColor = BRAND);
-        ta.addEventListener("blur", () => ta.style.borderColor = C.border);
-        promptList.style.gap = "6px";
-        promptList.append(ta);
-      }
-
-      // "Prompt Edit" in Face Refine mode → a modal: source clip on top, prompt below,
-      // view/edit only (no LLM write button — Face Refine has no vision feature yet).
-      function openFaceRefinePromptEdit() {
-        const snap = { p: state.frPrompt || "" };
-        const box = el("div", { style: {
-          background: "#0e0e0e", border: `1px solid ${C.border}`, borderRadius: "10px",
-          width: "760px", maxWidth: "94%", maxHeight: "90vh", display: "flex", flexDirection: "column",
-          overflow: "hidden", boxShadow: "0 16px 50px rgba(0,0,0,0.65)" } });
-        const head = el("div", { style: {
-          display: "flex", alignItems: "center", gap: "8px", padding: "10px 12px",
-          borderBottom: `1px solid ${C.border}`, flexShrink: "0" } },
-          [el("div", { text: "📝 Face Refine prompt", style: { color: "#fff", fontSize: "13px", fontWeight: "700", flex: "1" } })]);
-        const ov = el("div", { style: {
-          position: "fixed", inset: "0", zIndex: "100050", display: "flex", alignItems: "center",
-          justifyContent: "center", background: "rgba(0,0,0,0.72)" } }, [box]);
-        const finish = (apply) => {
-          if (!apply) state.frPrompt = snap.p;
-          persist(); ov.remove();
-          try { renderPrompts(); } catch (e) { console.warn("[MMH3] Face Refine prompt sync:", e); }
-        };
-        ov.addEventListener("mousedown", e => { if (e.target === ov) finish(true); });
-        head.appendChild(el("button", { type: "button", text: "✕ Cancel", style: {
-          cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "4px 10px", borderRadius: "6px",
-          background: "transparent", color: C.err, border: `1px solid ${C.border}` }, onclick: () => finish(false) }));
-
-        const body = el("div", { style: { display: "flex", flexDirection: "column", gap: "10px", padding: "12px", overflow: "auto" } });
-        if (state.frSource) {
-          const pv = el("video", { src: `/view?filename=${encodeURIComponent(state.frSource)}&type=input`,
-            controls: true, muted: true, loop: true, preload: "metadata",
-            style: { width: "100%", maxHeight: "300px", objectFit: "contain", borderRadius: "6px", background: "#000" } });
-          body.append(pv);
-        } else {
-          body.append(el("div", { text: "No source clip — pick one in the left panel.", style: { fontSize: "11px", color: C.warn } }));
-        }
-
-        const bigTA = el("textarea", { style: {
-          width: "100%", minHeight: "200px", boxSizing: "border-box", background: C.bg2, color: C.text,
-          border: `1px solid ${C.border}`, borderRadius: "6px", padding: "10px", fontSize: "13px",
-          fontFamily: "inherit", outline: "none", resize: "vertical" } });
-        bigTA.value = state.frPrompt || "";
-        bigTA.addEventListener("input", () => { state.frPrompt = bigTA.value; persist(); });
-        const presetRow = promptPresetLoadRow((text, name) => {
-          state.frPrompt = text; bigTA.value = text; persist();
-          showPopup(`Loaded prompt from "${name}".`, false);
-        });
-        body.append(label("Prompt"), presetRow, bigTA);
-
-        const foot = el("div", { style: {
-          display: "flex", gap: "8px", padding: "10px 12px", borderTop: `1px solid ${C.border}`, flexShrink: "0", justifyContent: "flex-end" } });
-        foot.append(
-          button("✕ Cancel", () => finish(false), "default"),
-          button("✓ Apply", () => finish(true), "primary"),
-        );
-
-        box.append(head, body, foot);
-        document.body.appendChild(ov);
-        bigTA.focus();
-      }
-
       addBtn.addEventListener("click", () => {
         state.prompts.push({ text: "", firstFrame: "", enabled: true });
         persist(); refreshPlan();
       });
-      splitBtn.addEventListener("click", () => {
-        const joined = state.prompts.map(promptText).filter(t => t && t.trim()).join("\n\n");
-        if (!joined.trim()) { showPopup("Nothing to split — write the brief in the first box.", true); return; }
-        // The style preamble and the sound/music tail are what every clip needs to look
-        // and sound like the same piece. Splitting used to glue them onto the first and
-        // last clip, leaving everything in between without them, so lift them out as the
-        // common header/footer instead — composeClipPrompt then gives them to each clip.
-        const { header, shots, footer } = parseBrief(joined);
-        if (shots.length <= 1) { showPopup("Could not find clip boundaries ([Shot N], --- or blank lines).", true); return; }
-        const parts = groupShots(shots, shots.length);
-        if (header) state.promptHeader = header;
-        if (footer) state.promptFooter = footer;
-        state.prompts = parts.map(t => ({ text: t, firstFrame: "", enabled: true }));
-        persist(); refreshPlan();
-        const carried = [header && "header", footer && "tail"].filter(Boolean).join(" + ");
-        showPopup(`Split into ${parts.length} clips${carried ? ` — shared ${carried} kept on every clip` : ""}.`, false);
-      });
-
       rightPanel.append(previewBox, statusWrap, promptWrap);
       mainRow.append(leftOuter, rightPanel);
       root.appendChild(mainRow);
@@ -2098,161 +1380,6 @@ app.registerExtension({
       }
       ctx.refreshPlan = refreshPlan;
       ctx.refreshModes = () => { renderPills(); renderLeft(); renderPrompts(); };
-
-      // Audio for the lock: pick something already in ComfyUI's input folder, or
-      // upload one. Same two-control shape the reference-audio rows use.
-      function audioFilePicker() {
-        const files = ctx.audioFiles || [];
-        const opts = ['', ...files].map(f => ({ value: f, label: f || (ctx.audioFiles ? '— pick a file —' : 'loading…') }));
-        const sel = select(opts, state.lockAudioFile || '', v => { state.lockAudioFile = v; persist(); renderLeft(); });
-        const up = el('button', { type: 'button', text: '⬆', title: 'Upload', style: {
-          cursor: 'pointer', fontFamily: 'inherit', fontSize: '10px', padding: '4px', width: '26px',
-          borderRadius: '5px', background: C.bg3, color: C.text, border: `1px solid ${C.border}`, flexShrink: '0',
-        }});
-        const inp = el('input', { type: 'file', accept: 'audio/*', style: { display: 'none' } });
-        up.addEventListener('click', () => inp.click());
-        inp.addEventListener('change', async () => {
-          const f = inp.files[0]; inp.value = '';
-          if (!f) return;
-          up.textContent = '…';
-          try {
-            state.lockAudioFile = await uploadMedia(f);
-            ctx.audioFiles = null;                 // force a refetch so it lists
-            persist(); loadAudioFiles(); renderLeft();
-          } catch (e) { showPopup(e.message, true); up.textContent = '⬆'; }
-        });
-        const mm = el('button', { type: 'button', text: '🎵', title: 'Pick from the MusicMaker playlist', style: {
-          cursor: 'pointer', fontFamily: 'inherit', fontSize: '10px', padding: '4px', width: '26px',
-          borderRadius: '5px', background: C.bg3, color: C.text, border: `1px solid ${C.border}`, flexShrink: '0',
-        }});
-        mm.addEventListener('click', () => openAudioGalleryPicker((name) => {
-          state.lockAudioFile = name;
-          ctx.audioFiles = null;
-          persist(); loadAudioFiles(); renderLeft();
-        }));
-        return col([row([col([sel]), up, mm, inp]), state.lockAudioFile ? audioPreviewPlayer(state.lockAudioFile) : null]);
-      }
-
-      // Playback + trim controls for the locked audio file. Playback/seek stay confined to
-      // the trimmed range ([effStart, effEnd]) — content outside it never reaches Audio Lock
-      // either, so previewing it would be misleading.
-      function audioPreviewPlayer(filename) {
-        const audio = el("audio", { preload: "metadata", src: `/view?filename=${encodeURIComponent(filename)}&type=input`, style: { display: "none" } });
-        const playBtn = el("button", { type: "button", text: "▶", style: {
-          cursor: "pointer", fontFamily: "inherit", fontSize: "11px", width: "26px", height: "26px",
-          borderRadius: "5px", background: C.bg3, color: C.text, border: `1px solid ${C.border}`, flexShrink: "0",
-        }});
-        const timeLbl = el("span", { text: "0:00 / 0:00", style: { fontSize: "10px", color: C.muted, minWidth: "72px", textAlign: "center", flexShrink: "0" } });
-        const seek = el("input", { type: "range", min: "0", max: "1000", value: "0", class: "ltx25-seek", style: { flex: "1", minWidth: "0" } });
-        let seeking = false, loopOn = false;
-        const loopBtn = el("button", { type: "button", text: "🔁", title: "Loop the trimmed range", style: {
-          cursor: "pointer", fontFamily: "inherit", fontSize: "11px", width: "26px", height: "26px",
-          borderRadius: "5px", background: C.bg3, color: C.muted, border: `1px solid ${C.border}`, flexShrink: "0",
-        }});
-        loopBtn.addEventListener("click", () => {
-          loopOn = !loopOn;
-          loopBtn.style.background = loopOn ? BRAND : C.bg3;
-          loopBtn.style.color = loopOn ? "#fff" : C.muted;
-        });
-
-        const fmt = s => {
-          if (!isFinite(s) || s < 0) return "0:00";
-          const m = Math.floor(s / 60), ss = Math.floor(s % 60).toString().padStart(2, "0");
-          return `${m}:${ss}`;
-        };
-        const effStart = () => Math.max(0, state.audioLockTrimStart || 0);
-        const effEnd = () => {
-          const dur = audio.duration || 0;
-          const e = state.audioLockTrimEnd || 0;
-          return e > 0 ? Math.min(e, dur || e) : dur;
-        };
-
-        playBtn.addEventListener("click", () => {
-          if (audio.paused) {
-            const s = effStart(), e = effEnd();
-            if (audio.currentTime < s || (e > s && audio.currentTime >= e)) audio.currentTime = s;
-            audio.play().catch(() => {});
-          } else audio.pause();
-        });
-        audio.addEventListener("play",  () => { playBtn.textContent = "⏸"; });
-        audio.addEventListener("pause", () => { playBtn.textContent = "▶"; });
-        audio.addEventListener("ended", () => { playBtn.textContent = "▶"; });
-        audio.addEventListener("timeupdate", () => {
-          if (seeking) return;
-          const s = effStart(), e = effEnd();
-          if (e > s && audio.currentTime >= e) {
-            if (loopOn) { audio.currentTime = s; audio.play().catch(() => {}); }
-            else { audio.pause(); audio.currentTime = e; }
-          }
-          const span = Math.max(0.001, e - s);
-          const pos = Math.min(1, Math.max(0, (audio.currentTime - s) / span));
-          seek.value = String(pos * 1000);
-          timeLbl.textContent = `${fmt(Math.max(0, audio.currentTime - s))} / ${fmt(span)}`;
-        });
-        audio.addEventListener("loadedmetadata", () => {
-          audio.currentTime = effStart();
-          timeLbl.textContent = `0:00 / ${fmt(effEnd() - effStart())}`;
-          updateTrimHint();
-        });
-        seek.addEventListener("input", () => {
-          seeking = true;
-          const s = effStart(), e = effEnd(), span = Math.max(0.001, e - s);
-          audio.currentTime = s + (parseFloat(seek.value) / 1000) * span;
-          timeLbl.textContent = `${fmt(audio.currentTime - s)} / ${fmt(span)}`;
-        });
-        seek.addEventListener("change", () => { seeking = false; });
-
-        const trimHint = el("div", { text: "", style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } });
-        function updateTrimHint() {
-          const dur = audio.duration || 0;
-          const s = effStart(), e = effEnd(), len = Math.max(0, e - s);
-          trimHint.textContent = dur
-            ? `Usable range: ${fmt(s)} – ${fmt(e)} (${len.toFixed(1)}s) — preview is confined to this range too`
-            : "";
-          if (audio.currentTime < s || (e > s && audio.currentTime > e)) audio.currentTime = s;
-          const span = Math.max(0.001, e - s);
-          const pos = Math.min(1, Math.max(0, (audio.currentTime - s) / span));
-          seek.value = String(pos * 1000);
-          timeLbl.textContent = `${fmt(Math.max(0, audio.currentTime - s))} / ${fmt(span)}`;
-        }
-        // Fixed width, not flex-grow — the buttons next to these fields already claim a
-        // known amount of space in the node's ~276px panel, and a plain flex-item with
-        // width:100% (numberField's own style) collapsed to 0 here instead of filling the
-        // remainder, so give it something concrete to size against instead.
-        const startField = numberField(state.audioLockTrimStart || 0, v => { state.audioLockTrimStart = Math.max(0, v); persist(); updateTrimHint(); }, 0.1);
-        const endField   = numberField(state.audioLockTrimEnd   || 0, v => { state.audioLockTrimEnd   = Math.max(0, v); persist(); updateTrimHint(); }, 0.1);
-        startField.style.width = "64px"; startField.style.flexShrink = "0";
-        endField.style.width   = "64px"; endField.style.flexShrink   = "0";
-        // Short labels on purpose — the node's ~276px panel is much narrower than the web
-        // app's, and "At playhead"/"Full length" alongside a number field wouldn't fit
-        // (the field would get crushed to a sliver, which is exactly what happened before).
-        const setBtnStyle = { cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "4px 6px", borderRadius: "5px", background: C.bg3, color: C.text, border: `1px solid ${C.border}`, flexShrink: "0" };
-        const setStartBtn   = el("button", { type: "button", text: "Now",  title: "Set to current playhead position", style: setBtnStyle });
-        const setEndBtn      = el("button", { type: "button", text: "Now",  title: "Set to current playhead position", style: setBtnStyle });
-        const setEndFullBtn = el("button", { type: "button", text: "Full", title: "Set to the full length of the file", style: setBtnStyle });
-        setStartBtn.addEventListener("click", () => {
-          state.audioLockTrimStart = Math.round((audio.currentTime || 0) * 100) / 100;
-          startField.value = String(state.audioLockTrimStart); persist(); updateTrimHint();
-        });
-        setEndBtn.addEventListener("click", () => {
-          state.audioLockTrimEnd = Math.round((audio.currentTime || 0) * 100) / 100;
-          endField.value = String(state.audioLockTrimEnd); persist(); updateTrimHint();
-        });
-        setEndFullBtn.addEventListener("click", () => {
-          state.audioLockTrimEnd = Math.round((audio.duration || 0) * 100) / 100;
-          endField.value = String(state.audioLockTrimEnd); persist(); updateTrimHint();
-        });
-        updateTrimHint();
-
-        // Stacked full-width, not side-by-side — at half the ~276px panel width there's no
-        // room left for a usable number field once a couple of buttons sit next to it.
-        const trimRow = row([
-          col([label("Trim start (s)"), row([startField, setStartBtn])]),
-          col([label("Trim End (s)"), row([col([endField]), setEndBtn, setEndFullBtn])]),
-        ]);
-
-        return col([row([playBtn, loopBtn, seek, timeLbl, audio], "6px"), trimRow, trimHint]);
-      }
 
       function checkboxRow(text, checked, onChange, opts) {
         const { disabled = false, title = "" } = opts || {};
@@ -2329,64 +1456,6 @@ app.registerExtension({
       const LTX_SAMPLERS   = ["euler_ancestral", "euler", "dpmpp_2m", "dpmpp_sde", "res_multistep", "lcm"];
       const LTX_SCHEDULERS = ["simple", "normal", "sgm_uniform", "beta", "linear_quadratic", "karras"];
 
-      // Gallery pick / local upload both end with the file sitting in ComfyUI's input/.
-      // `item` is the picker's gallery entry ({filename, subfolder, meta, prompt, ...}).
-      let _ltxSrcInfo = null;   // { width, height, duration, fps, has_audio } for the current source
-      async function loadLtxSrcInfo() {
-        _ltxSrcInfo = null;
-        if (!state.ltxSource) { renderLeft(); return; }
-        try {
-          const d = await getMediaInfo(state.ltxSource);
-          if (d && d.ok) _ltxSrcInfo = d;
-        } catch {}
-        renderLeft();
-      }
-      function setLtxSource(inputFilename, kind, item) {
-        state.ltxSource = inputFilename; state.ltxSourceKind = kind;
-        // A gallery pick means "refine THIS clip" — load its saved prompt/negative
-        // (from the sidecar meta json) straight into the boxes, replacing whatever was
-        // there. An upload carries no prompt, so leave the boxes for ✨ / manual entry.
-        let m = (item && item.meta) || {};
-        if (typeof m === "string") { try { m = JSON.parse(m); } catch { m = {}; } }
-        const p = (item && item.prompt) || m.prompt || (Array.isArray(m.prompts) && m.prompts[0]) || "";
-        const n = m.negativePrompt || m.negative || "";
-        if (kind === "gallery") {
-          if (String(p).trim()) { state.ltxPrompt = String(p); showPopup("Prompt loaded from the clip's saved metadata.", false); }
-          else showPopup("That clip has no prompt saved in its metadata — write one or use ✨.", true);
-          if (String(n).trim())  state.ltxNegPrompt = String(n);
-        } else {
-          if (String(p).trim() && !String(state.ltxPrompt || "").trim())    state.ltxPrompt = String(p);
-          if (String(n).trim() && !String(state.ltxNegPrompt || "").trim()) state.ltxNegPrompt = String(n);
-        }
-        // The clip's own sidecar meta is the instant, reliable source for the info line
-        // (duration / fps / size) — ffmpeg probe fills gaps and covers uploads.
-        const durM = m.durationSeconds || m.seconds || (m.frames && m.fps ? m.frames / m.fps : 0) || 0;
-        state.ltxSourceMeta = (m.w || m.h || m.fps || m.frames || durM)
-          ? { w: m.w || 0, h: m.h || 0, fps: m.fps || 0, frames: m.frames || 0, duration: durM }
-          : null;
-        _ltxSrcInfo = null;
-        persist(); renderLeft(); renderPrompts();
-        loadLtxSrcInfo();
-      }
-
-      // Gallery pick / upload for H3 Face Refine — mirrors setLtxSource above (same
-      // sidecar-meta prompt load), but a video/detector/cut change also invalidates any
-      // Manual Select pick (those shots no longer describe this clip — see
-      // SPEC_MINIMAX_H3_FACE_REFINE.md §6-B).
-      function setFrSource(inputFilename, kind, item) {
-        state.frSource = inputFilename; state.frSourceKind = kind;
-        state.frConfirmedPick = ""; state.frChainPicks = [];   // a different video/skip/cap invalidates any prior pick
-        let m = (item && item.meta) || {};
-        if (typeof m === "string") { try { m = JSON.parse(m); } catch { m = {}; } }
-        const p = (item && item.prompt) || m.prompt || (Array.isArray(m.prompts) && m.prompts[0]) || "";
-        if (kind === "gallery" && String(p).trim()) state.frPrompt = String(p);
-        const durM = m.durationSeconds || m.seconds || (m.frames && m.fps ? m.frames / m.fps : 0) || 0;
-        state.frSourceMeta = (m.w || m.h || m.fps || m.frames || durM)
-          ? { w: m.w || 0, h: m.h || 0, fps: m.fps || 0, frames: m.frames || 0, duration: durM }
-          : null;
-        persist(); renderLeft(); renderPrompts();
-      }
-
       // Gallery pick / upload for Postprocess — mirrors setLtxSource/setFrSource, but no
       // prompt to load (Postprocess has none): just the source file + its probed meta.
       function setPpSource(inputFilename, kind, item) {
@@ -2433,828 +1502,6 @@ app.registerExtension({
         const w = vid.videoWidth, h = vid.videoHeight;
         if (!w || !h) return;
         card.style.aspectRatio = (w / h) >= 1 ? `${w} / ${h}` : "1 / 1";
-      }
-
-      function renderLtxUpscaleLeft() {
-        const prevScroll = leftPanel.scrollTop;
-        clear(leftPanel);
-
-        if (!ltxUpscaleReady(state)) {
-          leftPanel.appendChild(panel([
-            el("div", { html: "⚙ <b>LTX 2.5 Upscale</b> needs its models set first.<br>Open <b>⚙ Settings → LTX 2.5 Upscale</b> and pick:", style: { fontSize: "12px", lineHeight: "1.6" } }),
-            el("div", { text: "missing: " + ltxUpscaleMissing(state).join(", "), style: { fontSize: "11px", color: C.warn, marginTop: "4px" } }),
-          ]));
-          useBottomWrap(seedGenWrap);
-          leftPanel.scrollTop = prevScroll;
-          return;
-        }
-
-        // ── source clip — square card, controls BELOW the video, clean frame ──
-        const srcKids = [label("Source clip")];
-        const hasSrc = !!state.ltxSource;
-
-        const card = el("div", { style: {
-          position: "relative", width: "100%", aspectRatio: "16 / 9", background: "#000",
-          borderRadius: "8px", overflow: "hidden",
-          border: `1px solid ${hasSrc ? BRAND : C.border}`,
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }});
-
-        if (hasSrc) {
-          // clean video — no native controls, landscape fits width / portrait fits height
-          const vid = el("video", { src: `/view?filename=${encodeURIComponent(state.ltxSource)}&type=input`,
-            muted: true, loop: true, playsInline: true, preload: "metadata",
-            style: { width: "100%", height: "100%", objectFit: "contain", background: "#000", display: "block", cursor: "pointer" } });
-          vid.addEventListener("click", () => { vid.paused ? vid.play() : vid.pause(); });
-          vid.addEventListener("loadedmetadata", () => applySourceCardAspect(card, vid));
-          card.appendChild(vid);
-          card.appendChild(el("button", { type: "button", text: "✕", title: "Clear source", style: {
-            position: "absolute", top: "6px", right: "6px", zIndex: "3", width: "24px", height: "24px",
-            border: "none", borderRadius: "6px", background: "rgba(0,0,0,0.7)", color: "#fff", cursor: "pointer", fontSize: "12px",
-          }, onclick: () => { state.ltxSource = ""; state.ltxSourceKind = "gallery"; state.ltxSourceMeta = null; _ltxSrcInfo = null; persist(); renderLeft(); renderPrompts(); } }));
-          srcKids.push(card);
-
-          // ── control bar — sits under the card, never over the picture ────────
-          const fmtT = (s) => { s = Math.max(0, s || 0); const m = Math.floor(s / 60); const ss = Math.floor(s % 60); return `${m}:${String(ss).padStart(2, "0")}`; };
-          const btnStyle = { width: "30px", height: "26px", flexShrink: "0", border: `1px solid ${C.border}`,
-            borderRadius: "5px", background: C.bg2, color: C.text, cursor: "pointer", fontSize: "11px" };
-          const playBtn = el("button", { type: "button", text: "▶", style: btnStyle });
-          const muteBtn = el("button", { type: "button", text: "🔇", title: "Unmute", style: btnStyle });
-          const seek = el("input", { type: "range", min: "0", max: "1000", value: "0",
-            style: { flex: "1", accentColor: BRAND, cursor: "pointer" } });
-          playBtn.addEventListener("click", () => { vid.paused ? vid.play() : vid.pause(); });
-          vid.addEventListener("play",  () => playBtn.textContent = "⏸");
-          vid.addEventListener("pause", () => playBtn.textContent = "▶");
-          muteBtn.addEventListener("click", () => { vid.muted = !vid.muted; muteBtn.textContent = vid.muted ? "🔇" : "🔊"; muteBtn.title = vid.muted ? "Unmute" : "Mute"; });
-          let seeking = false;
-          seek.addEventListener("input", () => { seeking = true; if (vid.duration) vid.currentTime = (parseFloat(seek.value) / 1000) * vid.duration; });
-          seek.addEventListener("change", () => { seeking = false; });
-          vid.addEventListener("timeupdate", () => {
-            if (!seeking && vid.duration) seek.value = String(Math.round((vid.currentTime / vid.duration) * 1000));
-          });
-          srcKids.push(el("div", { style: { display: "flex", alignItems: "center", gap: "8px", padding: "6px 2px" } }, [playBtn, seek, muteBtn]));
-
-          // ── info line — length · fps · size ────────────────────────────────
-          // The <video> element itself gives exact duration + pixel size once its
-          // metadata loads; fps comes from the ffmpeg probe or (frames ÷ duration)
-          // off the clip's sidecar. No dependency on the probe succeeding.
-          const durLabel  = el("span", { text: "0:00 / 0:00" });
-          const fpsSpan   = el("span", { text: "—", style: { color: C.muted } });
-          const sizeSpan  = el("span", { text: "—", style: { color: C.muted } });
-          const refreshInfo = () => {
-            const info = _ltxSrcInfo, sm = state.ltxSourceMeta || {};
-            const dur = vid.duration || (info && info.duration) || sm.duration || 0;
-            const w   = vid.videoWidth  || (info && info.width)  || sm.w || 0;
-            const h   = vid.videoHeight || (info && info.height) || sm.h || 0;
-            let fps   = (info && info.fps) || sm.fps || 0;
-            if (!fps && sm.frames && dur) fps = sm.frames / dur;
-            durLabel.textContent = `${fmtT(vid.currentTime)} / ${fmtT(dur)}`;
-            if (fps)   { fpsSpan.textContent  = `${Math.round(fps)}fps`; fpsSpan.style.color  = C.text; }
-            if (w && h){ sizeSpan.textContent = `${w}x${h}`;             sizeSpan.style.color = C.text; }
-          };
-          vid.addEventListener("loadedmetadata", refreshInfo);
-          vid.addEventListener("timeupdate", refreshInfo);
-          refreshInfo();
-          srcKids.push(el("div", { style: {
-            display: "flex", alignItems: "center", gap: "16px", padding: "0 2px",
-            fontSize: "11px", color: C.text, fontVariantNumeric: "tabular-nums",
-          }}, [durLabel, fpsSpan, sizeSpan]));
-          if (_ltxSrcInfo && _ltxSrcInfo.has_audio === false) srcKids.push(el("div", {
-            text: "⚠ No audio track — the LTX audio branch needs one. Add audio to the clip first.",
-            style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
-        } else {
-          card.appendChild(el("div", { text: "no source clip", style: { color: C.muted, fontSize: "12px" } }));
-          srcKids.push(card);
-        }
-
-        const fileInp = el("input", { type: "file", accept: "video/*", style: { display: "none" } });
-        fileInp.addEventListener("change", async () => {
-          const f = fileInp.files[0]; fileInp.value = "";
-          if (!f) return;
-          try { showPopup("Uploading…", false); const name = await uploadMedia(f); setLtxSource(name, "upload"); }
-          catch (e) { showPopup(e.message, true); }
-        });
-        // From gallery | Upload — equal width (1:1). The real clip gallery (badges,
-        // 눈가리기 blur, info, everything) opens in pick mode instead of a separate,
-        // stripped-down grid — a click there copies the clip to input/ and returns here.
-        const galBtn = button("🖼 From gallery", () => galleryOv?.showPicker((inputFilename, item) =>
-          setLtxSource(inputFilename, "gallery", item)));
-        const upBtn = button("⬆ Upload", () => fileInp.click(), "default");
-        galBtn.style.flex = "1"; upBtn.style.flex = "1";
-        srcKids.push(el("div", { style: { display: "flex", gap: "8px" } }, [galBtn, upBtn]));
-        srcKids.push(fileInp);
-        srcKids.push(el("div", { text: "The whole clip is upscaled 2× and its audio is carried through. Gallery picks auto-fill the prompt from the clip's saved meta.",
-          style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
-        leftPanel.appendChild(panel(srcKids));
-
-        // ── refine sampling ──────────────────────────────────────────────────
-        leftPanel.appendChild(panel([
-          label("UPSCALE SETTING"),
-          row([
-            col([label("Steps"), numberField(state.ltxSteps ?? 4, v => { state.ltxSteps = Math.max(1, Math.round(v)); persist(); }, 1)]),
-            col([label("Denoise"), numberField(state.ltxDenoise ?? 0.15, v => { state.ltxDenoise = Math.min(1, Math.max(0.01, v)); persist(); }, 0.01)]),
-          ]),
-          row([
-            col([label("Sampler"), select(LTX_SAMPLERS.map(s => ({ value: s, label: s })),
-              state.ltxSampler || "euler_ancestral", v => { state.ltxSampler = v; persist(); })]),
-            col([label("Scheduler"), select(LTX_SCHEDULERS.map(s => ({ value: s, label: s })),
-              state.ltxScheduler || "simple", v => { state.ltxScheduler = v; persist(); })]),
-          ]),
-          (() => {
-            // Two ways to say the same plan: "seconds" derives the piece count from a
-            // target size (rounded to whatever avoids a stub piece a few frames long);
-            // "count" takes the piece count directly — no rounding surprise, and no
-            // reloading the whole model just to run a handful of leftover frames.
-            const durNow = () => (_ltxSrcInfo && _ltxSrcInfo.duration) || (state.ltxSourceMeta && state.ltxSourceMeta.duration) || 0;
-            const segWrap = el("div", {});
-            function renderSegWrap() {
-              clear(segWrap);
-              const mode = state.ltxSegmentMode === "count" ? "count" : "seconds";
-              const segHint = el("div", { style: { fontSize: "13px", fontWeight: "700", color: BRAND, whiteSpace: "nowrap" } });
-              const updateSegHint = () => {
-                const d = durNow();
-                if (mode === "count") {
-                  const n = Math.max(1, Math.round(Number(state.ltxSegmentCount) || 1));
-                  if (n <= 1) segHint.textContent = "1 = whole clip, one pass";
-                  else if (!d) segHint.textContent = `${n} piece(s) — pick a source to see the length`;
-                  else segHint.textContent = `${n} piece(s) → ~${(d / n).toFixed(1)}s each      Total : ${d.toFixed(1)}s clip`;
-                } else {
-                  const s = Math.max(0, Number(state.ltxSegmentSeconds) || 0);
-                  if (!s) segHint.textContent = "0 = whole clip, one pass";
-                  else if (!d) segHint.textContent = `${s}s per piece — pick a source to see the piece count`;
-                  else segHint.textContent = `${s}s per piece → ${Math.max(1, Math.round(d / s))} piece(s)      Total : ${d.toFixed(1)}s clip`;
-                }
-              };
-              updateSegHint();
-              const modeSel = select([{ value: "seconds", label: "By seconds" }, { value: "count", label: "By count" }], mode, v => { state.ltxSegmentMode = v; persist(); renderSegWrap(); });
-              const valueField = mode === "count" ? numberField(state.ltxSegmentCount ?? 2, v => { state.ltxSegmentCount = Math.max(1, Math.round(v)); persist(); updateSegHint(); }, 1) : numberField(state.ltxSegmentSeconds ?? 5, v => { state.ltxSegmentSeconds = Math.max(0, Math.round(v)); persist(); updateSegHint(); }, 1);
-            const captionLabel = label(mode === "count" ? "Piece count (1 = whole clip)" : "Seconds per piece (0 = whole clip)");
-            segWrap.append(el("div", { style: { display: "flex", flexDirection: "column", gap: "4px" } }, [
-              el("div", { style: { display: "flex", alignItems: "center", gap: "4px" } }, [label("Split mode"), el("span", { text: "❔", title: "Splitting a long/large clip into fixed-length pieces upscales each on its own queue turn (VRAM freed between turns) then ffmpeg-concats — each piece is first-frame-anchored + low-denoise so the joins are seamless.", style: { cursor: "help", fontSize: "11px" } })]),
-              row([col([modeSel]), col([valueField])]),
-              captionLabel,
-              segHint,
-            ]));
-            }
-            renderSegWrap();
-            return segWrap;
-          })(),
-          el("div", { text: "2x latent upscale + a light refine. Verified defaults: 4 steps / 0.15 denoise / euler_ancestral / simple. ~0.8MP / 8s per piece on 16GB (~6 min each).",
-            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-        ]));
-
-        // ── LTX LoRA (own list — different model from H3) ────────────────────
-        const loraOpts = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
-        const ltxL = state.ltxLoras ||= [];
-        const ltxLoraWrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } });
-        function renderLtxLoras() {
-          clear(ltxLoraWrap);
-          ltxL.forEach((l, i) => {
-            const off = l.enabled === false;
-            const card = el("div", { style: {
-              border: `1px solid ${off ? C.dim : C.border}`, borderRadius: "6px", padding: "6px",
-              display: "flex", flexDirection: "column", gap: "5px", opacity: off ? "0.55" : "1" } });
-            const head = el("div", { style: { display: "flex", alignItems: "center", gap: "5px" } });
-            const tog = el("button", { type: "button", text: off ? "OFF" : "ON", style: {
-              flexShrink: "0", cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "3px 9px",
-              borderRadius: "10px", border: "none", fontWeight: "700", background: off ? "#444" : BRAND, color: "#fff" },
-              onclick: () => { l.enabled = off; persist(); renderLtxLoras(); } });
-            const strWrap = el("div", { style: { flexShrink: "0", width: "62px" } });
-            strWrap.appendChild(numberField(l.strength ?? 1.0, v => { l.strength = v; persist(); }, 0.05));
-            const del = el("button", { type: "button", text: "✕", title: "Remove", style: {
-              flexShrink: "0", cursor: "pointer", background: "transparent", color: C.err, border: "none", fontSize: "11px", padding: "2px 4px" },
-              onclick: () => { ltxL.splice(i, 1); persist(); renderLtxLoras(); } });
-            head.append(tog, el("div", { style: { flex: "1" } }), strWrap, del);
-            const sel = loraSelect(loraOpts, l.name || "none", v => { l.name = v; persist(); });
-            card.append(head, sel.el);
-            ltxLoraWrap.appendChild(card);
-          });
-          const add = el("button", { type: "button", text: "+ Add LoRA", style: {
-            cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 10px", borderRadius: "6px",
-            background: C.bg2, color: C.text, border: `1px solid ${C.border}` },
-            onclick: () => { ltxL.push({ name: "none", strength: 1.0, enabled: true }); persist(); renderLtxLoras(); } });
-          ltxLoraWrap.appendChild(add);
-          ltxLoraWrap.appendChild(el("div", { text: "Loads on the LTX 2.5 unet (before the attention patch). Separate from the H3 LoRA list.",
-            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
-        }
-        renderLtxLoras();
-        leftPanel.appendChild(accordion("ltxlora", "LTX LoRA",
-          ltxL.filter(l => l?.name && l.name !== "none" && l.enabled !== false).length
-            ? `${ltxL.filter(l => l?.name && l.name !== "none" && l.enabled !== false).length} on` : "OFF",
-          () => [ltxLoraWrap]));
-
-        // RTX VSR's own node takes either a scale multiplier or an exact width/height
-        // (see computeRtxTarget in core_ltx25.js). Short/Long are a convenience on top
-        // of that exact-size mode: type one side, the other is computed from the source's
-        // own aspect ratio, so the result is never distorted. W×H is the node's raw
-        // exact-size mode, always paired with a forced crop here so a mismatched aspect
-        // never stretches either — same 4 modes wherever RTX VSR appears (here, the main
-        // Upscale panel, and the gallery's own upscale bar).
-        function rtxSizeControls(rtxOn) {
-          const MODES = [["scale", "Scale (×)"], ["short", "Short"], ["long", "Long"], ["wh", "W×H"]];
-          const modeNow = state.rtxSizeMode || "scale";
-          const modeRow = el("div", { style: { display: "flex", gap: "4px" } },
-            MODES.map(([k, lbl]) => {
-              const active = k === modeNow;
-              const b = el("button", { type: "button", text: lbl, style: {
-                cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "4px 9px",
-                borderRadius: "5px", fontWeight: active ? "700" : "400",
-                background: active ? BRAND : C.bg2, color: "#fff",
-                border: `1px solid ${active ? BRAND : C.border}`,
-              }});
-              b.disabled = !rtxOn;
-              if (!rtxOn) b.style.opacity = "0.4";
-              b.addEventListener("click", () => { state.rtxSizeMode = k; persist(); renderLeft(); });
-              return b;
-            }));
-          const disabledField = (f) => { if (!rtxOn) { f.disabled = true; f.style.opacity = "0.4"; } return f; };
-          const rows = [col([label("Size"), modeRow])];
-          if (modeNow === "scale") {
-            rows.push(col([label("Scale (×)"), disabledField(
-              numberField(state.rtxScale ?? 2, v => { state.rtxScale = Math.max(1, v); persist(); }, 0.5))]));
-          } else if (modeNow === "short" || modeNow === "long") {
-            const key = modeNow === "short" ? "rtxShort" : "rtxLong";
-            rows.push(col([label(`${modeNow === "short" ? "Short" : "Long"} side (px)`), disabledField(
-              numberField(state[key] ?? (modeNow === "short" ? 1080 : 1920),
-                v => { state[key] = Math.max(8, Math.round(v)); persist(); }, 8))]));
-          } else {
-            rows.push(row([
-              col([label("Width"), disabledField(numberField(state.rtxW ?? 1920,
-                v => { state.rtxW = Math.max(8, Math.round(v)); persist(); }, 8))]),
-              col([label("Height"), disabledField(numberField(state.rtxH ?? 1080,
-                v => { state.rtxH = Math.max(8, Math.round(v)); persist(); }, 8))]),
-            ]));
-            rows.push(col([label("Crop anchor"), disabledField(select(
-              ["center", "left", "right", "top", "bottom"].map(a => ({ value: a, label: a[0].toUpperCase() + a.slice(1) })),
-              state.rtxCropAnchor || "center", v => { state.rtxCropAnchor = v; persist(); }))]));
-          }
-          return rows;
-        }
-
-        // ── post finish — Deblur + RTX VSR, both as a quality dropdown (none = off) ──
-        const QUAL = ["none", "LOW", "MEDIUM", "HIGH", "ULTRA"].map(v => ({ value: v, label: v === "none" ? "None" : v }));
-        const deblurNow = state.deblurStrength || "none";
-        const rtxQualNow = state.upscaleMode === "rtx" ? (state.rtxQuality || "ULTRA") : "none";
-        const rtxOn = rtxQualNow !== "none";
-        const rtxSizeTag = () => {
-          const m = state.rtxSizeMode || "scale";
-          return m === "scale" ? `${state.rtxScale ?? 2}×`
-            : m === "short" ? `short ${state.rtxShort ?? 1080}px`
-            : m === "long"  ? `long ${state.rtxLong ?? 1920}px`
-            : `${state.rtxW ?? 1920}×${state.rtxH ?? 1080}`;
-        };
-        leftPanel.appendChild(accordion("upscale", "Post finish",
-          [deblurNow !== "none" && `Deblur ${deblurNow}`, rtxOn && `RTX VSR ${rtxSizeTag()}`].filter(Boolean).join(" → ") || "OFF",
-          () => [
-            col([label("Deblur"), select(QUAL, deblurNow,
-              v => { state.deblurStrength = v; persist(); renderLeft(); })]),
-            col([label("RTX Video Super Resolution"), select(QUAL, rtxQualNow, v => {
-              if (v === "none") { state.upscaleMode = "none"; }
-              else { state.upscaleMode = "rtx"; state.rtxQuality = v; if (!(state.rtxScale > 0)) state.rtxScale = 2; }
-              persist(); renderLeft();
-            })]),
-            ...rtxSizeControls(rtxOn),
-            !ctx.availability?.RTXVideoSuperResolution ? el("div", {
-              html: "⚠ <code>RTXVideoSuperResolution</code> not installed — RTX VSR is skipped.",
-              style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }) : null,
-            el("div", { text: "A standalone pass over this clip's own frames (not chained through LTX's own scale). Deblur sharpens at the same size; RTX VSR scales it further.",
-              style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-          ]));
-
-        leftPanel.appendChild(el("div", {
-          html: `Models: <code>${(state.ltxUnet || "?").split(/[\\/]/).pop()}</code> · clip <code>${(state.ltxClip || "?").split(/[\\/]/).pop()}</code> — change in ⚙ Settings.`,
-          style: { fontSize: "9px", color: C.muted, lineHeight: "1.6", marginTop: "2px", wordBreak: "break-all" } }));
-
-        useBottomWrap(seedGenWrap);   // keep the Generate button below the panel
-        leftPanel.scrollTop = prevScroll;
-      }
-
-      // H3 Face Refine — post-process pass on a finished/uploaded clip. Same category as
-      // LTX Upscale (source card + accordions, no shot-list prompt), see
-      // SPEC_MINIMAX_H3_FACE_REFINE.md §5/§6.
-      const FR_SELECT_MODES = [
-        "largest_face", "smallest_face", "left_most", "right_most",
-        "top_most", "bottom_most", "centre_most", "detector_score", "manual",
-      ];
-
-      // Manual Select's "Pick Faces" dialog — the front end for ComfyUI-H3-FaceRefine's
-      // own two-stage backend (SPEC_MINIMAX_H3_FACE_REFINE.md §6-A): POST /h3_facerefine/scan
-      // runs the detector across the whole clip once (cached, GPU-busy-guarded on the
-      // server), returns one card per shot with every detected face boxed and numbered;
-      // the user's answer becomes `confirmed_pick` ("0,1,-1", one index per shot, -1 =
-      // "not in this shot"), which H3FaceSelect re-reads at actual graph-execution time.
-      async function openFacePickModal() {
-        if (!state.frSource) { showPopup("Pick a source clip first.", true); return; }
-
-        const overlay = el("div", { style: {
-          position: "fixed", inset: "0", background: "rgba(0,0,0,0.75)", zIndex: "10000",
-          display: "flex", alignItems: "center", justifyContent: "center", padding: "20px",
-        }});
-        const modal = el("div", { style: {
-          background: C.bg, border: `1px solid ${C.border}`, borderRadius: "10px",
-          width: "min(900px, 100%)", maxHeight: "90vh", overflowY: "auto", padding: "16px",
-          display: "flex", flexDirection: "column", gap: "12px", boxSizing: "border-box",
-        }});
-        const title = el("div", { text: "Pick Faces", style: { fontSize: "14px", fontWeight: "700", color: C.text } });
-        // The scan is one blocking request with nothing to show yet (no cards, no boxes) -
-        // make that wait obvious with the same big-centered-purple treatment as the main
-        // render's own "preparing" banner, then drop back to small/muted once real content
-        // (shot cards, or an error) has something to show.
-        const status = el("div", { text: "🔍 Scanning the clip for faces and cuts…", style: {
-          fontSize: "18px", fontWeight: "700", color: "#b57bff", textAlign: "center",
-          padding: "24px 16px", textShadow: "0 0 12px rgba(181,123,255,0.5)",
-        }});
-        const scanningStyle = () => {
-          status.style.fontSize = "12px"; status.style.fontWeight = "400";
-          status.style.color = C.muted; status.style.textAlign = "left";
-          status.style.padding = "0"; status.style.textShadow = "none";
-        };
-        const capWarn = el("div", { style: { fontSize: "11px", color: C.warn, display: "none" } });
-        const cardsWrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "12px" } });
-        const closeBtn = button("✕ Cancel", () => overlay.remove(), "default");
-        const useBtn = button("✓ Use these", () => {}, "primary");
-        useBtn.disabled = true; useBtn.style.opacity = "0.5";
-        const footer = el("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end" } }, [closeBtn, useBtn]);
-        modal.append(title, status, capWarn, cardsWrap, footer);
-        overlay.appendChild(modal);
-        overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
-        document.body.appendChild(overlay);
-
-        let shots = [];
-        const picks = [];      // per-shot single chosen face index (multi-shot path); -1 = "not in this shot"; null = unanswered
-        const order = [];      // single-shot path: ORDERED list of face indices to chain through — §12
-
-        // FaceRefine's /h3_facerefine/scan decodes the WHOLE clip into memory up front
-        // (same class of issue ui_gallery_ltx25.js's chunked post-process already works
-        // around) — CPU+RAM, not GPU/VRAM, so a long/large clip can exhaust system RAM and
-        // hang the whole ComfyUI process rather than erroring cleanly (hit this for real,
-        // 2026-09-12 — see SPEC §13). Cap frame_load_cap with the same byte-budget formula
-        // (1.25 GB / (w*h*16), clamped 8..240) so a long clip only scans its opening window
-        // instead of loading everything.
-        let scanFrameCap = 0;
-        try {
-          const info = await getVideoInfo(state.frSource, "", "input");
-          const totalFrames = info.frames || 0;
-          const perFrameBytes = Math.max(1, (info.width || 0) * (info.height || 0) * 16);
-          const budgetFrames = Math.max(8, Math.min(240, Math.floor((1.25 * 1024 ** 3) / perFrameBytes)));
-          if (totalFrames > budgetFrames) scanFrameCap = budgetFrames;
-        } catch { /* video_info unavailable — scan uncapped, same as before */ }
-
-        try {
-          const body = {
-            video: state.frSource, detector: state.faceDetector, confidence: state.frConfidence ?? 0.35,
-            cut_detection: state.frCutDetection ? "auto (pyscenedetect)" : "none",
-            cut_threshold: state.frCutThreshold ?? 3.0,
-            skip_first_frames: 0, frame_load_cap: scanFrameCap, select_every_nth: 1,
-            // Numbering MUST match H3FaceSelect's own numbering at render time, or a pick
-            // here refines a different face there. picker_api.py defaults `select` to
-            // "largest_face" (ranks boxes by size) when it's left out — but H3FaceSelect's
-            // manual mode numbers boxes by _MANUAL_RANK = "left_most" (leftmost first).
-            // Those two rankings can disagree on which box is "1" (found via a real report:
-            // picked box 1, box 2 got refined instead - see SPEC sec 20). Passing "manual"
-            // here makes picker_api._review_select() resolve to the same "left_most" order.
-            select: "manual",
-          };
-          const r = await fetch("/h3_facerefine/scan", {
-            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-          });
-          const d = await r.json();
-          if (d.error) throw new Error(d.error + (d.busy ? " (retry once the queue is clear)" : ""));
-          scanningStyle();
-          if (scanFrameCap) {
-            capWarn.textContent = `⚠ Large clip — scan capped to the first ${scanFrameCap} frames to avoid exhausting RAM. Cuts after that point won't show up here.`;
-            capWarn.style.display = "";
-          }
-          shots = d.shots || [];
-          if (!shots.length) throw new Error("No shots found.");
-
-          if (shots.length === 1) {
-            // ── single-shot clip: pick MULTIPLE faces, in the order to chain them ──
-            // Each pick becomes its own H3 Face Refine pass over the PREVIOUS pass's own
-            // output (runFaceRefine's chain loop, §12) — "5 faces found, only 3/5/7 in
-            // this order" is exactly clicking them in that order here.
-            const shot = shots[0];
-            status.textContent = `${shot.faces} face(s) found — click them in the order to refine (skip anyone you don't want).`;
-            const imgWrap = el("div", { style: {
-              position: "relative", width: "100%", background: "#000", borderRadius: "6px", overflow: "hidden",
-            }});
-            const chipsWrap = el("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } });
-            const orderLine = el("div", { style: { fontSize: "11px", color: C.muted } });
-
-            function renderChips() {
-              clear(chipsWrap);
-              for (let fi = 0; fi < shot.faces; fi++) {
-                const pos = order.indexOf(fi);
-                const on = pos >= 0;
-                const chip = el("button", { type: "button", text: on ? `${fi} (${pos + 1})` : String(fi), style: {
-                  minWidth: "34px", height: "26px", borderRadius: "13px", cursor: "pointer", fontSize: "11px",
-                  padding: "0 8px", border: `1px solid ${on ? BRAND : C.border}`, background: on ? BRAND : C.bg2,
-                  color: on ? "#fff" : C.text,
-                }});
-                chip.addEventListener("click", () => {
-                  const p = order.indexOf(fi);
-                  if (p >= 0) order.splice(p, 1); else order.push(fi);
-                  renderChips(); renderBoxes();
-                });
-                chipsWrap.appendChild(chip);
-              }
-              orderLine.textContent = order.length
-                ? `Order: ${order.join(" → ")} (${order.length} pass${order.length > 1 ? "es" : ""})` : "Nothing picked yet.";
-              useBtn.disabled = order.length === 0;
-              useBtn.style.opacity = useBtn.disabled ? "0.5" : "1";
-            }
-            function renderBoxes() {
-              clear(imgWrap);
-              if (!shot.jpg) {
-                imgWrap.appendChild(el("div", { text: "no face found", style: {
-                  color: C.muted, fontSize: "11px", padding: "24px", textAlign: "center" } }));
-                return;
-              }
-              imgWrap.appendChild(el("img", { src: `data:image/jpeg;base64,${shot.jpg}`,
-                style: { width: "100%", display: "block" } }));
-              (shot.boxes || []).forEach((b, fi) => {
-                const [x0, y0, x1, y1] = b;
-                const pos = order.indexOf(fi);
-                const on = pos >= 0;
-                const box = el("div", { title: `Face ${fi}`, style: {
-                  position: "absolute", left: `${x0 * 100}%`, top: `${y0 * 100}%`,
-                  width: `${(x1 - x0) * 100}%`, height: `${(y1 - y0) * 100}%`,
-                  border: `2px solid ${on ? BRAND : "rgba(255,255,255,0.7)"}`, borderRadius: "3px",
-                  cursor: "pointer", boxSizing: "border-box",
-                }});
-                if (on) box.appendChild(el("div", { text: String(pos + 1), style: {
-                  position: "absolute", top: "-9px", left: "-9px", width: "18px", height: "18px",
-                  borderRadius: "9px", background: BRAND, color: "#fff", fontSize: "10px",
-                  display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700",
-                }}));
-                box.addEventListener("click", () => {
-                  const p = order.indexOf(fi);
-                  if (p >= 0) order.splice(p, 1); else order.push(fi);
-                  renderChips(); renderBoxes();
-                });
-                imgWrap.appendChild(box);
-              });
-            }
-            renderBoxes(); renderChips();
-            cardsWrap.appendChild(el("div", { style: {
-              border: `1px solid ${C.border}`, borderRadius: "8px", padding: "8px",
-              display: "flex", flexDirection: "column", gap: "6px",
-            }}, [imgWrap, chipsWrap, orderLine]));
-          } else {
-            // ── multiple shots (cuts): one subject per shot, no cross-person chain ──
-            status.textContent = `${shots.length} shot(s) found${d.cached ? " (cached scan)" : ""} — click a face per shot.`;
-            const prior = String(state.frConfirmedPick || "").split(",").map(s => parseInt(s.trim(), 10));
-            const priorValid = prior.length === shots.length && prior.every(n => !Number.isNaN(n));
-
-            shots.forEach((shot, i) => {
-              picks[i] = priorValid ? prior[i] : null;
-              const card = el("div", { style: {
-                border: `1px solid ${C.border}`, borderRadius: "8px", padding: "8px",
-                display: "flex", flexDirection: "column", gap: "6px",
-              }});
-              const imgWrap = el("div", { style: {
-                position: "relative", width: "100%", background: "#000", borderRadius: "6px", overflow: "hidden",
-              }});
-              const chipsWrap = el("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } });
-
-              function renderChips() {
-                clear(chipsWrap);
-                for (let fi = 0; fi < shot.faces; fi++) {
-                  const on = picks[i] === fi;
-                  const chip = el("button", { type: "button", text: String(fi), style: {
-                    width: "26px", height: "26px", borderRadius: "13px", cursor: "pointer", fontSize: "11px",
-                    border: `1px solid ${on ? BRAND : C.border}`, background: on ? BRAND : C.bg2,
-                    color: on ? "#fff" : C.text,
-                  }});
-                  chip.addEventListener("click", () => { picks[i] = fi; renderChips(); renderBoxes(); });
-                  chipsWrap.appendChild(chip);
-                }
-                const noneOn = picks[i] === -1;
-                const noneChip = el("button", { type: "button", text: "not in this shot", style: {
-                  padding: "4px 8px", borderRadius: "6px", cursor: "pointer", fontSize: "11px",
-                  border: `1px solid ${noneOn ? BRAND : C.border}`, background: noneOn ? BRAND : C.bg2,
-                  color: noneOn ? "#fff" : C.text,
-                }});
-                noneChip.addEventListener("click", () => { picks[i] = -1; renderChips(); renderBoxes(); });
-                chipsWrap.appendChild(noneChip);
-                useBtn.disabled = picks.some(p => p == null);
-                useBtn.style.opacity = useBtn.disabled ? "0.5" : "1";
-              }
-
-              function renderBoxes() {
-                clear(imgWrap);
-                if (!shot.jpg) {
-                  imgWrap.appendChild(el("div", { text: "no face found in this shot", style: {
-                    color: C.muted, fontSize: "11px", padding: "24px", textAlign: "center" } }));
-                  return;
-                }
-                imgWrap.appendChild(el("img", { src: `data:image/jpeg;base64,${shot.jpg}`,
-                  style: { width: "100%", display: "block" } }));
-                (shot.boxes || []).forEach((b, fi) => {
-                  const [x0, y0, x1, y1] = b;
-                  const on = picks[i] === fi;
-                  const box = el("div", { title: `Face ${fi}`, style: {
-                    position: "absolute", left: `${x0 * 100}%`, top: `${y0 * 100}%`,
-                    width: `${(x1 - x0) * 100}%`, height: `${(y1 - y0) * 100}%`,
-                    border: `2px solid ${on ? BRAND : "rgba(255,255,255,0.7)"}`, borderRadius: "3px",
-                    cursor: "pointer", boxSizing: "border-box",
-                  }});
-                  box.addEventListener("click", () => { picks[i] = fi; renderChips(); renderBoxes(); });
-                  imgWrap.appendChild(box);
-                });
-              }
-
-              renderBoxes(); renderChips();
-              card.append(
-                el("div", { text: `Shot ${i + 1} — frame ${shot.frame} — ${shot.faces} face(s) detected`,
-                  style: { fontSize: "11px", color: C.muted } }),
-                imgWrap, chipsWrap,
-              );
-              cardsWrap.appendChild(card);
-            });
-            useBtn.disabled = picks.some(p => p == null);
-            useBtn.style.opacity = useBtn.disabled ? "0.5" : "1";
-          }
-        } catch (e) {
-          scanningStyle();
-          status.textContent = `Error: ${e.message}`;
-          status.style.color = C.warn;
-        }
-
-        useBtn.addEventListener("click", () => {
-          if (shots.length === 1) {
-            if (!order.length) return;
-            state.frChainPicks = order.slice();
-            state.frConfirmedPick = String(order[0]);
-            persist();
-            overlay.remove();
-            showPopup(`Face picks saved — ${order.length} pass${order.length > 1 ? "es" : ""} queued.`, false);
-          } else {
-            if (picks.some(p => p == null)) return;
-            state.frChainPicks = [];
-            state.frConfirmedPick = picks.join(",");
-            persist();
-            overlay.remove();
-            showPopup(`Face picks saved — ${shots.length} shot(s).`, false);
-          }
-          renderLeft();
-        });
-      }
-      function renderFaceRefineLeft() {
-        const prevScroll = leftPanel.scrollTop;
-        clear(leftPanel);
-
-        if (!faceRefineReady(state)) {
-          leftPanel.appendChild(panel([
-            el("div", { html: "⚙ <b>H3 Face Refine</b> needs a face detector set first.<br>Open <b>⚙ Settings → Models → H3 Face Refine</b> and pick one.", style: { fontSize: "12px", lineHeight: "1.6" } }),
-            el("div", { text: "missing: " + faceRefineMissing(state).join(", "), style: { fontSize: "11px", color: C.warn, marginTop: "4px" } }),
-          ]));
-          useBottomWrap(seedGenWrap);
-          leftPanel.scrollTop = prevScroll;
-          return;
-        }
-
-        // ── source clip ────────────────────────────────────────────────────────
-        const hasSrc = !!state.frSource;
-        const srcKids = [label("Source clip")];
-        const card = el("div", { style: {
-          position: "relative", width: "100%", aspectRatio: "16 / 9", background: "#000",
-          borderRadius: "8px", overflow: "hidden", border: `1px solid ${hasSrc ? BRAND : C.border}`,
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }});
-        if (hasSrc) {
-          const vid = el("video", {
-            src: `/view?filename=${encodeURIComponent(state.frSource)}&type=input`,
-            controls: true, muted: true, preload: "metadata",
-            style: { width: "100%", height: "100%", objectFit: "contain", background: "#000", display: "block" },
-          });
-          vid.addEventListener("loadedmetadata", () => applySourceCardAspect(card, vid));
-          card.appendChild(vid);
-          card.appendChild(el("button", { type: "button", text: "✕", title: "Clear source", style: {
-            position: "absolute", top: "6px", right: "6px", zIndex: "3", width: "24px", height: "24px",
-            border: "none", borderRadius: "6px", background: "rgba(0,0,0,0.7)", color: "#fff", cursor: "pointer", fontSize: "12px",
-          }, onclick: () => { state.frSource = ""; state.frSourceKind = "gallery"; state.frSourceMeta = null; state.frConfirmedPick = ""; state.frChainPicks = []; persist(); renderLeft(); renderPrompts(); } }));
-        } else {
-          card.appendChild(el("div", { text: "no source clip", style: { color: C.muted, fontSize: "12px" } }));
-        }
-        srcKids.push(card);
-
-        const fileInp = el("input", { type: "file", accept: "video/*", style: { display: "none" } });
-        fileInp.addEventListener("change", async () => {
-          const f = fileInp.files[0]; fileInp.value = "";
-          if (!f) return;
-          try { showPopup("Uploading…", false); const name = await uploadMedia(f); setFrSource(name, "upload"); }
-          catch (e) { showPopup(e.message, true); }
-        });
-        const galBtn = button("🖼 From gallery", () => galleryOv?.showPicker((inputFilename, item) =>
-          setFrSource(inputFilename, "gallery", item)));
-        const upBtn = button("⬆ Upload", () => fileInp.click(), "default");
-        galBtn.style.flex = "1"; upBtn.style.flex = "1";
-        srcKids.push(el("div", { style: { display: "flex", gap: "8px" } }, [galBtn, upBtn]));
-        srcKids.push(fileInp);
-        srcKids.push(el("div", {
-          text: "Tracks the face per frame, crops it to fill a canvas, re-renders it through H3, "
-              + "then stitches it back onto the original frames.",
-          style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
-        leftPanel.appendChild(panel(srcKids));
-        // Prompt lives in the bottom strip now (renderFaceRefinePrompt), same spot every
-        // other mode's prompt uses — not here in the left panel.
-
-        // ── face selection ────────────────────────────────────────────────────
-        const isManualSelect = state.frSelect === "manual";
-        const faceKids = [
-          label("Face"),
-          row([
-            col([label("Select"), select(FR_SELECT_MODES.map(s => ({ value: s, label: s })),
-              state.frSelect || "largest_face", v => { state.frSelect = v; persist(); renderLeft(); })]),
-            col([label("Confidence"), numberField(state.frConfidence ?? 0.35, v => { state.frConfidence = Math.min(0.95, Math.max(0.05, v)); persist(); }, 0.05)]),
-          ]),
-          row([
-            col([checkboxRow("Cut detection", state.frCutDetection, v => { state.frCutDetection = v; persist(); })]),
-            col([checkboxRow("Identity tracking", state.frIdentityTrack !== false, v => { state.frIdentityTrack = v; persist(); })]),
-          ]),
-        ];
-        if (isManualSelect) {
-          const chainN = (state.frChainPicks || []).length;
-          const pickCount = chainN > 1 ? chainN : (String(state.frConfirmedPick || "").trim()
-            ? String(state.frConfirmedPick).split(",").length : 0);
-          const label_ = chainN > 1 ? `🎯 Pick Faces — ${chainN} pass chain (${state.frChainPicks.join("→")})`
-            : pickCount ? `🎯 Pick Faces — ${pickCount} shot(s) picked` : "🎯 Pick Faces";
-          const pickBtn = button(label_, () => openFacePickModal(), pickCount ? "default" : "primary");
-          pickBtn.style.width = "100%";
-          faceKids.push(pickBtn);
-          if (!pickCount) faceKids.push(el("div", { text: "⚠ Manual is selected but no face has been picked yet — click Pick Faces.",
-            style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
-        }
-        faceKids.push(el("div", { text: isManualSelect
-            ? "Manual: you choose the subject per shot in Pick Faces. A different source clip, detector, confidence or cut setting clears the pick."
-            : "Which face is the subject, chosen once per shot (or per clip if Cut detection is off). "
-              + "Identity tracking holds one person through a crowd once a face is locked on.",
-          style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
-        leftPanel.appendChild(panel(faceKids));
-
-        // ── Face LoRA (own list — e.g. a face-detail LoRA, never state.loras) ─────
-        const frLoraOpts = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
-        const frL = state.frLoras ||= [];
-        const frLoraWrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } });
-        function renderFrLoras() {
-          clear(frLoraWrap);
-          frL.forEach((l, i) => {
-            const off = l.enabled === false;
-            const card = el("div", { style: {
-              border: `1px solid ${off ? C.dim : C.border}`, borderRadius: "6px", padding: "6px",
-              display: "flex", flexDirection: "column", gap: "5px", opacity: off ? "0.55" : "1" } });
-            const head = el("div", { style: { display: "flex", alignItems: "center", gap: "5px" } });
-            const tog = el("button", { type: "button", text: off ? "OFF" : "ON", style: {
-              flexShrink: "0", cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "3px 9px",
-              borderRadius: "10px", border: "none", fontWeight: "700", background: off ? "#444" : BRAND, color: "#fff" },
-              onclick: () => { l.enabled = off; persist(); renderFrLoras(); } });
-            const strWrap = el("div", { style: { flexShrink: "0", width: "62px" } });
-            strWrap.appendChild(numberField(l.strength ?? 1.0, v => { l.strength = v; persist(); }, 0.05));
-            const del = el("button", { type: "button", text: "✕", title: "Remove", style: {
-              flexShrink: "0", cursor: "pointer", background: "transparent", color: C.err, border: "none", fontSize: "11px", padding: "2px 4px" },
-              onclick: () => { frL.splice(i, 1); persist(); renderFrLoras(); } });
-            head.append(tog, el("div", { style: { flex: "1" } }), strWrap, del);
-            const sel = loraSelect(frLoraOpts, l.name || "none", v => { l.name = v; persist(); });
-            card.append(head, sel.el);
-            frLoraWrap.appendChild(card);
-          });
-          const add = el("button", { type: "button", text: "+ Add LoRA", style: {
-            cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 10px", borderRadius: "6px",
-            background: C.bg2, color: C.text, border: `1px solid ${C.border}` },
-            onclick: () => { frL.push({ name: "none", strength: 1.0, enabled: true }); persist(); renderFrLoras(); } });
-          frLoraWrap.appendChild(add);
-          frLoraWrap.appendChild(el("div", { text: "Applied on top of the model this run uses (H3's own, or Face Refine's separate model if "
-              + "'use a separate model' is on) — e.g. a face-detail LoRA. Separate from the main H3 LoRA list.",
-            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
-        }
-        renderFrLoras();
-        leftPanel.appendChild(accordion("frlora", "Face LoRA",
-          frL.filter(l => l?.name && l.name !== "none" && l.enabled !== false).length
-            ? `${frL.filter(l => l?.name && l.name !== "none" && l.enabled !== false).length} on` : "OFF",
-          () => [frLoraWrap]));
-
-        // ── crop / canvas ─────────────────────────────────────────────────────
-        leftPanel.appendChild(panel([
-          label("Crop / Canvas"),
-          row([
-            col([label("Crop factor"), numberField(state.frCropFactor ?? 2.5, v => { state.frCropFactor = Math.min(8, Math.max(1.2, v)); persist(); }, 0.1)]),
-            col([label("Canvas mode"), select([
-              { value: "auto_capped_768", label: "Auto (capped 768)" },
-              { value: "auto_no_downscale", label: "Auto (no downscale)" },
-              { value: "manual", label: "Manual" },
-            ], state.frCanvasMode || "auto_capped_768", v => { state.frCanvasMode = v; persist(); renderLeft(); })]),
-          ]),
-          state.frCanvasMode === "manual" ? row([
-            col([label("Canvas width"), numberField(state.frCanvasWidth ?? 768, v => { state.frCanvasWidth = Math.round(v); persist(); }, 32)]),
-            col([label("Canvas height"), numberField(state.frCanvasHeight ?? 768, v => { state.frCanvasHeight = Math.round(v); persist(); }, 32)]),
-          ]) : null,
-        ].filter(Boolean)));
-
-        // ── denoise ────────────────────────────────────────────────────────────
-        // Face Refine's own Turbo switch — independent of whatever the main H3
-        // generation modes are set to (turning turbo on/off here never touches those).
-        // OFF: no turbo LoRA at all, Steps below is the real step count. ON: applies a
-        // saved preset's full accel recipe (turbo LoRA + its trained step count) — the
-        // Steps field is ignored while it's on, since a turbo LoRA's step count is not a
-        // preference (SPEC_MINIMAX_H3_FACE_REFINE.md §17-B/§18).
-        // Same choices as the main Turbo section: None / Turbo LoRA (Basic) / larryvrh / SLA, each with
-        // its own LoRA, strength and steps — kept in fr* keys so the main render's Turbo is untouched.
-        const frMode = state.frTurboMode || "none";
-        const frNote = (t) => el("div", { text: t, style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } });
-        const frTurboRow = [
-          label("Turbo"),
-          select(TURBO_MODES.map(t => ({ value: t.key, label: t.label })), frMode,
-            v => { state.frTurboMode = v; persist(); renderLeft(); }),
-        ];
-        const frNode = (TURBO_MODES.find(t => t.key === frMode) || {}).node;
-        if (frNode && ctx.availability && Object.keys(ctx.availability).length && !ctx.availability[frNode]) {
-          frTurboRow.push(el("div", { html: `⚠ <code>${frNode}</code> not installed — this option is skipped at run time.`,
-            style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
-        }
-        if (frMode === "pdd") {
-          frTurboRow.push(
-            label("Turbo LoRA"),
-            loraSelect(frLoraOpts, state.frPddFile || "none", v => { state.frPddFile = v; persist(); renderLeft(); }).el,
-            row([
-              col([label("steps"), numberField(Number(state.frPddNfe) || 8,
-                v => { state.frPddNfe = String(Math.max(1, Math.round(v))); persist(); renderLeft(); }, 1)]),
-              col([label("lora strength"), numberField(state.frPddLoraStrength ?? 1.0,
-                v => { state.frPddLoraStrength = v; persist(); }, 0.05)]),
-            ]));
-          if (!state.frPddFile || state.frPddFile === "none")
-            frTurboRow.push(el("div", { text: "⚠ No turbo LoRA set — turbo is skipped.", style: { fontSize: "10px", color: C.warn } }));
-        } else if (frMode === "larryvrh") {
-          frTurboRow.push(
-            label("Turbo LoRA"),
-            loraSelect(frLoraOpts, state.frTurboLora || "none", v => { state.frTurboLora = v; persist(); renderLeft(); }).el,
-            row([
-              col([label("strength"), numberField(state.frTurboLoraStrength ?? 1.0,
-                v => { state.frTurboLoraStrength = v; persist(); }, 0.05)]),
-              col([label("turbo steps"), numberField(state.frTurboSteps ?? 4,
-                v => { state.frTurboSteps = Math.max(1, Math.round(v)); persist(); renderLeft(); }, 1)]),
-            ]),
-            checkboxRow("Low VRAM turbo load", !!state.frTurboLoraLowVram, v => { state.frTurboLoraLowVram = v; persist(); }));
-          if (!state.frTurboLora || state.frTurboLora === "none")
-            frTurboRow.push(el("div", { text: "⚠ No turbo LoRA set — turbo is skipped.", style: { fontSize: "10px", color: C.warn } }));
-        } else if (frMode === "lightx2v") {
-          frTurboRow.push(
-            label("SLA turbo LoRA"),
-            loraSelect(frLoraOpts, state.frSlaTurboLora || "none", v => { state.frSlaTurboLora = v; persist(); renderLeft(); }).el,
-            row([
-              col([label("strength"), numberField(state.frSlaTurboStrength ?? 1.0,
-                v => { state.frSlaTurboStrength = v; persist(); }, 0.05)]),
-              col([label("steps"), numberField(state.frSlaTurboSteps ?? 6,
-                v => { state.frSlaTurboSteps = Math.max(1, Math.round(v)); persist(); renderLeft(); }, 1)]),
-            ]),
-            frNote("An ordinary LoRA distilled against the SLA kernel; H3 SLA Attention is applied with it."));
-          if (!state.frSlaTurboLora || state.frSlaTurboLora === "none")
-            frTurboRow.push(el("div", { text: "⚠ No SLA turbo LoRA set — turbo is skipped.", style: { fontSize: "10px", color: C.warn } }));
-        }
-        const frTurboSteps = frMode === "pdd" ? Number(state.frPddNfe) || 8
-          : frMode === "larryvrh" ? state.frTurboSteps ?? 4 : frMode === "lightx2v" ? state.frSlaTurboSteps ?? 6 : null;
-        leftPanel.appendChild(panel([
-          label("Denoise"),
-          row([col(frTurboRow)]),
-          row([
-            col([label(frMode !== "none" ? "Steps (set by Turbo)" : "Steps"),
-              (() => {
-                const nf = numberField(frMode !== "none" ? frTurboSteps : (state.frSteps ?? 8),
-                  v => { state.frSteps = Math.max(1, Math.round(v)); persist(); }, 1);
-                if (frMode !== "none") { nf.disabled = true; nf.style.opacity = "0.5"; }
-                return nf;
-              })()]),
-            col([label("Base denoise"), numberField(state.frDenoise ?? 0.40, v => { state.frDenoise = Math.min(1, Math.max(0.01, v)); persist(); }, 0.01)]),
-          ]),
-          row([
-            col([label("Small-face ×"), numberField(state.frDenoiseMulSmall ?? 1.0, v => { state.frDenoiseMulSmall = Math.min(1, Math.max(0, v)); persist(); }, 0.05)]),
-            col([label("Large-face ×"), numberField(state.frDenoiseMulLarge ?? 0.35, v => { state.frDenoiseMulLarge = Math.min(1, Math.max(0, v)); persist(); }, 0.05)]),
-          ]),
-          el("div", { text: "Base denoise and the two multipliers are tuned as a set — the default 0.40 base is "
-              + "gentled down per frame by these (small face = full strength, large face = ×0.35). "
-              + "Change one, expect to retune the others.",
-            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-        ]));
-
-        // ── stitch ─────────────────────────────────────────────────────────────
-        leftPanel.appendChild(panel([
-          label("Stitch"),
-          row([
-            col([label("Paste region"), select([
-              { value: "face_only", label: "Face only" },
-              { value: "face_ellipse", label: "Face (ellipse)" },
-              { value: "full_crop", label: "Full crop" },
-            ], state.frPasteRegion || "face_only", v => { state.frPasteRegion = v; persist(); })]),
-            col([label("Feather"), numberField(state.frFeather ?? 6, v => { state.frFeather = Math.max(0, Math.round(v)); persist(); }, 2)]),
-          ]),
-          row([
-            col([label("Colour match"), numberField(state.frColourMatch ?? 1.0, v => { state.frColourMatch = Math.min(1, Math.max(0, v)); persist(); }, 0.05)]),
-            col([label("Blend"), numberField(state.frBlend ?? 1.0, v => { state.frBlend = Math.min(1, Math.max(0, v)); persist(); }, 0.05)]),
-          ]),
-        ]));
-
-        useBottomWrap(seedGenWrap);
-        leftPanel.scrollTop = prevScroll;
       }
 
       // ── Postprocess mode left panel ──────────────────────────────────────────
@@ -3544,7 +1791,6 @@ app.registerExtension({
       ppGenBtn.style.cssText += "width:100%;padding:11px;font-size:13px;";
       ppGenBtn.addEventListener("click", () => runPostprocess({ full: true }));
       const ppStopBtn = button("■ Stop", async () => {
-        ppStopRequested = true;
         await interrupt();
         setStatus("Stopping…");
       });
@@ -3559,13 +1805,12 @@ app.registerExtension({
       ppPreviewWrap.appendChild(row([ppGenBtn, ppStopBtn]));
 
       let ppRunning = false;
-      let ppStopRequested = false;
       async function runPostprocess({ full = true } = {}) {
         if (ppRunning) return;
         if (!state.ppSource) { showPopup("Pick a source clip first.", true); return; }
         const steps = ["ppDeblurOn", "ppDenoiseOn", "ppUpscaleOn", "ppSkinRetouchOn", "ppGrainOn", "ppInterpolateOn", "ppResizeOn"];
         if (!steps.some(k => state[k])) { showPopup("Enable at least one effect (A-F) first.", true); return; }
-        ppRunning = true; ppStopRequested = false;
+        ppRunning = true;
         const busyBtn = full ? ppGenBtn : ppPreviewBtn;
         ppGenBtn.disabled = true; ppPreviewBtn.disabled = true;
         busyBtn.textContent = "⏳ Running…"; busyBtn.style.opacity = "0.6";
@@ -3697,575 +1942,11 @@ app.registerExtension({
           showPopup(e?.message || String(e), true);
         } finally {
           hideBusyBanner();
-          ppRunning = false; ppStopRequested = false;
+          ppRunning = false;
           ppGenBtn.disabled = false; ppGenBtn.textContent = "▶ Generate"; ppGenBtn.style.opacity = "1";
           ppPreviewBtn.disabled = false; ppPreviewBtn.textContent = "Preview"; ppPreviewBtn.style.opacity = "1";
           try { await freeMemory(); } catch {}
         }
-      }
-
-      // Image Generator's "🔍 Prompt Edit" — the same merged single-screen popup
-      // (image/URL analysis, 3-way LLM backend, Enhance/Write/Apply) Krea2/Z-Image/Klein/
-      // Qwen2511/SDXL/Anima all share, reused here rather than rebuilt. t2i and ref2i
-      // share one prompt (state.imgPrompt); Character Sheet has its own system-prompt
-      // flow (sysPromptSaveBtn/Reset) and never opens this. `imgInlineTA` tracks whichever
-      // <textarea> renderImageGenPrompt() most recently built, since (unlike Krea2's
-      // mount-once box) it's rebuilt on every renderPrompts() call.
-      let imgInlineTA = null;
-      const imgPromptExpandEl = el("div", { style: {
-        position: "absolute", inset: "0", zIndex: "9997", background: "rgba(11,11,11,0.97)",
-        borderRadius: "inherit", display: "none", flexDirection: "column", padding: "14px", gap: "8px", boxSizing: "border-box",
-      }});
-      const imgPxHdr = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" } });
-      imgPxHdr.appendChild(el("div", { text: "🔍 Prompt — Full Screen Edit", style: { color: "#fff", fontSize: "13px", fontWeight: "700", flex: "1" } }));
-      const imgPxTA = el("textarea", { style: { flex: "1", background: C.bg2, color: C.text, border: `1px solid ${BRAND}`,
-        borderRadius: "6px", padding: "10px", fontSize: "13px", fontFamily: "inherit", resize: "none", outline: "none" } });
-      const imgPxApply = button("✓ Apply", () => {
-        state.imgPrompt = imgPxTA.value;
-        if (imgInlineTA) imgInlineTA.value = imgPxTA.value;
-        persist();
-        imgPromptExpandEl.style.display = "none";
-      }, "primary");
-      const imgPxClose = button("✕ Close", () => { imgPromptExpandEl.style.display = "none"; }, "danger");
-      imgPxHdr.append(imgPxApply, imgPxClose);
-      imgPromptExpandEl.append(imgPxHdr, imgPxTA);
-      const imgPromptExpandOv = {
-        show() { imgPromptExpandEl._tj_llm_onshow?.(); imgPromptExpandEl.style.display = "flex"; setTimeout(() => imgPxTA.focus(), 50); },
-        hide() { imgPromptExpandEl.style.display = "none"; },
-      };
-      attachLLMPanel({
-        promptExpandEl: imgPromptExpandEl, pxTA: imgPxTA,
-        getModePrompt: () => state.imgPrompt || "", setModePrompt: (_mode, val) => { state.imgPrompt = val; },
-        state, persist, updateCount: () => {}, getPromptTA: () => imgInlineTA,
-        openSettings: () => ctx.openImageLlmSettings?.() ?? settingsOv?.show(),
-      });
-
-      // ── Image Generator mode left panel ──────────────────────────────────────
-      // T2I / Reference to Image (Character Sheet ships separately) — not a new model,
-      // the same H3 fl2va/ref2va pipeline run at a short fixed length and read back as a
-      // still (see buildImageGenGraph's own comment). Keeps Seed/Mode + Generate/Stop
-      // (unlike Postprocess) and adds a "👁 Preview" button next to Generate for a cheap
-      // look at the preview resolution before spending the final-resolution run.
-      function renderImageGenLeft() {
-        const prevScroll = leftPanel.scrollTop;
-        clear(leftPanel);
-        const subMode = IMAGE_GEN_MODES.some(m => m.key === state.imageGenMode) ? state.imageGenMode : "t2i";
-        if (state.imageGenMode !== subMode) { state.imageGenMode = subMode; persist(); }
-
-        // ── sub-mode pills ───────────────────────────────────────────────────
-        const pillRow = el("div", { style: { display: "flex", gap: "4px", flexWrap: "wrap" } });
-        IMAGE_GEN_MODES.forEach(m => {
-          const active = m.key === subMode;
-          const b = el("button", { type: "button", text: m.label, title: m.hint, style: {
-            cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "6px 8px", flex: "1",
-            borderRadius: "6px", fontWeight: active ? "700" : "400",
-            background: active ? BRAND : C.bg2, color: active ? "#fff" : C.text,
-            border: `1px solid ${active ? BRAND : C.border}`,
-          }});
-          b.addEventListener("click", () => { state.imageGenMode = m.key; persist(); renderLeft(); renderPrompts(); restoreModeResult(); });
-          pillRow.appendChild(b);
-        });
-        leftPanel.appendChild(panel([pillRow]));
-
-        const ready = subMode === "charsheet" ? imageGenSubModeReady("ref2i", state) : imageGenSubModeReady(subMode, state);
-        if (!ready) {
-          leftPanel.appendChild(panel([el("div", {
-            html: `⚙ <b>${IMAGE_GEN_MODES.find(m => m.key === subMode).label}</b> needs its model set first — `
-              + `open <b>⚙ Settings → Models</b> and set the ${subMode === "t2i" ? "First/Last" : "Reference"} UNET, text encoder and video VAE.`,
-            style: { fontSize: "12px", lineHeight: "1.6" } })]));
-        }
-
-        // ── reference images (ref2i / charsheet only) — same multi-slot grid as the
-        // video Reference to Video mode's own "Images (N/9)" (mountImagePanel in
-        // ui_images_ltx25.js), images only (no ref videos/audios for a still) ──────
-        if (subMode === "ref2i" || subMode === "charsheet") {
-          const refs = (state.imgRefImages || []).slice(0, 9);
-          const grid = el("div", { style: { display: "flex", flexWrap: "wrap", gap: "5px", justifyContent: "center" } });
-          for (let i = 0; i < Math.min(9, refs.length + 1); i++) {
-            const slot = imageSlot(refs[i] ? `<Picture ${i + 1}>` : "+ add\nreference", refs[i] || null,
-              name => {
-                const list = (state.imgRefImages || []).slice();
-                const mpList = (state.imgRefImagesMp || []).slice();
-                if (name) { list[i] = name; } else { list.splice(i, 1); mpList.splice(i, 1); }
-                state.imgRefImages = list.filter(Boolean).slice(0, 9);
-                state.imgRefImagesMp = mpList.slice(0, 9);
-                persist(); renderLeft();
-              }, { box: 92 });
-            const cell = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px", alignItems: "center" } }, [slot.el]);
-            if (refs[i]) {
-              const mpIn = numberField(state.imgRefImagesMp?.[i] ?? 1.0, v => {
-                const mpList = (state.imgRefImagesMp || []).slice();
-                mpList[i] = Math.max(0, v);
-                state.imgRefImagesMp = mpList;
-                persist();
-              }, 0.1);
-              mpIn.style.width = "60px"; mpIn.title = "Megapixels sent to the model (0 = send as uploaded)";
-              cell.appendChild(mpIn);
-              cell.draggable = true;
-              cell.addEventListener("dragstart", (e) => {
-                e.dataTransfer.effectAllowed = "move";
-                e.dataTransfer.setData("text/plain", String(i));
-                cell.style.opacity = "0.4";
-              });
-              cell.addEventListener("dragend", () => { cell.style.opacity = "1"; });
-              cell.addEventListener("dragover", (e) => {
-                e.preventDefault(); e.dataTransfer.dropEffect = "move";
-                slot.el.style.outline = `2px solid ${BRAND}`;
-              });
-              cell.addEventListener("dragleave", () => { slot.el.style.outline = "none"; });
-              cell.addEventListener("drop", (e) => {
-                e.preventDefault();
-                slot.el.style.outline = "none";
-                const from = Number(e.dataTransfer.getData("text/plain"));
-                if (Number.isNaN(from) || from === i) return;
-                const list = (state.imgRefImages || []).slice();
-                const mpList = (state.imgRefImagesMp || []).slice();
-                const [movedImg] = list.splice(from, 1);
-                list.splice(i, 0, movedImg);
-                const [movedMp] = mpList.splice(from, 1);
-                mpList.splice(i, 0, movedMp);
-                state.imgRefImages = list.slice(0, 9);
-                state.imgRefImagesMp = mpList.slice(0, 9);
-                persist(); renderLeft();
-              });
-            }
-            grid.appendChild(cell);
-          }
-          leftPanel.appendChild(panel([label(`Reference Images (${refs.length}/9)`), grid,
-            el("div", { text: "MP = megapixels sent to the model for that image (0 = send as uploaded, no resize). Drag to reorder — the number is the <Picture N> token position.",
-              style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-            row([col([label("Reference size"), select(
-              [{ value: "match", label: "match — scale to output area (faster)" },
-               { value: "max",   label: "max — 2048px short edge (best identity, slower)" }],
-              state.imgRefImageSize || "max", v => { state.imgRefImageSize = v; persist(); })])]),
-          ]));
-          // Also: pull a previously-generated H3 image straight in as a new reference —
-          // opens the dedicated image gallery's own picker (a second entry point beside
-          // each slot's own generic gallery/upload buttons, which already cover the
-          // rest of the app's galleries).
-          const imgGalBtn = button("🎨 Add from H3 Images", () => imageGalleryOv?.showPicker((inputFilename) => {
-            const list = (state.imgRefImages || []).slice();
-            if (list.length >= 9) { showPopup("9 reference images max.", true); return; }
-            list.push(inputFilename);
-            state.imgRefImages = list;
-            persist(); renderLeft();
-          }));
-          imgGalBtn.style.width = "100%";
-          leftPanel.appendChild(panel([imgGalBtn]));
-        }
-
-        // ── resolution — one aspect ratio, separate preview/final megapixels ─
-        leftPanel.appendChild(panel([
-          label("Resolution"),
-          row([col([label("Aspect"), select(ASPECTS.map(a => ({ value: a.label, label: a.label })),
-            state.imgAspect || "2:3 Portrait", v => { state.imgAspect = v; persist(); })])]),
-          row([
-            col([label("Preview MP"), numberField(state.imgPreviewMp ?? 0.2,
-              v => { state.imgPreviewMp = Math.max(0.05, v); persist(); }, 0.05)]),
-            col([label("Final MP"), numberField(state.imgFinalMp ?? 1.0,
-              v => { state.imgFinalMp = Math.max(0.1, v); persist(); }, 0.1)]),
-          ]),
-          (subMode === "t2i" || subMode === "ref2i")
-            ? checkboxRow("Save Preview to Gallery", !!state.imgPreviewSaveToGallery,
-                v => { state.imgPreviewSaveToGallery = v; persist(); })
-            : null,
-        ]));
-
-        // ── LoRA — same dynamic Add-LoRA accordion as the video modes ───────────
-        const imgLoraOn = (state.imgLoras || []).filter(l => l && l.enabled !== false && l.name && l.name !== "none").length;
-        leftPanel.appendChild(accordion("imgLora", "LoRA", imgLoraOn ? `${imgLoraOn} active` : "None",
-          () => [mountImgLoraPanel()]));
-
-        // ── Latent — T2I/Ref2I only. Basic = the 8-frame clip latent read back as a
-        // still (preview pass, then latent upscale + 2nd pass). Fizgig = the true
-        // one-frame latent + its own decode (ComfyUI-Fizgig-H3-Still), one pass at the
-        // resolution being rendered.
-        if (subMode === "t2i" || subMode === "ref2i") {
-          const fizgigOn = state.imgLatentMode === "fizgig";
-          leftPanel.appendChild(accordion("imgLatent", "Latent", fizgigOn ? "Fizgig" : "Basic",
-            () => [
-              row([col([label("Latent"), select(
-                [{ value: "basic", label: "Use Basic Latent" }, { value: "fizgig", label: "Use Fizgig Latent" }],
-                fizgigOn ? "fizgig" : "basic",
-                v => { state.imgLatentMode = v === "fizgig" ? "fizgig" : "basic"; persist(); renderLeft(); })])]),
-              el("div", {
-                text: fizgigOn
-                  ? "Fizgig: a true single-frame latent and a decode that avoids the banding of the stock VAE Decode. One pass at the resolution being rendered — Preview renders at the Preview MP size, Generate at Final MP (no latent upscale or 2nd pass, so 2nd Pass Steps is ignored). Sharpest from about 3 MP up. Needs the ComfyUI-Fizgig-H3-Still pack."
-                  : "Basic: the 8-frame clip latent read back as a still — a cheap preview pass, then a latent upscale and a 2nd pass at the final resolution.",
-                style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-            ]));
-        }
-
-        // ── Turbo — T2I/Ref2I only (Character Sheet's render shares the main pipeline's
-        // own turbo stack via effectiveTurbo, unrelated to this). Off by default: with no
-        // turbo LoRA this pipeline runs as a plain, non-accelerated render at the chosen
-        // step count. Two separate LoRA slots (t2i/ref2i) since a turbo LoRA is trained
-        // against one base model, same reasoning as the main pipeline's own turboLora /
-        // turboLoraReference split.
-        if (subMode === "t2i" || subMode === "ref2i") {
-          const turboKey = subMode === "ref2i" ? "imgTurboLoraRef2i" : "imgTurboLoraT2i";
-          const turboOn = !!state.imgTurboOn;
-          leftPanel.appendChild(accordion("imgTurbo", "Turbo",
-            turboOn ? `${state[turboKey] && state[turboKey] !== "none" ? state[turboKey] : "no LoRA set"}` : "Off",
-            () => {
-              const loraOpts = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
-              const kids = [
-                checkboxRow("Use Turbo LoRA", turboOn, v => {
-                  state.imgTurboOn = v; rememberLora({ img_turbo_on: v }); renderLeft();
-                }),
-              ];
-              if (turboOn) {
-                kids.push(row([col([label(`Turbo LoRA (${subMode === "ref2i" ? "Reference" : "Text/First-Last"})`),
-                  loraSelect(loraOpts, state[turboKey] || "none", v => {
-                    state[turboKey] = v;
-                    rememberLora(subMode === "ref2i" ? { img_turbo_lora_ref2i: v } : { img_turbo_lora_t2i: v });
-                  }).el])]));
-                kids.push(row([col([label("strength"), numberField(state.imgTurboLoraStrength ?? 1.0,
-                  v => { state.imgTurboLoraStrength = v; rememberLora({ img_turbo_lora_strength: v }); }, 0.05)])]));
-              }
-              kids.push(row([
-                col([label("Steps"), numberField(state.imgSteps ?? 20,
-                  v => { state.imgSteps = Math.max(1, Math.round(v)); persist(); }, 1)]),
-                col([label("2nd Pass Steps"), select(
-                  [3, 4, 5].map(n => ({ value: String(n), label: `${n} step` })),
-                  String(state.imgSecondPassSteps ?? 3),
-                  v => { state.imgSecondPassSteps = Number(v); persist(); })]),
-              ]));
-              kids.push(el("div", {
-                text: "Steps sets the first (preview) pass only — 20+ for a plain render (no turbo LoRA); a turbo LoRA is trained for far fewer, typically 3/4/8 depending on the LoRA. 2nd Pass Steps picks which fixed sigma schedule the final-resolution pass uses — independent of Steps and Turbo.",
-                style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
-              return kids;
-            }));
-        }
-
-        if (subMode === "charsheet") {
-          // Subject name — folds into the saved filename, matching the reference
-          // workflow's own "Subject Name" + Finalize concat.
-          leftPanel.appendChild(panel([
-            label("Subject Name"),
-            (() => {
-              const inp = el("input", { type: "text", value: state.charSheetSubjectName || "Character", style: {
-                width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
-                border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px 8px", fontSize: "12px", fontFamily: "inherit",
-              }});
-              inp.addEventListener("input", () => { state.charSheetSubjectName = inp.value.trim() || "Character"; persist(); });
-              return inp;
-            })(),
-          ]));
-
-          // Post-finish on the raw 124-frame render — same tools as everywhere else in
-          // this app (Deblur + native RTX VSR), plus the reference workflow's own
-          // two-pass "Use Latent Upscale" option and per-frame saving. Install-level
-          // defaults via rememberLora, same as the Turbo panel above — these settings
-          // tend to be a per-user habit ("I always deblur + latent-upscale my sheets"),
-          // not something that should reset to Off on every fresh node.
-          const rtxOn = !!state.charSheetRtxVsr;
-          leftPanel.appendChild(panel([
-            label("Post finish"),
-            row([col([label("Deblur"), select(
-              ["none", "LOW", "MEDIUM", "HIGH", "ULTRA"].map(v => ({ value: v, label: v === "none" ? "Off" : v })),
-              state.charSheetDeblur || "none", v => { state.charSheetDeblur = v; rememberLora({ charsheet_deblur: v }); })])]),
-            checkboxRow("RTX VSR (2× scale, ULTRA quality)", rtxOn,
-              v => { state.charSheetRtxVsr = v; rememberLora({ charsheet_rtx_vsr: v }); renderLeft(); }),
-            !rtxOn ? null : checkboxRow("↳ For Supersampling (resize back down to render size)", !!state.charSheetRtxSupersample,
-              v => { state.charSheetRtxSupersample = v; rememberLora({ charsheet_rtx_supersample: v }); }),
-            checkboxRow("Use Latent Upscale (cheap first pass, then upscale)", !!state.charSheetUseLatentUpscale,
-              v => { state.charSheetUseLatentUpscale = v; rememberLora({ charsheet_use_latent_upscale: v }); renderLeft(); }),
-            !state.charSheetUseLatentUpscale ? null : row([
-              col([label("First Pass MP"), numberField(
-                state.charSheetFirstPassRatio ?? 0.36,
-                v => { state.charSheetFirstPassRatio = Math.max(0.05, v); rememberLora({ charsheet_first_pass_ratio: state.charSheetFirstPassRatio }); }, 0.02)]),
-              col([label("2nd Pass Steps"), select(
-                [3, 4, 5].map(n => ({ value: String(n), label: `${n} step` })),
-                String(state.charSheetSecondPassSteps ?? 3),
-                v => { state.charSheetSecondPassSteps = Number(v); rememberLora({ charsheet_second_pass_steps: Number(v) }); })]),
-            ]),
-            checkboxRow("Save Each Frame separately", !!state.charSheetSaveEachFrames,
-              v => { state.charSheetSaveEachFrames = v; rememberLora({ charsheet_save_each_frames: v }); }),
-            row([col([label("Sheet Max Size (px)"), numberField(
-              state.charSheetMaxSize ?? 2048,
-              v => { state.charSheetMaxSize = Math.max(256, Math.round(v)); rememberLora({ charsheet_max_size: state.charSheetMaxSize }); }, 64)])]),
-          ]));
-
-          // 8 frame indices, directly editable — same fields the reference workflow
-          // exposed as "indexes"/"indexes_1".."indexes_7" — an alternative to scrubbing
-          // through 🖼 View & Edit Sheet below for a quick numeric tweak.
-          if (!Array.isArray(state.charSheetFrameIndices) || state.charSheetFrameIndices.length !== 8) {
-            state.charSheetFrameIndices = CHARSHEET_DEFAULT_FRAME_INDICES.slice();
-          }
-          leftPanel.appendChild(accordion("charsheetFrames", "Frame Indices (8 shots)",
-            state.charSheetFrameIndices.join(","), () => {
-              const rows = [];
-              for (let i = 0; i < 8; i += 2) {
-                rows.push(row([
-                  col([label(`Shot ${i + 1}`), numberField(state.charSheetFrameIndices[i],
-                    v => { state.charSheetFrameIndices[i] = Math.max(0, Math.min(CHARSHEET_FRAMES - 1, Math.round(v))); persist(); }, 1)]),
-                  col([label(`Shot ${i + 2}`), numberField(state.charSheetFrameIndices[i + 1],
-                    v => { state.charSheetFrameIndices[i + 1] = Math.max(0, Math.min(CHARSHEET_FRAMES - 1, Math.round(v))); persist(); }, 1)]),
-                ]));
-              }
-              rows.push(state.charSheetVideoFile
-                ? button("↻ Rebuild sheet with these indices", async () => {
-                    try { await rebuildCharacterSheetGrid(); showPopup("Sheet rebuilt.", false); }
-                    catch (e) { showPopup(e?.message || String(e), true); }
-                  })
-                : el("div", { text: "Render the sheet once first — these apply on rebuild.", style: { fontSize: "10px", color: C.muted } }));
-              return rows;
-            }));
-
-          if (state.charSheetVideoFile) {
-            const editBtn2 = button("🖼 View & Edit Sheet", () => openCharSheetEditor());
-            editBtn2.style.width = "100%";
-            leftPanel.appendChild(panel([editBtn2]));
-          }
-        }
-
-        useBottomWrap(seedGenWrap);
-        imgPreviewBtn.style.display = (subMode === "t2i" || subMode === "ref2i") ? "" : "none";
-        leftPanel.scrollTop = prevScroll;
-      }
-
-      async function runImageGen({ final = true } = {}) {
-        if (running) return;
-        const subMode = state.imageGenMode === "ref2i" ? "ref2i" : "t2i";
-        if (subMode === "ref2i" && !(state.imgRefImages || []).filter(Boolean).length) { showPopup("Pick at least one reference image first.", true); return; }
-        running = true;
-        const busyBtn = final ? genBtn : imgPreviewBtn;
-        genBtn.disabled = true; imgPreviewBtn.disabled = true;
-        const genLabel = genBtn.textContent, previewLabel = imgPreviewBtn.textContent;
-        busyBtn.textContent = "⏳ Running…";
-        setStatus("Image Generator running…");
-        showBusyBanner(final ? "이미지를 생성하는 중입니다. 잠시 기다려주세요."
-          : "미리보기 처리중입니다. 잠시 기다려주세요.");
-        try {
-          if (!ctx.availability || !Object.keys(ctx.availability).length) {
-            const av = await getNodeAvailability();
-            ctx.availability = av.available || {}; ctx.availabilityInfo = av;
-          }
-          const previewRes = resolveResolution(state.imgAspect || "2:3 Portrait", state.imgPreviewMp ?? 0.2);
-          const finalRes = resolveResolution(state.imgAspect || "2:3 Portrait", state.imgFinalMp ?? 1.0);
-          const seed = state.seedMode === "fixed" ? (state.seed ?? 0) : randomSeed();
-          if (state.seedMode !== "fixed") { state.seed = seed; persist(); seedInput.value = String(seed); }
-          const turboKey = subMode === "ref2i" ? "imgTurboLoraRef2i" : "imgTurboLoraT2i";
-          const built = buildImageGenGraph(state, ctx.availability || {}, {
-            subMode, final,
-            refImages: subMode === "ref2i" ? state.imgRefImages : null,
-            refImageSize: state.imgRefImageSize || "max",
-            prompt: state.imgPrompt || "", seed, previewRes, finalRes,
-            filenamePrefix: `${state.imgSaveSubfolder || state.saveSubfolder || SUBFOLDER}/${subMode}_${final ? "final" : "preview"}`,
-            steps: state.imgSteps ?? 20, secondPassSteps: state.imgSecondPassSteps ?? 3,
-            turboOn: !!state.imgTurboOn, turboLora: state[turboKey], turboLoraStrength: state.imgTurboLoraStrength ?? 1.0,
-            savePreview: !!state.imgPreviewSaveToGallery,
-            latentMode: state.imgLatentMode,
-          });
-          const res = await queuePrompt(built.graph, {
-            onProgress: (v, m) => setStatus(`Image Generator — ${Math.round((v / (m || 1)) * 100)}%`),
-          });
-          const o = res.byNode[built.saveNode]?.images?.[0];
-          if (!o) throw new Error("No output produced.");
-          // A preview that wasn't opted into the gallery comes back as a PreviewImage
-          // output (type "temp"), not SaveImage's "output" — /view needs the right type
-          // or it 404s. &t=Date.now() busts the browser cache too — PreviewImage's own
-          // counter can repeat the same filename across separate runs.
-          const url = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=${encodeURIComponent(o.type || "output")}&t=${Date.now()}`;
-          showResultImage(url, { final });
-          if (final) {
-            // Everything the gallery's own "↩ Reuse Setting" needs to restore this exact
-            // run into the panel — same idea as the main clip's own meta, scoped to what
-            // Image Generator actually has (no accelerator/turbo stack of its own).
-            await saveMeta(o.filename, o.subfolder || (state.imgSaveSubfolder || state.saveSubfolder || SUBFOLDER), {
-              created: Date.now(), prompt: state.imgPrompt || state.charSheetPrompt || "",
-              w: finalRes.width, h: finalRes.height,
-              imgAspect: state.imgAspect || "2:3 Portrait",
-              imgPreviewMp: state.imgPreviewMp ?? 0.2, imgFinalMp: state.imgFinalMp ?? 1.0,
-              imgLoras: state.imgLoras || [], subMode,
-              refImages: subMode === "ref2i" ? (state.imgRefImages || []) : [],
-              refImageSize: state.imgRefImageSize || "max", seed,
-              imgSteps: state.imgSteps ?? 20, imgSecondPassSteps: state.imgSecondPassSteps ?? 3,
-              imgLatentMode: state.imgLatentMode === "fizgig" ? "fizgig" : "basic",
-              imgTurboOn: !!state.imgTurboOn,
-              imgTurboLora: state.imgTurboOn ? (state[turboKey] || null) : null,
-              imgTurboLoraStrength: state.imgTurboLoraStrength ?? 1.0,
-            }).catch(() => {});
-          }
-          setStatus(`✓ Image Generator done${final ? "" : " (preview)"}.`);
-          showPopup(final ? "Image finished — saved to output." : "Preview ready.", false);
-        } catch (e) {
-          setStatus(`Error: ${e?.message || e}`);
-          showPopup(e?.message || String(e), true);
-        } finally {
-          running = false;
-          genBtn.disabled = false; genBtn.textContent = genLabel || "▶ Generate";
-          imgPreviewBtn.disabled = false; imgPreviewBtn.textContent = previewLabel || "👁 Preview";
-          hideBusyBanner();
-          try { await freeMemory(); } catch {}
-        }
-      }
-
-      async function runCharacterSheet() {
-        if (running) return;
-        const refImages = (state.imgRefImages || []).filter(Boolean);
-        if (!refImages.length) { showPopup("Pick at least one reference image first.", true); return; }
-        running = true;
-        genBtn.disabled = true;
-        const genLabel = genBtn.textContent;
-        genBtn.textContent = "⏳ Rendering…";
-        setStatus(`Character Sheet — rendering ${CHARSHEET_FRAMES} frames…`);
-        try {
-          if (!ctx.availability || !Object.keys(ctx.availability).length) {
-            const av = await getNodeAvailability();
-            ctx.availability = av.available || {}; ctx.availabilityInfo = av;
-          }
-          const finalRes = resolveResolution(state.imgAspect || "2:3 Portrait", state.imgFinalMp ?? 1.0);
-          const firstPassRes = state.charSheetUseLatentUpscale
-            ? resolveResolution(state.imgAspect || "2:3 Portrait", state.charSheetFirstPassRatio ?? 0.36) : null;
-          const seed = state.seedMode === "fixed" ? (state.seed ?? 0) : randomSeed();
-          if (state.seedMode !== "fixed") { state.seed = seed; persist(); seedInput.value = String(seed); }
-          const subjectStem = (state.charSheetSubjectName || "Character").replace(/[^\w-]+/g, "_");
-          const built = buildCharacterSheetVideoGraph(state, ctx.availability || {}, {
-            refImages, refImageSize: state.imgRefImageSize || "max",
-            prompt: state.charSheetPrompt || CHARSHEET_PROMPT_TEMPLATE,
-            deblur: state.charSheetDeblur || "none",
-            rtx: state.charSheetRtxVsr ? { rtxSizeMode: "scale", rtxScale: 2.0, rtxQuality: "ULTRA" } : null,
-            rtxSupersample: !!state.charSheetRtxSupersample,
-            useLatentUpscale: !!state.charSheetUseLatentUpscale, firstPassRes,
-            secondPassSteps: state.charSheetSecondPassSteps ?? 3,
-            width: finalRes.width, height: finalRes.height, seed,
-            filenamePrefix: `${state.sheetVideoSaveSubfolder || state.imgSaveSubfolder || state.saveSubfolder || SUBFOLDER}/${subjectStem}_${Date.now()}`,
-          });
-          const res = await queuePrompt(built.graph, {
-            onProgress: (v, m) => setStatus(`Character Sheet — ${Math.round((v / (m || 1)) * 100)}%`),
-          });
-          const o = res.byNode[built.saveNode]?.images?.[0] || res.byNode[built.saveNode]?.gifs?.[0];
-          if (!o) throw new Error("No output produced.");
-          setStatus("Character Sheet — preparing for frame picking…");
-          const videoInputFile = await copyOutputToInput(o.filename, o.subfolder || "", "output");
-          state.charSheetVideoFile = videoInputFile;
-          state.charSheetVideoOutput = { filename: o.filename, subfolder: o.subfolder || "" };
-          state.charSheetRefImage = refImages[0];
-          if (!Array.isArray(state.charSheetFrameIndices) || state.charSheetFrameIndices.length !== 8) {
-            state.charSheetFrameIndices = CHARSHEET_DEFAULT_FRAME_INDICES.slice();
-          }
-          state.charSheetCellW = finalRes.width; state.charSheetCellH = finalRes.height;
-          persist();
-          setStatus("Character Sheet — assembling the sheet…");
-          await rebuildCharacterSheetGrid();
-          setStatus("✓ Character Sheet done.");
-          showPopup("Character Sheet finished — pick 🖼 View & Edit Sheet to swap any shot.", false);
-          renderLeft();
-        } catch (e) {
-          setStatus(`Error: ${e?.message || e}`);
-          showPopup(e?.message || String(e), true);
-        } finally {
-          running = false;
-          genBtn.disabled = false; genBtn.textContent = genLabel || "▶ Generate";
-          try { await freeMemory(); } catch {}
-        }
-      }
-
-      // Re-assembles the sheet image from the ALREADY-RENDERED video + whatever
-      // state.charSheetFrameIndices currently holds — cheap, no H3 model touched. Used
-      // both right after the render and every time the editor swaps one shot.
-      async function rebuildCharacterSheetGrid() {
-        const subjectStem = (state.charSheetSubjectName || "Character").replace(/[^\w-]+/g, "_");
-        const folder = state.imgSaveSubfolder || state.saveSubfolder || SUBFOLDER;
-        const built = buildCharacterSheetGridGraph({
-          videoFile: state.charSheetVideoFile, refImage: state.charSheetRefImage,
-          frameIndices: state.charSheetFrameIndices, cellWidth: state.charSheetCellW, cellHeight: state.charSheetCellH,
-          maxDimension: state.charSheetMaxSize ?? 2048,
-          saveEachFrames: !!state.charSheetSaveEachFrames,
-          framesFilenamePrefix: `${folder}/${subjectStem}_frames`,
-          filenamePrefix: `${folder}/${subjectStem}_sheet_${Date.now()}`,
-        }, ctx.availability || {});
-        const res = await queuePrompt(built.graph, {});
-        const o = res.byNode[built.saveNode]?.images?.[0];
-        if (!o) throw new Error("No sheet output produced.");
-        const url = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=output&t=${Date.now()}`;
-        showResultImage(url, { final: true });
-        await saveMeta(o.filename, o.subfolder || (state.imgSaveSubfolder || state.saveSubfolder || SUBFOLDER), {
-          created: Date.now(), prompt: state.charSheetPrompt || "", subMode: "charsheet",
-          frameIndices: state.charSheetFrameIndices, sheetSource: state.charSheetVideoOutput,
-        }).catch(() => {});
-        return { filename: o.filename, subfolder: o.subfolder || "" };
-      }
-
-      // "🖼 View & Edit Sheet" — scrub the raw render to pick a different frame for any
-      // of the 8 shots, then rebuild just the (cheap) grid. User's own flow: "교체 수정할
-      // 이미지 선택 -> 배치 이미지에서 확인후 교체 -> 최종 시트 이미지 완성."
-      function openCharSheetEditor() {
-        let armedShot = null;
-        const sheetImg = el("img", { src: lastResultURL || "", style: {
-          width: "100%", maxHeight: "50vh", objectFit: "contain", background: "#000", borderRadius: "6px", display: "block" } });
-        const shotRow = el("div", { style: { display: "flex", gap: "5px", flexWrap: "wrap" } });
-        const scrubWrap = el("div", { style: { display: "none", flexDirection: "column", gap: "6px",
-          background: C.bg2, border: `1px solid ${BRAND}`, borderRadius: "6px", padding: "10px" } });
-        const armedLabel = el("div", { style: { fontSize: "12px", color: BRAND, fontWeight: "700" } });
-        const vid = el("video", { muted: true, preload: "metadata", style: { width: "100%", background: "#000", borderRadius: "4px", display: "block" } });
-        vid.src = `/view?filename=${encodeURIComponent(state.charSheetVideoOutput.filename)}&subfolder=${encodeURIComponent(state.charSheetVideoOutput.subfolder || "")}&type=output`;
-        const frameSlider = el("input", { type: "range", min: "0", max: String(CHARSHEET_FRAMES - 1), value: "0",
-          style: { width: "100%", accentColor: BRAND, cursor: "pointer" } });
-        const frameLabel = el("div", { style: { fontSize: "11px", color: C.muted, textAlign: "center" } });
-        const seekTo = (idx) => { try { vid.currentTime = idx / FPS; } catch {} frameLabel.textContent = `frame ${idx} / ${CHARSHEET_FRAMES - 1}`; };
-        frameSlider.addEventListener("input", () => seekTo(parseInt(frameSlider.value, 10)));
-        const useBtn = button("✓ Use this frame", async () => {
-          if (armedShot == null) return;
-          state.charSheetFrameIndices[armedShot] = parseInt(frameSlider.value, 10);
-          persist();
-          useBtn.disabled = true; useBtn.textContent = "⏳ Rebuilding…";
-          try {
-            const o = await rebuildCharacterSheetGrid();
-            sheetImg.src = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=output&t=${Date.now()}`;
-            renderShotRow();
-            showPopup(`Shot ${armedShot + 1} replaced.`, false);
-          } catch (e) { showPopup(e?.message || String(e), true); }
-          useBtn.disabled = false; useBtn.textContent = "✓ Use this frame";
-        }, "primary");
-        scrubWrap.append(armedLabel, vid, frameSlider, frameLabel, useBtn);
-
-        function renderShotRow() {
-          clear(shotRow);
-          for (let i = 0; i < 8; i++) {
-            const active = armedShot === i;
-            const b = el("button", { type: "button", text: `Shot ${i + 1} (f${state.charSheetFrameIndices[i]})`, style: {
-              cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "5px 8px",
-              borderRadius: "6px", background: active ? BRAND : C.bg2, color: active ? "#fff" : C.text,
-              border: `1px solid ${active ? BRAND : C.border}`,
-            }});
-            b.addEventListener("click", () => {
-              armedShot = i;
-              armedLabel.textContent = `Scrubbing for Shot ${i + 1} — drag the slider, then confirm.`;
-              scrubWrap.style.display = "flex";
-              frameSlider.value = String(state.charSheetFrameIndices[i]);
-              seekTo(state.charSheetFrameIndices[i]);
-              renderShotRow();
-            });
-            shotRow.appendChild(b);
-          }
-        }
-        renderShotRow();
-
-        const closeBtn = el("button", { type: "button", text: "✕ Close", style: {
-          cursor: "pointer", fontFamily: "inherit", fontSize: "12px", padding: "6px 14px",
-          borderRadius: "6px", border: "none", background: "#c0392b", color: "#fff", alignSelf: "flex-end",
-        }});
-        const box = el("div", { style: {
-          background: "#141414", border: `1px solid ${C.border}`, borderRadius: "10px",
-          width: "720px", maxWidth: "94%", maxHeight: "92vh", overflowY: "auto", padding: "16px",
-          display: "flex", flexDirection: "column", gap: "10px", boxShadow: "0 16px 50px rgba(0,0,0,0.65)",
-        }}, [
-          el("div", { text: "Character Sheet — View & Edit", style: { color: "#fff", fontSize: "14px", fontWeight: "700" } }),
-          sheetImg, el("div", { text: "Click a shot below, scrub the raw render, then confirm to replace just that cell.",
-            style: { fontSize: "10.5px", color: C.muted } }),
-          shotRow, scrubWrap, closeBtn,
-        ]);
-        const pop = el("div", { style: {
-          position: "fixed", inset: "0", zIndex: "100060", display: "flex",
-          alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.72)",
-        }}, [box]);
-        const close = () => { try { vid.pause(); } catch {} pop.remove(); };
-        closeBtn.addEventListener("click", close);
-        pop.addEventListener("mousedown", e => { if (e.target === pop) close(); });
-        document.body.appendChild(pop);
       }
 
       function renderLeft() {
@@ -4274,10 +1955,7 @@ app.registerExtension({
         // checkbox halfway down therefore threw you back to Canvas and you had to scroll
         // down again for the next one. Remember where the column was and put it back
         // after the rebuild; the browser clamps for us if the new content is shorter.
-        if (state.generationMode === "ltxupscale") { renderLtxUpscaleLeft(); return; }
-        if (state.generationMode === "facerefine") { renderFaceRefineLeft(); return; }
         if (state.generationMode === "postprocess") { renderPostprocessLeft(); return; }
-        if (state.generationMode === "imagegen") { renderImageGenLeft(); return; }
         const prevScroll = leftPanel.scrollTop;
         const contModes = continuityModesFor(state.generationMode, state);
         // A continuity option that this mode does not offer, or whose model is
@@ -4397,33 +2075,6 @@ app.registerExtension({
         const loraOn = (state.loras || []).filter(l => l && l.enabled !== false && l.name && l.name !== "none").length;
         leftPanel.appendChild(accordion("lora", "LoRA", loraOn ? `${loraOn} active` : "None",
           () => [mountLoraPanel()]));
-
-        // pipeline options — each accel mode's knobs render right under the dropdown so
-        // switching modes never means a round-trip through the Settings modal.
-        // ── pipeline ──────────────────────────────────────────────────────────
-        // One accordion per patch layer. The layers are genuinely independent (see the
-        // graph builder), so the only thing keeping combinations apart is the turbo
-        // selection, which is why it sits first.
-        const availKnown = ctx.availability && Object.keys(ctx.availability).length;
-        const missingNode = (node) => node && availKnown && !ctx.availability[node];
-        const warn = (node) => missingNode(node) ? el("div", {
-          html: `⚠ <code>${node}</code> not installed — this option is skipped at run time.`,
-          style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }) : null;
-        // Same shape as warn(), muted rather than amber: this describes how two legal
-        // options interact, it is not something to fix.
-        const hint = (text) => text ? el("div", {
-          text,
-          style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }) : null;
-        // A dropdown whose blocked entries stay visible, greyed, with the reason inline —
-        // an option that vanishes just reads as a bug.
-        const gatedSelect = (opts, value, reasonFor, onChange) => select(
-          opts.map(o => {
-            const why = reasonFor(o.key);
-            return { value: o.key, disabled: !!why, label: why ? `${o.label} — ${why}` : o.label };
-          }), value, onChange);
-        const loraOpts = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
-        // Basic and larryvrh would both shorten to "Turbo LoRA", so Basic keeps its suffix.
-        const shortLabel = (s) => /\(Basic\)/.test(s) ? String(s) : String(s || "").replace(/ \(.*\)/, "");
 
         // Deblur and Upscale share one accordion because they run back to back on the same
         // frames, but they are independent settings: either can be None. Deblur is listed
@@ -4711,114 +2362,6 @@ app.registerExtension({
         return wrap;
       }
 
-      // Image Generator's own LoRA list — same dynamic add/remove/toggle/trigger-word
-      // shape as mountLoraPanel() above, just keyed to state.imgLoras instead of
-      // state.loras so the two modes' LoRA stacks never collide.
-      function mountImgLoraPanel() {
-        const wrap = el("div");
-        function render() {
-          clear(wrap);
-          const loras = state.imgLoras || (state.imgLoras = []);
-          const countEl = label("");
-          const refreshCount = () => {
-            const on = loras.filter(l => l.enabled !== false && l.name && l.name !== "none").length;
-            countEl.textContent = `LoRA (${on}/${loras.length} on)`;
-          };
-          refreshCount();
-
-          const reload = el("button", { type: "button", text: "⟳", title: "Rescan the LoRA folder", style: {
-            flexShrink: "0", cursor: "pointer", fontFamily: "inherit", fontSize: "11px",
-            padding: "1px 7px", borderRadius: "5px",
-            background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
-          }});
-          reload.addEventListener("click", async () => {
-            reload.disabled = true; reload.textContent = "…";
-            try {
-              const before = (ctx.availableModels?.loras || []).length;
-              ctx.availableModels = await getModels();
-              const after = (ctx.availableModels?.loras || []).length;
-              showPopup(after === before ? `LoRA list refreshed — ${after} found.`
-                                         : `LoRA list refreshed — ${after} found (${after - before > 0 ? "+" : ""}${after - before}).`, false);
-            } catch { showPopup("Could not refresh the model list.", true); }
-            reload.disabled = false; reload.textContent = "⟳";
-            render();
-          });
-
-          const head0 = el("div", { style: { display: "flex", alignItems: "center", gap: "6px" } });
-          head0.append(countEl, el("div", { style: { flex: "1" } }), reload);
-          const kids = [head0];
-          const all = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
-          loras.forEach((l, i) => {
-            const off = l.enabled === false;
-            const card = el("div", { style: {
-              border: `1px solid ${off ? C.dim : C.border}`, borderRadius: "6px",
-              padding: "6px", display: "flex", flexDirection: "column", gap: "5px",
-              opacity: off ? "0.55" : "1",
-            }});
-            const head = el("div", { style: { display: "flex", alignItems: "center", gap: "5px" } });
-            const tog = el("button", { type: "button", text: off ? "OFF" : "ON", style: {
-              flexShrink: "0", cursor: "pointer", fontFamily: "inherit", fontSize: "10px",
-              padding: "3px 9px", borderRadius: "10px", border: "none", fontWeight: "700",
-              background: off ? "#444" : BRAND, color: "#fff",
-            }});
-            tog.title = off ? "Switched off — neither the weights nor its trigger words are used" : "Switched on";
-            tog.addEventListener("click", () => { l.enabled = off; persist(); render(); });
-
-            const del = el("button", { type: "button", text: "✕", title: "Remove", style: {
-              flexShrink: "0", cursor: "pointer", fontFamily: "inherit", fontSize: "11px",
-              background: "transparent", color: C.err, border: "none", padding: "2px 4px",
-            }});
-            del.addEventListener("click", () => { state.imgLoras.splice(i, 1); persist(); render(); });
-
-            const strWrap = el("div", { style: { flexShrink: "0", width: "62px" } });
-            strWrap.appendChild(numberField(l.strength ?? 1.0, v => { l.strength = v; persist(); }, 0.05));
-            head.append(tog, el("div", { style: { flex: "1" } }), strWrap, del);
-
-            const tw = el("input", { type: "text", placeholder: "Trigger word…", style: {
-              width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
-              border: `1px solid ${C.border}`, borderRadius: "4px", padding: "4px 6px",
-              fontSize: "11px", fontFamily: "inherit", outline: "none",
-            }});
-            tw.value = l.triggerWord || "";
-            tw.title = "Added to the image prompt while this LoRA is on";
-            tw.addEventListener("input", () => { l.triggerWord = tw.value; persist(); });
-
-            const sel = loraSelect(all, l.name || "none", async v => {
-              const prev = l.name;
-              l.name = v; persist();
-              if (v && v !== "none") {
-                if (v !== prev) { l.triggerWord = ""; tw.value = ""; }
-                if (!l.triggerWord) {
-                  tw.placeholder = "Loading…";
-                  try {
-                    const d = await getLoraTriggers(v);
-                    if (d.ok && d.triggers?.length) { l.triggerWord = d.triggers.join(", "); tw.value = l.triggerWord; persist(); }
-                  } catch {}
-                  tw.placeholder = "Trigger word…";
-                }
-              } else { l.triggerWord = ""; tw.value = ""; persist(); }
-              refreshCount();
-            });
-
-            card.append(head, sel.el, tw);
-            kids.push(card);
-          });
-          const add = el("button", { type: "button", text: "+ Add LoRA", style: {
-            width: "100%", cursor: "pointer", fontFamily: "inherit", fontSize: "11px",
-            padding: "6px", borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
-          }});
-          add.addEventListener("click", () => {
-            if (state.imgLoras.length >= 4) { showPopup("4 LoRAs max.", true); return; }
-            state.imgLoras.push({ name: "none", strength: 1.0, triggerWord: "", enabled: true });
-            persist(); render();
-          });
-          kids.push(add);
-          wrap.appendChild(panel(kids));
-        }
-        render();
-        return wrap;
-      }
-
       // ══ SEED + GENERATE ═════════════════════════════════════════════════════
       const seedInput = numberField(state.seed, v => { state.seed = v; persist(); }, 1);
       const seedModeDD = select(
@@ -4838,10 +2381,6 @@ app.registerExtension({
         if (seedGenWrap.parentNode && seedGenWrap !== wrap) seedGenWrap.parentNode.removeChild(seedGenWrap);
         if (ppPreviewWrap.parentNode && ppPreviewWrap !== wrap) ppPreviewWrap.parentNode.removeChild(ppPreviewWrap);
         leftOuter.appendChild(wrap);
-        // Default hidden every time — only Image Generator's own render (t2i/ref2i) turns
-        // it back on, right after calling this. Without this reset it stayed visible after
-        // switching away from Image Generator into any other mode (video modes included).
-        imgPreviewBtn.style.display = "none";
       }
 
       const genBtn = button("▶ Generate", null, "primary");
@@ -4924,18 +2463,6 @@ app.registerExtension({
         renderQueueListPopup();
         queueListOv.el.style.display = "flex";
       });
-      // Image Generator only (t2i/ref2i): a preview-resolution look before spending the
-      // full run's time on the final resolution's latent-upscale pass. Hidden for every
-      // other mode (including Character Sheet, which has no preview step) — visibility is
-      // synced from renderImageGenLeft(). Its own full-width row, same light-purple/
-      // BRAND-text look as Postprocess's own Preview button, rather than squeezed in as a
-      // 5th small button alongside Generate/Stop/Next/Queue.
-      const imgPreviewBtn = el("button", { type: "button", text: "👁 Preview", style: {
-        display: "none", cursor: "pointer", width: "100%", padding: "10px", fontSize: "13px", fontWeight: "700",
-        borderRadius: "6px", border: "none", background: "#e4d4fb", color: BRAND, marginBottom: "4px",
-      }});
-      imgPreviewBtn.addEventListener("click", () => runImageGen({ final: false }));
-      seedGenWrap.appendChild(imgPreviewBtn);
       seedGenWrap.appendChild(row([genBtn, stopBtn, nextGenBtn, queueListBtn]));
 
       // ── Queued-runs popup ──────────────────────────────────────────────────
@@ -5041,72 +2568,29 @@ app.registerExtension({
       // What the gallery needs to show a clip and to put its prompt back into the
       // editor. Kept flat and small — this is written next to every video file.
       function metaForVideo(promptText, extra = {}, st = state) {
-        const { width, height } = hiresActive(st, ctx.availability) ? hiresSizes(st).final : resolveResolution(st.aspect, st.megapixels);
+        const { width, height } = resolveResolution(st.aspect, st.megapixels);
         return {
-          v: 1,
+          v: 2,
+          node: "ltx25",
           prompt: String(promptText || ""),
           promptHeader: st.promptHeader || "",
-          promptFooter: st.promptFooter || "",
           w: width, h: height,
           mode: st.generationMode || "t2v",
           aspect: st.aspect,
           megapixels: st.megapixels,
-          hiresFinish: hiresActive(st, ctx.availability),
-          hiresStartMp: st.hiresStartMp, hiresFinalMp: st.hiresFinalMp, hiresChunkRows: st.hiresChunkRows,
           frames: st.clipFrames,
-          steps: st.steps,
-          sampler: st.sampler,
-          scheduler: st.scheduler,
-          denoise: st.denoise,
-          shiftVideo: st.shiftVideo,
-          shiftAudio: st.shiftAudio,
-          // Turbo needs its own step count and its model file to actually engage — without
-          // these, Reuse restored `turboMode` alone and effectiveTurbo() fell back to none,
-          // so a PDD clip came back rendering at the normal step count.
-          turboSteps: st.turboSteps,
-          slaTurboSteps: st.slaTurboSteps,
-          slaTurboLora: st.slaTurboLora,
-          pddNfe: st.pddNfe,
-          pddFile: st.pddFile,
-          pddFileReference: st.pddFileReference,
-          // Only recorded when Turbo is actually set to the larryvrh LoRA mode - these two
-          // fields stay populated in state even with Turbo off or set to pdd/lightx2v, so
-          // writing them unconditionally made a clip's sidecar (and Reuse) claim the 4-step
-          // LoRA ran on every clip regardless of what actually rendered it.
-          turboLora: st.turboMode === "larryvrh" ? st.turboLora : null,
-          turboLoraReference: st.turboMode === "larryvrh" ? st.turboLoraReference : null,
-          // The pipeline is one field per patch layer now. `accel` stays only so a clip
-          // written today still says something to a reader that predates the split.
-          accel: st.attnBackend,
-          turboMode:   st.turboMode,
-          attnBackend: st.attnBackend,
-          attnForward: st.attnForward,
-          h3Optimizer: st.h3Optimizer || "none",
-          h3SparseBudget: (st.h3Optimizer === "memory_sparse") ? (st.h3SparseBudget ?? 0.15) : null,
-          blockCache:  st.blockCache,
-          useSpectrum: !!st.useSpectrum,
-          useFusedModulation: !!st.useFusedModulation,
-          // The Torch patch was missing here while every other pipeline axis was recorded,
-          // which left two clips that differ only by it indistinguishable after the fact —
-          // exactly the comparison the A/B presets exist to make.
-          useTorchPatch: st.useTorchPatch !== false,
-          fp16Accum: st.fp16Accum !== false,
-          // Which named combination produced this, when the axes match one. Saves reading
-          // six fields back to work out what a clip in the gallery actually was.
-          preset: (matchPreset(st) || {}).id ?? null,
-          // The images the clip was actually built from. Without these, Reuse restored the
-          // prompt and every setting but none of the pictures, so in Reference mode it
-          // could not reproduce the clip at all — the one thing it exists to do.
-          refImages:   Array.isArray(st.refImages) ? st.refImages.slice() : [],
-          refImagesMp: Array.isArray(st.refImagesMp) ? st.refImagesMp.slice() : [],
+          steps: st.ltxGenSteps,
+          sampler: st.ltxGenSampler,
+          scheduler: st.ltxGenScheduler,
+          stage2Sigmas: st.ltxStage2Sigmas,
+          cfg: st.ltxCfg,
+          distilledLora: st.distilledLoraOn && st.distilledLora ? { name: st.distilledLora, strength: st.distilledLoraStrength ?? 0.5 } : null,
+          // The pictures the clip was built from: without them Reuse brings back the prompt and the settings but not the clip.
           firstFrameImage: st.firstFrameImage || null,
           lastFrameImage:  st.lastFrameImage  || null,
-          refVideos: Array.isArray(st.refVideos) ? st.refVideos.map(v => ({ ...v })) : [],
-          refAudios: Array.isArray(st.refAudios) ? st.refAudios.map(a => ({ ...a })) : [],
           // Library assets / project the clip used (Asset tab). null = the clip used the file slots.
           assetRef: st.assetRef ? { ...st.assetRef, ids: [...(st.assetRef.ids || [])] } : null,
           seed: st.seed,
-          node: "minimax_h3",
           created: Date.now(),
           ...extra,
         };
@@ -5207,376 +2691,8 @@ app.registerExtension({
         };
       }
 
-      // ── LTX 2.5 Upscale run — segmented, survives a page reload ─────────────
-      // Each segment is queued as its own /prompt; state._ltxRelay persists the plan +
-      // finished parts + the in-flight prompt_id after every step. A tab switch that
-      // reloads the page kills this JS loop but not ComfyUI's queue — checkResumeLtx()
-      // below rebuilds the loop from _ltxRelay, reconnects to the running segment, and
-      // finishes the concat.
-      async function resolveInFlightSegment(pid, prog) {
-        if (!pid) return null;
-        try {
-          const e = await historyEntry(pid);
-          if (e && e.status && e.status.completed && e.status.status_str !== "error") {
-            return { byNode: e.outputs || {} };
-          }
-        } catch {}
-        try {
-          const q = await (await api.fetchApi("/queue")).json();
-          const live = [...(q.queue_running || []), ...(q.queue_pending || [])].some(it => it[1] === pid);
-          if (live) return await waitForHistory(pid, { onProgress: prog, samplerNode: "LX:sampler" });
-        } catch {}
-        return null;   // gone — the caller re-queues this segment fresh
-      }
-
-      async function runLtxUpscale(resume = null) {
-        if (running) return;
-
-        let rs, passes, parts, segSec, sourceFile, folder;
-        if (resume) {
-          const R = state._ltxRelay;
-          if (!R || !Array.isArray(R.passes) || !Array.isArray(R.parts) || !R.rs) {
-            delete state._ltxRelay; persist(); return;
-          }
-          rs = R.rs; passes = R.passes; parts = R.parts.slice(); segSec = R.segSec || 0;
-        } else {
-          if (state.seedMode === "randomize")      { state.seed = randomSeed(); seedInput.value = state.seed; }
-          else if (state.seedMode === "increment") { state.seed = (state.seed || 0) + 1; seedInput.value = state.seed; }
-          else if (state.seedMode === "decrement") { state.seed = Math.max(0, (state.seed || 0) - 1); seedInput.value = state.seed; }
-          persist();
-          rs = JSON.parse(JSON.stringify(state));
-          if (!ltxUpscaleReady(rs)) { showPopup("Set the LTX 2.5 models in ⚙ Settings first — missing: " + ltxUpscaleMissing(rs).join(", "), true); return; }
-          if (!rs.ltxSource)        { showPopup("Pick a source clip (gallery) or upload a video.", true); return; }
-          // Every segment shares one seed so the low-denoise refine stays coherent across
-          // the joins (the reroll above already stamped rs.seed).
-          rs.seedMode = "fixed";
-        }
-        sourceFile = rs.ltxSource;
-        folder = (rs.saveSubfolder || SUBFOLDER).replace(/\\/g, "/");
-
-        running = true; stopRequested = false;
-        startWakeAudio(); startQueueWatch();
-        genBtn.disabled = true; genBtn.textContent = "⏳ LTX Upscale…";
-        nextGenBtn.style.display = "none";
-        if (!resume) { resetPreview(); barInner.style.width = "0%"; }
-        startClock();
-        let mem = null;
-        try {
-          if (!ctx.availability || !Object.keys(ctx.availability).length) {
-            const av = await getNodeAvailability();
-            ctx.availability = av.available || {}; ctx.availabilityInfo = av;
-          }
-
-          // ── plan the passes (fresh run only) ────────────────────────────────
-          if (!resume) {
-            const segMode = rs.ltxSegmentMode === "count" ? "count" : "seconds";
-            const s = Math.max(0, Number(rs.ltxSegmentSeconds) || 0);
-            const segCount = Math.max(1, Math.round(Number(rs.ltxSegmentCount) || 1));
-            segSec = s;
-            passes = [{ window: null, suffix: "" }];
-            if ((segMode === "count" && segCount > 1) || (segMode === "seconds" && s > 0)) {
-              let srcInfo = null;
-              try { srcInfo = await getVideoInfo(sourceFile, "", "input"); } catch {}
-              const sFps = (srcInfo && srcInfo.fps) || rs.ltxSourceMeta?.fps || FPS;
-              const total = (srcInfo && srcInfo.frames)
-                || Math.round(((rs.ltxSourceMeta?.duration) || 0) * sFps) || 0;
-              // LTX 2.5's video VAE only takes 8n+1 pixel frames cleanly — anything else
-              // gets silently cropped to the nearest 8n+1 (comfy_extras/nodes_lt.py:
-              // "Must be 8*n + 1 frames"). Not the same 17k+5 rule H3's own transformer
-              // uses (unrelated; this pass never touches H3's graph) — LTX needs its own.
-              const snap8n1 = (n) => 8 * Math.max(0, Math.round((n - 1) / 8)) + 1;
-
-              // How many pieces: "count" takes it directly (no seconds→frames guess, no
-              // rounding surprise); "seconds" derives it from the target size so a request
-              // for ~5s pieces on a 10.13s clip lands on 2 pieces, not a 3rd one holding a
-              // single leftover frame that would reload the whole model just to run it.
-              let nPieces;
-              if (segMode === "count") {
-                nPieces = Math.min(segCount, Math.max(1, Math.floor(total / 9)));
-              } else {
-                const targetSeg = Math.max(9, snap8n1(s * sFps));
-                nPieces = Math.max(1, Math.round(total / targetSeg));
-              }
-
-              if (nPieces > 1 && total > 9) {
-                const pieceLen = Math.max(9, snap8n1(Math.round(total / nPieces)));
-                passes = [];
-                let skip = 0;
-                for (let k = 0; k < nPieces; k++) {
-                  const isLast = k === nPieces - 1;
-                  // Only the last piece takes a raw (non-8n+1) remainder — nothing after
-                  // it depends on the count, so whatever LTX crops it to is fine.
-                  const cap = isLast ? (total - skip) : pieceLen;
-                  if (cap <= 0) break;
-                  passes.push({ window: { skip, cap }, suffix: `_seg${String(k).padStart(2, "0")}` });
-                  skip += cap;
-                }
-              }
-            }
-            parts = [];
-            state._ltxRelay = { rs, passes, parts, segSec, curPromptId: null }; persist();
-          }
-
-          mem = watchMemory();
-          let meta = null;
-          let inFlightId = resume ? (state._ltxRelay?.curPromptId || null) : null;
-          try {
-            for (let i = parts.length; i < passes.length; i++) {
-              if (stopRequested) throw new Error("Stopped.");
-              const p = passes[i];
-              const prog = (v, m) => setStepProgress(
-                passes.length > 1 ? (i + (v || 0)) / passes.length : v,
-                passes.length > 1 ? `seg ${i + 1}/${passes.length}${m ? " — " + m : ""}` : m);
-              setStatus(passes.length > 1
-                ? `LTX Upscale · segment ${i + 1}/${passes.length}${p.window ? ` (frames ${p.window.skip}–${p.window.skip + p.window.cap})` : ""}`
-                : "LTX Upscale · queued (≈6 min sampling on 16GB)");
-              // Segment 1 anchors on its own window's own frame 0 (the clip's true first
-              // frame, still the un-upscaled original — buildLtxUpscaleGraph's own default).
-              // Every later segment must instead anchor on the PREVIOUS segment's own
-              // (already-upscaled) LAST frame, or each segment quietly re-anchors to the
-              // original source and the stitched result shows a seam at every boundary.
-              let anchorImage = null;
-              if (i > 0) {
-                setStatus(`LTX Upscale · segment ${i + 1}/${passes.length} — reading the previous segment's last frame…`);
-                anchorImage = await getClipLastFrame(parts[i - 1].filename, parts[i - 1].subfolder || "");
-              }
-              const built = buildLtxUpscaleGraph(rs, ctx.availability, {
-                nodeId: self.id, sourceFile, window: p.window, saveSuffix: p.suffix, anchorImage,
-              });
-              meta = built.meta;
-
-              let r = null;
-              if (inFlightId) {
-                setStatus(`Reconnecting to segment ${i + 1}/${passes.length} after reload…`);
-                r = await resolveInFlightSegment(inFlightId, prog);
-                inFlightId = null;
-              }
-              if (!r) {
-                r = await queuePrompt(built.graph, {
-                  onProgress: prog, samplerNode: "LX:sampler",
-                  onQueued: (pid) => {
-                    if (state._ltxRelay) { state._ltxRelay.curPromptId = pid; persist(); }
-                  },
-                });
-              }
-              const out = firstOutput(r.byNode, "LX:save");
-              if (!out) throw new Error(`LTX Upscale segment ${i + 1} produced no output.`);
-              parts.push(out);
-              if (state._ltxRelay) { state._ltxRelay.parts = parts; state._ltxRelay.curPromptId = null; persist(); }
-              try { await freeMemory(); } catch {}
-            }
-          } finally { mem.stop(); }
-
-          // ── assemble ─────────────────────────────────────────────────────────
-          let vid;
-          if (parts.length === 1) {
-            vid = parts[0];
-          } else {
-            setStatus(`Assembling ${parts.length} segments with ffmpeg…`);
-            // Deliberately no "_full" in this name — that substring is what flags a gallery
-            // card "★ stitched" (nodes.py's /ltx25_one/videos route: `"_full" in
-            // name.lower()`), and splitting into segments is a VRAM workaround for ONE
-            // upscale job, not a real multi-clip stitch. "★ stitched" is reserved for a
-            // manual gallery Stitch or a multi-clip generation's own auto-stitch result.
-            const st = await stitchClips(
-              parts.map(p => ({ filename: p.filename, subfolder: p.subfolder || "" })),
-              `${folder}/${rs.filenamePrefix || "MMH3"}_LTXUP`, null, null, null,
-            );
-            vid = { filename: st.filename, subfolder: st.subfolder || "", type: "output" };
-            // the per-segment files were scratch — drop them so the gallery stays clean
-            for (const p of parts) {
-              try { await deleteImage(p.filename, p.subfolder || ""); } catch {}
-            }
-          }
-          if (!vid) throw new Error("LTX Upscale finished but produced no video output.");
-          delete state._ltxRelay; persist();
-          meta = meta || {};
-          const memPeak = mem ? mem.peak() : null;
-          const clipMeta = {
-            v: 1,
-            prompt: String(rs.ltxPrompt || ""),
-            mode: "ltxupscale",
-            source: rs.ltxSource, sourceKind: rs.ltxSourceKind,
-            ltx: {
-              unet: rs.ltxUnet, clip: rs.ltxClip, latentUpscaler: rs.ltxLatentUpscaler,
-              vaeVideo: rs.ltxVaeVideo, vaeAudio: rs.ltxVaeAudio,
-            },
-            steps: meta.steps, denoise: meta.denoise, sampler: meta.sampler,
-            scheduler: meta.scheduler, seed: meta.seed, fps: meta.fps,
-            deblur: meta.deblur || null, upscale: meta.upscale || null,
-            loras: meta.loras || [],
-            negativePrompt: String(rs.ltxNegPrompt || ""),
-            segments: passes.length,
-            ...(passes.length > 1 ? { stitched: true, segmentSeconds: segSec, frames: null } : {}),
-            elapsedSec: (Date.now() - (runStart || Date.now())) / 1000,
-            ...(memPeak || {}),
-          };
-          try { await reconcileGeometry?.(clipMeta, vid); } catch {}
-          saveMeta(vid.filename, vid.subfolder || "", clipMeta);
-
-          const url = `/view?filename=${encodeURIComponent(vid.filename)}&subfolder=${encodeURIComponent(vid.subfolder || "")}&type=output`;
-          lastResultURL = url;
-          showResultVideo(url, { final: true });
-          badge.textContent = "LTX UPSCALED";
-          setStatus(`Done — ${vid.filename}`);
-          barInner.style.width = "100%";
-          try { galleryOv?.refresh?.(); } catch {}
-        } catch (e) {
-          // A real failure (or an explicit Stop) — drop the relay so a later load doesn't
-          // try to resume a dead run. A page reload never reaches here (JS is killed), so
-          // _ltxRelay survives that and checkResumeLtx picks it up.
-          delete state._ltxRelay; persist();
-          const why = explainGenerationError(e.message);
-          setStatus(why ? `Error: ${why}` : `Error: ${e.message}`);
-          showPopup(why || e.message, true);
-        } finally {
-          try { await freeMemory(); } catch {}
-          stopWakeAudio(); stopQueueWatch();
-          running = false; stopRequested = false;
-          genBtn.disabled = false; genBtn.textContent = "▶ Generate";
-          stopClock();
-        }
-      }
-
-      // Single-queue run, no relay/segmenting (Face Refine's frame count comes off the
-      // tracker itself, so there's no seconds/count plan to build — see
-      // SPEC_MINIMAX_H3_FACE_REFINE.md §4/§10, unlike LTX Upscale which can split a long
-      // clip across queue turns).
-      // Multi-person chain (SPEC_MINIMAX_H3_FACE_REFINE.md §12): frChainPicks (>1 entry) is
-      // an ORDERED list of face indices — each pass refines one person over the PREVIOUS
-      // pass's own output, so the final save has every picked person refined in one clip.
-      // A 0-or-1-length frChainPicks is the plain single-subject path (frConfirmedPick as-is).
-      async function runFaceRefine() {
-        if (running) return;
-        if (!faceRefineReady(state)) { showPopup("Set a face detector in ⚙ Settings → Models first — missing: " + faceRefineMissing(state).join(", "), true); return; }
-        if (!state.frSource) { showPopup("Pick a source clip (gallery) or upload a video.", true); return; }
-        if (state.frSelect === "manual" && !String(state.frConfirmedPick || "").trim() && !(state.frChainPicks || []).length) {
-          showPopup("Select is Manual but no face has been picked yet.", true); return;
-        }
-
-        if (state.seedMode === "randomize")      { state.seed = randomSeed(); seedInput.value = state.seed; }
-        else if (state.seedMode === "increment") { state.seed = (state.seed || 0) + 1; seedInput.value = state.seed; }
-        else if (state.seedMode === "decrement") { state.seed = Math.max(0, (state.seed || 0) - 1); seedInput.value = state.seed; }
-        persist();
-        const rs = JSON.parse(JSON.stringify(state));
-        const chain = rs.frSelect === "manual" && Array.isArray(rs.frChainPicks) && rs.frChainPicks.length > 1
-          ? rs.frChainPicks : null;
-
-        running = true; stopRequested = false;
-        startWakeAudio(); startQueueWatch();
-        genBtn.disabled = true; genBtn.textContent = "⏳ Face Refine…";
-        nextGenBtn.style.display = "none";
-        resetPreview(); barInner.style.width = "0%";
-        startClock();
-        // Editing the prompt or opening the editor mid-run can't affect the job already
-        // queued (the graph is built once, up front) - disable both while running so that
-        // isn't implied.
-        editBtn.disabled = true; editBtn.style.opacity = "0.4"; editBtn.style.pointerEvents = "none";
-        promptList.style.opacity = "0.5"; promptList.style.pointerEvents = "none";
-        let mem = null;
-        try {
-          if (!ctx.availability || !Object.keys(ctx.availability).length) {
-            const av = await getNodeAvailability();
-            ctx.availability = av.available || {}; ctx.availabilityInfo = av;
-          }
-          mem = watchMemory();
-
-          let out = null;
-          let sourceFile = rs.frSource;
-          let lastMeta = null;
-          const steps = chain || [null];   // null = single-subject run, uses rs.frConfirmedPick as-is
-
-          try {
-            for (let i = 0; i < steps.length; i++) {
-              if (stopRequested) throw new Error("Stopped.");
-              const passLabel = chain ? ` — pass ${i + 1}/${chain.length} (face ${chain[i]})` : "";
-              setStatus(`Face Refine${passLabel} · queued (tracking + per-frame img2img)`);
-              // Detection/tracking runs before sampling and streams nothing of its own —
-              // show the big centered banner for that silent stretch, hide it the moment
-              // real sampling progress starts arriving (see prog() below).
-              placeholder.style.display = "none";
-              frDetectBanner.style.display = "flex";
-              const prog = (v, m) => {
-                frDetectBanner.style.display = "none";
-                setStepProgress(
-                  chain ? (i + (v || 0)) / chain.length : v,
-                  chain ? `pass ${i + 1}/${chain.length}${m ? " — " + m : ""}` : m);
-              };
-
-              const built = buildFaceRefineGraph(rs, ctx.availability, {
-                nodeId: self.id, sourceFile, promptText: rs.frPrompt, seed: rs.seed,
-                refImages: rs.refImages,
-                confirmedPickOverride: steps[i] != null ? String(steps[i]) : undefined,
-              });
-              lastMeta = built.meta;
-              const r = await queuePrompt(built.graph, { onProgress: prog, samplerNode: "MM:sampler" });
-              out = firstOutput(r.byNode, "FR:save");
-              if (!out) throw new Error(`Face Refine${passLabel} produced no output.`);
-
-              // Not the last pass: this pass's own output becomes the next pass's source —
-              // copy_to_input so the next VHS_LoadVideo/H3FaceSelect can read it.
-              if (i < steps.length - 1) {
-                const passOut = out;
-                sourceFile = await copyOutputToInput(passOut.filename, passOut.subfolder || "", "output");
-                // The pass's own output/ file was only ever scratch for the next pass to read
-                // (already copied into input/ above) - drop it so a multi-person chain
-                // doesn't leave every intermediate pass sitting in the gallery as its own
-                // untagged clip. Same cleanup LTX Upscale already does for its segment
-                // scratch files.
-                try { await deleteImage(passOut.filename, passOut.subfolder || ""); } catch {}
-                try { await freeMemory(); } catch {}
-              }
-            }
-          } finally { mem.stop(); }
-          if (!out) throw new Error("Face Refine produced no output.");
-
-          const memPeak = mem ? mem.peak() : null;
-          const clipMeta = {
-            v: 1, prompt: String(rs.frPrompt || ""), mode: "facerefine",
-            source: rs.frSource, sourceKind: rs.frSourceKind,
-            faceRefine: {
-              select: rs.frSelect, detector: rs.faceDetector, cropFactor: rs.frCropFactor,
-              canvasMode: rs.frCanvasMode, denoise: rs.frDenoise,
-              turboMode: lastMeta.turboMode, loras: lastMeta.loras || [],
-              ...(chain ? { chainPicks: chain } : {}),
-            },
-            steps: lastMeta.steps, seed: lastMeta.seed,
-            elapsedSec: (Date.now() - (runStart || Date.now())) / 1000,
-            ...(memPeak || {}),
-          };
-          try { await reconcileGeometry?.(clipMeta, out); } catch {}
-          saveMeta(out.filename, out.subfolder || "", clipMeta);
-
-          const url = `/view?filename=${encodeURIComponent(out.filename)}&subfolder=${encodeURIComponent(out.subfolder || "")}&type=output`;
-          lastResultURL = url;
-          showResultVideo(url, { final: true });
-          badge.textContent = "FACE REFINED";
-          setStatus(`Done — ${out.filename}`);
-          barInner.style.width = "100%";
-          try { galleryOv?.refresh?.(); } catch {}
-        } catch (e) {
-          const why = explainGenerationError(e.message);
-          setStatus(why ? `Error: ${why}` : `Error: ${e.message}`);
-          showPopup(why || e.message, true);
-        } finally {
-          frDetectBanner.style.display = "none";
-          editBtn.disabled = false; editBtn.style.opacity = "1"; editBtn.style.pointerEvents = "";
-          promptList.style.opacity = "1"; promptList.style.pointerEvents = "";
-          try { await freeMemory(); } catch {}
-          stopWakeAudio(); stopQueueWatch();
-          running = false; stopRequested = false;
-          genBtn.disabled = false; genBtn.textContent = "▶ Generate";
-          stopClock();
-        }
-      }
-
       async function runGeneration(resume = null) {
         if (running) return;
-        if (state.generationMode === "ltxupscale" && !resume) return runLtxUpscale();
-        if (state.generationMode === "facerefine" && !resume) return runFaceRefine();
-        if (state.generationMode === "imagegen" && !resume) {
-          return state.imageGenMode === "charsheet" ? runCharacterSheet() : runImageGen({ final: true });
-        }
         running = true; stopRequested = false;
         startWakeAudio();
         startQueueWatch();
@@ -5639,7 +2755,6 @@ app.registerExtension({
           const clipRecords = resume ? resume.clipRecords.slice() : [];
           let chainFrame = resume ? resume.chainFrame
             : (rs.generationMode === "reference" ? null : (rs.firstFrameImage || null));
-          let prevCheckpointName = resume ? resume.prevCheckpointName : null;   // One-Take: previous clip's saved latent, loaded fresh each queue submission
           const clipTimes = [];
           const startPos = resume ? resume.pos : 0;
 
@@ -5650,7 +2765,7 @@ app.registerExtension({
           function saveRelay(pos) {
             state._relay = {
               pos, totClip, activeIdx: active.map(a => a.i),
-              chainFrame, prevCheckpointName, clipRecords: clipRecords.slice(), runState: rs,
+              chainFrame, clipRecords: clipRecords.slice(), runState: rs,
             };
             persist();
           }
@@ -5688,7 +2803,6 @@ app.registerExtension({
             let refImages  = rs.refImages || [];
             const continued = pos > 0 && rs.continuityMode === "lastframe" && !!chainFrame;
             if (pos > 0) firstFrame = continued ? chainFrame : null;
-            if (continued) refImages = [];   // FL2VA takes no reference images
 
             // Per-prompt first-image override (A3) beats the continuity default outright.
             // Like Last Frame Chain, only FL2VA accepts a first frame, so a clip with an
@@ -5725,13 +2839,14 @@ app.registerExtension({
               clipState.refVideos      = assets.refVideos;
               clipState.refAudios      = assets.refAudios;
             }
+            // First / Last frames picked from the Asset Library become files in the input folder.
+            let libLast = null;
+            if (clipState.assetRef && (clipState.assetRef.first || clipState.assetRef.last)) {
+              const files = await ctx.assetFrameFiles(clipState.assetRef);
+              if (files.first && !continued) firstFrame = files.first;
+              libLast = files.last || null;
+            }
             const restore = pipeOv ? applyOverridesTemp(clipState, pipeOv.overrides) : null;
-            // One-Take: a checkpoint name unique to this node instance + prompt index, so
-            // two MiniMax H3 nodes on the same canvas (or a re-run over old prompt indices)
-            // never collide on the same checkpoint file.
-            const isOneTake = rs.continuityMode === "onetake";
-            const checkpointName = isOneTake ? `${self.id}_${i}` : null;
-
             const fvsrOn = clipState.upscaleMode === "flashvsr";
             const hiresOn = hiresActive(clipState, ctx.availability);
             const progressNodes = [NODE_IDS.sampler, ...(hiresOn ? [NODE_IDS.hrSampler] : []), ...(fvsrOn ? [NODE_IDS.fvsr] : [])];
@@ -5759,12 +2874,14 @@ app.registerExtension({
             } else {
               let built;
               try {
+                await ctx.syncClipDir?.(i, clipState.clipFrames);
                 built = buildClipGraph(clipState, ctx.availability, {
+                  dir: (typeof rs.prompts[i] === "object" ? rs.prompts[i].dir : null) || null,
                   nodeId: self.id,
                   promptText: promptForClip(i, rs),
                   seed: seedForClip(i, rs),
                   firstFrame,
-                  lastFrame: (pos === active.length - 1 && !libFrames) ? (rs.lastFrameImage || null) : null,
+                  lastFrame: libLast || ((pos === active.length - 1 && !libFrames) ? (rs.lastFrameImage || null) : null),
                   refImages,
                   clipIndex: i,
                   saveLastFrame: true,
@@ -5772,8 +2889,6 @@ app.registerExtension({
                   // black when picking a chain frame — dead weight (and eight temp PNGs
                   // per clip) in every other continuity mode.
                   saveTailPreviews: rs.continuityMode === "lastframe",
-                  prevCheckpointName: isOneTake ? prevCheckpointName : null,
-                  checkpointName,
                 });
               } finally { restore?.(); }
               ran = built.meta;
@@ -5793,7 +2908,6 @@ app.registerExtension({
               } finally { mem.stop(); }
             }
             fvsrBanner.style.display = "none"; hiresBanner.style.display = "none";
-            if (isOneTake) prevCheckpointName = checkpointName;
 
             // Captured once, right after the clip actually finishes — reused for both the
             // saved meta (so the Gallery can show/average real per-clip time) and the
@@ -5810,32 +2924,24 @@ app.registerExtension({
               // gallery can put that exact text back into the editor
               const clipMeta = metaForVideo(promptForClip(i, rs), {
                 clip: curClip, clips: plan.count, seed: seedForClip(i, rs), mode: modeForClip,
-                // the editable source text, so "reuse" restores the editor exactly
+                // the editable source text and the clip's segment timeline, so "reuse" restores the editor exactly
                 prompts: [promptText(rs.prompts?.[i])],
-                // lets the Gallery's manual stitch auto-detect that adjacent clips share
-                // an overlap and offer to trim it, instead of the user having to remember
-                onetake: isOneTake,
-                // everything a full Reuse needs to reproduce this exact clip, plus the
-                // measured time it actually took (see refreshAvgFromHistory)
+                dir: (typeof rs.prompts?.[i] === "object" ? rs.prompts[i].dir : null) || null,
+                chained: continued,
+                // the measured time it took (see refreshAvgFromHistory)
                 elapsedSec,
                 // What the graph actually ran, as opposed to what the panel was showing.
                 ...(ran ? {
                   stepsEffective: ran.steps,
                   samplerUsed:    ran.samplerUsed,
-                  turboFile:      ran.turboFile,
-                  pddNfe:         ran.pddNfe,
                   // Post-decode frame ops wired into this clip's graph (null when not run).
                   deblur:  ran.deblur  || null,
                   upscale: ran.upscale || null,
                   hires:   ran.hires   || null,
                 } : {}),
-                // Memory extremes over this clip. vramFreeMinMiB near zero is the
-                // signature of a spill: the step times balloon and nothing errors.
+                // Memory extremes over this clip. vramFreeMinMiB near zero is the signature of a spill:
+                // the step times balloon and nothing errors.
                 ...(memPeak || {}),
-                // turboLora/turboLoraReference are gated inside metaForVideo() itself now
-                // (only recorded when turboMode === "larryvrh"); strength/lowVram are just
-                // config for that mode, harmless to keep even when unused.
-                turboLoraStrength: rs.turboLoraStrength ?? 1.0, turboLoraLowVram: !!rs.turboLoraLowVram,
                 loras: (rs.loras || []).map(l => ({
                   name: l.name || "none", strength: l.strength ?? 1.0,
                   triggerWord: l.triggerWord || "", enabled: l.enabled !== false,
@@ -5907,51 +3013,35 @@ app.registerExtension({
             }
           }
 
-          // Stitching moved to the Gallery's 🔗 스티치 mode (SPEC A6) — clips are always
-          // kept separate here so a stopped/resumed run never has a half-built combined file.
-          // One-Take is the one exception: the whole point of the mode is a single
-          // continuous take, and consecutive clips share `overlap` seconds by construction
-          // (TJ_H3_LatentContinuation handed each clip's head the previous clip's tail), so
-          // a plain concat would visibly repeat that stretch. Auto-stitch with that overlap
-          // trimmed on a completed run — a stopped run still leaves the per-clip files and
-          // checkpoints alone so resuming from A3's override still works.
-          if (rs.continuityMode === "onetake" && rs.oneTakeAutoStitch !== false
-              && !stopRequested && clipRecords.length > 1) {
-            const overlapSec = framesToSeconds(alignFrameCount(ONE_TAKE_OVERLAP_FRAMES));
-            setStatus(`Stitching ${clipRecords.length} clips (One-Take, ${overlapSec.toFixed(3)}s overlap trimmed)…`);
+          // Clips are kept separate so a stopped run never leaves a half-built file. The exception is Last Frame
+          // Chain: every clip after the first opens on the previous clip's last frame, so a completed run is joined
+          // with that one repeated frame trimmed.
+          if (rs.continuityMode === "lastframe" && !stopRequested && clipRecords.length > 1) {
+            const trimSec = 1 / FPS;
+            setStatus(`Stitching ${clipRecords.length} clips…`);
             try {
               const folder = (rs.saveSubfolder || SUBFOLDER).replace(/\\/g, "/");
-              const audioOverride = rs.oneTakeAudioOverride && rs.audioLock && rs.lockAudioFile
-                ? { filename: rs.lockAudioFile, start: Math.max(0, rs.audioLockTrimStart || 0) }
-                : null;
-              const out = await stitchClips(
-                clipRecords, `${folder}/${rs.filenamePrefix || "MMH3"}_full`, null, overlapSec, audioOverride,
-              );
+              const out = await stitchClips(clipRecords, `${folder}/${rs.filenamePrefix || "LTX25"}_full`, null, trimSec, null);
               const url = `/view?filename=${encodeURIComponent(out.filename)}&subfolder=${encodeURIComponent(out.subfolder || "")}&type=output&t=${Date.now()}`;
-              // metaForVideo's `frames` is per-clip (rs.clipFrames) — left as-is here it
-              // would make the Gallery show this combined file's length as one clip's
-              // length. durationSeconds carries the real total; frames:null stops the
-              // per-clip value from being misread as this file's own.
+              // `frames` of metaForVideo is per clip; durationSeconds carries this file's real length
               const totalSeconds = active.slice(0, clipRecords.length).reduce((sum, { i }) => sum + clipSecondsFor(rs, i), 0)
-                - (clipRecords.length - 1) * overlapSec;
-              const oneTakeMeta = metaForVideo(
+                - (clipRecords.length - 1) * trimSec;
+              const fullMeta = metaForVideo(
                 active.map(({ i }) => promptForClip(i, rs)).join("\n\n"),
-                { clips: clipRecords.length, stitched: true, onetake: true, overlapSeconds: overlapSec,
-                  frames: null, durationSeconds: totalSeconds,
-                  prompts: (rs.prompts || []).map(promptText) },
+                { clips: clipRecords.length, stitched: true, chained: true, frames: null, durationSeconds: totalSeconds,
+                  prompts: (rs.prompts || []).map(promptText), dirs: (rs.prompts || []).map(q => (typeof q === "object" ? q.dir : null) || null) },
                 rs,
               );
-              // Clips may have been upscaled inline — the stitched file inherits that size.
-              await reconcileGeometry(oneTakeMeta, out, { keepFrames: true });
-              saveMeta(out.filename, out.subfolder || "", oneTakeMeta);
+              await reconcileGeometry(fullMeta, out, { keepFrames: true });
+              saveMeta(out.filename, out.subfolder || "", fullMeta);
               showResultVideo(url, { final: true });
-              badge.textContent = `FULL · ${clipRecords.length} clips (One-Take)`;
+              badge.textContent = `FULL · ${clipRecords.length} clips`;
               await setLastResult(self.id, { videoPath: out.path });
-              setStatus(`Done — ${clipRecords.length} clips stitched (One-Take) → ${out.filename}`);
-              showPopup(`One-Take stitched: ${out.filename}`, false);
+              setStatus(`Done — ${clipRecords.length} clips stitched → ${out.filename}`);
+              showPopup(`Stitched: ${out.filename}`, false);
             } catch (e) {
-              setStatus(`Clips saved, One-Take stitch failed: ${e.message}`);
-              showPopup(`One-Take stitch failed: ${e.message} — per-clip files are still on disk.`, true);
+              setStatus(`Clips saved, stitch failed: ${e.message}`);
+              showPopup(`Stitch failed: ${e.message} — per-clip files are still on disk.`, true);
             }
           } else if (rs._extendFrom && clipRecords.length === 1 && !stopRequested) {
             // Gallery Extend: one continuation clip was rendered from the source's last
@@ -5962,9 +3052,9 @@ app.registerExtension({
             setStatus("Stitching the extended clip…");
             try {
               const folder = (rs.saveSubfolder || SUBFOLDER).replace(/\\/g, "/");
-              const trimSec = framesToSeconds(alignFrameCount(1));
+              const trimSec = 1 / FPS;   // the one repeated seed frame
               const out = await stitchClips(
-                [ext.clip, clipRecords[0]], `${folder}/${rs.filenamePrefix || "MMH3"}_full`, null, trimSec, null,
+                [ext.clip, clipRecords[0]], `${folder}/${rs.filenamePrefix || "LTX25"}_full`, null, trimSec, null,
               );
               const url = `/view?filename=${encodeURIComponent(out.filename)}&subfolder=${encodeURIComponent(out.subfolder || "")}&type=output&t=${Date.now()}`;
               const clipPrompts = [ext.sourcePrompt || "", promptForClip(0, rs)];
@@ -6101,17 +3191,11 @@ app.registerExtension({
           ? meta.prompts.slice()
           : [String(meta.prompt || "")];
         if (!parts.some(p => String(p || "").trim())) return false;
-        state.prompts = parts.map(t => ({ text: String(t || ""), firstFrame: "", enabled: true }));
-        if (Array.isArray(meta.prompts)) {
-          // A stitched file's stored prompts are each clip's *composed* text — that clip's
-          // own header and footer are already inside them, and the clips may not even
-          // share the same ones. Restoring a common header/footer on top would apply them
-          // a second time, so for a stitch the shared fields are cleared and each prompt
-          // stands alone. A normal clip stores the raw body instead, which does need the
-          // header and footer put back around it.
-          state.promptHeader = meta.stitched ? "" : (meta.promptHeader || "");
-          state.promptFooter = meta.stitched ? "" : (meta.promptFooter || "");
-        }
+        // each clip comes back with its own segment timeline
+        const dirs = Array.isArray(meta.dirs) ? meta.dirs : [meta.dir];
+        state.prompts = parts.map((t, k) => ({ text: String(t || ""), firstFrame: "", enabled: true, dir: dirs[k] || null }));
+        // a stitched file stores each clip's composed text, header included, so it stands alone
+        if (Array.isArray(meta.prompts)) state.promptHeader = meta.stitched ? "" : (meta.promptHeader || "");
         persist();
         refreshPlan();
         promptEditOv?.syncCommon?.();
@@ -6119,90 +3203,34 @@ app.registerExtension({
         return true;
       };
 
-      // Full "make this exact clip again" restore — everything reusePrompt does, plus
-      // every render setting saveMeta captured (resolution, sampling, acceleration, both
-      // LoRA slots). Same seed on purpose — reproducing the clip exactly is the point;
-      // switch Seed mode afterward if a variation is wanted instead. Missing fields (older
-      // clips saved before this existed) are skipped rather than clobbering the current
-      // panel value with something that was never actually recorded.
+      // Full "make this exact clip again" restore: the prompt and timeline plus every render setting saved with the
+      // clip. Same seed on purpose - reproducing the clip is the point; switch Seed mode afterward for a variation.
+      // A field an older clip never recorded is skipped rather than overwritten with a default.
       ctx.reuseAll = (meta) => {
         if (!ctx.reusePrompt(meta)) return false;
-        // Images first: they decide what the mode pills and reference panel show.
-        if (Array.isArray(meta.refImages)) {
-          state.refImages = meta.refImages.slice();
-          state.refImagesMp = Array.isArray(meta.refImagesMp)
-            ? meta.refImagesMp.slice()
-            : state.refImages.map(() => 1.0);
-        }
         if (meta.firstFrameImage !== undefined) state.firstFrameImage = meta.firstFrameImage || null;
         if (meta.lastFrameImage  !== undefined) state.lastFrameImage  = meta.lastFrameImage  || null;
-        if (Array.isArray(meta.refVideos)) state.refVideos = meta.refVideos.map(v => ({ ...v }));
-        if (Array.isArray(meta.refAudios)) state.refAudios = meta.refAudios.map(a => ({ ...a }));
-        // The library choice comes back with the clip; a clip saved without one (or before the
-        // library existed) restores to the file slots, so a leftover library set cannot win over them.
+        // the library choice comes back with the clip; a clip saved without one restores to the file slots
         state.assetRef = normalizeAssetRef(meta.assetRef);
         state.refSource = state.assetRef ? "library" : "files";
-        // A restored set is worth showing — leaving its panel collapsed hides the fact
-        // that anything came back.
-        if (state.refImages?.length || state.refVideos?.length || state.refAudios?.length) {
-          state.refTypes = { ...(state.refTypes || {}),
-            images: !!state.refImages?.length || state.refTypes?.images !== false,
-            videos: !!state.refVideos?.length || !!state.refTypes?.videos,
-            audios: !!state.refAudios?.length || !!state.refTypes?.audios };
-        }
         if (meta.aspect) state.aspect = meta.aspect;
         if (meta.megapixels != null) state.megapixels = meta.megapixels;
-        state.hiresFinish = !!meta.hiresFinish;
-        if (meta.hiresStartMp != null) state.hiresStartMp = meta.hiresStartMp;
-        if (meta.hiresFinalMp != null) state.hiresFinalMp = meta.hiresFinalMp;
-        if (meta.hiresChunkRows != null) state.hiresChunkRows = meta.hiresChunkRows;
         if (meta.frames) { state.clipFrames = meta.frames; state.clipLengthCustom = false; }
-        if (meta.steps != null) state.steps = meta.steps;
-        if (meta.sampler) state.sampler = meta.sampler;
-        // A clip saved after the pipeline split carries each axis; one saved before it
-        // has only `accel`, holding turbo/solattn/spectrum/none — values that are not
-        // valid on any of the new axes, so they get translated the same way
-        // migrateLegacyAccel() translates a stored workflow.
-        if (meta.attnBackend || meta.turboMode || meta.blockCache) {
-          if (meta.turboMode)   state.turboMode   = meta.turboMode;
-          if (meta.attnBackend) state.attnBackend = meta.attnBackend;
-          if (meta.attnForward) state.attnForward = meta.attnForward;
-          if (meta.h3Optimizer) state.h3Optimizer = meta.h3Optimizer;
-          if (meta.h3SparseBudget != null) state.h3SparseBudget = meta.h3SparseBudget;
-          if (meta.blockCache)  state.blockCache  = meta.blockCache;
-          if (meta.useSpectrum != null)        state.useSpectrum        = !!meta.useSpectrum;
-          if (meta.useFusedModulation != null) state.useFusedModulation = !!meta.useFusedModulation;
-          // Clips written before these were recorded simply leave them alone, which keeps
-          // the panel's current values rather than inventing a default the clip never had.
-          if (meta.useTorchPatch != null)      state.useTorchPatch      = !!meta.useTorchPatch;
-          if (meta.fp16Accum != null)          state.fp16Accum          = !!meta.fp16Accum;
-        } else if (meta.accel) {
-          if (meta.accel === "turbo")         state.turboMode   = "larryvrh";
-          else if (meta.accel === "spectrum") state.useSpectrum = true;
-          else if (meta.accel === "solattn")  state.attnBackend = "solattn_kijai";
+        if (meta.steps != null) state.ltxGenSteps = meta.steps;
+        if (meta.sampler) state.ltxGenSampler = meta.sampler;
+        if (meta.scheduler) state.ltxGenScheduler = meta.scheduler;
+        if (meta.stage2Sigmas) state.ltxStage2Sigmas = meta.stage2Sigmas;
+        if (meta.cfg != null) state.ltxCfg = meta.cfg;
+        if (meta.distilledLora !== undefined) {
+          state.distilledLoraOn = !!meta.distilledLora;
+          if (meta.distilledLora) { state.distilledLora = meta.distilledLora.name; state.distilledLoraStrength = meta.distilledLora.strength; }
         }
         if (meta.seed != null) {
           state.seed = meta.seed; state.seedMode = "fixed";
           seedInput.value = meta.seed; seedModeDD.value = "fixed";
         }
-        if (meta.turboLora) state.turboLora = meta.turboLora;
-        if (meta.turboLoraReference) state.turboLoraReference = meta.turboLoraReference;
-        if (meta.turboLoraStrength != null) state.turboLoraStrength = meta.turboLoraStrength;
-        if (meta.turboLoraLowVram != null) state.turboLoraLowVram = meta.turboLoraLowVram;
-        if (meta.scheduler)  state.scheduler  = meta.scheduler;
-        if (meta.denoise != null)    state.denoise    = meta.denoise;
-        if (meta.shiftVideo != null) state.shiftVideo = meta.shiftVideo;
-        if (meta.shiftAudio != null) state.shiftAudio = meta.shiftAudio;
-        if (meta.turboSteps != null)    state.turboSteps    = meta.turboSteps;
-        if (meta.slaTurboSteps != null) state.slaTurboSteps = meta.slaTurboSteps;
-        if (meta.slaTurboLora)          state.slaTurboLora  = meta.slaTurboLora;
-        if (meta.pddNfe)                state.pddNfe            = meta.pddNfe;
-        if (meta.pddFile)              state.pddFile           = meta.pddFile;
-        if (meta.pddFileReference)     state.pddFileReference  = meta.pddFileReference;
-        // Inline deblur / upscale the clip was made with — reproduce it. Only for a clip
-        // whose pass ran INLINE at generation time: a gallery post-processed file
-        // (meta.postProcess set) carries the SOURCE's meta, and §5 Reuse rebuilds that
-        // un-processed original, not the upscale-again.
+        // Inline deblur / upscale the clip was made with. A gallery post-processed file (meta.postProcess) carries the
+        // SOURCE's meta, and Reuse rebuilds that un-processed original, not the upscale-again.
         if (!meta.postProcess) {
           if (meta.deblur !== undefined) state.deblurStrength = meta.deblur || "none";
           if (meta.upscale === null) {
@@ -6223,41 +3251,6 @@ app.registerExtension({
         persist();
         refreshPlan();
         renderLeft();
-        return true;
-      };
-
-      // H3 Image Gallery's own "↩ Reuse Setting" — Image Generator has none of the main
-      // clip's accelerator/turbo stack, so this is a separate, much smaller restore than
-      // ctx.reuseAll rather than a variant of it: prompt, sub-mode, resolution, LoRAs and
-      // (for Reference to Image) the reference image set.
-      ctx.reuseImageSettings = (meta) => {
-        if (!meta) return false;
-        state.generationMode = "imagegen";
-        const subMode = ["t2i", "ref2i", "charsheet"].includes(meta.subMode) ? meta.subMode : "t2i";
-        state.imageGenMode = subMode;
-        if (subMode === "charsheet") state.charSheetPrompt = String(meta.prompt || "");
-        else state.imgPrompt = String(meta.prompt || "");
-        if (meta.imgAspect) state.imgAspect = meta.imgAspect;
-        if (meta.imgPreviewMp != null) state.imgPreviewMp = meta.imgPreviewMp;
-        if (meta.imgFinalMp != null) state.imgFinalMp = meta.imgFinalMp;
-        if (Array.isArray(meta.imgLoras)) state.imgLoras = meta.imgLoras.map(l => ({
-          name: l.name || "none", strength: l.strength ?? 1.0,
-          triggerWord: l.triggerWord || "", enabled: l.enabled !== false,
-        }));
-        if (Array.isArray(meta.refImages)) state.imgRefImages = meta.refImages.slice();
-        if (meta.refImageSize) state.imgRefImageSize = meta.refImageSize;
-        if (meta.seed != null) { state.seed = meta.seed; state.seedMode = "fixed"; seedInput.value = meta.seed; seedModeDD.value = "fixed"; }
-        if (meta.imgSteps != null) state.imgSteps = meta.imgSteps;
-        if (meta.imgSecondPassSteps != null) state.imgSecondPassSteps = meta.imgSecondPassSteps;
-        state.imgLatentMode = meta.imgLatentMode === "fizgig" ? "fizgig" : "basic";
-        if (meta.imgTurboOn != null) state.imgTurboOn = !!meta.imgTurboOn;
-        if (meta.imgTurboLora) {
-          const turboKey = subMode === "ref2i" ? "imgTurboLoraRef2i" : "imgTurboLoraT2i";
-          state[turboKey] = meta.imgTurboLora;
-        }
-        if (meta.imgTurboLoraStrength != null) state.imgTurboLoraStrength = meta.imgTurboLoraStrength;
-        persist();
-        renderPills(); renderLeft(); renderPrompts();
         return true;
       };
 
@@ -6302,34 +3295,10 @@ app.registerExtension({
         runGeneration();
       };
 
-      // Preset save / manage dialogs. They persist through the same config route the
-      // model pickers use, so a saved preset is not lost with the browser's storage.
-      presetDlgs = createPresetDialogs(root, {
-        getUserPresets: () => (Array.isArray(state.userPresets) ? state.userPresets.slice() : []),
-        setUserPresets: (arr) => {
-          state.userPresets = arr;
-          persist();
-          saveConfig({ user_presets: arr }).catch(() => {});
-          renderLeft();
-        },
-        captureAxes: () => captureAxes(state),
-        showPopup,
-      });
-
       galleryOv = createGalleryOverlay(state, ctx);
       root.appendChild(galleryOv.el);
       document.body.appendChild(galleryOv.playerEl);   // fullscreen player lives above everything
 
-      imageGalleryOv = createImageGalleryOverlay(state, ctx);
-      root.appendChild(imageGalleryOv.el);
-      root.appendChild(imgPromptExpandEl);
-      // Templates read only `state.mode`; T2I and Ref2I each keep their own tag presets.
-      imgTemplateOv = createTemplateOverlay({ get mode() { return state.imageGenMode === "ref2i" ? "ref2i" : "t2i"; } }, ctx, txt => {
-        state.imgPrompt = txt;
-        if (imgInlineTA) imgInlineTA.value = txt;
-        persist();
-      }, "minimax_h3");
-      root.appendChild(imgTemplateOv.el);
       // Any reference-video picker (left panel media slots, Prompt Edit's per-clip slots)
       // opens this same gallery instead of a separate, badge-less grid of its own.
       ctx.pickVideoFromGallery = (onPick, opts) => galleryOv.showPicker(onPick, opts);
@@ -6343,7 +3312,6 @@ app.registerExtension({
         if (commonOv?.isOpen())    { commonOv.hide(); return; }
         if (promptEditOv?.isOpen()) { promptEditOv.hide(); return; }
         if (galleryOv?.isOpen())   { galleryOv.hide(); return; }
-        if (imageGalleryOv?.isOpen()) { imageGalleryOv.hide(); return; }
         if (helpEl.style.display !== "none") { helpEl.style.display = "none"; return; }
         if (queueListOv.el.style.display !== "none") { queueListOv.el.style.display = "none"; return; }
         if (settingsOv?.el.style.display !== "none") { settingsOv.hide(); return; }
@@ -6417,25 +3385,11 @@ app.registerExtension({
         setStatus(`Resuming clip ${saved.pos + 1}/${saved.totClip} after reload…`);
         runGeneration({
           pos: saved.pos, activeIdx: saved.activeIdx, chainFrame: saved.chainFrame,
-          prevCheckpointName: saved.prevCheckpointName, clipRecords: saved.clipRecords,
+          clipRecords: saved.clipRecords,
           runState: saved.runState, inFlightPromptId,
         });
       })();
 
-      // Same idea for a segmented LTX Upscale run: state._ltxRelay carries the plan +
-      // finished parts + the in-flight segment's prompt_id. A tab-switch reload that
-      // kills the JS loop leaves ComfyUI still churning through the queued segments —
-      // rebuild the loop and let it finish + concat.
-      (async function checkResumeLtxRunning() {
-        const R = state._ltxRelay;
-        if (!R || !Array.isArray(R.passes) || !Array.isArray(R.parts) || !R.rs
-            || !(R.parts.length < R.passes.length)) {
-          if (R) { delete state._ltxRelay; persist(); }
-          return;
-        }
-        setStatus(`Resuming LTX Upscale segment ${R.parts.length + 1}/${R.passes.length} after reload…`);
-        runLtxUpscale({ resumed: true });
-      })();
     };
   },
 });
