@@ -1069,10 +1069,16 @@ This cannot be undone.`,
   }
 
   // The result is shown first, as a plan, and only goes into the clips when applied.
+  // A dimmed backdrop with the result in a panel: the whole plan fills it, a refined prompt is a small popup.
   const planOv = el("div", { style: {
     display: "none", position: "absolute", inset: "0", zIndex: "20",
-    background: "rgba(11,11,11,0.985)", borderRadius: "inherit",
-    flexDirection: "column", padding: "12px", gap: "8px", boxSizing: "border-box",
+    background: "rgba(0,0,0,0.6)", borderRadius: "inherit",
+    alignItems: "center", justifyContent: "center", boxSizing: "border-box",
+  }});
+  const planPanel = el("div", { style: {
+    display: "flex", flexDirection: "column", gap: "8px", boxSizing: "border-box", padding: "12px",
+    background: "rgba(11,11,11,0.985)", border: `1px solid ${BRAND}`, borderRadius: "10px",
+    boxShadow: "0 8px 30px rgba(0,0,0,0.6)",
   }});
   const planHdr = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" } });
   const planTitle = el("div", { text: "", style: { color: "#fff", fontSize: "14px", fontWeight: "700", flex: "1" } });
@@ -1081,7 +1087,8 @@ This cannot be undone.`,
   planBody.className = "ltx25-lp";
   const planFoot = el("div", { style: { display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "8px", flexShrink: "0" } });
   const planNote = el("div", { style: { fontSize: "10.5px", color: C.muted, flex: "1" } });
-  planOv.append(planHdr, planBody, planFoot);
+  planPanel.append(planHdr, planBody, planFoot);
+  planOv.append(planPanel);
 
   function planCard(title, text, accent = BRAND) {
     return el("div", { style: { background: C.bg1, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "9px 11px", display: "flex", flexDirection: "column", gap: "5px" } }, [
@@ -1089,8 +1096,11 @@ This cannot be undone.`,
       el("div", { text, style: { color: C.text, fontSize: "12px", lineHeight: "1.55", whiteSpace: "pre-wrap" } }),
     ]);
   }
-  function openPlanReview({ title, cards, note, onApply, onAgain }) {
+  function openPlanReview({ title, cards, note, onApply, onAgain, popup = false }) {
     clear(planBody); clear(planFoot);
+    Object.assign(planPanel.style, popup
+      ? { width: "min(780px, 92%)", height: "auto", maxHeight: "82%" }
+      : { width: "calc(100% - 24px)", height: "calc(100% - 24px)", maxHeight: "none" });
     planTitle.textContent = title;
     cards.forEach(c => planBody.appendChild(c));
     planNote.textContent = note || "";
@@ -1208,13 +1218,13 @@ This cannot be undone.`,
 
   // ── Prompt Refine ────────────────────────────────────────────────────────────
   let lastRefineInstruction = "";
-  async function doRefine() {
+  async function doRefine(scope = "clip") {
     if (busy) return;
     const problem = briefProblem();
     if (problem) { ctx.showPopup?.(problem, true); return; }
-    const seg = isDirector() ? await host.selectedSegment() : null;
-    const current = (seg ? seg.prompt : editor.value || "").trim();
-    const what = seg ? `segment ${seg.index + 1} (${secLabel(seg.start)} – ${secLabel(seg.end)})` : `clip ${selected + 1}'s prompt`;
+    const seg = scope === "clip" && isDirector() ? await host.selectedSegment() : null;
+    const current = (scope === "global" ? headerTA.value : seg ? seg.prompt : editor.value || "").trim();
+    const what = scope === "global" ? "the global prompt" : seg ? `segment ${seg.index + 1} (${secLabel(seg.start)} – ${secLabel(seg.end)})` : `clip ${selected + 1}'s prompt`;
     if (!current) { ctx.showPopup?.(`Nothing to refine yet — ${seg ? "that segment has no prompt" : "write a prompt first"}.`, true); return; }
     const instruction = await ask(ov, {
       title: "Refine prompt",
@@ -1225,7 +1235,7 @@ This cannot be undone.`,
     lastRefineInstruction = instruction.trim();
 
     const lines = [];
-    if ((state.promptHeader || "").trim()) lines.push("Global prompt of the piece:", state.promptHeader.trim(), "");
+    if (scope === "clip" && (state.promptHeader || "").trim()) lines.push("Global prompt of the piece:", state.promptHeader.trim(), "");
     if ((editor.value || "").trim() && seg) lines.push("Prompt of this clip:", editor.value.trim(), "");
     if (seg) {
       const around = seg.prompts.map((t, n) => (n === seg.index || !t.trim() ? null : `segment ${n + 1}: ${t.trim()}`)).filter(Boolean);
@@ -1244,11 +1254,17 @@ This cannot be undone.`,
       if (!text) throw new Error("empty response");
       openPlanReview({
         title: `Refine — ${what}`,
+        popup: true,
         cards: [planCard("BEFORE", current, C.muted), planCard("AFTER", text)],
-        note: "Apply replaces " + (seg ? "that segment's prompt." : "the clip prompt."),
+        note: "Apply replaces " + (scope === "global" ? "the global prompt." : seg ? "that segment's prompt." : "the clip prompt."),
         onApply: async () => {
           snapshot("Prompt Refine");
-          if (seg) { await host.setSegmentPrompt(seg.index, text); saveDir(); }
+          if (scope === "global") {
+            const target = framingTarget();
+            if (ownFraming()) target.header = text; else target.promptHeader = text;
+            headerTA.value = text;
+            ctx.persist(); refreshPreviewTag(); ctx.onGlobalRefined?.();
+          } else if (seg) { await host.setSegmentPrompt(seg.index, text); saveDir(); }
           else {
             editor.value = text;
             state.prompts[selected] = normPrompt(state.prompts[selected]);
@@ -1270,12 +1286,18 @@ This cannot be undone.`,
       setEditorBusy(false);
     }
   }
-  refineBtn.addEventListener("click", doRefine);
+  refineBtn.addEventListener("click", () => doRefine());
+  headerUC.append(el("button", { type: "button", text: "🔧 Refine", title: "Refine the global prompt with the writer", style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "9px", padding: "2px 7px", borderRadius: "4px",
+    background: C.bg2, color: BRAND, border: `1px solid ${BRAND}`, flexShrink: "0",
+  } }));
+  headerUC.lastChild.addEventListener("click", () => doRefine("global"));
 
   // Write / Refine started from the main screen: the popup opens only to host the dialogs, and closes again after.
   let transientMode = false;
   function openTransient(idx, action) {
     transientMode = ov.style.display === "none";
+    transientLook(transientMode);
     ov.style.display = "flex";
     if (!state.prompts || !state.prompts.length) state.prompts = [blankPrompt()];
     if (idx != null) selected = idx;
@@ -1284,7 +1306,13 @@ This cannot be undone.`,
     action().finally(() => { if (transientMode && planOv.style.display === "none") finishTransient(); });
   }
   function finishTransient() {
-    if (transientMode && planOv.style.display === "none") { ov.style.display = "none"; transientMode = false; }
+    if (transientMode && planOv.style.display === "none") { ov.style.display = "none"; transientMode = false; transientLook(false); }
+  }
+  // Started from the main screen, only the dialogs show: the editor stays out of sight behind a dim backdrop.
+  function transientLook(on) {
+    ov.style.background = on ? "rgba(0,0,0,0.55)" : "rgba(11,11,11,0.985)";
+    ov.style.zIndex = on ? "10000" : "9999";
+    [hdr, setsWrap, commonWrap, body, footer].forEach(n => { n.style.visibility = on ? "hidden" : ""; });
   }
 
   // ── footer ─────────────────────────────────────────────────────────────────
@@ -1323,7 +1351,7 @@ This cannot be undone.`,
     renderList(); loadSelected(); refreshPlanTag(); refreshUndo();
   }
 
-  function hide() { ov.style.display = "none"; planOv.style.display = "none"; transientMode = false; onApply?.(); }
+  function hide() { ov.style.display = "none"; planOv.style.display = "none"; transientMode = false; transientLook(false); onApply?.(); }
 
   return {
     el: ov,
@@ -1351,6 +1379,10 @@ This cannot be undone.`,
      * that precedes it) fully covers it — the user never sees the tabs/editor. */
     openRefine(idx) {
       openTransient(idx, doRefine);
+    },
+    /** Refine the global prompt from the Global popup. */
+    openRefineGlobal() {
+      openTransient(null, () => doRefine("global"));
     },
     /** Same idea as openRefine(), but runs Prompt Write instead — used by the main
      * screen's own Prompt Write button. */

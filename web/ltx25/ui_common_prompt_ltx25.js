@@ -7,10 +7,16 @@ import { C, BRAND, el, composeClipPrompt } from "./core_ltx25.js";
 import { button } from "../klein/ui_common.js";
 
 export function createCommonPromptOverlay(state, ctx, onApply) {
+  // A popup over a dimmed backdrop, not the whole node.
   const ov = el("div", { style: {
     position: "absolute", inset: "0", zIndex: "9999",
-    background: "rgba(11,11,11,0.985)", borderRadius: "inherit",
-    display: "none", flexDirection: "column", padding: "12px", gap: "8px", boxSizing: "border-box",
+    background: "rgba(0,0,0,0.6)", borderRadius: "inherit",
+    display: "none", alignItems: "center", justifyContent: "center", boxSizing: "border-box",
+  }});
+  const panel = el("div", { style: {
+    width: "min(760px, 92%)", height: "min(430px, 80%)", display: "flex", flexDirection: "column", gap: "8px",
+    padding: "12px", boxSizing: "border-box", background: "rgba(11,11,11,0.985)",
+    border: `1px solid ${BRAND}`, borderRadius: "10px", boxShadow: "0 8px 30px rgba(0,0,0,0.6)",
   }});
 
   const hdr = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" } });
@@ -56,7 +62,9 @@ export function createCommonPromptOverlay(state, ctx, onApply) {
     headerF.ta.value = "";
     ctx.persist(); refreshTag(); onApply?.();
   });
-  foot.append(clearBtn, tag, button("✓ Done", () => hide(), "primary"));
+  const refineBtn = button("🔧 Refine", () => ctx.refineGlobal?.(), "default");
+  ctx.onGlobalRefined = () => { headerF.ta.value = state.promptHeader || ""; refreshTag(); onApply?.(); };
+  foot.append(clearBtn, refineBtn, tag, button("✓ Done", () => hide(), "primary"));
 
   function refreshTag() {
     const full = composeClipPrompt(state, 0).length;
@@ -65,7 +73,8 @@ export function createCommonPromptOverlay(state, ctx, onApply) {
 
   function hide() { ov.style.display = "none"; onApply?.(); }
 
-  ov.append(hdr, body, foot);
+  panel.append(hdr, body, foot);
+  ov.append(panel);
   return {
     el: ov,
     show() {

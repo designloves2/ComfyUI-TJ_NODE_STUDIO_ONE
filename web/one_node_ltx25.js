@@ -3193,6 +3193,7 @@ app.registerExtension({
       promptEditOv = createPromptEditOverlay(state, ctx, () => { refreshPlan(); });
       root.appendChild(promptEditOv.el);
 
+      ctx.refineGlobal = () => promptEditOv?.openRefineGlobal();
       commonOv = createCommonPromptOverlay(state, ctx, () => { refreshPlan(); promptEditOv?.syncCommon?.(); });
       root.appendChild(commonOv.el);
 
