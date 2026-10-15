@@ -8,9 +8,9 @@
 // ships, fetched from the backend (with a built-in fallback when TJ_NODE isn't present).
 import {
   C, BRAND, el, clear, clipSecondsFor, clipFramesFor, clipTimeline, snapHalf, clipSecForTyped, composeClipPrompt, clipFraming, promptText,
-  promptEnabled, promptOverrides, activePrompts, parseTargetSeconds, emptyTimeline
+  promptEnabled, promptOverrides, activePrompts, parseTargetSeconds, emptyTimeline, clipAssets
 } from "./core_ltx25.js";
-import { LTX_WRITE_SYSTEM, LTX_REFINE_SYSTEM, LTX_VISION_SYSTEM } from "./prompts_ltx25.js";
+import { LTX_WRITE_SYSTEM, LTX_WRITE_PLAIN_SYSTEM, LTX_REFINE_SYSTEM, LTX_VISION_SYSTEM } from "./prompts_ltx25.js";
 import { button, select } from "../klein/ui_common.js";
 import { createDirectorHost } from "./director/director_host.js";
 import { openAssetPicker } from "../shared/reflib_picker.js";
@@ -448,7 +448,7 @@ This cannot be undone.`,
   editor.addEventListener("input", () => {
     state.prompts[selected] = normPrompt(state.prompts[selected]);
     state.prompts[selected].text = editor.value;
-    host.setText(editor.value).then(saveDir);
+    if (isDirector()) host.setText(editor.value).then(saveDir);
     ctx.persist(); updateCount(); renderList();
   });
   const editorUndoClear = undoClearBtns(editor, v => {
@@ -532,6 +532,8 @@ This cannot be undone.`,
   // Same "busy, no per-step feedback" banner language as the video preview's own
   // frDetectBanner/fvsrBanner — dim cover + centered glowing text — over the one field
   // a Prompt Write/Refine run is actually about to overwrite.
+  // Only LTX Director edits a segment timeline; Text To Video and Image to Video write one prompt per clip.
+  const isDirector = () => state.generationMode === "director";
   const editorWrap = el("div", { style: { flex: "0 0 auto", height: "72px", display: "flex", position: "relative" } });
   const editorBusyOv = el("div", { text: "✨ Writing the prompt…", style: {
     display: "none", position: "absolute", inset: "0", zIndex: "5",
@@ -576,7 +578,7 @@ This cannot be undone.`,
   }
   function timeChanged() {
     editor.value = promptText(normPrompt(state.prompts[selected]));
-    host.setLength(clipFramesFor(state, selected)).then(saveDir);
+    if (isDirector()) host.setLength(clipFramesFor(state, selected)).then(saveDir);
     ctx.persist(); renderTimeRow(); renderList(); refreshPlanTag(); refreshPreviewTag(); ctx.refreshModes?.();
   }
   timeChk.addEventListener("change", () => {
@@ -784,7 +786,14 @@ This cannot be undone.`,
     editor.value = promptText(p);
     editorUndoClear.resetStack?.();
     editTitle.textContent = `Clip ${selected + 1}`;
-    host.load(p.dir, { frames: clipFramesFor(state, selected), text: promptText(p) });
+    const timeline = isDirector();
+    editor.placeholder = timeline
+      ? "Prompt for this clip — the scene, camera and sound. Each segment gets its own prompt in the timeline below."
+      : "Prompt for this clip — the shot, the action, the camera and the sound, as one flowing paragraph.";
+    hostWrap.style.display = timeline ? "flex" : "none";
+    editorWrap.style.flex = timeline ? "0 0 auto" : "1";
+    editorWrap.style.height = timeline ? "72px" : "";
+    if (timeline) host.load(p.dir, { frames: clipFramesFor(state, selected), text: promptText(p) });
     renderTimeRow();
     updateCount();
     renderFirstFrameRow();
@@ -803,9 +812,10 @@ This cannot be undone.`,
   ctx.describeImages = (files) => describeImages(files, () => {});
 
   // ── Prompt Write / Refine ────────────────────────────────────────────────────
-  // The writer works in segments. Write plans every clip - the clip's own prompt plus a prompt and an end time
-  // for each segment - and Apply puts the result straight into the clips' timelines. Refine rewrites the one
-  // segment that is selected in the timeline (or the clip prompt when none is).
+  // In LTX Director the writer works in segments: Write plans every clip - the clip's own prompt plus a prompt and an
+  // end time for each segment - and Apply puts the result straight into the clips' timelines; Refine rewrites the one
+  // segment that is selected in the timeline (or the clip prompt when none is). In Text To Video and Image to Video
+  // Write plans one prompt per clip and Refine rewrites the clip prompt.
   // The writer's settings live in a small popup that opens upward from this button, so the editor keeps the height.
   const enhTitle = el("span", { text: "PROMPT WRITER" });
   const writerBtn = el("button", { type: "button", title: "Writer settings: target, length, model", style: {
@@ -969,7 +979,11 @@ This cannot be undone.`,
   }
   /** [{ file, at }] - the image segments of clip i's timeline, in time order. */
   function timelineImages(i) {
-    const p = normPrompt((state.prompts || [])[i]) || {};
+    if (!isDirector()) {
+      const a = clipAssets(state, i);
+      return [a.firstFrame && { file: a.firstFrame, at: 0 }, a.lastFrame && { file: a.lastFrame, at: clipSecondsFor(state, i) }].filter(Boolean);
+    }
+    const p =normPrompt((state.prompts || [])[i]) || {};
     let tl = {};
     try { tl = JSON.parse(p.dir?.widgets?.timeline_data || "{}"); } catch { tl = {}; }
     return (tl.segments || [])
@@ -1015,7 +1029,7 @@ This cannot be undone.`,
     const total = lens.reduce((a, b) => a + b, 0);
     const lines = [
       `Total length: ${secLabel(total)} in ${lens.length} clip${lens.length > 1 ? "s" : ""}: ${lens.map((s, k) => `clip ${k + 1} = ${secLabel(s)}`).join(", ")}.`,
-      `Write exactly ${lens.length} clip${lens.length > 1 ? "s" : ""} with these lengths; the last segment of each clip ends at that clip's length.`,
+      `Write exactly ${lens.length} clip${lens.length > 1 ? "s" : ""} with these lengths${isDirector() ? "; the last segment of each clip ends at that clip's length" : ""}.`,
     ];
     if (target === "one") {
       lines.push(`This is clip ${selected + 1} of ${(state.prompts || []).length}; the other clips already exist, so keep the "global" description of the piece.`);
@@ -1024,7 +1038,7 @@ This cannot be undone.`,
         if (prev) lines.push(`The previous clip ends like this - open this clip where it left off: ${prev}`);
       }
     }
-    if (imageNotes) lines.push("", "Images placed on this clip's timeline (in order; the time is when each one appears):", imageNotes);
+    if (imageNotes) lines.push("", isDirector() ? "Images placed on this clip's timeline (in order; the time is when each one appears):" : "Images given to this clip (in order; the time is when each one appears):", imageNotes);
     lines.push("", "Brief:", base || "(no text supplied - base the plan on the images above)", "", "Return only the JSON object.");
     return lines.join("\n");
   }
@@ -1092,7 +1106,7 @@ This cannot be undone.`,
   /** Put a plan into the clips: each clip gets its prompt and one text segment per planned beat. */
   async function applyPlan(plan, target) {
     snapshot("Prompt Write");
-    planHost = planHost || createDirectorHost();
+    if (isDirector()) planHost = planHost || createDirectorHost();
     if (plan.global && (target === "all" || !(state.promptHeader || "").trim())) state.promptHeader = plan.global;
     if (target === "all") {
       while (state.prompts.length < plan.clips.length) state.prompts.push(blankPrompt());
@@ -1104,6 +1118,7 @@ This cannot be undone.`,
       const p = state.prompts[i] = normPrompt(state.prompts[i]);
       p.text = clip.prompt;
       p.enabled = true;
+      if (!isDirector()) continue;
       const frames = clipFramesFor(state, i);
       let tl;
       try { tl = JSON.parse(p.dir?.widgets?.timeline_data || "null"); } catch { tl = null; }
@@ -1164,14 +1179,15 @@ This cannot be undone.`,
         const summary = await describeImages(imgs.map(m => m.file));
         notes = summary.split("\n").map((l, k) => `${l}  [appears at ${secLabel(imgs[k]?.at || 0)}]`).join("\n");
       }
-      progressStage("Planning clips and segments...");
-      const text = await callBrief(LTX_WRITE_SYSTEM, buildWriteRequest(target, lens, base, notes), Math.min(16000, 1800 * lens.length + 1500));
+      progressStage(isDirector() ? "Planning clips and segments..." : "Planning clips...");
+      const text = await callBrief(isDirector() ? LTX_WRITE_SYSTEM : LTX_WRITE_PLAIN_SYSTEM,buildWriteRequest(target, lens, base, notes), Math.min(16000, 1800 * lens.length + 1500));
       if (!text) throw new Error("empty response");
       const plan = parsePlan(text, lens);
       openPlanReview({
         title: target === "all" ? `Plan — ${plan.clips.length} clip${plan.clips.length > 1 ? "s" : ""}` : `Plan — clip ${selected + 1}`,
         cards: planCards(plan, lens),
-        note: target === "all" ? "Apply replaces the global prompt and every clip's prompt and text segments (images on the timelines stay)."
+        note: !isDirector() ? (target === "all" ? "Apply replaces the global prompt and every clip's prompt." : "Apply replaces this clip's prompt.")
+          : target === "all" ? "Apply replaces the global prompt and every clip's prompt and text segments (images on the timelines stay)."
           : "Apply replaces this clip's prompt and text segments (its images stay).",
         onApply: () => applyPlan(plan, target),
         onAgain: () => doWrite(),
@@ -1196,7 +1212,7 @@ This cannot be undone.`,
     if (busy) return;
     const problem = briefProblem();
     if (problem) { ctx.showPopup?.(problem, true); return; }
-    const seg = await host.selectedSegment();
+    const seg = isDirector() ? await host.selectedSegment() : null;
     const current = (seg ? seg.prompt : editor.value || "").trim();
     const what = seg ? `segment ${seg.index + 1} (${secLabel(seg.start)} – ${secLabel(seg.end)})` : `clip ${selected + 1}'s prompt`;
     if (!current) { ctx.showPopup?.(`Nothing to refine yet — ${seg ? "that segment has no prompt" : "write a prompt first"}.`, true); return; }
@@ -1237,7 +1253,7 @@ This cannot be undone.`,
             editor.value = text;
             state.prompts[selected] = normPrompt(state.prompts[selected]);
             state.prompts[selected].text = text;
-            await host.setText(text); saveDir();
+            if (isDirector()) { await host.setText(text); saveDir(); }
             ctx.persist(); renderList(); updateCount();
           }
         },

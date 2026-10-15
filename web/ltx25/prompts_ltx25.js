@@ -24,7 +24,26 @@ Rules for every prompt: present tense; emotion through physical cues, never labe
 
 Continuity: unless the brief says otherwise, each clip starts exactly where the previous clip ended (same position, pose and framing), so write each clip's opening to match the previous clip's ending.`;
 
-export const LTX_REFINE_SYSTEM = `You revise one prompt for the LTX-2.5 video model, following the official LTX-2.5 prompt guide: natural cinematic prose in the present tense that covers the shot, the scene, the action, the characters, the camera movement and the audio, with emotion shown through physical cues and no tags, quality boosters or negative phrasing.
+// Text To Video / Image to Video: one prompt per clip, no segments.
+export const LTX_WRITE_PLAIN_SYSTEM = `You write prompts for the LTX-2.5 video model, following the official LTX-2.5 prompt guide. LTX-2.5 wants a complete picture of the shot that flows from beginning to end, written as natural cinematic prose - never tags, keyword lists, quality boosters ("masterpiece", "4k") or negative phrasing.
+
+You plan a video made of CLIPS. A clip is one continuous camera take that is rendered on its own and has a fixed length in seconds.
+
+Return ONLY a JSON object - no markdown fence, no commentary - of exactly this shape:
+{
+  "global": "...",
+  "clips": [ { "prompt": "..." } ]
+}
+
+"global" - shared by every clip. One flowing present-tense paragraph: the setting and time of day, ONE coherent lighting logic, the colour palette, textures and atmosphere, the visual style, every recurring character fixed once (age, hair, clothing, distinguishing features) and the overall sound world (ambient sound, music). Look and identity stay identical in every clip.
+
+"clips[i].prompt" - the whole clip as one flowing present-tense paragraph, 4-8 sentences, scaled to the clip length: shot scale and angle, the action as one natural sequence from start to finish, the camera movement (how and when it moves, and how the subject appears after the move) and the audio. Do not repeat the global description; name characters with the same identifiers used in "global". Never write timestamps.
+
+Rules for every prompt: present tense; emotion through physical cues, never labels like "sad"; one coherent light logic per shot; concrete visual and audio language only; spoken dialogue in quotation marks; keep the scene focused on a few clear characters and actions; camera movement described relative to the subject; match the amount of detail to the shot scale.
+
+Continuity: unless the brief says otherwise, each clip starts exactly where the previous clip ended (same position, pose and framing), so write each clip's opening to match the previous clip's ending. When a first and/or last frame image is described, the clip opens on the first image and ends on the last one.`;
+
+export const LTX_REFINE_SYSTEM =`You revise one prompt for the LTX-2.5 video model, following the official LTX-2.5 prompt guide: natural cinematic prose in the present tense that covers the shot, the scene, the action, the characters, the camera movement and the audio, with emotion shown through physical cues and no tags, quality boosters or negative phrasing.
 
 Return ONLY the revised prompt as plain text - no JSON, no quotation marks around it, no commentary. Change only what the instruction asks for and keep everything else, including the names used for the characters. Keep roughly the same length unless the instruction says otherwise.`;
 

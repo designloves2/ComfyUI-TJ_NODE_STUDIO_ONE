@@ -1317,7 +1317,7 @@ app.registerExtension({
             else state.prompts.splice(i, 1);
             persist(); refreshPlan();
           });
-          line.append(sideCol, el("div", { style: { flex: "1", minWidth: "0", display: "flex", flexDirection: "column", gap: "3px" } }, [ta, miniBar(p, i)]), del);
+          line.append(sideCol, el("div", { style: { flex: "1", minWidth: "0", display: "flex", flexDirection: "column", gap: "3px" } }, [ta, ...(state.generationMode === "director" ? [miniBar(p, i)] : [])]), del);
           promptList.appendChild(line);
         });
       }
@@ -2753,8 +2753,9 @@ app.registerExtension({
           totClip = active.length;
           nextGenBtn.style.display = "";
           const clipRecords = resume ? resume.clipRecords.slice() : [];
-          let chainFrame = resume ? resume.chainFrame
-            : (rs.generationMode === "reference" ? null : (rs.firstFrameImage || null));
+          // Only Image to Video takes the panel's frames; Director places its images on the timeline.
+          const framesFromPanel = rs.generationMode === "firstlast";
+          let chainFrame = resume ? resume.chainFrame : (framesFromPanel ? (rs.firstFrameImage || null) : null);
           const clipTimes = [];
           const startPos = resume ? resume.pos : 0;
 
@@ -2799,7 +2800,7 @@ app.registerExtension({
             // which is what keeps a run looking like one piece.
             const isRef = rs.generationMode === "reference";
             const libFrames = flLibrarySource(rs);   // First/Last from the Asset Library: file frames stay out
-            let firstFrame = (isRef || libFrames) ? null : (rs.firstFrameImage || null);
+            let firstFrame = (!framesFromPanel || libFrames) ? null : (rs.firstFrameImage || null);
             let refImages  = rs.refImages || [];
             const continued = pos > 0 && rs.continuityMode === "lastframe" && !!chainFrame;
             if (pos > 0) firstFrame = continued ? chainFrame : null;
@@ -2828,7 +2829,7 @@ app.registerExtension({
             // Library assets / project of this clip (its own when overriding, else the node's). A
             // chained clip starts from the previous clip's last frame, so a library First frame
             // does not apply to it.
-            clipState.assetRef = assets.assetRef
+            clipState.assetRef = (framesFromPanel || assets.own) && assets.assetRef
               ? { ...assets.assetRef, first: continued ? null : assets.assetRef.first }
               : null;
             if (assets.own) {
@@ -2874,14 +2875,15 @@ app.registerExtension({
             } else {
               let built;
               try {
-                await ctx.syncClipDir?.(i, clipState.clipFrames);
+                const useDir = rs.generationMode === "director";
+                if (useDir) await ctx.syncClipDir?.(i, clipState.clipFrames);
                 built = buildClipGraph(clipState, ctx.availability, {
-                  dir: (typeof rs.prompts[i] === "object" ? rs.prompts[i].dir : null) || null,
+                  dir: (useDir && typeof rs.prompts[i] === "object" ? rs.prompts[i].dir : null) || null,
                   nodeId: self.id,
                   promptText: promptForClip(i, rs),
                   seed: seedForClip(i, rs),
                   firstFrame,
-                  lastFrame: libLast || ((pos === active.length - 1 && !libFrames) ? (rs.lastFrameImage || null) : null),
+                  lastFrame: libLast || ((framesFromPanel && pos === active.length - 1 && !libFrames) ? (rs.lastFrameImage || null) : null),
                   refImages,
                   clipIndex: i,
                   saveLastFrame: true,

@@ -5,7 +5,6 @@ import { C, BRAND, el, clear, SUBFOLDER } from "./core_ltx25.js";
 import { panel, label, button, numberField, row, col } from "../klein/ui_common.js";
 import { getModels, getConfig, saveConfig, getNodeAvailability, listVideos, getTempSize, clearTempFiles } from "./api_ltx25.js";
 import { customLLMControls } from "../shared/custom_llm_controls.js";
-import { mountLLMSettingsSection } from "../shared/llm_panel.js";
 
 function searchableSelect(options, value, onChange) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } });
@@ -76,7 +75,7 @@ export function createSettingsOverlay(state, ctx) {
   ov.appendChild(topRow);
 
   // ── tab bar ────────────────────────────────────────────────────────────────
-  const TABS = ["LTX Model", "LLM Setting", "Image LLM", "Preview", "Output"];
+  const TABS = ["LTX Model", "LLM Setting", "Preview", "Output"];
   let activeTab = "LTX Model";
   const tabBar = el("div", { style: { display: "flex", gap: "6px", flexShrink: "0" } });
   const bodyWrap = el("div", { style: { flex: "1", overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px", paddingRight: "4px" } });
@@ -402,27 +401,6 @@ export function createSettingsOverlay(state, ctx) {
       roleRow("Vision — reads reference images", "h3VisionBackend", "nativeVisionClip", "h3OrModelVision", "native"),
     );
 
-    // ── LTX Upscale LLM — its own backend + model (not shared with H3) ──
-    if (!h3Only) {
-    const mkTA = (val, on) => {
-      const t = el("textarea", { value: val || "", style: {
-        width: "100%", minHeight: "90px", boxSizing: "border-box", background: C.bg2, color: C.text,
-        border: `1px solid ${C.border}`, borderRadius: "6px", padding: "7px", fontSize: "11px",
-        fontFamily: "inherit", outline: "none", resize: "vertical" } });
-      t.addEventListener("input", () => { on(t.value); ctx.persist(); });
-      return t;
-    };
-    const ltxInstr = mkTA(state.ltxLlmPrompt, v => state.ltxLlmPrompt = v);
-    const ltxConv  = mkTA(state.ltxConvertPrompt, v => state.ltxConvertPrompt = v);
-    wrap2.append(el("div", { style: { borderTop: `1px solid ${C.border}`, margin: "4px 0 2px" } }));
-    wrap2.append(roleRow("LTX Upscale — used by the ✨ and H3→LTX buttons", "ltxVisionBackend", "ltxVisionClip", "ltxVisionOrModel", "native", [
-      col([label("✨ vision instruction — writes a prompt from the source clip's first frame"), ltxInstr]),
-      col([label("H3 → LTX 2.5 instruction — converts a loaded H3 brief into an LTX prompt"), ltxConv]),
-      el("div", { text: "Both instructions ship ready to use — you don't have to write them. The ✨ path needs a vision-capable model; H3→LTX is text-only. Saved with Save All.",
-        style: { fontSize: "10px", color: C.muted, lineHeight: "1.55" } }),
-    ]));
-    }
-
     if (anyOR) {
       const keyIn = el("input", { type: "password", placeholder: "sk-or-… (stored in .env, shared)", style: {
         width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
@@ -536,37 +514,6 @@ export function createSettingsOverlay(state, ctx) {
       el("div", { text: "Every clip is always written to disk as its own video; the stitched file is written alongside them.", style: { fontSize: "10px", color: C.muted } }),
     ]));
 
-    // Image Generator writes stills to its own folder, separate from the video path
-    // above, so the dedicated H3 Image Gallery (which only ever lists this folder) and
-    // the video gallery never mix each other's files just because they share a path.
-    const imgPathIn = el("input", { type: "text", placeholder: SUBFOLDER, style: {
-      width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
-      border: `1px solid ${C.border}`, borderRadius: "6px", padding: "7px",
-      fontSize: "12px", fontFamily: "inherit",
-    }});
-    imgPathIn.value = state.imgSaveSubfolder || "";
-    imgPathIn.addEventListener("input", () => { state.imgSaveSubfolder = imgPathIn.value.trim(); ctx.persist(); });
-
-    // Character Sheet saves the raw multi-shot render (the "set" a sheet frame can later
-    // be re-extracted from) as a video, alongside the assembled sheet image — its own path
-    // since it's neither an ordinary H3 clip nor an Image Generator still.
-    const sheetVidPathIn = el("input", { type: "text", placeholder: SUBFOLDER + "/sheets", style: {
-      width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text,
-      border: `1px solid ${C.border}`, borderRadius: "6px", padding: "7px",
-      fontSize: "12px", fontFamily: "inherit",
-    }});
-    sheetVidPathIn.value = state.sheetVideoSaveSubfolder || "";
-    sheetVidPathIn.addEventListener("input", () => { state.sheetVideoSaveSubfolder = sheetVidPathIn.value.trim(); ctx.persist(); });
-
-    wrap.appendChild(panel([
-      label("Image Generator Save Folder (inside ComfyUI output/)"), imgPathIn,
-      el("div", { text: "Empty = same as the Save Folder above. Read by the 🎨 H3 Image Gallery and by T2I/Reference to Image/Character Sheet's own saves.",
-        style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-      label("Character Sheet — paired video Save Folder"), sheetVidPathIn,
-      el("div", { text: "Character Sheet saves the raw 8-shot render here (as a video) alongside the assembled sheet image, so any frame can be re-extracted later. Empty = same as the Image Generator folder above.",
-        style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-    ]));
-
     // Preview runs (Postprocess's, and any later mode's) never touch the real gallery —
     // they land in one shared scratch folder under ComfyUI's own temp/ dir instead, so
     // this is the one place to see how much they've grown and clear them out.
@@ -656,30 +603,14 @@ export function createSettingsOverlay(state, ctx) {
     return wrap;
   }
 
-  // Image Generator's "🔍 Prompt Edit" popup (T2I/Reference to Image, shared with Krea2/
-  // Z-Image/Klein/Qwen2511/SDXL/Anima) reads its backend/model config from the SAME
-  // cross-tool "tj_studio_one_llm_settings" store those 6 tools use — a separate system
-  // from "LLM Setting" above, which is H3's own video-brief/vision backend
-  // (h3_brief_backend etc.) and has nothing to do with the image prompt popup.
-  function imageLlmTab() {
-    const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } });
-    const llmPanel = panel([]);
-    wrap.appendChild(llmPanel);
-    mountLLMSettingsSection(llmPanel, ctx);
-    return wrap;
-  }
-
   function renderBody() {
     clear(bodyWrap);
     const fn = {
       "LTX Model": ltxModelTab,
-      "LLM Setting": samplingTab, "Image LLM": imageLlmTab, Preview: previewTab, Output: outputTab,
+      "LLM Setting": samplingTab, Preview: previewTab, Output: outputTab,
     }[activeTab];
     bodyWrap.appendChild(fn());
   }
-  // The Image Generator popup's own "⚙" shortcut jumps straight to this tab.
-  ctx.openImageLlmSettings = () => { activeTab = "Image LLM"; renderTabs(); renderBody(); ov.style.display = "flex"; refreshModels(); };
-
   function saveAll() {
     ctx.persist();
     saveConfig({
@@ -720,8 +651,6 @@ export function createSettingsOverlay(state, ctx) {
       turbo_lora_strength: state.turboLoraStrength ?? 1.0,
       upscale_model:   state.upscaleModel  || "",
       save_subfolder:  state.saveSubfolder || "",
-      img_save_subfolder: state.imgSaveSubfolder || "",
-      sheet_video_save_subfolder: state.sheetVideoSaveSubfolder || "",
       prompt_suffix:   state.promptSuffix  || "",
       avg_minutes_per_clip: state.avgMinutesPerClip ?? 13,
       preview_tiny_vae: state.previewTinyVae || "",
@@ -967,8 +896,6 @@ export function createSettingsOverlay(state, ctx) {
     // (and the gallery, and every "From gallery" picker) always came back to the
     // hardcoded SUBFOLDER default until you retyped it, every single session.
     if (cfg.save_subfolder && !state.saveSubfolder) state.saveSubfolder = cfg.save_subfolder;
-    if (cfg.img_save_subfolder && !state.imgSaveSubfolder) state.imgSaveSubfolder = cfg.img_save_subfolder;
-    if (cfg.sheet_video_save_subfolder && !state.sheetVideoSaveSubfolder) state.sheetVideoSaveSubfolder = cfg.sheet_video_save_subfolder;
     if (cfg.charsheet_system_prompt && !state.charSheetSystemPrompt) state.charSheetSystemPrompt = cfg.charsheet_system_prompt;
     if (cfg.stitch_at_end != null)          state.stitchAtEnd        = cfg.stitch_at_end;
     if (cfg.trim_last_clip != null)         state.trimLastClip       = cfg.trim_last_clip;

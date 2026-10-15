@@ -122,12 +122,19 @@ export function mountImagePanel(state, ctx) {
           n => { state.lastFrameImage = n; ctx.persist(); });
         kids.push(el("div", { style: { display: "flex", gap: "6px", justifyContent: "center" } }, [first.el, last.el]));
       }
-      kids.push(el("div", { html: "Both are optional. With neither, this is the same as Text only. The images become image segments of "
-        + "every clip's timeline (a clip's own timeline wins), and <b>Last Frame Chain</b> continuity replaces ① for every clip after the first.",
+      kids.push(el("div", { html: "One image is used as the first frame (or, if only ② is set, the last frame); two images are first + last. "
+        + "With neither, this is the same as Text only. <b>Last Frame Chain</b> continuity replaces ① for every clip after the first, "
+        + "and a clip can swap its own images in Prompt Edit.",
         style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
       wrap.appendChild(panel(kids));
       return;
     }
+
+    wrap.appendChild(panel([
+      label("Images"),
+      el("div", { text: "Images are placed on each clip's timeline in Prompt Edit. Last Frame Chain continuity still starts every clip after the first from the previous clip's last frame.",
+        style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+    ]));
 
   }
 
