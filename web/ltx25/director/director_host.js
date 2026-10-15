@@ -63,11 +63,11 @@ export function createDirectorHost({ onChange } = {}) {
   function fitHeight(ed) {
     const avail = el.clientHeight;
     if (!ed || avail < 220) return;
-    const room = Math.max(150, avail - (el.scrollHeight - ed.canvasHeight) - 4);
+    const room = Math.max(190, avail - (el.scrollHeight - ed.canvasHeight) - 4);
     const ruler = 20, rest = room - ruler;
-    const main = Math.max(52, Math.round(rest * 0.5));
-    const audio = Math.max(30, Math.round(rest * 0.25));
-    const motion = Math.max(30, rest - main - audio);
+    const main = Math.max(60, Math.round(rest * 0.4));
+    const audio = Math.max(54, Math.round(rest * 0.3));
+    const motion = Math.max(54, rest - main - audio);
     if (ed.blockHeight === main && ed.audioTrackHeight === audio && ed.motionTrackHeight === motion) return;
     ed.rulerHeight = ruler; ed.blockHeight = main; ed.audioTrackHeight = audio; ed.motionTrackHeight = motion;
     ed.canvasHeight = ruler + main + audio + motion;

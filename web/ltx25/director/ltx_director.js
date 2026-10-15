@@ -236,10 +236,11 @@ const STYLES = `
     background: #1e1e1e;
     border: 1px solid #333;
     border-radius: 6px;
-    padding: 6px 10px;
+    padding: 4px 8px;
     display: flex;
-    flex-direction: column;
-    gap: 4px;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
     margin-bottom: 4px;
     box-sizing: border-box;
     width: 100%;
@@ -247,8 +248,8 @@ const STYLES = `
   .prcs-strength-row {
     display: flex;
     align-items: center;
-    gap: 12px;
-    width: 100%;
+    gap: 8px;
+    flex: 0 0 auto;
     box-sizing: border-box;
   }
   .prcs-height-resizer {
@@ -357,10 +358,10 @@ const STYLES = `
     display: flex;
     justify-content: center;
     align-items: center;
-    gap: 12px;
-    padding: 2px 0;
-    flex-wrap: wrap;
-    width: 100%;
+    gap: 8px;
+    padding: 0;
+    flex: 1 1 0;
+    min-width: 0;
   }
   .prcs-icon-btn {
     background: #2a2a2a;
@@ -434,10 +435,11 @@ const STYLES = `
     display: flex;
     align-items: center;
     gap: 4px;
-    margin-left: 12px;
+    margin-left: 4px;
+    flex: 0 0 auto;
   }
   .prcs-zoom-slider {
-    width: 80px;
+    width: 60px;
     -webkit-appearance: none;
     appearance: none;
     height: 4px;
