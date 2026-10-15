@@ -850,8 +850,10 @@ This cannot be undone.`,
       ? "Prompt for this clip — the scene, camera and sound. Each segment gets its own prompt in the timeline below."
       : "Prompt for this clip — the shot, the action, the camera and the sound, as one flowing paragraph.";
     hostWrap.style.display = timeline ? "flex" : "none";
-    editorWrap.style.flex = timeline ? "0 0 auto" : "1";
-    editorWrap.style.height = timeline ? "72px" : "";
+    // LTX Director has no clip-level prompt field here: the prompts belong to the timeline's segments.
+    editorWrap.style.display = timeline ? "none" : "flex";
+    charCount.style.display = editorUndoClear.style.display = timeline ? "none" : "";
+    editorWrap.style.flex = "1";
     if (timeline) host.load(p.dir, { frames: clipFramesFor(state, selected), text: promptText(p) });
     renderTimeRow();
     updateCount();
