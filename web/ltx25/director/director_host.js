@@ -23,7 +23,7 @@ export function createDirectorHost({ onChange } = {}) {
   const node = window.LiteGraph.createNode("LTXDirectorTJ25");
   const ui = node.widgets.find(w => w.name === "timeline_ui");
   const el = document.createElement("div");
-  el.style.cssText = "flex:1;min-height:0;overflow:auto;position:relative";
+  el.style.cssText = "flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable;position:relative";
   el.appendChild(ui.element);
 
   let suppress = false;
@@ -45,6 +45,7 @@ export function createDirectorHost({ onChange } = {}) {
       const block = gp && gp.closest(".prcs-prop-container");
       if (block) block.style.display = "none";
       fit(ed);
+      resizer.observe(ed.wrapper);
     }
     return ed;
   }
@@ -63,7 +64,7 @@ export function createDirectorHost({ onChange } = {}) {
   function fitHeight(ed) {
     const avail = el.clientHeight;
     if (!ed || avail < 220) return;
-    const room = Math.max(190, avail - (el.scrollHeight - ed.canvasHeight) - 4);
+    const room = Math.max(190, avail - (ed.wrapper.offsetHeight - ed.canvasHeight) - 6);
     const ruler = 20, rest = room - ruler;
     const main = Math.max(60, Math.round(rest * 0.4));
     const audio = Math.max(54, Math.round(rest * 0.3));
@@ -77,7 +78,8 @@ export function createDirectorHost({ onChange } = {}) {
     ed.updateSidebarHeights();
     ed.render();
   }
-  new ResizeObserver(() => { if (hooked) fit(hooked); }).observe(el);
+  const resizer = new ResizeObserver(() => { if (hooked) fit(hooked); });
+  resizer.observe(el);
 
   // The editor hands every wheel turn to the graph canvas (zoom) unless something inside it can scroll. This box can,
   // so the wheel scrolls it - except over the timeline itself, which keeps its own wheel (zoom / pan), and over a text
