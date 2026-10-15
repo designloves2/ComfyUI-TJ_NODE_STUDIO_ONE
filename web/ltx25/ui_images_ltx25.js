@@ -117,9 +117,9 @@ export function mountImagePanel(state, ctx) {
         kids.push(libraryBlock("firstlast", "First / Last frames picked from the Asset tab; the file slots are not used."));
       } else {
         const first = imageSlot("① First frame\n(click / drop)", state.firstFrameImage,
-          n => { state.firstFrameImage = n; ctx.persist(); });
+          n => { state.firstFrameImage = n; ctx.persist(); if (n) ctx.matchAspect?.(n); });
         const last = imageSlot("② Last frame\n(optional)", state.lastFrameImage,
-          n => { state.lastFrameImage = n; ctx.persist(); });
+          n => { state.lastFrameImage = n; ctx.persist(); if (n && !state.firstFrameImage) ctx.matchAspect?.(n); });
         kids.push(el("div", { style: { display: "flex", gap: "6px", justifyContent: "center" } }, [first.el, last.el]));
       }
       kids.push(el("div", { html: "One image is used as the first frame (or, if only ② is set, the last frame); two images are first + last. "

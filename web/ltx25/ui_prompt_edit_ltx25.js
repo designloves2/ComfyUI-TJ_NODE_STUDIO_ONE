@@ -731,8 +731,8 @@ This cannot be undone.`,
       return;
     }
     const a = clipAssets(state, selected);
-    const first = imageSlot("① First frame\n(click / drop)", a.firstFrame, n => { if (own) p.firstFrame = n || ""; else state.firstFrameImage = n; sync(); renderFirstFrameRow(); }, { box: 80 });
-    const last = imageSlot("② Last frame\n(optional)", a.lastFrame, n => { if (own) p.lastFrame = n || ""; else state.lastFrameImage = n; sync(); }, { box: 80 });
+    const first = imageSlot("① First frame\n(click / drop)", a.firstFrame, n => { if (own) p.firstFrame = n || ""; else state.firstFrameImage = n; sync(); renderFirstFrameRow(); if (n && !own) ctx.matchAspect?.(n); }, { box: 80 });
+    const last = imageSlot("② Last frame\n(optional)", a.lastFrame, n => { if (own) p.lastFrame = n || ""; else state.lastFrameImage = n; sync(); if (n && !own && !state.firstFrameImage) ctx.matchAspect?.(n); }, { box: 80 });
     imgBlock.append(el("div", { style: { display: "flex", gap: "10px" } }, [first.el, last.el]));
   }
   editCol.append(editHdr, timeRow, editorWrap, hostWrap, fiRow, fiHint);

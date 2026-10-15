@@ -3214,6 +3214,17 @@ app.registerExtension({
 
       // Restores the editor from a saved clip's sidecar. Older files only carry the
       // composed `prompt`; treat that as a single clip body so nothing is lost.
+      // An image given to Image to Video sets the Aspect to the closest preset, so the Canvas shows the shape the clip will have.
+      ctx.matchAspect = async (file) => {
+        const d = await imageSize(file);
+        if (!d) return;
+        const r = d.w / d.h;
+        const best = ASPECTS.reduce((b, a) => Math.abs(a.w / a.h - r) < Math.abs(b.w / b.h - r) ? a : b);
+        if (best.label === state.aspect) return;
+        state.aspect = best.label;
+        persist(); refreshPlan(); renderLeft();
+      };
+
       ctx.reusePrompt = (meta) => {
         if (!meta) return false;
         const parts = Array.isArray(meta.prompts) && meta.prompts.length
