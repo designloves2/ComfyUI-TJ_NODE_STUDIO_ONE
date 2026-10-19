@@ -11,17 +11,30 @@
 import { api } from "../../../scripts/api.js";
 
 // ── 1. Read the selected PromptDB row via the connected loader ────────────────
+// The node an input is wired to (wireless Set/Get resolves to a real link), or null.
+function linkedSource(node, inputName) {
+  const slot = node?.inputs?.findIndex(i => i.name === inputName);
+  if (slot == null || slot < 0) return null;
+  const linkId = node.inputs[slot]?.link;
+  if (linkId == null) return null;
+  const link = node.graph?.links?.[linkId];
+  const src = link ? node.graph.getNodeById(link.origin_id) : null;
+  return src ? { src, link } : null;
+}
+
 export async function readPipeRow(node) {
   try {
-    const slot = node?.inputs?.findIndex(i => i.name === "pipe");
-    if (slot == null || slot < 0) return null;
-    const linkId = node.inputs[slot]?.link;
-    if (linkId == null) return null;                       // pipe not connected
-    const link = node.graph?.links?.[linkId];
-    if (!link) return null;
-    const src = node.graph.getNodeById(link.origin_id);    // wireless Set/Get resolves to a real link
-    if (!src || src.type !== "TJ_PromptDBLoader") return null;
+    const from = linkedSource(node, "pipe");
+    if (!from || from.src.type !== "TJ_PromptDBLoader") return null;
+    return await loaderRow(from.src);
+  } catch {
+    return null;                                            // any failure → behave as no pipe
+  }
+}
 
+// The row a PromptDBLoader has selected, read through TJ_NODE's HTTP API.
+async function loaderRow(src) {
+  try {
     const w = name => src.widgets?.find(x => x.name === name)?.value;
     const excelPath  = w("excel_path");
     const selectedId = Number(w("selected_id") ?? -1);
@@ -36,7 +49,30 @@ export async function readPipeRow(node) {
     const rows = (await res.json())?.rows || [];
     return rows.find(r => Number(r.id) === selectedId) || null;
   } catch {
-    return null;                                            // any failure → behave as no pipe
+    return null;
+  }
+}
+
+// The text wired into `prompt_override`. Nothing is computed until the workflow runs, so a PromptDBLoader is read
+// through its selected row (its first output is the positive prompt); any other node gives the widget it exposes.
+export async function readPromptOverride(node) {
+  try {
+    const from = linkedSource(node, "prompt_override");
+    if (!from) return "";
+    let { src, link } = from;
+    // a Reroute only passes the link on: follow it to the node that really holds the text
+    while (src.type === "Reroute") {
+      const next = src.inputs?.[0]?.link != null ? src.graph.links[src.inputs[0].link] : null;
+      const origin = next ? src.graph.getNodeById(next.origin_id) : null;
+      if (!origin) return "";
+      src = origin; link = next;
+    }
+    if (src.type === "TJ_PromptDBLoader") return String((await loaderRow(src))?.positive_prompt ?? "").trim();
+    const out = src.outputs?.[link.origin_slot]?.name;
+    const w = src.widgets?.find(x => x.name === out) ?? src.widgets?.[link.origin_slot] ?? src.widgets?.[0];
+    return String(w?.value ?? "").trim();
+  } catch {
+    return "";
   }
 }
 
@@ -62,6 +98,13 @@ export function collectModelNames(resp) {
   const out = [];
   for (const k of keys) if (Array.isArray(resp[k])) out.push(...resp[k]);
   return [...new Set(out.filter(n => n && n !== "none"))];
+}
+
+// The slot receives PromptDBLoader (TJ)'s pipe output. It keeps its internal name `pipe` (saved workflows and the
+// lookups above use it); only the label on the node changes.
+export function labelPipeInput(node) {
+  const input = node.inputs?.find(i => i.name === "pipe");
+  if (input) input.label = "PDBLoader pipe";
 }
 
 // ── 2. Turn a row into an overrides object (only present + valid fields) ───────
@@ -141,8 +184,10 @@ export function applyOverridesTemp(state, overrides) {
 // immediately — so `state` is only touched while the graph is built.
 export async function resolvePipeOverrides(node, state, { samplers = [], schedulers = [] } = {}) {
   const row = await readPipeRow(node);
-  if (!row) return null;
-  const { overrides, skipped, meta } = computePipeOverrides(row, { samplers, schedulers });
+  const { overrides, skipped, meta } = row ? computePipeOverrides(row, { samplers, schedulers }) : { overrides: {}, skipped: [], meta: {} };
+  // A connected prompt_override replaces the node's own prompt outright (it wins over the pipe's positive prompt too).
+  const text = await readPromptOverride(node);
+  if (text) overrides.prompt = text;
   const nApplied = Object.keys(overrides).length;
   if (!nApplied && !skipped.length) return null;
   const parts = [`PromptDB pipe: applied ${nApplied}`];

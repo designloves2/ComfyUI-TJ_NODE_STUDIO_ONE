@@ -960,7 +960,7 @@ async def fk_set_last_image(request):
     data = await request.json()
     uid = str(data.get("unique_id", ""))
     if uid:
-        _fk_last_images[uid] = data.get("image", {})
+        _fk_last_images[uid] = {**data.get("image", {}), "run": data.get("run") or {}}
     return web.json_response({"ok": True})
 
 
@@ -1075,7 +1075,7 @@ _zit_last_images: dict = {}
 async def zit_set_last_image(request):
     data = await request.json()
     uid = str(data.get("unique_id", ""))
-    _zit_last_images[uid] = data.get("image", {})
+    _zit_last_images[uid] = {**data.get("image", {}), "run": data.get("run") or {}}
     return web.json_response({"ok": True})
 
 
@@ -1191,7 +1191,7 @@ async def k2_set_last_image(request):
     data = await request.json()
     uid = str(data.get("unique_id", ""))
     if uid:
-        _k2_last_images[uid] = data.get("image", {})
+        _k2_last_images[uid] = {**data.get("image", {}), "run": data.get("run") or {}}
     return web.json_response({"ok": True})
 
 
@@ -1306,7 +1306,7 @@ async def sdxl_set_last_image(request):
     data = await request.json()
     uid = str(data.get("unique_id", ""))
     if uid:
-        _sdxl_last_images[uid] = data.get("image", {})
+        _sdxl_last_images[uid] = {**data.get("image", {}), "run": data.get("run") or {}}
     return web.json_response({"ok": True})
 
 
@@ -1439,7 +1439,7 @@ async def qe_set_last_image(request):
     data = await request.json()
     uid = str(data.get("unique_id", ""))
     if uid:
-        _qe_last_images[uid] = data.get("image", {})
+        _qe_last_images[uid] = {**data.get("image", {}), "run": data.get("run") or {}}
     return web.json_response({"ok": True})
 
 
@@ -1659,7 +1659,7 @@ async def q21_set_last_image(request):
     data = await request.json()
     uid = str(data.get("unique_id", ""))
     if uid:
-        _q21_last_images[uid] = data.get("image", {})
+        _q21_last_images[uid] = {**data.get("image", {}), "run": data.get("run") or {}}
     return web.json_response({"ok": True})
 
 
@@ -3913,7 +3913,7 @@ async def anima_set_last_image(request):
     data = await request.json()
     uid = str(data.get("unique_id", ""))
     if uid:
-        _anima_last_images[uid] = data.get("image", {})
+        _anima_last_images[uid] = {**data.get("image", {}), "run": data.get("run") or {}}
     return web.json_response({"ok": True})
 
 
@@ -4025,6 +4025,12 @@ async def shared_save_prompt_categories(request):
 # Node classes
 # ════════════════════════════════════════════════════════════════════════════════
 
+def _run_outputs(info):
+    """The positive prompt and the settings (as JSON) the last image was generated with, as the page reported them."""
+    run = info.get("run") or {}
+    return (str(run.get("positive_prompt", "")), json.dumps(run, ensure_ascii=False))
+
+
 class Flux2KleinOneTJNode:
     @classmethod
     def INPUT_TYPES(cls):
@@ -4035,7 +4041,7 @@ class Flux2KleinOneTJNode:
                     "default": "",
                     "multiline": True,
                     "forceInput": True,
-                    "tooltip": "External prompt override — prepended before the internal prompt.",
+                    "tooltip": "External prompt override — replaces the node's own prompt. Takes the text of a PromptDBLoader (TJ) or any text node wired in.",
                 }),
                 "pipe": ("TJ_PROMPT_PIPE", {
                     "tooltip": "PromptDB pipe (TJ_NODE). At generation, fields present in the pipe override this node's settings; missing fields keep the node's own values. The node's UI is never changed.",
@@ -4043,8 +4049,8 @@ class Flux2KleinOneTJNode:
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("image",)
+    RETURN_TYPES = ("IMAGE", "STRING", "STRING")
+    RETURN_NAMES = ("image", "prompt", "settings")
     FUNCTION = "get_output_image"
     CATEGORY = " ✨ TJ_Node/Generator"
     OUTPUT_NODE = True
@@ -4061,10 +4067,10 @@ class Flux2KleinOneTJNode:
                 path = os.path.join(base, subfolder, filename) if subfolder else os.path.join(base, filename)
                 img = Image.open(path).convert("RGB")
                 arr = np.array(img).astype(np.float32) / 255.0
-                return (torch.from_numpy(arr)[None,],)
+                return (torch.from_numpy(arr)[None,], *_run_outputs(info))
         except Exception as e:
             print(f"[FK] output slot error: {e}")
-        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32),)
+        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32), *_run_outputs(info))
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):
@@ -4081,7 +4087,7 @@ class Krea2OneTJNode:
                     "default": "",
                     "multiline": True,
                     "forceInput": True,
-                    "tooltip": "External prompt override — prepended before the internal prompt.",
+                    "tooltip": "External prompt override — replaces the node's own prompt. Takes the text of a PromptDBLoader (TJ) or any text node wired in.",
                 }),
                 "pipe": ("TJ_PROMPT_PIPE", {
                     "tooltip": "PromptDB pipe (TJ_NODE). At generation, fields present in the pipe override this node's settings; missing fields keep the node's own values. The node's UI is never changed.",
@@ -4089,8 +4095,8 @@ class Krea2OneTJNode:
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("image",)
+    RETURN_TYPES = ("IMAGE", "STRING", "STRING")
+    RETURN_NAMES = ("image", "prompt", "settings")
     FUNCTION = "get_output_image"
     CATEGORY = " ✨ TJ_Node/Generator"
     OUTPUT_NODE = True
@@ -4107,10 +4113,10 @@ class Krea2OneTJNode:
                 path = os.path.join(base, subfolder, filename) if subfolder else os.path.join(base, filename)
                 img = Image.open(path).convert("RGB")
                 arr = np.array(img).astype(np.float32) / 255.0
-                return (torch.from_numpy(arr)[None,],)
+                return (torch.from_numpy(arr)[None,], *_run_outputs(info))
         except Exception as e:
             print(f"[K2] output slot error: {e}")
-        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32),)
+        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32), *_run_outputs(info))
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):
@@ -4127,7 +4133,7 @@ class ZImageTurboOneNode:
                     "default": "",
                     "multiline": True,
                     "forceInput": True,
-                    "tooltip": "External prompt override — prepended before the internal prompt.",
+                    "tooltip": "External prompt override — replaces the node's own prompt. Takes the text of a PromptDBLoader (TJ) or any text node wired in.",
                 }),
                 "pipe": ("TJ_PROMPT_PIPE", {
                     "tooltip": "PromptDB pipe (TJ_NODE). At generation, fields present in the pipe override this node's settings; missing fields keep the node's own values. The node's UI is never changed.",
@@ -4135,8 +4141,8 @@ class ZImageTurboOneNode:
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("image",)
+    RETURN_TYPES = ("IMAGE", "STRING", "STRING")
+    RETURN_NAMES = ("image", "prompt", "settings")
     FUNCTION = "get_output_image"
     CATEGORY = " ✨ TJ_Node/Generator"
     OUTPUT_NODE = True
@@ -4153,10 +4159,10 @@ class ZImageTurboOneNode:
                 path = os.path.join(base, subfolder, filename) if subfolder else os.path.join(base, filename)
                 img = Image.open(path).convert("RGB")
                 arr = np.array(img).astype(np.float32) / 255.0
-                return (torch.from_numpy(arr)[None,],)
+                return (torch.from_numpy(arr)[None,], *_run_outputs(info))
         except Exception as e:
             print(f"[ZIT] output slot error: {e}")
-        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32),)
+        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32), *_run_outputs(info))
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):
@@ -4173,7 +4179,7 @@ class QwenImageEdit2511OneTJNode:
                     "default": "",
                     "multiline": True,
                     "forceInput": True,
-                    "tooltip": "External prompt override appended before the internal prompt.",
+                    "tooltip": "External prompt override — replaces the node's own prompt. Takes the text of a PromptDBLoader (TJ) or any text node wired in.",
                 }),
                 "pipe": ("TJ_PROMPT_PIPE", {
                     "tooltip": "PromptDB pipe (TJ_NODE). At generation, fields present in the pipe override this node's settings; missing fields keep the node's own values. The node's UI is never changed.",
@@ -4181,8 +4187,8 @@ class QwenImageEdit2511OneTJNode:
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("image",)
+    RETURN_TYPES = ("IMAGE", "STRING", "STRING")
+    RETURN_NAMES = ("image", "prompt", "settings")
     FUNCTION = "get_output_image"
     CATEGORY = " ✨ TJ_Node/Generator"
     OUTPUT_NODE = True
@@ -4199,10 +4205,10 @@ class QwenImageEdit2511OneTJNode:
                 path = os.path.join(base, subfolder, filename) if subfolder else os.path.join(base, filename)
                 img = Image.open(path).convert("RGB")
                 arr = np.array(img).astype(np.float32) / 255.0
-                return (torch.from_numpy(arr)[None,],)
+                return (torch.from_numpy(arr)[None,], *_run_outputs(info))
         except Exception as e:
             print(f"[QE2511] output slot error: {e}")
-        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32),)
+        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32), *_run_outputs(info))
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):
@@ -4219,7 +4225,7 @@ class QwenImage21OneTJNode:
                     "default": "",
                     "multiline": True,
                     "forceInput": True,
-                    "tooltip": "External prompt override appended before the internal prompt.",
+                    "tooltip": "External prompt override — replaces the node's own prompt. Takes the text of a PromptDBLoader (TJ) or any text node wired in.",
                 }),
                 "pipe": ("TJ_PROMPT_PIPE", {
                     "tooltip": "PromptDB pipe (TJ_NODE). At generation, fields present in the pipe override this node's settings; missing fields keep the node's own values. The node's UI is never changed.",
@@ -4227,8 +4233,8 @@ class QwenImage21OneTJNode:
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("image",)
+    RETURN_TYPES = ("IMAGE", "STRING", "STRING")
+    RETURN_NAMES = ("image", "prompt", "settings")
     FUNCTION = "get_output_image"
     CATEGORY = " ✨ TJ_Node/Generator"
     OUTPUT_NODE = True
@@ -4245,10 +4251,10 @@ class QwenImage21OneTJNode:
                 path = os.path.join(base, subfolder, filename) if subfolder else os.path.join(base, filename)
                 img = Image.open(path).convert("RGB")
                 arr = np.array(img).astype(np.float32) / 255.0
-                return (torch.from_numpy(arr)[None,],)
+                return (torch.from_numpy(arr)[None,], *_run_outputs(info))
         except Exception as e:
             print(f"[Q21] output slot error: {e}")
-        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32),)
+        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32), *_run_outputs(info))
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):
@@ -4265,7 +4271,7 @@ class SDXLOneTJNode:
                     "default": "",
                     "multiline": True,
                     "forceInput": True,
-                    "tooltip": "External prompt override — prepended before the internal prompt.",
+                    "tooltip": "External prompt override — replaces the node's own prompt. Takes the text of a PromptDBLoader (TJ) or any text node wired in.",
                 }),
                 "pipe": ("TJ_PROMPT_PIPE", {
                     "tooltip": "PromptDB pipe (TJ_NODE). At generation, fields present in the pipe override this node's settings; missing fields keep the node's own values. The node's UI is never changed.",
@@ -4273,8 +4279,8 @@ class SDXLOneTJNode:
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("image",)
+    RETURN_TYPES = ("IMAGE", "STRING", "STRING")
+    RETURN_NAMES = ("image", "prompt", "settings")
     FUNCTION = "get_output_image"
     CATEGORY = " ✨ TJ_Node/Generator"
     OUTPUT_NODE = True
@@ -4291,10 +4297,10 @@ class SDXLOneTJNode:
                 path = os.path.join(base, subfolder, filename) if subfolder else os.path.join(base, filename)
                 img = Image.open(path).convert("RGB")
                 arr = np.array(img).astype(np.float32) / 255.0
-                return (torch.from_numpy(arr)[None,],)
+                return (torch.from_numpy(arr)[None,], *_run_outputs(info))
         except Exception as e:
             print(f"[SDXL ONE] output slot error: {e}")
-        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32),)
+        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32), *_run_outputs(info))
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):
@@ -4381,7 +4387,7 @@ class AnimaOneTJNode:
                     "default": "",
                     "multiline": True,
                     "forceInput": True,
-                    "tooltip": "External prompt override — prepended before the internal prompt.",
+                    "tooltip": "External prompt override — replaces the node's own prompt. Takes the text of a PromptDBLoader (TJ) or any text node wired in.",
                 }),
                 "pipe": ("TJ_PROMPT_PIPE", {
                     "tooltip": "PromptDB pipe (TJ_NODE). At generation, fields present in the pipe override this node's settings; missing fields keep the node's own values. The node's UI is never changed.",
@@ -4389,8 +4395,8 @@ class AnimaOneTJNode:
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("image",)
+    RETURN_TYPES = ("IMAGE", "STRING", "STRING")
+    RETURN_NAMES = ("image", "prompt", "settings")
     FUNCTION = "get_output_image"
     CATEGORY = " ✨ TJ_Node/Generator"
     OUTPUT_NODE = True
@@ -4407,10 +4413,10 @@ class AnimaOneTJNode:
                 path = os.path.join(base, subfolder, filename) if subfolder else os.path.join(base, filename)
                 img = Image.open(path).convert("RGB")
                 arr = np.array(img).astype(np.float32) / 255.0
-                return (torch.from_numpy(arr)[None,],)
+                return (torch.from_numpy(arr)[None,], *_run_outputs(info))
         except Exception as e:
             print(f"[Anima] output slot error: {e}")
-        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32),)
+        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32), *_run_outputs(info))
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):

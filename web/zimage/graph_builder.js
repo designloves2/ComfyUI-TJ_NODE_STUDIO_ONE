@@ -4,10 +4,7 @@ import { SUBFOLDER } from "./core.js";
 function buildPromptText(state) {
   const modePrompt = (state.promptsByMode && state.mode && state.mode in state.promptsByMode)
     ? state.promptsByMode[state.mode] : (state.prompt || "");
-  // 외부 오버라이드가 있으면 맨 앞에 삽입
-  const parts = state.promptOverride
-    ? [state.promptOverride, modePrompt]
-    : [modePrompt];
+  const parts = [modePrompt];
   (state.loras || []).forEach(l => {
     if (l.enabled !== false && l.name && l.name !== "none" && l.triggerWord) parts.push(l.triggerWord);
   });

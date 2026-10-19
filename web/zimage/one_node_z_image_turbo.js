@@ -7,7 +7,9 @@ import { panel, label, button, select, numberField, row, col,
          modeBar, iconBtn, openFullscreen } from "./ui_common.js";
 import { queuePrompt, interrupt, copyOutputToInput, setLastImage,
          freeMemory, saveMeta, getModels } from "./api.js";
-import { resolvePipeOverrides, applyOverridesTemp, collectModelNames } from "../shared/promptdb_pipe.js";
+import { resolvePipeOverrides, applyOverridesTemp, collectModelNames, labelPipeInput } from "../shared/promptdb_pipe.js";
+import { summarizeRun } from "../shared/run_summary.js";
+import { OUTER_W, OUTER_H } from "../shared/node_size.js";
 import { t } from "../shared/i18n.js";
 import { attachLLMPanel } from "../shared/llm_panel.js";
 import { mountT2II2ILeft }     from "./ui_t2i_i2i.js";
@@ -31,11 +33,10 @@ const PROMPT_LBL = 18;
 const PROMPT_H   = PROMPT_LBL + 4 + PROMPT_TA_H;
 const RIGHT_H    = PREVIEW_SIZE + PAD + SEND_TO_H + PAD + PROMPT_H;
 const ROOT_H     = PAD + TOPBAR_H + PAD + RIGHT_H + BOTTOM_PAD;
-const NODE_H     = ROOT_H + 30;
 // Node box is slightly larger than the DOM content so inputs (incl. the pipe) don't
 // push the DOM past the node edge: +30 right, +40 bottom.
-const NODE_MW = NODE_W + 30;
-const NODE_MH = NODE_H + 40;
+const NODE_MW = OUTER_W;
+const NODE_MH = OUTER_H;
 
 const MODES = [
   { key:"t2i",         label:"T2I",         enabled:true },
@@ -108,12 +109,12 @@ app.registerExtension({
   async beforeRegisterNodeDef(nodeType,nodeData){
     if(nodeData.name!=="ZImageTurboOneNode") return;
 
-    nodeType.prototype.onNodeCreated=function(){
+    nodeType.prototype.onNodeCreated=function(){ labelPipeInput(this);
       this.color="#7612DA"; this.bgcolor=C.bg0; this.title_color="#ffffff";
       this.resizable=false; this.size=[NODE_MW, NODE_MH];
       this._buildUI();
     };
-    nodeType.prototype.onConfigure=function(){
+    nodeType.prototype.onConfigure=function(){ labelPipeInput(this);
       this.size=[NODE_MW, NODE_MH +(this._extraH||0)];
       restoreNodeState(this);
     };
@@ -137,7 +138,7 @@ app.registerExtension({
       let compareEnabled=true;   // compare toggle state (기본 ON)
 
       function publishOutput(im){
-        setLastImage(self.id,im);
+        setLastImage(self.id, im, self._tjLastRun);
         const hasLink=self.outputs?.[0]?.links?.length>0;
         if(hasLink){try{app.queuePrompt(0);}catch(e){}}
       }
@@ -539,9 +540,7 @@ app.registerExtension({
 
       let modeHandle=null;
 
-      // ── 연결된 prompt_override 슬롯 값 읽기 ────────────────────────────────
-      // LiteGraph 그래프에서 직접 읽으므로 실행 없이 즉시 사용 가능.
-      // Primitive / String 노드처럼 위젯 값이 메모리에 있는 노드에서 동작.
+      // The value of the widget on the node wired into a model / clip / vae override slot.
       function getOverrideSlot(slotName) {
         try {
           const slotIdx = self.inputs?.findIndex(i => i.name === slotName);
@@ -557,7 +556,6 @@ app.registerExtension({
               ?? "";
         } catch(e) { return ""; }
       }
-      const getPromptOverride = () => getOverrideSlot("prompt_override");
 
       genBtn.onclick=async()=>{
         if(!modeHandle) return;
@@ -598,7 +596,6 @@ app.registerExtension({
         loadingOv.style.display="flex";
         let originalURL=null;
         try{
-          state.promptOverride = getPromptOverride();
           await modeHandle.beforeGenerate?.();
           if(compareEnabled && typeof modeHandle.getSourceURL==="function") originalURL=modeHandle.getSourceURL();
           if(state.seedMode==="randomize") state.seed=randomSeed();
@@ -608,6 +605,7 @@ app.registerExtension({
           let graph;
           const _restore=pipeOv?applyOverridesTemp(state,pipeOv.overrides):null;
           try{ graph=modeHandle.getGraph(); } finally{ _restore?.(); }
+          self._tjLastRun = summarizeRun(graph, state);
           const result=await queuePrompt(graph,{onProgress:()=>{}});
           const imgs=result?.output?.images;
           if(!imgs?.length) throw new Error("No output images returned.");
@@ -618,7 +616,7 @@ app.registerExtension({
             showPopup("Generation error: "+(e.message||String(e)));
           loadingOv.style.display="none"; placeholder.style.display="block";
         }finally{
-          state.promptOverride=""; state.modelOverride=""; state.clipOverride=""; state.vaeOverride="";
+          state.modelOverride=""; state.clipOverride=""; state.vaeOverride="";
           genBtn.disabled=false; genBtn.textContent="▶ Generate";
         }
       };

@@ -11,6 +11,9 @@ import { mountT2ILeft } from "./ui_t2i_anima.js";
 import { mountControlLeft } from "./ui_control_anima.js";
 import { mountUpscaleLeft } from "./ui_upscale_anima.js";
 import { attachNodeState, restoreNodeState } from "../shared/node_state.js";
+import { resolvePipeOverrides, applyOverridesTemp, labelPipeInput } from "../shared/promptdb_pipe.js";
+import { summarizeRun } from "../shared/run_summary.js";
+import { OUTER_W, OUTER_H } from "../shared/node_size.js";
 import { attachPanZoom, createCompareView } from "../shared/pan_zoom.js";
 
 // ── Layout ───────────────────────────────────────────────────────────────────
@@ -22,9 +25,8 @@ const PROMPT_LBL  = 18;
 const PROMPT_H    = PROMPT_LBL + 4 + PROMPT_TA_H;
 const RIGHT_H     = PREVIEW_SIZE + PAD + SEND_TO_H + PAD + PROMPT_H;
 const ROOT_H      = PAD + TOPBAR_H + PAD + RIGHT_H + BOTTOM_PAD;
-const NODE_H      = ROOT_H + 30;
-const NODE_MW     = NODE_W + 30;
-const NODE_MH     = NODE_H + 40;
+const NODE_MW     = OUTER_W;
+const NODE_MH     = OUTER_H;
 
 const MODES = [
   { key: "t2i",          label: "T2I",           enabled: true },
@@ -64,7 +66,7 @@ app.registerExtension({
   async beforeRegisterNodeDef(nodeType, nodeData) {
     if (nodeData.name !== "AnimaOneTJNode") return;
 
-    nodeType.prototype.onNodeCreated = function () {
+    nodeType.prototype.onNodeCreated = function () { labelPipeInput(this);
       this.color       = BRAND;
       this.bgcolor     = C.bg0;
       this.title_color = "#ffffff";
@@ -72,7 +74,7 @@ app.registerExtension({
       this.size        = [NODE_MW, NODE_MH];
       this._buildUI();
     };
-    nodeType.prototype.onConfigure = function () {
+    nodeType.prototype.onConfigure = function () { labelPipeInput(this);
       this.size = [NODE_MW, NODE_MH];
       restoreNodeState(this);
     };
@@ -208,7 +210,7 @@ app.registerExtension({
       ctx.showResult = (im) => {
         const url=`/view?filename=${encodeURIComponent(im.filename)}&subfolder=${encodeURIComponent(im.subfolder||"")}&type=${im.type||"output"}&t=${Date.now()}`;
         modeResults[state.mode]={im,url}; loadingOv.style.display="none"; tryShowCompare(); renderSendTo();
-        setLastImage(self.id, im).catch(()=>{});
+        setLastImage(self.id, im, self._tjLastRun).catch(()=>{});
       };
 
       // ── Send-to strip + Output toggle ───────────────────────────────────────
@@ -361,8 +363,16 @@ app.registerExtension({
 
         try{await modeHandle.beforeGenerate?.();}catch(err){alert(err.message);running=false;genBtn.disabled=false;genBtn.textContent="▶ Generate";loadingOv.style.display="none";if(!modeResults[state.mode])resetPreview();return;}
 
+        // PromptDB pipe / prompt_override: applied only while the graph is built, then restored (the UI never changes).
+        let pipeOv=null;
+        try{ pipeOv=await resolvePipeOverrides(self, state); if(pipeOv) ctx.showPopup?.(pipeOv.summary,false); }catch{}
+
         let prompt;
-        try{ prompt=await modeHandle.getGraph(); }
+        try{
+          const _restore=pipeOv?applyOverridesTemp(state,pipeOv.overrides):null;
+          try{ prompt=await modeHandle.getGraph(); } finally{ _restore?.(); }
+          self._tjLastRun = summarizeRun(prompt, state);
+        }
         catch(err){alert(`Build error: ${err.message}`);running=false;genBtn.disabled=false;genBtn.textContent="▶ Generate";loadingOv.style.display="none";if(!modeResults[state.mode])resetPreview();return;}
 
         try{

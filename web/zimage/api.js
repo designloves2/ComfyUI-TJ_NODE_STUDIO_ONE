@@ -97,11 +97,11 @@ export async function copyOutputToInput(filename, subfolder, type) {
 }
 
 // Notify Python backend of the last generated image (for the IMAGE output slot).
-export async function setLastImage(nodeId, im) {
+export async function setLastImage(nodeId, im, run) {
   await api.fetchApi(`${API}/set_last_image`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ unique_id: String(nodeId), image: im }),
+    body: JSON.stringify({ unique_id: String(nodeId), image: im, run }),
   }).catch(() => {});
 }
 

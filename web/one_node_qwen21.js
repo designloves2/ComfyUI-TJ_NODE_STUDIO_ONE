@@ -4,6 +4,9 @@
 // and Angle Change are intentionally dropped (see AGENTS-level task spec) — modes here are
 // T2I / I2I (plain + Ref-to-Image) / Edit / Inpaint / Outpaint / Upscale.
 import { app } from "../../scripts/app.js";
+import { resolvePipeOverrides, applyOverridesTemp, labelPipeInput } from "./shared/promptdb_pipe.js";
+import { summarizeRun } from "./shared/run_summary.js";
+import { OUTER_W, OUTER_H } from "./shared/node_size.js";
 import { C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, MAX_REF_IMAGES, SUBFOLDER,
          POSE_SYSTEM_PROMPT_DEFAULT, POSE_SAM3D_MODEL_DEFAULT,
          el, clear, loadState, saveState, defaultState, randomSeed } from "./qwen21/core_qwen21.js";
@@ -43,9 +46,8 @@ const PROMPT_LBL  = 18;
 const PROMPT_H    = PROMPT_LBL + 4 + PROMPT_TA_H;
 const RIGHT_H     = PREVIEW_SIZE + PAD + SEND_TO_H + PAD + PROMPT_H;
 const ROOT_H      = PAD + TOPBAR_H + PAD + RIGHT_H + BOTTOM_PAD;
-const NODE_H      = ROOT_H + 30;
-const NODE_MW     = NODE_W + 30;
-const NODE_MH     = NODE_H + 40;
+const NODE_MW     = OUTER_W;
+const NODE_MH     = OUTER_H;
 
 const RES_PRESETS = [
   { label: "1024 × 1024", w: 1024, h: 1024 },
@@ -154,7 +156,7 @@ app.registerExtension({
   async beforeRegisterNodeDef(nodeType, nodeData) {
     if (nodeData.name !== "QwenImage21OneTJNode") return;
 
-    nodeType.prototype.onNodeCreated = function () {
+    nodeType.prototype.onNodeCreated = function () { labelPipeInput(this);
       this.color       = BRAND;
       this.bgcolor     = C.bg0;
       this.title_color = "#ffffff";
@@ -162,7 +164,7 @@ app.registerExtension({
       this.size        = [NODE_MW, NODE_MH];
       this._buildUI();
     };
-    nodeType.prototype.onConfigure = function () { this.size = [NODE_MW, NODE_MH]; restoreNodeState(this); };
+    nodeType.prototype.onConfigure = function () { labelPipeInput(this); this.size = [NODE_MW, NODE_MH]; restoreNodeState(this); };
     nodeType.prototype.onResize    = function () { this.size = [NODE_MW, NODE_MH]; };
     nodeType.prototype.getSlotMenuOptions = function () { return []; };
 
@@ -197,7 +199,6 @@ app.registerExtension({
           return srcNode.widgets?.[link.origin_slot]?.value ?? srcNode.widgets?.[0]?.value ?? "";
         } catch { return ""; }
       }
-      const getPromptOverride = () => getOverrideSlot("prompt_override");
       function syncOverrideSlots(enabled) {
         if (enabled) {
           for (const { name, type } of OVERRIDE_SLOTS) {
@@ -301,7 +302,7 @@ app.registerExtension({
       const showResult = (im) => {
         const url = `/view?filename=${encodeURIComponent(im.filename)}&subfolder=${encodeURIComponent(im.subfolder||"")}&type=${im.type||"output"}&t=${Date.now()}`;
         modeResults[state.mode] = { im, url }; loadingOv.style.display="none"; tryShowCompare(); renderSendTo();
-        setLastImage(self.id, im).catch(()=>{});
+        setLastImage(self.id, im, self._tjLastRun).catch(()=>{});
       };
 
       // ── Send-to strip + output toggle ───────────────────────────────────
@@ -1015,11 +1016,15 @@ app.registerExtension({
         const mOk = state.modelOverride || (state.model && state.model !== "none");
         if (!mOk) { alert("No model selected. Open ⚙ Settings to pick a model."); running=false; genBtn.disabled=false; genBtn.textContent="▶ Generate"; loadingOv.style.display="none"; if(!modeResults[state.mode]) resetPreview(); return; }
 
+        // PromptDB pipe / prompt_override: applied only while the graph is built, then restored (the UI never changes).
+        let pipeOv = null;
+        try { pipeOv = await resolvePipeOverrides(self, state); if (pipeOv) showPopup(pipeOv.summary, false); } catch {}
+
         let prompt;
         try {
-          prompt = await modeHandle.getGraph();
-          const po = getPromptOverride();
-          if (po) { for (const n of Object.values(prompt)) { if (n.class_type === "TextEncodeQwenImage21" && n.inputs?.prompt) n.inputs.prompt = po + " " + n.inputs.prompt; } }
+          const _restore = pipeOv ? applyOverridesTemp(state, pipeOv.overrides) : null;
+          try { prompt = await modeHandle.getGraph(); } finally { _restore?.(); }
+          self._tjLastRun = summarizeRun(prompt, state);
         }
         catch (err) { alert(`Build error: ${err.message}`); modeHandle?.afterGenerate?.(); running=false; genBtn.disabled=false; genBtn.textContent="▶ Generate"; loadingOv.style.display="none"; if(!modeResults[state.mode]) resetPreview(); return; }
 

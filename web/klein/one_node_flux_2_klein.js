@@ -6,7 +6,9 @@ import { panel, label, button, select, numberField, row, col,
          modeBar, iconBtn, outputModeToggle, openFullscreen } from "./ui_common.js";
 import { queuePrompt, interrupt, freeMemory, setLastImage, saveMeta,
          copyOutputToInput, getModels } from "./api_klein.js";
-import { resolvePipeOverrides, applyOverridesTemp, collectModelNames } from "../shared/promptdb_pipe.js";
+import { resolvePipeOverrides, applyOverridesTemp, collectModelNames, labelPipeInput } from "../shared/promptdb_pipe.js";
+import { summarizeRun } from "../shared/run_summary.js";
+import { OUTER_W, OUTER_H } from "../shared/node_size.js";
 import { createSettingsOverlay }  from "./ui_app_settings_klein.js";
 import { t } from "../shared/i18n.js";
 import { attachLLMPanel } from "../shared/llm_panel.js";
@@ -29,11 +31,10 @@ const PROMPT_LBL  = 18;
 const PROMPT_H    = PROMPT_LBL + 4 + PROMPT_TA_H;
 const RIGHT_H     = PREVIEW_SIZE + PAD + SEND_TO_H + PAD + PROMPT_H;
 const ROOT_H      = PAD + TOPBAR_H + PAD + RIGHT_H + BOTTOM_PAD;
-const NODE_H      = ROOT_H + 30;
 // Node box is slightly larger than the DOM content so inputs (incl. the pipe) don't
 // push the DOM past the node edge: +30 right, +40 bottom.
-const NODE_MW = NODE_W + 30;
-const NODE_MH = NODE_H + 40;
+const NODE_MW = OUTER_W;
+const NODE_MH = OUTER_H;
 
 const MODES = [
   { key: "t2i",      label: "T2I",      enabled: true },
@@ -92,7 +93,7 @@ app.registerExtension({
   async beforeRegisterNodeDef(nodeType, nodeData) {
     if (nodeData.name !== "Flux2KleinOneTJNode") return;
 
-    nodeType.prototype.onNodeCreated = function () {
+    nodeType.prototype.onNodeCreated = function () { labelPipeInput(this);
       this.color        = LIME;
       this.bgcolor      = C.bg0;
       this.title_color  = "#ffffff";
@@ -100,7 +101,7 @@ app.registerExtension({
       this.size         = [NODE_MW, NODE_MH];
       this._buildUI();
     };
-    nodeType.prototype.onConfigure = function () {
+    nodeType.prototype.onConfigure = function () { labelPipeInput(this);
       this.size = [NODE_MW, NODE_MH + (this._extraH || 0)];
       restoreNodeState(this);
     };
@@ -148,7 +149,6 @@ app.registerExtension({
               ?? "";
         } catch(e) { return ""; }
       }
-      const getPromptOverride = () => getOverrideSlot("prompt_override");
 
       // ── Root ──────────────────────────────────────────────────────────────
       const root = el("div", { style: {
@@ -482,7 +482,7 @@ app.registerExtension({
         tryShowCompare();
         renderSendTo();
         // image output 슬롯에 마지막 이미지 등록
-        setLastImage(self.id, im).catch(() => {});
+        setLastImage(self.id, im, self._tjLastRun).catch(() => {});
       };
 
       // ── Send-to strip + Output toggle ──────────────────────────────────────
@@ -785,15 +785,7 @@ app.registerExtension({
         try {
           const _restore = pipeOv ? applyOverridesTemp(state, pipeOv.overrides) : null;
           try { prompt = await modeHandle.getGraph(); } finally { _restore?.(); }
-          // prompt_override 주입
-          const po = getPromptOverride();
-          if (po) {
-            for (const n of Object.values(prompt)) {
-              if (n.class_type === "CLIPTextEncode" && n.inputs?.text) {
-                n.inputs.text = po + " " + n.inputs.text;
-              }
-            }
-          }
+          self._tjLastRun = summarizeRun(prompt, state);
         } catch(err) {
           alert(`Build error: ${err.message}`);
           running = false; genBtn.disabled = false; genBtn.textContent = "▶ Generate";

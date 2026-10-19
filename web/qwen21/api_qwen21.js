@@ -104,10 +104,10 @@ export async function copyOutputToInput(filename, subfolder, type) {
   if (!d.ok) throw new Error(d.error || "copy failed");
   return d.filename;
 }
-export async function setLastImage(nodeId, im) {
+export async function setLastImage(nodeId, im, run) {
   await api.fetchApi(`${API}/set_last_image`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ unique_id: String(nodeId), image: im }),
+    body: JSON.stringify({ unique_id: String(nodeId), image: im, run }),
   }).catch(() => {});
 }
 export function queuePrompt(promptGraph, { onProgress, outputKey = "images" } = {}) {

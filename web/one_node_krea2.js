@@ -3,7 +3,9 @@ import { app } from "../../scripts/app.js";
 import { C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD,
          el, clear, loadState, saveState, defaultState, randomSeed, LS_KEY, buildAgentJob } from "./krea2/core_krea2.js";
 import { downloadAgentJob, agentStamp } from "./shared/agent_job.js";
-import { resolvePipeOverrides, applyOverridesTemp, collectModelNames } from "./shared/promptdb_pipe.js";
+import { resolvePipeOverrides, applyOverridesTemp, collectModelNames, labelPipeInput } from "./shared/promptdb_pipe.js";
+import { summarizeRun } from "./shared/run_summary.js";
+import { OUTER_W, OUTER_H } from "./shared/node_size.js";
 import { panel, label, button, select, numberField, row, col,
          modeBar, iconBtn, openFullscreen }                                    from "./klein/ui_common.js";
 import { queuePrompt, interrupt, setLastImage, saveMeta,
@@ -28,11 +30,10 @@ const PROMPT_LBL  = 18;
 const PROMPT_H    = PROMPT_LBL + 4 + PROMPT_TA_H;
 const RIGHT_H     = PREVIEW_SIZE + PAD + SEND_TO_H + PAD + PROMPT_H;
 const ROOT_H      = PAD + TOPBAR_H + PAD + RIGHT_H + BOTTOM_PAD;
-const NODE_H      = ROOT_H + 30;
 // Node box is slightly larger than the DOM content so inputs (incl. the pipe) don't
 // push the DOM past the node edge: +30 right, +40 bottom.
-const NODE_MW     = NODE_W + 30;
-const NODE_MH     = NODE_H + 40;
+const NODE_MW     = OUTER_W;
+const NODE_MH     = OUTER_H;
 
 const MODES = [
   { key: "t2i",      label: "T2I",      enabled: true },
@@ -63,7 +64,7 @@ app.registerExtension({
   async beforeRegisterNodeDef(nodeType, nodeData) {
     if (nodeData.name !== "Krea2OneTJNode") return;
 
-    nodeType.prototype.onNodeCreated = function () {
+    nodeType.prototype.onNodeCreated = function () { labelPipeInput(this);
       this.color       = BRAND;
       this.bgcolor     = C.bg0;
       this.title_color = "#ffffff";
@@ -71,7 +72,7 @@ app.registerExtension({
       this.size        = [NODE_MW, NODE_MH];
       this._buildUI();
     };
-    nodeType.prototype.onConfigure = function () {
+    nodeType.prototype.onConfigure = function () { labelPipeInput(this);
       this.size = [NODE_MW, NODE_MH + (this._extraH||0)];
       restoreNodeState(this);
     };
@@ -117,7 +118,6 @@ app.registerExtension({
           return srcNode.widgets?.[link.origin_slot]?.value ?? srcNode.widgets?.[0]?.value ?? "";
         } catch { return ""; }
       }
-      const getPromptOverride = () => getOverrideSlot("prompt_override");
       function syncOverrideSlots(enabled) {
         if (enabled) {
           for (const { name, type } of OVERRIDE_SLOTS) {
@@ -256,7 +256,7 @@ app.registerExtension({
       ctx.showResult = (im) => {
         const url=`/view?filename=${encodeURIComponent(im.filename)}&subfolder=${encodeURIComponent(im.subfolder||"")}&type=${im.type||"output"}&t=${Date.now()}`;
         modeResults[state.mode]={im,url}; loadingOv.style.display="none"; tryShowCompare(); renderSendTo();
-        setLastImage(self.id, im).catch(()=>{});
+        setLastImage(self.id, im, self._tjLastRun).catch(()=>{});
       };
 
       // ── Send-to strip + Output toggle ──────────────────────────────────────
@@ -435,8 +435,7 @@ app.registerExtension({
         try{
           const _restore=pipeOv?applyOverridesTemp(state,pipeOv.overrides):null;
           try{ prompt=await modeHandle.getGraph(); } finally{ _restore?.(); }
-          const po=getPromptOverride();
-          if(po){ for(const n of Object.values(prompt)){ if(n.class_type==="CLIPTextEncode"&&n.inputs?.text) n.inputs.text=po+" "+n.inputs.text; } }
+          self._tjLastRun = summarizeRun(prompt, state);
         }catch(err){alert(`Build error: ${err.message}`);running=false;genBtn.disabled=false;genBtn.textContent="▶ Generate";loadingOv.style.display="none";if(!modeResults[state.mode])resetPreview();return;}
 
         try{
