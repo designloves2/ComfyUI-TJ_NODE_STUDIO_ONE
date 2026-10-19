@@ -7,6 +7,14 @@
 > 워크플로우 배선 없이 노드 하나에서 T2I · I2I · Inpaint · Outpaint · ControlNet · Edit · Faceswap · ANGLE · Upscale(SeedVR2) 등 다양한 모드를 전환합니다.
 > switch between modes in a single node without workflow wiring T2I · I2I · Inpaint · Outpaint · ControlNet · Edit · Faceswap · ANGLE · Upscale(SeedVR2) etc. switch between various modes.
 >
+> 🆕 **LTX 2.5 ONE STUDIO가 모드 3개로 나뉘었습니다.** **Text To Video**(클립당 프롬프트 한 칸), **Image to Video (F/L)**(첫/마지막 프레임 1~2장, 마지막 이미지는 첫 이미지 모양으로 중앙 크롭), **LTX Director**(세그먼트 타임라인은 여기서만). 글로벌 프롬프트도 Refine 할 수 있고, 프롬프트 세트는 H3와 완전히 분리되었습니다.
+>
+> 🆕 **LTX 2.5 ONE STUDIO now has three modes.** **Text To Video** (one prompt per clip), **Image to Video (F/L)** (one or two frames; the last image is centre-cropped to the first image's shape) and **LTX Director** (the segment timeline lives only here). The global prompt can be refined too, and prompt sets are fully separate from H3's.
+>
+> 🆕 **이미지 노드 7종**: `prompt_override`가 노드의 프롬프트를 통째로 대체하고(PromptDBLoader 또는 일반 텍스트 노드), Qwen 2.1 · Anima도 PromptDB `pipe`를 적용합니다. 새 출력 **`prompt`** · **`settings`**(JSON)가 추가되었고, 모든 노드(H3 · LTX · Music 포함)가 1310 × 1034로 통일되었습니다.
+>
+> 🆕 **The 7 image nodes**: `prompt_override` replaces the node's prompt outright (a PromptDBLoader or any text node), and Qwen 2.1 / Anima now apply the PromptDB `pipe`. New outputs **`prompt`** and **`settings`** (JSON), and every node (H3, LTX, Music included) is now 1310 × 1034.
+>
 > 🆕 **MiniMax H3 Prompt Edit이 크게 좋아졌습니다.** 클립마다 **시간 오버라이드**(1초~15초, 0.5초 단위로 실제 렌더 길이에 맞춰 정리)를 줄 수 있고, **CLIPS** 목록에 클립별 누적 시간과 샷 범위(`[shot 1] 0~4.5`)가 보입니다(One-Take에서는 겹침을 뺀 `stitched` 시간도). 오버라이드한 클립은 주황, 에셋 라이브러리 오버라이드는 핑크로 표시됩니다. 클립을 나누면 각 클립의 샷 번호와 시간이 `[Shot 1]`부터 다시 시작하고(시간은 0.5초 단위), 클립별 전체 브리프(헤더 / 샷 / 사운드·음악)는 각각 THIS CLIP 칸으로 들어갑니다. ✨ Prompt Write · 🔧 Prompt Refine은 ✓ Done 옆에 항상 보입니다.
 >
 > 🆕 **MiniMax H3 Prompt Edit got a big upgrade.** Each clip can have its own **time override** (1 s to 15 s, tidied to half seconds that match the length really rendered), and the **CLIPS** list shows each clip's running clock and shot ranges (`[shot 1] 0~4.5`), plus the `stitched` time without the overlap in One-Take. A clip with an override is orange, one with an Asset Library override is pink. Splitting restarts the shot numbers and times of every clip from `[Shot 1]` (times in half seconds), and a full brief per clip (header / shots / sound-music) goes into that clip's own THIS CLIP boxes. ✨ Prompt Write and 🔧 Prompt Refine stay beside ✓ Done.
@@ -1516,7 +1524,7 @@ Settings → **Model Override** enable the checkbox to expose input slots on the
 
 ### LTX 2.5 ONE STUDIO (TJ) 🧪
 
-LTX 2.5 video + audio in the ONE STUDIO layout: a segment timeline per clip (the LTX Director editor, copied into this package — GPL-3.0, see
+LTX 2.5 video + audio in the ONE STUDIO layout in three modes (Text To Video, Image to Video (F/L), LTX Director): in LTX Director a segment timeline per clip (the LTX Director editor, copied into this package — GPL-3.0, see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)), a two-stage render (half size → 2x latent upscale → refine), Prompt Write / Refine that plan clips and
 segments with the LTX-2.5 prompt guide, Last Frame Chain between clips, gallery with Extend / Reuse, Postprocess and the Asset Library.
 Models are set once in ⚙ Settings → LTX Model (one LTX model, text encoder, video / audio VAE, latent upscaler; the distilled LoRA switch is for a

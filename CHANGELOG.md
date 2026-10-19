@@ -2,6 +2,34 @@
 
 ---
 
+## v1.42.0
+
+### LTX 2.5 ONE STUDIO: three modes
+- **Text To Video / Image to Video (F/L) / LTX Director.** The segment timeline now exists only in LTX Director. Text To Video and Image to Video write one prompt
+  per clip in Prompt Edit (the graph gets just that prompt); Write and Refine work per mode (clip prompts outside Director, segments inside it).
+  Director's Prompt Edit has no clip prompt field - the segments are the prompts.
+- **Image to Video images**: one image is the first frame (or the last, if only ② is set), two are first + last. Prompt Edit has a foldable FIRST / LAST FRAMES band
+  (source switch, both slots, synced with the main screen; "override for this clip" makes it that clip's own). Last Frame Chain and per-clip overrides unchanged.
+- **Shape rules**: the canvas takes the first image's shape at the megapixels you set, and putting an image in sets the Aspect to the closest preset. The last image
+  is scaled to cover and centre-cropped to the first image's shape (never stretched); a yellow notice appears when the two images differ.
+- Refine also works on the global prompt (🔧 Refine in Prompt Edit and in the 🌐 Global popup). Refine's BEFORE/AFTER, the Global popup and H3's Common popup
+  are centred popups. Reuse restores the global prompt (stitched files too).
+- Fixes: prompt sets are really separate from H3 (the server matched `/ltx25_one/` only at the start of the path, but the page calls `/api/ltx25_one/...`);
+  the bottom clip prompt fields resize again and the list scrolls with the mouse wheel; timeline label overlap, one-row transport controls, jitter when
+  resizing the segment prompt box.
+- Settings: tabs are LTX Model / LLM Setting / Preview / Output (the Image LLM tab, the LTX Upscale LLM block and the image / character-sheet save folders are gone).
+
+### Image ONE STUDIO nodes (Krea 2, Z-Image, Anima, SDXL, Qwen 2.1, Klein, Qwen Edit 2511)
+- **`prompt_override` now replaces the node's prompt** instead of being pasted in front of every text encoder. It reads a PromptDBLoader (TJ) through its selected row,
+  or any text node (also through a Reroute). Before, the connected node's first widget was read, so a PromptDBLoader never delivered its prompt.
+- Qwen 2.1 and Anima now apply the PromptDB `pipe` (the socket existed but was ignored). The `pipe` slot is labelled "PDBLoader pipe" (internal name unchanged).
+- New outputs **`prompt`** and **`settings`** (JSON: model, seed, steps, cfg, sampler, scheduler, positive_prompt, negative_prompt) taken from the graph that was
+  really submitted; PromptDBSave (TJ) can take `settings` as its JSON input.
+- Node size is 1310 x 1034 like ITDA, and the UI fills it: the left menu keeps its width, the preview and the prompt take the extra width, the prompt field takes the extra height.
+
+### Layout
+- MiniMax H3, LTX 2.5 and MusicMaker are 1310 x 1034 too.
+
 ## v1.41.0
 
 ### New: LTX 2.5 ONE STUDIO (TJ) — GPL-3.0
