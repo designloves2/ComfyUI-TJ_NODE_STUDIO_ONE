@@ -9,7 +9,7 @@ export const C = {
 
 // LEFT_W / NODE_W move together (keeps the right column's own width unchanged) — user:
 // 380 -> 330 -> 340.
-export const NODE_W       = 1270;   // widened 25% from 1000, then adjusted alongside LEFT_W — the right column is flex:1, so the extra width goes to the preview
+export const NODE_W       = 1280;   // widened 25% from 1000, then adjusted alongside LEFT_W — the right column is flex:1, so the extra width goes to the preview
 export const PREVIEW_SIZE = 620;
 export const LEFT_W       = 340;
 export const PAD          = 12;

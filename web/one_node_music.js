@@ -19,10 +19,14 @@ import { openPianoRoll } from "./music/ui_piano_roll.js";
 import { melodySeconds } from "./music/melody_core.js";
 import { openImageGalleryPicker } from "./shared/ui_image_gallery_picker.js";
 import { attachSensitiveToggle, mediaKey } from "./shared/ui_sensitive_media.js";
+import { OUTER_W, OUTER_H } from "./shared/node_size.js";
 
-// Match MiniMax H3's outer node size exactly (see one_node_minimax_h3.js NODE_MW/NODE_MH).
-const NODE_MW = 1280;
-const NODE_MH = 994;
+// The same outer node size as every ONE STUDIO node (node_size.js); the UI fills what is left after the node body's
+// margin and the one slot row.
+const NODE_MW = OUTER_W;
+const NODE_MH = OUTER_H;
+const UI_W = NODE_MW - 30;
+const UI_H = NODE_MH - 40 - 20;
 
 const jget  = (p)    => api.fetchApi(API + p).then(r => r.json());
 const jpost = (p, b) => api.fetchApi(API + p, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }).then(r => r.json());
@@ -2098,7 +2102,7 @@ app.registerExtension({
       root.appendChild(settingsEl);
 
       // ── mount ──────────────────────────────────────────────────────────────
-      self.addDOMWidget("mmm_ui", "div", root, { serialize: false, computeSize: () => [NODE_MW, NODE_MH] });
+      self.addDOMWidget("mmm_ui", "div", root, { serialize: false, computeSize: () => [UI_W, UI_H] });
 
       jget("/models").then(d => { ctx.models = d; renderCompose(); }).catch(() => {});
       jget("/node_availability").then(d => { ctx.availability = d.available || {}; }).catch(() => {});

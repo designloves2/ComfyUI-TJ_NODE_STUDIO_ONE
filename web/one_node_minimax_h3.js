@@ -67,7 +67,7 @@ import { openAudioGalleryPicker } from "./shared/ui_audio_gallery_picker.js";
 const TOPBAR_H   = 40;
 const BOTTOM_PAD = 20;
 const STATUS_H   = 46;
-const PROMPT_H   = 150;   // the strip scrolls; the fields inside it are the tall part
+const PROMPT_H   = 190;   // the strip scrolls; the fields inside it are the tall part. +40 over the old 150 so the node is 1310 x 1034 like the other ONE STUDIO nodes
 const RIGHT_H    = PREVIEW_SIZE + PAD + STATUS_H + PAD + PROMPT_H;
 const ROOT_H     = PAD + TOPBAR_H + PAD + RIGHT_H + BOTTOM_PAD;
 const NODE_H     = ROOT_H + 30;
@@ -6871,7 +6871,7 @@ app.registerExtension({
         if (settingsOv?.el.style.display !== "none") { settingsOv.hide(); return; }
       });
 
-      self.addDOMWidget("mmh3_ui", "div", root, { serialize: false, computeSize: () => [NODE_MW, NODE_MH] });
+      self.addDOMWidget("mmh3_ui", "div", root, { serialize: false, computeSize: () => [NODE_W, ROOT_H] });
 
       // Every panel, repainted from `state` — used after a workflow restores settings.
       self._mmh3Repaint = () => {

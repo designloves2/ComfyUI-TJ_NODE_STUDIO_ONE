@@ -46,7 +46,7 @@ import { createNodeFullscreen } from "./shared/node_fullscreen.js";
 const TOPBAR_H   = 40;
 const BOTTOM_PAD = 20;
 const STATUS_H   = 46;
-const PROMPT_H   = 150;   // the strip scrolls; the fields inside it are the tall part
+const PROMPT_H   = 190;   // the strip scrolls; the fields inside it are the tall part. +40 over the old 150 so the node is 1310 x 1034 like the other ONE STUDIO nodes
 const RIGHT_H    = PREVIEW_SIZE + PAD + STATUS_H + PAD + PROMPT_H;
 const ROOT_H     = PAD + TOPBAR_H + PAD + RIGHT_H + BOTTOM_PAD;
 const NODE_H     = ROOT_H + 30;
@@ -1318,7 +1318,7 @@ app.registerExtension({
         state.prompts.forEach((raw, i) => {
           const p = normPrompt(raw);
           const on = promptEnabled(p);
-          const line = el("div", { style: { display: "flex", gap: "4px", alignItems: "flex-start", opacity: on ? "1" : "0.5" } });
+          const line = el("div", { style: { display: "flex", gap: "4px", alignItems: "flex-start", flexShrink: "0", opacity: on ? "1" : "0.5" } });
           const sideCol = el("div", { style: { width: "28px", flexShrink: "0", display: "flex", flexDirection: "column", gap: "2px", alignItems: "center", paddingTop: "5px" } });
           sideCol.appendChild(el("div", {
             text: `C${i + 1}`,
@@ -1336,7 +1336,7 @@ app.registerExtension({
           const ta = el("textarea", { placeholder: i === 0
             ? (state.generationMode === "director" ? "Global prompt of this clip — its segments are written in Prompt Edit" : "Clip prompt — the shot, the action, the camera and the sound (shared text goes in 🌐 Global)")
             : "(blank = reuse the previous prompt)", style: {
-            flex: "1", minHeight: "86px", boxSizing: "border-box", background: C.bg2, color: C.text,
+            flex: "0 0 auto", minHeight: "86px", boxSizing: "border-box", background: C.bg2, color: C.text,
             border: `1px solid ${C.border}`, borderRadius: "6px", padding: "6px",
             fontSize: "12px", fontFamily: "inherit", outline: "none", resize: "vertical",
           }});
@@ -3383,7 +3383,7 @@ app.registerExtension({
         if (settingsOv?.el.style.display !== "none") { settingsOv.hide(); return; }
       });
 
-      self.addDOMWidget("ltx25_ui", "div", root, { serialize: false, computeSize: () => [NODE_MW, NODE_MH] });
+      self.addDOMWidget("ltx25_ui", "div", root, { serialize: false, computeSize: () => [NODE_W, ROOT_H] });
 
       // Every panel, repainted from `state` — used after a workflow restores settings.
       self._ltx25Repaint = () => {
