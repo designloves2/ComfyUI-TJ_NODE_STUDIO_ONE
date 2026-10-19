@@ -165,8 +165,12 @@ set REPOS[25]=https://github.com/shootthesound/ComfyUI-Fizgig-H3-Still
 rem VOSR2 - one-step image super-resolution, the UPSCALE tab next to SeedVR2 in every image
 rem node. The model bundle (~7 GB) downloads itself into models/vosr2 on its first run.
 set REPOS[26]=https://github.com/ylchen333/ComfyUI-VOSR2
+rem H3 Face Refine (face track / crop / per-frame denoise / stitch) - MiniMax H3 Face Refine MMH3 tab.
+set REPOS[27]=https://github.com/Carasibana/ComfyUI-H3-FaceRefine
+rem H3 3D latent upscaler - MiniMax H3 7+1 hi-res finish and Image Generator.
+set REPOS[28]=https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler
 
-set COUNT=27
+set COUNT=29
 set /a LAST=COUNT-1
 
 :: ComfyUI Manager names a folder after the pack's pyproject "name", not the repo name.
@@ -180,6 +184,7 @@ set "ALT[20]=rife_comfyui_wrapper"
 set "ALT[21]=h3-optimizations"
 set "ALT[23]=comfyui-ace-step-ksampler"
 set "ALT[26]=comfyui-vosr2"
+set "ALT[27]=comfyui-h3-facerefine"
 
 set /a N_NEW=0, N_UPD=0, N_CUR=0, N_FAIL=0
 

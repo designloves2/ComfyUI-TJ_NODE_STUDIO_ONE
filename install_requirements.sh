@@ -170,6 +170,10 @@ REPOS=(
     # VOSR2 - one-step image super-resolution, the UPSCALE tab next to SeedVR2 in every image
     # node. The model bundle (~7 GB) downloads itself into models/vosr2 on its first run.
     "https://github.com/ylchen333/ComfyUI-VOSR2"
+    # H3 Face Refine - MiniMax H3 Face Refine MMH3 tab.
+    "https://github.com/Carasibana/ComfyUI-H3-FaceRefine"
+    # H3 3D latent upscaler - MiniMax H3 7+1 hi-res finish and Image Generator.
+    "https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler"
 )
 
 # ComfyUI Manager names a folder after the pack's pyproject `name`, which is often not
@@ -183,6 +187,7 @@ alt_folder_for() {
     case "$1" in
         ComfyUI-SeedVR2_VideoUpscaler)     printf 'seedvr2_videoupscaler' ;;
         ComfyUI-VOSR2)                     printf 'comfyui-vosr2' ;;
+        ComfyUI-H3-FaceRefine)             printf 'comfyui-h3-facerefine' ;;
         Nvidia_RTX_Nodes_ComfyUI)          printf 'comfyui_nvidia_rtx_nodes' ;;
         ComfyUI-MiniMaxH3-FirstBlockCache) printf 'minimax-h3-firstblockcache' ;;
         ComfyUI-VFI)                       printf 'rife_comfyui_wrapper' ;;

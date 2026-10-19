@@ -48,6 +48,8 @@ _OPTIONAL = [
     ("comfyui-krea2edit",                 ("comfyui-krea2edit",)),
     ("ComfyUI-NK2E",                      ("comfyui-nk2e",)),
     ("ComfyUI-Fizgig-H3-Still",           ("comfyui-fizgig-h3-still",)),
+    ("ComfyUI-H3-FaceRefine",             ("comfyui-h3-facerefine",)),
+    ("Comfyui_Minimax_h3_latent_Upscaler", ("comfyui_minimax_h3_latent_upscaler",)),
 ]
 
 _LINE = "=" * 74

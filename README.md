@@ -310,6 +310,11 @@ chmod +x install_requirements.sh
 | [ComfyUI-Fizgig-H3-Still](https://github.com/shootthesound/ComfyUI-Fizgig-H3-Still) 🧪 | 진짜 1프레임 H3 latent · 줄무늬 없는 디코드<br><sub>true single-frame H3 latent + banding-free decode</sub>| MiniMax H3 Image Generator Latent=Use Fizgig Latent<br><sub>(선택 · optional)</sub>|
 | [JK-AceStep-Nodes](https://github.com/jeankassio/JK-AceStep-Nodes) 🧪 | JKASS 품질 샘플러 (`jkass_quality`)<br><sub>JKASS quality sampler</sub>| MusicMaker Ace-Step 엔진<br><sub>MusicMaker Ace-Step engine</sub>|
 | [ComfyUI-Openrouter_node](https://github.com/gabe-init/ComfyUI-Openrouter_node) | OpenRouter LLM 키 저장소<br><sub>OpenRouter LLM key store</sub>| MusicMaker · 이미지 노드 · H3 의 OpenRouter LLM 백엔드 (선택)<br><sub>optional — OpenRouter LLM backend for MusicMaker / image nodes / H3</sub>|
+| [ComfyUI-VFI](https://github.com/GACLove/ComfyUI-VFI) 🧪 | RIFE 프레임 보간 (`RIFEInterpolation`)<br><sub>RIFE frame interpolation</sub>| 갤러리 "Interpolate a finished clip" 후처리 (선택)<br><sub>gallery "Interpolate a finished clip" post-process (optional)</sub>|
+| [H3-Optimizations](https://github.com/Zironic/H3-Optimizations) 🧪 | VRAM 최적화 · H3 Sparse Attention<br><sub>VRAM optimizer + H3 Sparse Attention</sub>| MiniMax H3 (선택)<br><sub>optional</sub>|
+| [ComfyUI-VOSR2](https://github.com/ylchen333/ComfyUI-VOSR2) 🧪 | 1스텝 이미지 초해상 (모델 ~7 GB는 첫 실행 때 `models/vosr2`로 자동 다운로드)<br><sub>one-step image super-resolution (the ~7 GB model downloads itself into `models/vosr2` on first run)</sub>| 모든 이미지 노드 UPSCALE 탭의 VOSR2<br><sub>VOSR2 in the UPSCALE tab of every image node</sub>|
+| [ComfyUI-H3-FaceRefine](https://github.com/Carasibana/ComfyUI-H3-FaceRefine) 🧪 | 얼굴 추적·크롭·프레임별 디노이즈·스티치<br><sub>face track / crop / per-frame denoise / stitch</sub>| MiniMax H3 Face Refine MMH3 (선택)<br><sub>optional</sub>|
+| [Comfyui_Minimax_h3_latent_Upscaler](https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler) 🧪 | H3 latent 3D 업스케일 (`MinimaxH3LatentUpscaler3D`)<br><sub>H3 3D latent upscaler</sub>| MiniMax H3 7+1 하이레스 · Image Generator<br><sub>7+1 hi-res finish / Image Generator</sub>|
 
 ---
 
@@ -1135,6 +1140,11 @@ chmod +x install_requirements.sh
 | **ComfyUI-FlashVSR_Ultra_Fast** 🧪 | 타일 기반 디퓨전 VSR (`FlashVSRInitPipe`/`FlashVSRNodeAdv`)<br><sub>tiled diffusion video super-resolution</sub>| MiniMax H3 · Upscale=FlashVSR VSR | [lihaoyun6/ComfyUI-FlashVSR_Ultra_Fast](https://github.com/lihaoyun6/ComfyUI-FlashVSR_Ultra_Fast) |
 | **JK-AceStep-Nodes** 🧪 | JKASS 품질 샘플러 (`jkass_quality`)<br><sub>JKASS quality sampler</sub>| MusicMaker · Ace-Step | [jeankassio/JK-AceStep-Nodes](https://github.com/jeankassio/JK-AceStep-Nodes) |
 | **ComfyUI-Openrouter_node** | OpenRouter LLM 키 저장소<br><sub>OpenRouter LLM key store</sub>| MusicMaker · 이미지 노드 · H3 (OpenRouter LLM) | [gabe-init/ComfyUI-Openrouter_node](https://github.com/gabe-init/ComfyUI-Openrouter_node) |
+| **ComfyUI-VFI** 🧪 | RIFE 프레임 보간 (`RIFEInterpolation`)<br><sub>RIFE frame interpolation</sub>| 갤러리 · Interpolate | [GACLove/ComfyUI-VFI](https://github.com/GACLove/ComfyUI-VFI) |
+| **H3-Optimizations** 🧪 | VRAM 최적화 · H3 Sparse Attention<br><sub>VRAM optimizer + H3 Sparse Attention</sub>| MiniMax H3 | [Zironic/H3-Optimizations](https://github.com/Zironic/H3-Optimizations) |
+| **ComfyUI-VOSR2** 🧪 | 1스텝 이미지 초해상<br><sub>one-step image super-resolution</sub>| 이미지 노드 · UPSCALE | [ylchen333/ComfyUI-VOSR2](https://github.com/ylchen333/ComfyUI-VOSR2) |
+| **ComfyUI-H3-FaceRefine** 🧪 | 얼굴 추적·크롭·프레임별 디노이즈·스티치<br><sub>face track / crop / per-frame denoise / stitch</sub>| MiniMax H3 · Face Refine | [Carasibana/ComfyUI-H3-FaceRefine](https://github.com/Carasibana/ComfyUI-H3-FaceRefine) |
+| **Comfyui_Minimax_h3_latent_Upscaler** 🧪 | H3 latent 3D 업스케일<br><sub>H3 3D latent upscaler</sub>| MiniMax H3 · 7+1 · Image Generator | [LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler](https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler) |
 
 > MiniMax H3용 노드는 **모두 선택 사항**입니다. 없으면 해당 기능만 꺼지고 나머지는 정상 동작하며, 노드 설정 화면에 상태가 표시됩니다.
 > Every MiniMax H3 pack is optional — a missing one only switches its own feature off, and Settings shows the status.
@@ -1771,6 +1781,39 @@ Several nodes were heavily reworked and integrated into the TJ wireless workflow
 - [Krea-2-controlnet](https://github.com/Tanmaypatil123/Krea-2-controlnet) — Thanks to Tanmaypatil123 for documenting the reference Krea2 control-LoRA inference pipeline.
 - [Patil/Krea-2-depth-controlnet](https://huggingface.co/Patil/Krea-2-depth-controlnet) — Thanks for providing the public depth Control LoRA weights.
 - [facok/comfyui-krea2-controlnet](https://github.com/facok/comfyui-krea2-controlnet) — Thanks for the ComfyUI Krea2 Control LoRA node implementation used in this project.
+
+### 함께 쓰는 핵심 노드 · 모델 / Core nodes and models we build on
+
+이 패키지는 아래 개발자들의 노드와 모델 위에서 동작합니다. 모든 분께 진심으로 감사드립니다. 🙏
+This package runs on the nodes and models of the people below. Thank you all. 🙏
+
+**공통 · 이미지 / Shared and image nodes**
+- [ltdrdata/ComfyUI-Impact-Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack) · [ComfyUI-Impact-Subpack](https://github.com/ltdrdata/ComfyUI-Impact-Subpack) — FaceDetailer, 얼굴 감지 / face detection
+- [kijai/ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes) — 라이브 프리뷰(Model Preview Override) · SageAttention · ImagePad · KV cache / live preview, SageAttention, ImagePad, KV cache
+- [numz/ComfyUI-SeedVR2_VideoUpscaler](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler) — SeedVR2 업스케일 / upscaling
+- [ylchen333/ComfyUI-VOSR2](https://github.com/ylchen333/ComfyUI-VOSR2) — VOSR2 1스텝 초해상 / one-step super-resolution
+- [cubiq/ComfyUI_FaceAnalysis](https://github.com/cubiq/ComfyUI_FaceAnalysis) — Faceswap 얼굴 분석 / face analysis
+- [1038lab/ComfyUI-RMBG](https://github.com/1038lab/ComfyUI-RMBG) — 배경 제거 / background removal
+- [Fannovel16/comfyui_controlnet_aux](https://github.com/Fannovel16/comfyui_controlnet_aux) — ControlNet 전처리기 / preprocessors
+- [city96/ComfyUI-GGUF](https://github.com/city96/ComfyUI-GGUF) — GGUF 모델 로딩 / GGUF model loading
+- [lbouaraba/comfyui-krea2edit](https://github.com/lbouaraba/comfyui-krea2edit) — Krea2 in-context 편집 / in-context edit
+- [Nynxz/ComfyUI-NK2E](https://github.com/Nynxz/ComfyUI-NK2E) — Krea2 NK2E (canny)
+
+**MiniMax H3 · LTX 후처리 / MiniMax H3 and post-processing**
+- [Carasibana/ComfyUI-H3-FaceRefine](https://github.com/Carasibana/ComfyUI-H3-FaceRefine) — H3 Face Refine
+- [LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler](https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler) — H3 latent 3D 업스케일 / 3D latent upscaler
+- [Zironic/H3-Optimizations](https://github.com/Zironic/H3-Optimizations) — VRAM 최적화 · Sparse Attention
+- [GACLove/ComfyUI-VFI](https://github.com/GACLove/ComfyUI-VFI) — RIFE 프레임 보간 / frame interpolation
+
+**LTX 2.5**
+- [CGlide/LTX-2.5-Director](https://github.com/CGlide/LTX-2.5-Director) · [WhatDreamsCost/WhatDreamsCost-ComfyUI](https://github.com/WhatDreamsCost/WhatDreamsCost-ComfyUI) — LTX Director 타임라인 (GPL-3.0) / Director timeline (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md))
+- [Lightricks](https://github.com/Lightricks) — LTX 모델 / LTX models
+
+**MusicMaker**
+- [jeankassio/JK-AceStep-Nodes](https://github.com/jeankassio/JK-AceStep-Nodes) — JKASS 품질 샘플러 / quality sampler
+- [gabe-init/ComfyUI-Openrouter_node](https://github.com/gabe-init/ComfyUI-Openrouter_node) — OpenRouter LLM 키 저장소 / key store
+
+**모델 / Models**: Krea 2 (Comfy-Org / Krea), Z-Image, Flux.2 Klein (Black Forest Labs), Qwen Image · Qwen Image Edit (Alibaba Qwen), Anima, SDXL (Stability AI), MiniMax H3 · MiniMax Music (MiniMax), ACE-Step 1.5, YuE, LTX 2.5 (Lightricks), llama.cpp
 
 ---
 
