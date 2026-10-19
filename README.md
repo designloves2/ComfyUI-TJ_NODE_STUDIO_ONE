@@ -8,7 +8,9 @@
 >
 > 워크플로우 배선 없이 노드 하나에서 T2I · I2I · Inpaint · Outpaint · ControlNet · Edit · Faceswap · ANGLE · Upscale(SeedVR2) 등 다양한 모드를 전환합니다.
 > switch between modes in a single node without workflow wiring T2I · I2I · Inpaint · Outpaint · ControlNet · Edit · Faceswap · ANGLE · Upscale(SeedVR2) etc. switch between various modes.
->
+
+### 📝 업데이트 히스토리 (Update & New)
+
 > 🆕 **LTX 2.5 ONE STUDIO가 모드 3개로 나뉘었습니다.** **Text To Video**(클립당 프롬프트 한 칸), **Image to Video (F/L)**(첫/마지막 프레임 1~2장, 마지막 이미지는 첫 이미지 모양으로 중앙 크롭), **LTX Director**(세그먼트 타임라인은 여기서만). 글로벌 프롬프트도 Refine 할 수 있고, 프롬프트 세트는 H3와 완전히 분리되었습니다.
 >
 > 🆕 **LTX 2.5 ONE STUDIO now has three modes.** **Text To Video** (one prompt per clip), **Image to Video (F/L)** (one or two frames; the last image is centre-cropped to the first image's shape) and **LTX Director** (the segment timeline lives only here). The global prompt can be refined too, and prompt sets are fully separate from H3's.
