@@ -20,8 +20,13 @@ import { attachPanZoom, createCompareView } from "../shared/pan_zoom.js";
 const TOPBAR_H    = 40;
 const BOTTOM_PAD  = 20;
 const SEND_TO_H   = 32;
-const PROMPT_TA_H = 96;
 const PROMPT_LBL  = 18;
+// The node's outer size is fixed (node_size.js). Its UI fills what is left of it after the node body's margin and the
+// slot rows (image / prompt / settings outputs): the left menu keeps LEFT_W, the preview and the prompt take the extra
+// width, and the prompt field takes the extra height, so nothing is left empty.
+const UI_W        = OUTER_W - 30;
+const UI_H        = OUTER_H - 40 - 3 * 20;
+const PROMPT_TA_H = 96 + Math.max(0, UI_H - (PAD + TOPBAR_H + PAD + PREVIEW_SIZE + PAD + SEND_TO_H + PAD + PROMPT_LBL + 4 + 96 + BOTTOM_PAD));
 const PROMPT_H    = PROMPT_LBL + 4 + PROMPT_TA_H;
 const RIGHT_H     = PREVIEW_SIZE + PAD + SEND_TO_H + PAD + PROMPT_H;
 const ROOT_H      = PAD + TOPBAR_H + PAD + RIGHT_H + BOTTOM_PAD;
@@ -101,7 +106,7 @@ app.registerExtension({
 
       // ── Root ──────────────────────────────────────────────────────────────
       const root = el("div", { style:{
-        width:`${NODE_W}px`, height:`${ROOT_H}px`, boxSizing:"border-box",
+        width:`${UI_W}px`, height:`${ROOT_H}px`, boxSizing:"border-box",
         position:"relative", overflow:"hidden",
         background:C.bg0, borderRadius:"8px",
         padding:`${PAD}px ${PAD}px ${BOTTOM_PAD}px ${PAD}px`,
@@ -174,7 +179,7 @@ app.registerExtension({
       const rightPanel = el("div",{style:{flex:"1",minWidth:`${PREVIEW_SIZE}px`,display:"flex",flexDirection:"column",gap:`${PAD}px`,height:`${RIGHT_H}px`}});
 
       // Preview box
-      const previewBox = el("div",{style:{width:`${PREVIEW_SIZE}px`,height:`${PREVIEW_SIZE}px`,flexShrink:"0",background:"#000",borderRadius:"8px",border:`1px solid ${C.border}`,position:"relative",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",alignSelf:"flex-start"}});
+      const previewBox = el("div",{style:{width:"100%",height:`${PREVIEW_SIZE}px`,flexShrink:"0",background:"#000",borderRadius:"8px",border:`1px solid ${C.border}`,position:"relative",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",alignSelf:"flex-start"}});
       const placeholder = el("div",{text:"Generate to see result",style:{color:C.muted,fontSize:"12px"}});
       const finalImg    = el("img",{style:{maxWidth:"100%",maxHeight:"100%",objectFit:"contain",display:"none"}});
       const loadingOv   = el("div",{style:{position:"absolute",inset:"0",background:"rgba(0,0,0,0.5)",display:"none",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"12px",zIndex:"10"}});
@@ -432,7 +437,7 @@ app.registerExtension({
         if(galleryOv?.el.style.display!=="none"){galleryOv.hide();return;}
       });
 
-      self.addDOMWidget("animav1_ui","div",root,{serialize:false,computeSize:()=>[NODE_MW,NODE_MH]});
+      self.addDOMWidget("animav1_ui","div",root,{serialize:false,computeSize:()=>[UI_W,UI_H]});
       self._tjRepaint = () => { seedField.value = state.seed ?? 0; promptTA.value = getModePrompt(state.mode); updateCount?.(); renderPills(); renderMode(); applyCompareBtnStyle?.(); };
       renderPills(); renderMode(); applyCompareBtnStyle();
     };

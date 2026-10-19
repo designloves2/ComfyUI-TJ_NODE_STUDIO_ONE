@@ -23,8 +23,13 @@ import { attachPanZoom, createCompareView } from "../shared/pan_zoom.js";
 const TOPBAR_H    = 40;
 const BOTTOM_PAD  = 20;
 const SEND_TO_H   = 32;
-const PROMPT_TA_H = 96;
 const PROMPT_LBL  = 18;
+// The node's outer size is fixed (node_size.js). Its UI fills what is left of it after the node body's margin and the
+// slot rows (image / prompt / settings outputs): the left menu keeps LEFT_W, the preview and the prompt take the extra
+// width, and the prompt field takes the extra height, so nothing is left empty.
+const UI_W        = OUTER_W - 30;
+const UI_H        = OUTER_H - 40 - 3 * 20;
+const PROMPT_TA_H = 96 + Math.max(0, UI_H - (PAD + TOPBAR_H + PAD + PREVIEW_SIZE + PAD + SEND_TO_H + PAD + PROMPT_LBL + 4 + 96 + BOTTOM_PAD));
 const PROMPT_H    = PROMPT_LBL + 4 + PROMPT_TA_H;
 const RIGHT_H     = PREVIEW_SIZE + PAD + SEND_TO_H + PAD + PROMPT_H;
 const ROOT_H      = PAD + TOPBAR_H + PAD + RIGHT_H + BOTTOM_PAD;
@@ -110,7 +115,7 @@ app.registerExtension({
 
       // ── Root ────────────────────────────────────────────────────────────────
       const root = el("div", { style: {
-        width: `${NODE_W}px`, height: `${ROOT_H}px`, boxSizing: "border-box",
+        width: `${UI_W}px`, height: `${ROOT_H}px`, boxSizing: "border-box",
         position: "relative", overflow: "hidden",
         background: C.bg0, borderRadius: "8px",
         padding: `${PAD}px ${PAD}px ${BOTTOM_PAD}px ${PAD}px`,
@@ -243,7 +248,7 @@ app.registerExtension({
 
       // Preview
       const previewBox = el("div", { style: {
-        width: `${PREVIEW_SIZE}px`, height: `${PREVIEW_SIZE}px`, flexShrink: "0",
+        width: "100%", height: `${PREVIEW_SIZE}px`, flexShrink: "0",
         background: "#000", borderRadius: "8px", border: `1px solid ${C.border}`,
         position: "relative", display: "flex", alignItems: "center", justifyContent: "center",
         overflow: "hidden", alignSelf: "flex-start",
@@ -635,7 +640,7 @@ app.registerExtension({
       // Register DOM widget
       self.addDOMWidget("ui", "div", root, {
         serialize: false,
-        computeSize: () => [NODE_MW, NODE_MH + (self._extraH || 0)],
+        computeSize: () => [UI_W, UI_H + (self._extraH || 0)],
       });
 
       // Every panel, repainted from `state` — used after a workflow restores settings.
