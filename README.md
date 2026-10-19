@@ -108,9 +108,6 @@
 > ⚠️ **생성 방식**: 모든 노드의 생성은 ComfyUI 상단 **RUN**이 아닌 노드 내부의 **▶ Generate** 버튼으로 실행합니다. RUN 실행 시 마지막으로 생성된 이미지가 OUTPUT image 슬롯으로 출력됩니다.
 > ⚠️ **Generation Method**: generation for all nodes is executed using at the top of ComfyUI **RUN**instead of, use the button inside the node **▶ Generate** button. When RUN is executed, the most recently generated image is output through the OUTPUT image slot..
 
-<img width="988" height="984" alt="image" src="https://github.com/user-attachments/assets/5764b302-b95d-40e1-98aa-a1a63c135c51" />
-<img width="1201" height="816" alt="Screen Shot 2026-06-27 at 05 58 39 907 AM" src="https://github.com/user-attachments/assets/aaf0686e-e09b-43b4-8aff-c6d369e5f06c" />
-
 ---
 
 ## ⚠️ 설치 후 필수 단계 — 의존성 노드 설치
