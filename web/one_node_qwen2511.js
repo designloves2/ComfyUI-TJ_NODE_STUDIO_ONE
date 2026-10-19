@@ -9,6 +9,7 @@ import { queuePrompt, interrupt, setLastImage, saveMeta,
 import { resolvePipeOverrides, applyOverridesTemp, collectModelNames, labelPipeInput }          from "./shared/promptdb_pipe.js";
 import { summarizeRun } from "./shared/run_summary.js";
 import { addLivePreview, listenLivePreview, showStepBar } from "./shared/live_preview.js";
+import { createOverrideToggle } from "./shared/override_toggle.js";
 import { OUTER_W, OUTER_H } from "./shared/node_size.js";
 import { createSettingsOverlay }  from "./qwen2511/ui_app_settings_qe.js";
 import { t } from "./shared/i18n.js";
@@ -213,6 +214,7 @@ app.registerExtension({
 
       let settingsOv,galleryOv,helpOv;
       topBar.appendChild(pillsWrap);
+      topBar.appendChild(createOverrideToggle(state, persist));
       topBar.appendChild(resetBtn);
       topBar.appendChild(compareBtn);
       topBar.appendChild(unloadBtn);

@@ -6,6 +6,7 @@
 
 - **Image nodes: live sampling preview.** Krea2, Z-Image, Anima, SDXL, Qwen 2.1, Klein and Qwen Edit 2511 put a Model Preview Override (KJNodes) in front of each
   sampler and paint the frames in the preview box, fitted like the final image, with a `Preview [n/step]` progress strip along the bottom. Skipped when KJNodes is missing.
+- **Prompt/pipe Override switch** in the top bar of the 7 image nodes (left of the icon buttons). Off = a connected `prompt_override` / `pipe` is ignored, so one PromptDBLoader can stay wired to all nodes. A muted or bypassed source node now counts as not connected.
 - SDXL settings: the UNet list was always empty (the page read `diffusion_models`, the server sends `unets`).
 
 ---

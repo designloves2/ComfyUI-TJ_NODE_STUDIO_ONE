@@ -14,6 +14,7 @@ import { attachNodeState, restoreNodeState } from "../shared/node_state.js";
 import { resolvePipeOverrides, applyOverridesTemp, labelPipeInput } from "../shared/promptdb_pipe.js";
 import { summarizeRun } from "../shared/run_summary.js";
 import { addLivePreview, listenLivePreview, showStepBar } from "../shared/live_preview.js";
+import { createOverrideToggle } from "../shared/override_toggle.js";
 import { OUTER_W, OUTER_H } from "../shared/node_size.js";
 import { attachPanZoom, createCompareView } from "../shared/pan_zoom.js";
 
@@ -163,6 +164,7 @@ app.registerExtension({
 
       let settingsOv, galleryOv, helpOv;
       topBar.appendChild(pillsWrap);
+      topBar.appendChild(createOverrideToggle(state, persist));
       topBar.appendChild(resetBtn);
       topBar.appendChild(compareBtn);
       topBar.appendChild(unloadBtn);

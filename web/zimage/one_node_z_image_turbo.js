@@ -10,6 +10,7 @@ import { queuePrompt, interrupt, copyOutputToInput, setLastImage,
 import { resolvePipeOverrides, applyOverridesTemp, collectModelNames, labelPipeInput } from "../shared/promptdb_pipe.js";
 import { summarizeRun } from "../shared/run_summary.js";
 import { addLivePreview, listenLivePreview, showStepBar } from "../shared/live_preview.js";
+import { createOverrideToggle } from "../shared/override_toggle.js";
 import { OUTER_W, OUTER_H } from "../shared/node_size.js";
 import { t } from "../shared/i18n.js";
 import { attachLLMPanel } from "../shared/llm_panel.js";
@@ -274,6 +275,7 @@ app.registerExtension({
       helpBtn.style.cssText+=`font-weight:700;font-size:13px;`;
 
       topBar.appendChild(pillsWrap);
+      topBar.appendChild(createOverrideToggle(state, persist));
       topBar.appendChild(resetBtn);
       topBar.appendChild(compareBtn);
       topBar.appendChild(unloadBtn);

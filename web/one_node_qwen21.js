@@ -7,6 +7,7 @@ import { app } from "../../scripts/app.js";
 import { resolvePipeOverrides, applyOverridesTemp, labelPipeInput } from "./shared/promptdb_pipe.js";
 import { summarizeRun } from "./shared/run_summary.js";
 import { addLivePreview, listenLivePreview, showStepBar } from "./shared/live_preview.js";
+import { createOverrideToggle } from "./shared/override_toggle.js";
 import { OUTER_W, OUTER_H } from "./shared/node_size.js";
 import { C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, MAX_REF_IMAGES, SUBFOLDER,
          POSE_SYSTEM_PROMPT_DEFAULT, POSE_SAM3D_MODEL_DEFAULT,
@@ -262,6 +263,7 @@ app.registerExtension({
       });
 
       topBar.appendChild(pillsWrap);
+      topBar.appendChild(createOverrideToggle(state, persist));
       topBar.appendChild(resetBtn);
       topBar.appendChild(unloadBtn);
       let settingsOv, galleryOv, helpOv;

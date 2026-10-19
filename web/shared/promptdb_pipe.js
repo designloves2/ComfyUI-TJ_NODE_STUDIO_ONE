@@ -19,7 +19,8 @@ function linkedSource(node, inputName) {
   if (linkId == null) return null;
   const link = node.graph?.links?.[linkId];
   const src = link ? node.graph.getNodeById(link.origin_id) : null;
-  return src ? { src, link } : null;
+  // a muted (2) or bypassed (4) source node is the same as no connection
+  return src && src.mode !== 2 && src.mode !== 4 ? { src, link } : null;
 }
 
 export async function readPipeRow(node) {
@@ -183,6 +184,7 @@ export function applyOverridesTemp(state, overrides) {
 // The caller applies with applyOverridesTemp() around getGraph() and restores
 // immediately — so `state` is only touched while the graph is built.
 export async function resolvePipeOverrides(node, state, { samplers = [], schedulers = [] } = {}) {
+  if (state.promptOverride === false) return null;           // the node's Prompt/pipe Override switch is off
   const row = await readPipeRow(node);
   const { overrides, skipped, meta } = row ? computePipeOverrides(row, { samplers, schedulers }) : { overrides: {}, skipped: [], meta: {} };
   // A connected prompt_override replaces the node's own prompt outright (it wins over the pipe's positive prompt too).
