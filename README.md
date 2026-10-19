@@ -1,6 +1,8 @@
 # TJ NODE STUDIO ONE (통합 패키지)
 # TJ NODE STUDIO ONE (Integrated Package)
 
+![TJ NODE STUDIO ONE - 11 nodes / 13 models](docs/11nodes.png)
+
 > **ComfyUI 올인원 생성 UI 패키지** — Z-Image ONE STUDIO, Flux.2 Klein ONE STUDIO, Qwen Image Edit 2511 ONE STUDIO, **Qwen Image 2.1 ONE STUDIO**, Krea 2 ONE STUDIO, **SDXL ONE STUDIO**, Minimax H3 ONE STUDIO, **Anima ONE STUDIO**, **MusicMaker ONE STUDIO**, **ITDA ONE STUDIO** 열 가지 노드를 단일 패키지로 제공합니다.  
 > **ComfyUI all-in-one generation UI package** — Z-Image ONE STUDIO, Flux.2 Klein ONE STUDIO, Qwen Image Edit 2511 ONE STUDIO, **Qwen Image 2.1 ONE STUDIO**, Krea 2 ONE STUDIO, **SDXL ONE STUDIO**, Minimax H3 ONE STUDIO, **Anima ONE STUDIO**, **MusicMaker ONE STUDIO**, **ITDA ONE STUDIO** — ten nodes in a single package.
 >
@@ -46,6 +48,15 @@
 > 🆕 **MiniMax H3에 Asset Library가 추가되었습니다.** 첫 번째 **Asset 탭**의 **+ Add ▾** 메뉴(Single Image / Images as a set / Video / Audio / From Gallery)로 이미지·영상·오디오·이미지 세트를 등록하고(From Gallery는 모든 갤러리·MusicMaker에서 가져오며 숨김·Cache·미리듣기를 지원), 카테고리·태그·구간 자르기, **프로젝트**(@별칭·순서)를 관리합니다. 참조 이미지는 노드 전체와 클립별 모두 **Files / Gallery** 또는 **Asset Library** 중 하나를 골라 쓰고, 프롬프트(메인 입력칸과 Prompt Edit 모두)에는 `@토큰`(자동완성 + Load 검사)을 쓰며 Prompt Write/Refine도 `@토큰`으로 작성합니다. ComfyUI-TJ_NODE의 Reference Asset Library가 필요합니다.
 >
 > 🆕 **MiniMax H3 now has an Asset Library.** The first **Asset tab**'s **+ Add ▾** menu (Single Image / Images as a set / Video / Audio / From Gallery) registers images, videos, audio and image sets (From Gallery imports from every gallery and MusicMaker, with hide, Cache and audio preview), with categories, tags, audio trim and **projects** (@aliases, order). References — node-wide and per clip — come from either **Files / Gallery** or **Asset Library**; prompts (main box and Prompt Edit) use `@tokens` (autocomplete + a Load check) and Prompt Write / Refine write with them. Needs ComfyUI-TJ_NODE's Reference Asset Library.
+
+>
+> ![MiniMax H3 Asset tab: categories, assets, viewer and details](docs/asset-mode.png)
+>
+> 🆕 **`@` / `#` / tag autocomplete in the prompt.** While you write a prompt (main box or Prompt Edit), typing `@`, `#` or a tag name lists the matching library assets right under the box, as a small card with its thumbnail, `@id`, name, type and category, so you can pick one instead of remembering ids. A picked asset becomes an `@token` in the prompt; the **Asset Library** reference panel below shows what is attached, and **Load** checks that the prompt's `@tokens` match those references.
+>
+> 🆕 **프롬프트에서 `@` / `#` / 태그 자동완성.** 프롬프트(메인 입력칸과 Prompt Edit)에 `@`, `#`, 태그 이름을 입력하면 입력칸 바로 아래에 맞는 라이브러리 에셋이 썸네일·`@id`·이름·종류·카테고리가 있는 작은 카드로 나타나, id를 외우지 않고 골라 쓸 수 있습니다. 고른 에셋은 프롬프트에 `@토큰`으로 들어가고, 아래 **Asset Library** 참조 패널에 붙은 에셋이 보이며, **Load**가 프롬프트의 `@토큰`과 참조가 맞는지 검사합니다.
+>
+> ![Asset tag suggestion under the prompt box, and the Asset Library reference panel](docs/asset-tag.png)
 >
 > 🆕 **모든 LLM 백엔드에 Connect Custom이 추가되었습니다.** MiniMax H3(Brief · Vision · LTX Upscale), 이미지 노드의 Prompt Enhance · Image → Prompt Write, MusicMaker에서 OpenAI 호환 서버(LM Studio · Ollama · llama.cpp · 게이트웨이)를 URL/모델/컨텍스트만 넣어 쓸 수 있습니다. 이미지 노드의 LLM 설정은 이제 **브라우저가 아니라 서버에 저장**되어 브라우저가 바뀌어도(웹 앱 포함) 같습니다. H3에는 **Prompt Refine → Include Images**, 갤러리 **Load more**(Settings → Output에서 개수 지정, 기본 50), 2-pass 업스케일이 추가되었습니다.
 >
