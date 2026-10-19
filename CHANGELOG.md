@@ -2,6 +2,14 @@
 
 ---
 
+## Unreleased
+
+- **Image nodes: live sampling preview.** Krea2, Z-Image, Anima, SDXL, Qwen 2.1, Klein and Qwen Edit 2511 put a Model Preview Override (KJNodes) in front of each
+  sampler and paint the frames in the preview box, fitted like the final image, with a `Preview [n/step]` progress strip along the bottom. Skipped when KJNodes is missing.
+- SDXL settings: the UNet list was always empty (the page read `diffusion_models`, the server sends `unets`).
+
+---
+
 ## v1.42.0
 
 ### LTX 2.5 ONE STUDIO: three modes

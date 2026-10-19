@@ -9,6 +9,7 @@ import { queuePrompt, interrupt, copyOutputToInput, setLastImage,
          freeMemory, saveMeta, getModels } from "./api.js";
 import { resolvePipeOverrides, applyOverridesTemp, collectModelNames, labelPipeInput } from "../shared/promptdb_pipe.js";
 import { summarizeRun } from "../shared/run_summary.js";
+import { addLivePreview, listenLivePreview, showStepBar } from "../shared/live_preview.js";
 import { OUTER_W, OUTER_H } from "../shared/node_size.js";
 import { t } from "../shared/i18n.js";
 import { attachLLMPanel } from "../shared/llm_panel.js";
@@ -310,7 +311,7 @@ app.registerExtension({
         overflow:"hidden",alignSelf:"flex-start",
       }});
       const placeholder=el("div",{text:"Generate to see result",style:{color:C.muted,fontSize:"12px"}});
-      const finalImg=el("img",{style:{maxWidth:"100%",maxHeight:"100%",objectFit:"contain",display:"none"}});
+      const finalImg=el("img",{style:{width:"100%",height:"100%",objectFit:"contain",display:"none"}});
       const loadingOv=el("div",{style:{
         position:"absolute",inset:"0",background:"rgba(0,0,0,0.5)",
         display:"none",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"12px",
@@ -543,6 +544,16 @@ app.registerExtension({
       genRow.appendChild(row([genBtn,stopBtn]));
       seedRow.appendChild(genRow);
 
+      // live sampling frames (ModelPreviewOverrideKJ) paint over the box until the final image replaces them
+      const stopLive = listenLivePreview(self, (url, step, total) => {
+        if (finalImg.parentNode !== previewBox) previewBox.appendChild(finalImg);
+        placeholder.style.display = "none"; loadingOv.style.display = "none";
+        if (step && total) showStepBar(previewBox, step, total);
+        finalImg.src = url; finalImg.style.display = "block";
+      });
+      const origOnRemoved = nodeType.prototype.onRemoved;
+      self.onRemoved = function () { stopLive(); origOnRemoved?.apply(this, arguments); };
+
       let modeHandle=null;
 
       // The value of the widget on the node wired into a model / clip / vae override slot.
@@ -611,6 +622,7 @@ app.registerExtension({
           const _restore=pipeOv?applyOverridesTemp(state,pipeOv.overrides):null;
           try{ graph=modeHandle.getGraph(); } finally{ _restore?.(); }
           self._tjLastRun = summarizeRun(graph, state);
+          await addLivePreview(graph, self.id);
           const result=await queuePrompt(graph,{onProgress:()=>{}});
           const imgs=result?.output?.images;
           if(!imgs?.length) throw new Error("No output images returned.");

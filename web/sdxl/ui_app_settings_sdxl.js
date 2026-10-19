@@ -121,7 +121,7 @@ export function createSettingsOverlay(state, ctx) {
   }
 
   function buildSeparateSection(data) {
-    const diff    = ["none", ...(data.diffusion_models || [])];
+    const diff    = ["none", ...(data.unets || [])];
     const te      = ["none", ...(data.text_encoders    || [])];
     const vaes    = ["none", ...(data.vaes             || [])];
     const refiners = ["none", ...(data.checkpoints    || [])];

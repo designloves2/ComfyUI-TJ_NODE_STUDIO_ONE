@@ -5,6 +5,7 @@ import { C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD,
 import { downloadAgentJob, agentStamp } from "./shared/agent_job.js";
 import { resolvePipeOverrides, applyOverridesTemp, collectModelNames, labelPipeInput } from "./shared/promptdb_pipe.js";
 import { summarizeRun } from "./shared/run_summary.js";
+import { addLivePreview, listenLivePreview, showStepBar } from "./shared/live_preview.js";
 import { OUTER_W, OUTER_H } from "./shared/node_size.js";
 import { panel, label, button, select, numberField, row, col,
          modeBar, iconBtn, openFullscreen }                                    from "./klein/ui_common.js";
@@ -227,7 +228,7 @@ app.registerExtension({
       // Preview box
       const previewBox = el("div",{style:{width:"100%",height:`${PREVIEW_SIZE}px`,flexShrink:"0",background:"#000",borderRadius:"8px",border:`1px solid ${C.border}`,position:"relative",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",alignSelf:"flex-start"}});
       const placeholder = el("div",{text:"Generate to see result",style:{color:C.muted,fontSize:"12px"}});
-      const finalImg    = el("img",{style:{maxWidth:"100%",maxHeight:"100%",objectFit:"contain",display:"none"}});
+      const finalImg    = el("img",{style:{width:"100%",height:"100%",objectFit:"contain",display:"none"}});
       const loadingOv   = el("div",{style:{position:"absolute",inset:"0",background:"rgba(0,0,0,0.5)",display:"none",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"12px",zIndex:"10"}});
       const spinner     = el("div",{style:{width:"44px",height:"44px",border:`3px solid ${C.border}`,borderTop:`3px solid ${BRAND}`,borderRadius:"50%",animation:"k2v3-spin 0.8s linear infinite"}});
       loadingOv.appendChild(spinner); loadingOv.appendChild(el("div",{text:"Generating…",style:{color:C.text,fontSize:"12px"}}));
@@ -247,6 +248,17 @@ app.registerExtension({
         placeholder.style.display="block"; finalImg.style.display="none"; loadingOv.style.display="none"; zoomLockBtn.style.display="none"; clearBtn.style.display="none"; resetZoom();
       }
       resetPreview();
+
+      // live sampling frames (ModelPreviewOverrideKJ) paint over the box until the final image replaces them
+      const stopLive = listenLivePreview(self, (url, step, total) => {
+        if (!running) return;
+        if (finalImg.parentNode !== previewBox) previewBox.appendChild(finalImg);
+        placeholder.style.display = "none"; loadingOv.style.display = "none";
+        if (step && total) showStepBar(previewBox, step, total);
+        finalImg.src = url; finalImg.style.display = "block";
+      });
+      const origOnRemoved = nodeType.prototype.onRemoved;
+      self.onRemoved = function () { stopLive(); origOnRemoved?.apply(this, arguments); };
 
       let modeHandle = null;
       function tryShowCompare(){
@@ -441,6 +453,7 @@ app.registerExtension({
           const _restore=pipeOv?applyOverridesTemp(state,pipeOv.overrides):null;
           try{ prompt=await modeHandle.getGraph(); } finally{ _restore?.(); }
           self._tjLastRun = summarizeRun(prompt, state);
+          await addLivePreview(prompt, self.id);
         }catch(err){alert(`Build error: ${err.message}`);running=false;genBtn.disabled=false;genBtn.textContent="▶ Generate";loadingOv.style.display="none";if(!modeResults[state.mode])resetPreview();return;}
 
         try{
