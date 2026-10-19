@@ -16,6 +16,11 @@
 > 🆕 **이미지 노드 7종**: `prompt_override`가 노드의 프롬프트를 통째로 대체하고(PromptDBLoader 또는 일반 텍스트 노드), Qwen 2.1 · Anima도 PromptDB `pipe`를 적용합니다. 새 출력 **`prompt`** · **`settings`**(JSON)가 추가되었고, 모든 노드(H3 · LTX · Music 포함)가 1310 × 1034로 통일되었습니다.
 >
 > 🆕 **The 7 image nodes**: `prompt_override` replaces the node's prompt outright (a PromptDBLoader or any text node), and Qwen 2.1 / Anima now apply the PromptDB `pipe`. New outputs **`prompt`** and **`settings`** (JSON), and every node (H3, LTX, Music included) is now 1310 × 1034.
+
+>
+> 🆕 **이미지 노드 7종 생성 중 실시간 프리뷰**: 샘플링 중간 이미지가 프리뷰 칸에 보이고(완성 이미지와 같은 크기·자리), 아래쪽 줄에 `Preview [n/step]` 진행바가 표시됩니다. ComfyUI-KJNodes의 Model Preview Override가 필요하며 없으면 평소처럼 생성합니다.
+>
+> 🆕 **Live sampling preview in the 7 image nodes**: the in-progress image shows in the preview box (same size and place as the final image) with a `Preview [n/step]` progress strip along the bottom. Needs ComfyUI-KJNodes' Model Preview Override; without it generation runs as before.
 >
 > 🆕 **MiniMax H3 Prompt Edit이 크게 좋아졌습니다.** 클립마다 **시간 오버라이드**(1초~15초, 0.5초 단위로 실제 렌더 길이에 맞춰 정리)를 줄 수 있고, **CLIPS** 목록에 클립별 누적 시간과 샷 범위(`[shot 1] 0~4.5`)가 보입니다(One-Take에서는 겹침을 뺀 `stitched` 시간도). 오버라이드한 클립은 주황, 에셋 라이브러리 오버라이드는 핑크로 표시됩니다. 클립을 나누면 각 클립의 샷 번호와 시간이 `[Shot 1]`부터 다시 시작하고(시간은 0.5초 단위), 클립별 전체 브리프(헤더 / 샷 / 사운드·음악)는 각각 THIS CLIP 칸으로 들어갑니다. ✨ Prompt Write · 🔧 Prompt Refine은 ✓ Done 옆에 항상 보입니다.
 >
@@ -201,6 +206,19 @@
 
 > **🔗 PromptDB 파이프 연동 (TJ_NODE)**: 모든 ONE STUDIO 노드에 `pipe` 입력이 있어, [`ComfyUI-TJ_NODE`](https://github.com/designloves2/ComfyUI-TJ_NODE)의 **`PromptDBLoader(TJ)`** 에서 고른 기록을 **소켓 하나로** 받아 **생성 시점에 적용**합니다. 적용 필드: 프롬프트(pos/neg) · seed · steps · cfg · sampler · scheduler. **모델은 파이프에서 적용하지 않고 각 노드가 자기 설정 모델을 사용**합니다(노드마다 필요한 모델 계열이 달라서). 파이프에 있는 값만 오버라이드하고 없는 값은 노드 설정을 그대로 쓰며, 노드 UI는 변경되지 않습니다. TJ_NODE 미설치 시 해당 소켓만 비활성이고 노드는 정상 동작합니다. (TJ_NODE v2.10.1+)
 > **🔗 PromptDB pipe (TJ_NODE)**: every ONE STUDIO node has a `pipe` input that receives a selected record from **`PromptDBLoader(TJ)`** and applies it **at generation time** — prompt (pos/neg), seed, steps, cfg, sampler, scheduler. **The model is NOT taken from the pipe**; each node keeps its own configured model (different nodes need different model families). Only fields present in the pipe override the node's settings, the rest keep the node's own values, and the node UI is never changed. No hard dependency: if TJ_NODE isn't installed the socket is simply inactive. (TJ_NODE v2.10.1+)
+
+>
+> **프롬프트 DB 연동 · 저장 정리 (이미지 노드 7종)**
+> - **`pipe`** (표시 이름 "PDBLoader pipe"): `PromptDBLoader(TJ)`의 선택 기록으로 프롬프트(pos/neg) · seed · steps · cfg · sampler · scheduler를 덮어씁니다. 내부 이름은 `pipe` 그대로라 저장된 워크플로우와 호환됩니다.
+> - **`prompt_override`**: 연결하면 노드의 프롬프트를 **통째로 대체**하며 pipe의 프롬프트보다 우선합니다. `PromptDBLoader(TJ)`(선택 행의 positive prompt), 일반 텍스트 노드, Reroute 경유 모두 읽습니다.
+> - **출력 `prompt` · `settings`**: 생성 뒤 실제로 쓰인 프롬프트(문자열)와 설정(JSON)을 내보냅니다. `settings` JSON 키: `model`, `seed`, `steps`, `cfg`, `sampler`, `scheduler`, `positive_prompt`, `negative_prompt`. 값은 pipe · `prompt_override`가 적용된 **실제 제출 그래프**에서 읽습니다.
+> - **저장**: `settings`를 `PromptDBSave(TJ)`의 JSON 입력(`json_input`)에 연결하면 DB로 저장됩니다(키 대응: `model` → `model_name`, `sampler` → `sampler_name`). `json_input`이 있는 TJ_NODE 버전이 필요합니다.
+>
+> **PromptDB hookup and saving (the 7 image nodes)**
+> - **`pipe`** (shown as "PDBLoader pipe"): a `PromptDBLoader(TJ)` record overrides the prompt (pos/neg), seed, steps, cfg, sampler and scheduler. The internal name stays `pipe`, so saved workflows keep working.
+> - **`prompt_override`**: when connected it **replaces the node's prompt outright** and wins over the pipe's prompt. It reads a `PromptDBLoader(TJ)` (the selected row's positive prompt), any text node, or either through a Reroute.
+> - **Outputs `prompt` and `settings`**: after a run they give the prompt that was really used (string) and the settings (JSON). `settings` keys: `model`, `seed`, `steps`, `cfg`, `sampler`, `scheduler`, `positive_prompt`, `negative_prompt`, read from the **graph actually submitted**, so pipe and `prompt_override` are included.
+> - **Saving**: wire `settings` into `PromptDBSave(TJ)`'s JSON input (`json_input`) to store it in the DB (key mapping: `model` → `model_name`, `sampler` → `sampler_name`). Needs a TJ_NODE version that has `json_input`.
 >
 > ![PromptDBLoader(TJ) → Flux.2 Klein ONE STUDIO (TJ) pipe connection](docs/promptdb_pipe_connection.png)
 > _`PromptDBLoader(TJ)`의 `pipe` 출력을 ONE STUDIO 노드의 `pipe` 입력에 연결한 예시 (Flux.2 Klein) / example `pipe` connection (Flux.2 Klein)_
