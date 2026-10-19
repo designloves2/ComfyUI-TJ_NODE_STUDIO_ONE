@@ -24,6 +24,10 @@
 >
 > 🆕 **Live sampling preview in the 7 image nodes**: the in-progress image shows in the preview box (same size and place as the final image) with a `Preview [n/step]` progress strip along the bottom. Needs ComfyUI-KJNodes' Model Preview Override; without it generation runs as before.
 >
+> 🆕 **이미지 노드 7종 상단바에 `Prompt/pipe Override` 스위치**가 생겼습니다. 끄면 `prompt_override` · `pipe`가 연결돼 있어도 무시하므로, PromptDBLoader 하나를 모든 노드에 연결해 두고 노드별로 켜고 끌 수 있습니다. 바이패스·뮤트된 소스 노드는 연결 없음으로 취급합니다.
+>
+> 🆕 **A `Prompt/pipe Override` switch in the top bar of the 7 image nodes.** Off ignores a connected `prompt_override` / `pipe`, so one PromptDBLoader can stay wired to every node and be switched per node. A muted or bypassed source node counts as not connected.
+>
 > 🆕 **MiniMax H3 Prompt Edit이 크게 좋아졌습니다.** 클립마다 **시간 오버라이드**(1초~15초, 0.5초 단위로 실제 렌더 길이에 맞춰 정리)를 줄 수 있고, **CLIPS** 목록에 클립별 누적 시간과 샷 범위(`[shot 1] 0~4.5`)가 보입니다(One-Take에서는 겹침을 뺀 `stitched` 시간도). 오버라이드한 클립은 주황, 에셋 라이브러리 오버라이드는 핑크로 표시됩니다. 클립을 나누면 각 클립의 샷 번호와 시간이 `[Shot 1]`부터 다시 시작하고(시간은 0.5초 단위), 클립별 전체 브리프(헤더 / 샷 / 사운드·음악)는 각각 THIS CLIP 칸으로 들어갑니다. ✨ Prompt Write · 🔧 Prompt Refine은 ✓ Done 옆에 항상 보입니다.
 >
 > 🆕 **MiniMax H3 Prompt Edit got a big upgrade.** Each clip can have its own **time override** (1 s to 15 s, tidied to half seconds that match the length really rendered), and the **CLIPS** list shows each clip's running clock and shot ranges (`[shot 1] 0~4.5`), plus the `stitched` time without the overlap in One-Take. A clip with an override is orange, one with an Asset Library override is pink. Splitting restarts the shot numbers and times of every clip from `[Shot 1]` (times in half seconds), and a full brief per clip (header / shots / sound-music) goes into that clip's own THIS CLIP boxes. ✨ Prompt Write and 🔧 Prompt Refine stay beside ✓ Done.
