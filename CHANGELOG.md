@@ -4,7 +4,7 @@
 
 ## Unreleased
 
-- **Moss Image: the MOSS-Image prompt-enhancer system prompt** (verbatim from ComfyUI's MOSS-Image templates) is now what Prompt Enhance / Auto Enhance send on every Moss mode (T2I, I2I, R2I, INPAINT), instead of the generic Model Format prompt. `attachLLMPanel` takes an optional `systemPrompt` for this; Refine keeps its own instruction.
+- **Moss Image: the MOSS-Image prompt-enhancer system prompt** (verbatim from ComfyUI's MOSS-Image templates) is now what Prompt Enhance / Auto Enhance send on on Moss instead of the generic Model Format prompt: T2I / I2I / INPAINT send the T2I template's text, R2I (bboxes) sends the bboxes template's own (`web/moss/system_prompt_moss.js`). `attachLLMPanel` takes an optional `systemPrompt` for this; Refine keeps its own instruction.
 
 ---
 

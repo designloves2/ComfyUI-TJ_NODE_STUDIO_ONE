@@ -9,7 +9,7 @@ import { attachLLMPanel } from "../shared/llm_panel.js";
 import { createGalleryOverlay } from "./ui_gallery_moss.js";
 import { mountT2ILeft } from "./ui_t2i_moss.js";
 import { mountI2ILeft } from "./ui_i2i_moss.js";
-import { MOSS_SYSTEM_PROMPT } from "./system_prompt_moss.js";
+import { mossSystemPrompt } from "./system_prompt_moss.js";
 import { mountInpaintLeft } from "./ui_inpaint_moss.js";
 import { mountR2ILeft } from "./ui_r2i_moss.js";
 import { attachNodeState, restoreNodeState } from "../shared/node_state.js";
@@ -279,7 +279,7 @@ app.registerExtension({
       };
       // Default Model Format for THIS node's Prompt Edit — ported from Qwen Image 2.1's
       // pilot. Applied inside attachLLMPanel once its model list actually loads.
-      const llmApi = attachLLMPanel({promptExpandEl,pxTA,getModePrompt,setModePrompt,state,persist,updateCount,getPromptTA:()=>promptTA,openSettings:()=>settingsOv?.show(),defaultModelFormat:"Universal Natural Language",systemPrompt:MOSS_SYSTEM_PROMPT});
+      const llmApi = attachLLMPanel({promptExpandEl,pxTA,getModePrompt,setModePrompt,state,persist,updateCount,getPromptTA:()=>promptTA,openSettings:()=>settingsOv?.show(),defaultModelFormat:"Universal Natural Language",systemPrompt:()=>mossSystemPrompt(state.mode)});
 
       // ── Prompt area ────────────────────────────────────────────────────────
       const promptWrap = el("div",{style:{height:`${PROMPT_H}px`,flexShrink:"0",display:"flex",flexDirection:"column",gap:"4px"}});

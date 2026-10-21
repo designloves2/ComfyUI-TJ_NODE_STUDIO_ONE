@@ -675,7 +675,7 @@ async function runRefine({ getText, onApply, setBusy }) {
 // ══════════════════════════════════════════════════════════════════════════
 // Popup — single merged screen
 // ══════════════════════════════════════════════════════════════════════════
-// systemPrompt (optional): a node's own system prompt for Prompt Enhance, sent as system_override in place of the generic
+// systemPrompt (optional): a node's own system prompt for Prompt Enhance (a string, or a function of the current mode), sent as system_override in place of the generic
 // Model Format one. Refine keeps its own instruction.
 export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA, openSettings, defaultModelFormat, systemPrompt }) {
   // Grab existing children (header row + textarea) — restructure the interior.
@@ -1126,6 +1126,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
 
   // ── Prompt Enhance: dumbs the current text into a better prompt, in place ──
   async function doEnhance() {
+    const sysPrompt = typeof systemPrompt === "function" ? systemPrompt() : systemPrompt;   // may depend on the current mode
     const prompt = existingTA.value.trim();
     if (!prompt) return;
     applySeedControl();
@@ -1152,7 +1153,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
           model_format: llm.model_format,
           aesthetic: llm.aesthetic,
           extra_instructions: llm.extra_instructions,
-          ...(systemPrompt ? { system_override: systemPrompt } : {}),
+          ...(sysPrompt ? { system_override: sysPrompt } : {}),
         }),
       });
       const d = await r.json();
