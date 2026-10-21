@@ -2,6 +2,12 @@
 
 ---
 
+## Unreleased
+
+- **Moss Image ONE STUDIO (TJ)** - new image node for ComfyUI's MOSS-Image (~5B, Qwen3.5 text encoder, FLUX.2 small VAE). Modes: **T2I**, **I2I** (source scaled to the working size, VAE-encoded and re-noised by Denoise) and **R2I (bboxes)** (boxes drawn on a canvas, each an OBJECT or a TEXT block, built into the layout prompt by MOSSImageLayoutPrompt; "Characters" picks object boxes by number). Same UI as the other image nodes: Settings, Gallery, LoRAs (max 3), Prompt Edit / Refine / Auto Enhance / Prompt Preset, live preview with the `Preview [n/step]` strip, Prompt/pipe Override switch, `prompt_override` / `pipe` inputs and `prompt` / `settings` outputs, 1310 x 1034. Resolution presets are Krea2's; the size actually rendered is snapped to multiples of 16 (1080 -> 1088). Needs a ComfyUI with the MOSS-Image nodes. Models: `moss_image_sft_*` / `moss_image_base_*` (diffusion_models), `qwen3.5_9b_*` (text_encoders, CLIP type `moss_image`), `flux2-vae` (vae); Hugging Face `Comfy-Org/MOSS-Image`.
+
+---
+
 ## v1.43.0
 
 - **Image nodes: live sampling preview.** Krea2, Z-Image, Anima, SDXL, Qwen 2.1, Klein and Qwen Edit 2511 put a Model Preview Override (KJNodes) in front of each

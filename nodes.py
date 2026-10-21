@@ -38,6 +38,7 @@ Q21_CONFIG_PATH = os.path.join(NODE_DIR, 'config_qwen21.json')
 SDXL_CONFIG_PATH = os.path.join(NODE_DIR, 'config_sdxl_one.json')
 MMH3_CONFIG_PATH = os.path.join(NODE_DIR, 'config_minimax_h3.json')
 ANIMA_CONFIG_PATH = os.path.join(NODE_DIR, 'config_anima.json')
+MOSS_CONFIG_PATH = os.path.join(NODE_DIR, 'config_moss.json')
 
 # Custom prompt templates, decoupled from any one tool's own config file — see
 # SPEC_ZIMAGE_TEMPLATE_SHARING.md. Two independent pools, split by prompt style:
@@ -50,7 +51,7 @@ PROMPT_TEMPLATE_POOLS = {
 # One pool per tool, so each tool's custom templates stay its own. "nl"/"tag" above are
 # the old shared pools: still served for older clients, and the source each per-tool
 # pool is seeded from the first time it is read.
-for _tool in ("klein", "zimage", "krea2", "qwen2511", "qwen21", "anima", "sdxl", "minimax_h3"):
+for _tool in ("klein", "zimage", "krea2", "qwen2511", "qwen21", "anima", "moss", "sdxl", "minimax_h3"):
     PROMPT_TEMPLATE_POOLS[_tool] = os.path.join(NODE_DIR, f'templates_prompt_{_tool}.json')
 
 FK_SUBFOLDER  = "one_flux2-klein"
@@ -61,6 +62,7 @@ Q21_SUBFOLDER = "one_qwen21"
 SDXL_SUBFOLDER = "one_sdxl"
 MMH3_SUBFOLDER = "one_minimax_h3"
 ANIMA_SUBFOLDER = "one_anima"
+MOSS_SUBFOLDER = "one_moss"
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -3918,6 +3920,83 @@ async def anima_set_last_image(request):
 
 
 # ════════════════════════════════════════════════════════════════════════════════
+# Route registration — moss_one
+# ════════════════════════════════════════════════════════════════════════════════
+
+PromptServer.instance.routes.get("/moss_one/gallery")(_make_gallery_handler(MOSS_SUBFOLDER, "moss"))
+PromptServer.instance.routes.post("/moss_one/save_meta")(_make_save_meta_handler("moss"))
+PromptServer.instance.routes.post("/moss_one/update_meta")(_make_update_meta_handler("moss"))
+PromptServer.instance.routes.get("/moss_one/meta")(_make_meta_get_handler())
+PromptServer.instance.routes.post("/moss_one/open_folder")(_make_open_folder_handler())
+PromptServer.instance.routes.post("/moss_one/delete")(_make_delete_handler("moss"))
+PromptServer.instance.routes.post("/moss_one/copy_to_input")(_make_copy_to_input_handler("moss"))
+PromptServer.instance.routes.get("/moss_one/lora_triggers")(_make_lora_triggers_handler())
+
+
+@PromptServer.instance.routes.get("/moss_one/config")
+async def moss_get_config(request):
+    cfg = _load_config(MOSS_CONFIG_PATH)
+    return web.json_response({
+        "selected_model":         cfg.get("selected_model",         ""),
+        "selected_text_encoder":  cfg.get("selected_text_encoder",  ""),
+        "selected_vae":           cfg.get("selected_vae",           "flux2-vae.safetensors"),
+        "save_subfolder":         cfg.get("save_subfolder")         or MOSS_SUBFOLDER,
+        "negative_prompt":        cfg.get("negative_prompt",        "nsfw, worst quality, bad anatomy, watermark, jpeg artifact"),
+        "output_mode_visible":    cfg.get("output_mode_visible",    True),
+    })
+
+
+@PromptServer.instance.routes.post("/moss_one/config")
+async def moss_save_config(request):
+    try:
+        patch = await request.json()
+        if not isinstance(patch, dict):
+            return web.json_response({"ok": False, "error": "invalid payload"}, status=400)
+        cfg = _load_config(MOSS_CONFIG_PATH)
+        cfg.update(patch)
+        _save_config(MOSS_CONFIG_PATH, cfg)
+        return web.json_response({"ok": True})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+
+@PromptServer.instance.routes.get("/moss_one/models")
+async def moss_get_models(request):
+    try:
+        # graph_builder_moss.js branches on .gguf same as every other tool here.
+        diff = _scan("diffusion_models", [".safetensors", ".gguf", ".ckpt", ".pt", ".pth"])
+    except Exception:
+        diff = ["none"]
+    try:
+        te = _scan("text_encoders", [".safetensors", ".gguf", ".ckpt", ".pt", ".pth"])
+    except Exception:
+        te = ["none"]
+    try:
+        vaes = _scan("vae")
+    except Exception:
+        vaes = ["none"]
+    loras = _scan("loras")
+    return web.json_response({
+        "diffusion_models": diff,
+        "text_encoders":    te,
+        "vaes":              vaes,
+        "loras":             loras,
+    })
+
+
+_moss_last_images: dict = {}
+
+
+@PromptServer.instance.routes.post("/moss_one/set_last_image")
+async def moss_set_last_image(request):
+    data = await request.json()
+    uid = str(data.get("unique_id", ""))
+    if uid:
+        _moss_last_images[uid] = {**data.get("image", {}), "run": data.get("run") or {}}
+    return web.json_response({"ok": True})
+
+
+# ════════════════════════════════════════════════════════════════════════════════
 # Route registration — shared prompt template pools
 # ════════════════════════════════════════════════════════════════════════════════
 # Decoupled from any single tool's own config file. Two pools split by prompt
@@ -3956,7 +4035,7 @@ def _seed_prompt_pool(pool):
         return _load_config(PROMPT_TEMPLATE_POOLS["nl"]).get("templates", [])
     if pool == "sdxl":
         return _load_config(PROMPT_TEMPLATE_POOLS["tag"]).get("templates", [])
-    if pool in ("nl", "krea2", "qwen2511", "anima"):
+    if pool in ("nl", "krea2", "qwen2511", "anima", "moss"):
         return _seed_nl_pool_from_legacy()
     return []
 
@@ -4416,6 +4495,52 @@ class AnimaOneTJNode:
                 return (torch.from_numpy(arr)[None,], *_run_outputs(info))
         except Exception as e:
             print(f"[Anima] output slot error: {e}")
+        return (torch.zeros((1, 64, 64, 3), dtype=torch.float32), *_run_outputs(info))
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return float("nan")
+
+
+class MossImageOneTJNode:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {},
+            "optional": {
+                "prompt_override": ("STRING", {
+                    "default": "",
+                    "multiline": True,
+                    "forceInput": True,
+                    "tooltip": "External prompt override — replaces the node's own prompt. Takes the text of a PromptDBLoader (TJ) or any text node wired in.",
+                }),
+                "pipe": ("TJ_PROMPT_PIPE", {
+                    "tooltip": "PromptDB pipe (TJ_NODE). At generation, fields present in the pipe override this node's settings; missing fields keep the node's own values. The node's UI is never changed.",
+                }),
+            },
+            "hidden": {"unique_id": "UNIQUE_ID"},
+        }
+    RETURN_TYPES = ("IMAGE", "STRING", "STRING")
+    RETURN_NAMES = ("image", "prompt", "settings")
+    FUNCTION = "get_output_image"
+    CATEGORY = " ✨ TJ_Node/Generator"
+    OUTPUT_NODE = True
+
+    def get_output_image(self, unique_id=None, prompt_override="", **kwargs):
+        uid = str(unique_id) if unique_id else ""
+        info = _moss_last_images.get(uid, {})
+        try:
+            filename = info.get("filename")
+            if filename:
+                img_type = info.get("type", "output")
+                subfolder = info.get("subfolder", "") or ""
+                base = folder_paths.get_output_directory() if img_type == "output" else folder_paths.get_input_directory()
+                path = os.path.join(base, subfolder, filename) if subfolder else os.path.join(base, filename)
+                img = Image.open(path).convert("RGB")
+                arr = np.array(img).astype(np.float32) / 255.0
+                return (torch.from_numpy(arr)[None,], *_run_outputs(info))
+        except Exception as e:
+            print(f"[Moss] output slot error: {e}")
         return (torch.zeros((1, 64, 64, 3), dtype=torch.float32), *_run_outputs(info))
 
     @classmethod
@@ -5914,6 +6039,7 @@ NODE_CLASS_MAPPINGS = {
     "MusicMakerOneTJNode":         MusicMakerOneTJNode,
     "TJStudioOneTextOutput":       TJStudioOneTextOutput,
     "AnimaOneTJNode":              AnimaOneTJNode,
+    "MossImageOneTJNode":          MossImageOneTJNode,
     "ItdaStudioOneTJNode":         ItdaStudioOneTJNode,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -5928,6 +6054,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "TJ_RTXDeblur":                "RTX Deblur (TJ)",
     "TJStudioOneTextOutput":       "TJ Studio ONE — Text Output",
     "AnimaOneTJNode":              "Anima ONE STUDIO (TJ)",
+    "MossImageOneTJNode":          "Moss Image ONE STUDIO (TJ)",
     "ItdaStudioOneTJNode":         "ITDA ONE STUDIO (TJ)",
 }
 

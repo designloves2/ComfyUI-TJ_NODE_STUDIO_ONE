@@ -18,6 +18,10 @@
 > 🆕 **이미지 노드 7종**: `prompt_override`가 노드의 프롬프트를 통째로 대체하고(PromptDBLoader 또는 일반 텍스트 노드), Qwen 2.1 · Anima도 PromptDB `pipe`를 적용합니다. 새 출력 **`prompt`** · **`settings`**(JSON)가 추가되었고, 모든 노드(H3 · LTX · Music 포함)가 1310 × 1034로 통일되었습니다.
 >
 > 🆕 **The 7 image nodes**: `prompt_override` replaces the node's prompt outright (a PromptDBLoader or any text node), and Qwen 2.1 / Anima now apply the PromptDB `pipe`. New outputs **`prompt`** and **`settings`** (JSON), and every node (H3, LTX, Music included) is now 1310 × 1034.
+>
+> 🆕 **새 노드 Moss Image ONE STUDIO (TJ)**: ComfyUI의 MOSS-Image 모델용 이미지 노드입니다. 모드는 **T2I** · **I2I** · **R2I (bboxes)**. R2I는 캔버스에 박스를 그려 각 박스를 오브젝트 또는 텍스트(정확한 글자)로 지정하고, 순서대로 레이아웃 프롬프트로 만들어 생성합니다. 다른 이미지 노드와 같은 UI·기능(갤러리, LoRA, Prompt Edit, 라이브 프리뷰, Override 스위치, `prompt`/`settings` 출력)을 씁니다. 모델은 Hugging Face `Comfy-Org/MOSS-Image`(`moss_image_sft_*` · `qwen3.5_9b_*` · `flux2-vae`)입니다.
+>
+> 🆕 **New node: Moss Image ONE STUDIO (TJ)**, an image node for ComfyUI's MOSS-Image model. Modes: **T2I**, **I2I** and **R2I (bboxes)**. In R2I you draw boxes on a canvas, set each one as an object or a text block (exact words), and they are turned into the layout prompt in drawing order. It has the same UI and features as the other image nodes (gallery, LoRAs, Prompt Edit, live preview, Override switch, `prompt` / `settings` outputs). Models are on Hugging Face `Comfy-Org/MOSS-Image` (`moss_image_sft_*`, `qwen3.5_9b_*`, `flux2-vae`).
 
 >
 > 🆕 **이미지 노드 7종 생성 중 실시간 프리뷰**: 샘플링 중간 이미지가 프리뷰 칸에 보이고(완성 이미지와 같은 크기·자리), 아래쪽 줄에 `Preview [n/step]` 진행바가 표시됩니다. ComfyUI-KJNodes의 Model Preview Override가 필요하며 없으면 평소처럼 생성합니다.
@@ -204,6 +208,7 @@
 | **SDXL ONE STUDIO (TJ)** 🧪 | SDXL Checkpoint / Separate UNET 모델<br><sub>SDXL Checkpoint / Separate UNET model</sub>| T2I · I2I · Inpaint · Outpaint · Upscale *(테스트 버전 / Test Version)* |
 | **MiniMax H3 ONE STUDIO (TJ)** 🧪 | MiniMax H3 영상+오디오 생성 모델<br><sub>MiniMax H3 video + audio model</sub>| Text / First-Last / Reference · **클립 릴레이 + 자동 합본** · 라이브 프리뷰 · **Postprocess** · **Image Generator** · **Character Sheet** *(실험적 / Experimental)* |
 | **Anima ONE STUDIO (TJ)** 🆕 | Anima (ComfyUI 네이티브 애니메이션풍 이미지 모델)<br><sub>Anima (ComfyUI-native anime-style image model)</sub>| T2I · Inpainting · Any Control to Image · Depth Control to Image · **Turbo LoRA** · **인라인 마스크 페인터**<br><sub>T2I · Inpainting · Any Control to Image · Depth Control to Image · **Turbo LoRA** · **inline mask painter**</sub>|
+| **Moss Image ONE STUDIO (TJ)** 🆕 | MOSS-Image (오픈 ~5B 텍스트→이미지 모델, 영·중 문자 렌더링과 레이아웃 제어)<br><sub>MOSS-Image (open ~5B text-to-image model, strong English / Chinese text rendering and layout control)</sub>| T2I · I2I · R2I (bboxes)<br><sub>R2I = 박스를 그려 오브젝트·텍스트 위치 지정 / draw boxes for objects and exact text</sub>|
 | **MusicMaker ONE STUDIO (TJ)** 🆕🧪 | Ace-Step 1.5 · MiniMax Music 3 · YuE2 (음악 생성)<br><sub>Ace-Step 1.5 / MiniMax Music 3 / YuE2 music model</sub>| 노래 / 연주곡 · 3 엔진 · **Melody Editor(피아노롤 + MIDI 건반)** · **앨범 커버 복사/붙여넣기/업로드/갤러리** · **대기 큐** · 캡션·가사 LLM (로컬 / OpenRouter / TextGenerate / Connect Custom) · 태그가 박힌 파일<br><sub>song / instrumental · 3 engines · **Melody Editor (piano roll + MIDI keyboard)** · **album cover copy / paste / upload / gallery** · **generation queue** · caption+lyric LLM (local / OpenRouter / TextGenerate / Connect Custom) · tags embedded in the file</sub>|
 | **ITDA ONE STUDIO (TJ)** 🆕 | 영상·오디오 스티치 타임라인 (ffmpeg)<br><sub>video / audio stitch timeline (ffmpeg)</sub>| 3-레인 타임라인 · 분할 / 그룹 / 스티치 / 스냅 · 웨이브폼 · Auto Stitch · 장면/비트 감지 · 내보내기 · H3 영상 갤러리·MusicMaker 플레이리스트에서 불러오기<br><sub>3-lane timeline · split / group / stitch / snap · waveforms · Auto Stitch · scene/beat detect · export · import from the H3 video gallery and MusicMaker playlist</sub>|
 
