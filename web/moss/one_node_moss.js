@@ -9,6 +9,7 @@ import { attachLLMPanel } from "../shared/llm_panel.js";
 import { createGalleryOverlay } from "./ui_gallery_moss.js";
 import { mountT2ILeft } from "./ui_t2i_moss.js";
 import { mountI2ILeft } from "./ui_i2i_moss.js";
+import { mountInpaintLeft } from "./ui_inpaint_moss.js";
 import { mountR2ILeft } from "./ui_r2i_moss.js";
 import { attachNodeState, restoreNodeState } from "../shared/node_state.js";
 import { resolvePipeOverrides, applyOverridesTemp, labelPipeInput } from "../shared/promptdb_pipe.js";
@@ -36,17 +37,21 @@ const NODE_MW     = OUTER_W;
 const NODE_MH     = OUTER_H;
 
 const MODES = [
-  { key: "t2i", label: "T2I",          enabled: true },
-  { key: "i2i", label: "I2I",          enabled: true },
-  { key: "r2i", label: "R2I (bboxes)", enabled: true },
+  { key: "t2i",     label: "T2I",          enabled: true },
+  { key: "i2i",     label: "I2I",          enabled: true },
+  { key: "inpaint", label: "INPAINT",      enabled: true },
+  { key: "r2i",     label: "R2I (bboxes)", enabled: true },
 ];
 
-// Send-to targets per mode: where a generated result can be copied as the I2I source. T2I and R2I draw from text
-// (and boxes), so I2I is the only mode that takes an image.
+// Send-to targets per mode: where a generated result can be copied as the next mode's source image. T2I and R2I draw
+// from text (and boxes), so they are not targets themselves.
+const TO_I2I     = { mode:"i2i",     label:"→ I2I",     field:"i2iImage"     };
+const TO_INPAINT = { mode:"inpaint", label:"→ Inpaint", field:"inpaintImage" };
 const SEND_TO = {
-  t2i: [{ mode:"i2i", label:"→ I2I", field:"i2iImage" }],
-  i2i: [],
-  r2i: [{ mode:"i2i", label:"→ I2I", field:"i2iImage" }],
+  t2i:     [TO_I2I, TO_INPAINT],
+  i2i:     [TO_INPAINT],
+  inpaint: [TO_I2I],
+  r2i:     [TO_I2I, TO_INPAINT],
 };
 
 // ── Compare view (source vs result, for control modes) ───────────────────────
@@ -204,7 +209,7 @@ app.registerExtension({
         const mr=modeResults[state.mode]; if(!mr)return;
         const src=modeHandle?.getSourceURL?.();
         previewBox.innerHTML=""; clearBtn.style.display="block"; zoomLockBtn.style.display="block";
-        if(compareEnabled && state.mode==="i2i" && src){ previewBox.appendChild(createCompareView(src,mr.url)); resetZoom(); }
+        if(compareEnabled && (state.mode==="i2i"||state.mode==="inpaint") && src){ previewBox.appendChild(createCompareView(src,mr.url)); resetZoom(); }
         else { placeholder.style.display="none"; finalImg.src=mr.url; finalImg.style.display="block"; previewBox.appendChild(placeholder); previewBox.appendChild(finalImg); }
         loadingOv.style.display="none"; previewBox.appendChild(loadingOv); previewBox.appendChild(zoomLockBtn); previewBox.appendChild(clearBtn);
       }
@@ -331,6 +336,7 @@ app.registerExtension({
         switch(mode){
           case "t2i": modeHandle=mountT2ILeft(leftPanel,state,ctx); break;
           case "i2i": modeHandle=mountI2ILeft(leftPanel,state,ctx); break;
+          case "inpaint": modeHandle=mountInpaintLeft(leftPanel,state,ctx); break;
           case "r2i": modeHandle=mountR2ILeft(leftPanel,state,ctx); break;
         }
         leftOuter.appendChild(seedGenWrap);

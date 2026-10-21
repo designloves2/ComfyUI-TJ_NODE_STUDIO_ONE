@@ -20,6 +20,7 @@ function btn(text, onClick, variant) {
 const SEND_TARGETS = [
   { mode: "t2i",          label: "→ T2I (reuse)"   },
   { mode: "i2i",          label: "→ I2I",           field: "i2iImage"          },
+  { mode: "inpaint",      label: "→ Inpaint",       field: "inpaintImage"      },
 ];
 
 export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {

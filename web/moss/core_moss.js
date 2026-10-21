@@ -99,6 +99,13 @@ export function defaultState(saved) {
     i2iHeight:  saved.i2iHeight  || 0,
     i2iLockRatio: saved.i2iLockRatio ?? true,
 
+    // INPAINT — source + painted mask; the work size is the source's own (set on upload)
+    inpaintImage:   saved.inpaintImage   || null,
+    inpaintMask:    saved.inpaintMask    || null,
+    inpaintDenoise: saved.inpaintDenoise ?? 1.0,
+    inpaintWidth:   saved.inpaintWidth   || 0,
+    inpaintHeight:  saved.inpaintHeight  || 0,
+
     // R2I — region (bounding box) layout. Boxes are in canvas pixels of width x height.
     // { x, y, width, height, metadata: { type: "obj"|"text", text, desc, palette: [] } }
     r2iBoxes:      Array.isArray(saved.r2iBoxes) ? saved.r2iBoxes : [],

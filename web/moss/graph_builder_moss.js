@@ -105,6 +105,26 @@ export function buildI2IGraph(state) {
   });
 }
 
+// ── INPAINT: latent noise mask + DifferentialDiffusion (same route as Z-Image's inpaint) ──
+export function buildInpaintGraph(state) {
+  if (!state.inpaintImage) throw new Error("No source image uploaded for INPAINT.");
+  if (!state.inpaintMask)  throw new Error("No mask: paint the area to repaint.");
+  const { g, modelOut } = baseGraph(state);
+  const w = snap16(state.inpaintWidth || state.width || 1024), h = snap16(state.inpaintHeight || state.height || 1024);
+  g["MS:diff"]   = { class_type: "DifferentialDiffusion", inputs: { model: modelOut } };
+  g["MS:src"]    = { class_type: "LoadImage", inputs: { image: state.inpaintImage } };
+  g["MS:msrc"]   = { class_type: "LoadImage", inputs: { image: state.inpaintMask } };
+  g["MS:fit"]    = { class_type: "ImageScale", inputs: { image: ["MS:src", 0], upscale_method: "lanczos", width: w, height: h, crop: "center" } };
+  g["MS:mfit"]   = { class_type: "ImageScale", inputs: { image: ["MS:msrc", 0], upscale_method: "nearest-exact", width: w, height: h, crop: "center" } };
+  g["MS:mask"]   = { class_type: "ImageToMask", inputs: { image: ["MS:mfit", 0], channel: "red" } };
+  g["MS:encode"] = { class_type: "VAEEncode", inputs: { pixels: ["MS:fit", 0], vae: ["MS:vae", 0] } };
+  g["MS:nmask"]  = { class_type: "SetLatentNoiseMask", inputs: { samples: ["MS:encode", 0], mask: ["MS:mask", 0] } };
+  return sample(g, state, {
+    model: ["MS:diff", 0], positiveLink: positive(g, promptFor(state, "inpaint")), latent: ["MS:nmask", 0],
+    denoise: state.inpaintDenoise ?? 1,
+  });
+}
+
 // ── R2I (bboxes): boxes + prompt -> MOSSImageLayoutPrompt -> CLIPTextEncode ──────
 export function buildR2IGraph(state) {
   const boxes = (state.r2iBoxes || []).filter(b => b && b.width > 0 && b.height > 0);
