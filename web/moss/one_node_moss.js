@@ -39,8 +39,8 @@ const NODE_MH     = OUTER_H;
 const MODES = [
   { key: "t2i",     label: "T2I",          enabled: true },
   { key: "i2i",     label: "I2I",          enabled: true },
-  { key: "inpaint", label: "INPAINT",      enabled: true },
   { key: "r2i",     label: "R2I (bboxes)", enabled: true },
+  { key: "inpaint", label: "INPAINT",      enabled: true },
 ];
 
 // Send-to targets per mode: where a generated result can be copied as the next mode's source image. T2I and R2I draw

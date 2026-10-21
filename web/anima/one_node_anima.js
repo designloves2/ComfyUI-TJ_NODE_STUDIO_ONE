@@ -244,7 +244,8 @@ app.registerExtension({
         if (!targets.length) return;
         sendLeft.appendChild(el("div",{text:"Send to:",style:{color:C.muted,fontSize:"11px",flexShrink:"0"}}));
         targets.forEach(t=>{
-          const btn=el("button",{type:"button",text:t.label,disabled:!mr,style:{cursor:mr?"pointer":"not-allowed",fontFamily:"inherit",fontSize:"11px",padding:"3px 8px",borderRadius:"12px",background:C.bg2,color:mr?C.text:C.muted,border:`1px solid ${C.border}`,opacity:mr?"1":"0.5"}});
+          const btn=el("button",{type:"button",text:t.label,style:{cursor:mr?"pointer":"not-allowed",fontFamily:"inherit",fontSize:"11px",padding:"3px 8px",borderRadius:"12px",background:C.bg2,color:mr?C.text:C.muted,border:`1px solid ${C.border}`,opacity:mr?"1":"0.5"}});
+          btn.disabled=!mr;   // el() would setAttribute("disabled", false), which still disables
           if (mr) {
             btn.addEventListener("mouseenter",()=>btn.style.background=C.bg3);
             btn.addEventListener("mouseleave",()=>btn.style.background=C.bg2);
