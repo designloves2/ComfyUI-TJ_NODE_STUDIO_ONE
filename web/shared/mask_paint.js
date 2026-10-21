@@ -214,9 +214,11 @@ export function createDrawingEngine(maskRef, dispCanvas, opts = {}) {
     });
 
     const end = () => {
+      const painted = isDrawing;
       isDrawing = false; isPanning = false; lastPos = null; panStart = null;
       dispCanvas.style.cursor = "none";
       schedRender();
+      if (painted) opts.onStrokeEnd?.();
     };
     dispCanvas.addEventListener("pointerup",     end);
     dispCanvas.addEventListener("pointercancel", end);
@@ -422,7 +424,8 @@ export function createInlineMaskEditor(opts) {
   }});
   canvasWrap.appendChild(dispCanvas);
 
-  const engine = createDrawingEngine(maskRef, dispCanvas, { brushSize: 20 });
+  // a stroke makes the uploaded mask file stale: drop it so auto-save-on-generate re-uploads what is painted now
+  const engine = createDrawingEngine(maskRef, dispCanvas, { brushSize: 20, onStrokeEnd: () => { state[maskField] = null; ctx.persist(); } });
   const { toolRow, zoomRow, hint, clearBtn } = createEditorToolbar(engine, accentColor, {
     // Inverting edits the canvas, so the uploaded file no longer matches — drop it so
     // Save / auto-save-on-generate re-uploads the new mask.

@@ -265,10 +265,9 @@ export function mountInpaintLeft(leftEl, state, ctx) {
     beforeGenerate: async () => {
       if (!state.inpaintImage) throw new Error("Upload a source image first.");
       if (state.paintSubMode === "inpaint") {
-        if (!state.inpaintMaskImage) {
-          const saved = await autoSaveMask().catch(()=>false);
-          if (!saved) throw new Error("Draw a mask area (auto-save failed).");
-        }
+        // always save what is painted now: strokes after an earlier save would otherwise be lost
+        const saved = await autoSaveMask().catch(()=>false);
+        if (!saved && !state.inpaintMaskImage) throw new Error("Draw a mask area (auto-save failed).");
       } else {
         const total = (state.outpaintUp||0)+(state.outpaintDown||0)+(state.outpaintLeft||0)+(state.outpaintRight||0);
         if (total <= 0) throw new Error("Set at least one expansion value (Up/Down/Left/Right).");

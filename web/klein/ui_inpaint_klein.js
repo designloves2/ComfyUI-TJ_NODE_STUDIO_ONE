@@ -524,10 +524,9 @@ export function mountInpaintLeft(leftEl, state, ctx) {
     beforeGenerate: async () => {
       if (!state.inpaintImage) throw new Error("소스 이미지를 업로드하세요.");
       if (state.paintSubMode === "inpaint") {
-        if (!state.inpaintMaskImage) {
-          const saved = await autoSaveMask().catch(() => false);
-          if (!saved) throw new Error(t("inpaint_no_mask"));
-        }
+        // always save what is painted now: strokes after an earlier save would otherwise be lost
+        const saved = await autoSaveMask().catch(() => false);
+        if (!saved && !state.inpaintMaskImage) throw new Error(t("inpaint_no_mask"));
       } else {
         const total = (state.outpaintUp||0)+(state.outpaintDown||0)+(state.outpaintLeft||0)+(state.outpaintRight||0);
         if (total <= 0) throw new Error("최소 한 방향의 Expansion 값을 입력하세요.");

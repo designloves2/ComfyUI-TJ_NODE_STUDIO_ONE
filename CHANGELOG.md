@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- **Inpaint masks: the current painting is always the mask.** A mask saved earlier was reused on Generate, so strokes painted afterwards were lost. Anima, Z-Image and Moss (shared mask editor) now drop the saved mask after every stroke; Klein, Qwen Edit 2511 and SDXL re-save the canvas on every Generate (an uploaded mask is kept when nothing is painted).
 - **Moss Image: the MOSS-Image prompt-enhancer system prompt** (verbatim from ComfyUI's MOSS-Image templates) is now what Prompt Enhance / Auto Enhance send on on Moss instead of the generic Model Format prompt: T2I / I2I / INPAINT send the T2I template's text, R2I (bboxes) sends the bboxes template's own (`web/moss/system_prompt_moss.js`). `attachLLMPanel` takes an optional `systemPrompt` for this; Refine keeps its own instruction.
 
 ---
