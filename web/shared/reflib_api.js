@@ -18,6 +18,9 @@ const post = (path, body) => call(path, {
   method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}),
 });
 
+/** @mentions only match word characters, so spaces and hyphens in an asset name become "_". */
+export const mentionName = (s) => String(s ?? "").trim().replace(/[\s-]+/g, "_");
+
 export const CATEGORIES = ["character", "background", "prop", "music", "voice", "video", "etc"];
 
 export const reflib = {
@@ -30,17 +33,17 @@ export const reflib = {
   deleteProject: (id) => post(`/projects/${id}/delete`),
   resolve: (body) => post("/resolve", body),
   waveform: (id, bins = 600) => call(`/waveform/${id}?bins=${bins}`),
-  update: (id, body) => post(`/assets/${id}/update`, body),
+  update: (id, body) => post(`/assets/${id}/update`, body?.name != null ? { ...body, name: mentionName(body.name) } : body),
   remove: (id, force) => post(`/assets/${id}/delete`, { force: !!force }),
   upload(file, { category, subcategory = "", name = "" }) {
     const form = new FormData();
     form.append("file", file);
     form.append("category", category);
     if (subcategory) form.append("subcategory", subcategory);
-    form.append("name", name || file.name.replace(/\.[^.]+$/, ""));
+    form.append("name", mentionName(name || file.name.replace(/\.[^.]+$/, "")));
     return call("/assets", { method: "POST", body: form });
   },
-  createSet: (body) => post("/sets", body),
+  createSet: (body) => post("/sets", body?.name != null ? { ...body, name: mentionName(body.name) } : body),
   replace(id, file) {
     const form = new FormData();
     form.append("file", file);
