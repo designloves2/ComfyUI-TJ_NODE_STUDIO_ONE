@@ -224,3 +224,6 @@ node.zip
 sensitive_media.json
 studio_llm.json
 studio_llm_settings.json
+
+# Claude Desktop graphify plugin output
+graphify-out/
