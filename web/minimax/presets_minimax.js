@@ -86,9 +86,23 @@ const RECIPE_KEYS = [
   // both the save and apply side (see cloneVal below) so a preset's own array is never
   // the SAME array as the live panel's — editing one must not silently edit the other.
   "loras",
+  // Every setting inside the Turbo / Attention / Block cache / Spectrum / Model patches
+  // sections — the pipeline axes above only pick which of them is on.
+  "turboLoraStrength", "turboLoraLowVram", "slaTurboStrength", "pddLoraStrength", "pddNfe",
+  "sageAttnMode", "ckAttentionBackend",
+  "solTau", "solStart", "solEnd", "solMinTokens",
+  "slaSparsity", "slaBlockSize", "slaMinSeqLen", "slaDenseLastSteps", "slaProtectAudio", "slaRunEnabled",
+  "solSagTauStart", "solSagTauEnd", "solSagCurve", "solSagMinTokens", "solSagStrict", "solSagDensePercent",
+  "solSagThreshType", "solSagInt8Qk", "solSagInt8Pv", "solSagSinkCond", "solSagDenseBlocks",
+  "h3Optimizer", "h3MemChunkRows", "h3MemPrecision", "h3MemQkvStreaming", "h3MemLowVram",
+  "h3SparseBudget", "h3SparseDenserEdges", "h3SparseLayerBudgets",
+  "fbcMode", "fbcThreshold", "fbcStartPercent", "fbcEndPercent", "fbcMaxHits", "fbcTemporalGuard",
+  "specBlendWeight", "specDegree", "specRidgeLambda", "specWindowSize", "specFlexWindow",
+  "specWarmupSteps", "specTailSteps", "specMaxHistory", "specHistoryStore",
+  "fp16Accum",
   // 7+1 hi-res finish: the checkbox and its two sizes travel with a saved recipe, but it is
   // not a matching axis — a built-in preset never turns it on or off.
-  "hiresFinish", "hiresStartMp", "hiresFinalMp", "hiresChunkRows",
+  "hiresFinish", "hiresNoOpt", "hiresLastFixed", "hiresStartMp", "hiresFinalMp", "hiresChunkRows",
 ];
 
 // Shallow-clones an array of plain objects (loras); anything else passes through as-is.

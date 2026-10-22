@@ -2558,6 +2558,7 @@ def _mmh3_config_response(cfg, subfolder, prefix):
     return {
         "unet_first_last":  cfg.get("unet_first_last",  ""),
         "unet_reference":   cfg.get("unet_reference",   ""),
+        "hires_last_model": cfg.get("hires_last_model", ""),
         "clip_name":        cfg.get("clip_name",        ""),
         "vae_video":        cfg.get("vae_video",        ""),
         "vae_audio":        cfg.get("vae_audio",        ""),

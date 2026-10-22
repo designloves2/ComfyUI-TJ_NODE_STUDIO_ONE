@@ -327,23 +327,24 @@ export function effectiveTurbo(state, avail) {
 
 /**
  * 7+1 hi-res finish: the first 7 of the 8 turbo steps run at Start MP, the latent is scaled
- * up, and the last step refines it at Final MP. Only exists with Turbo LoRA (Basic).
+ * up, and the last step refines it at Final MP. Runs with Turbo LoRA (Basic) or with Turbo None
+ * (an 8-step checkpoint that already has the turbo baked in).
  */
 export function hiresActive(state, avail) {
-  return !!state.hiresFinish && effectiveTurbo(state, avail).mode === "pdd";
+  return !!state.hiresFinish && (effectiveTurbo(state, avail).mode === "pdd" || (state.turboMode || "none") === "none");
 }
 
 /** Stage-1 size, the size the latent upscaler lands on (both 32-aligned), and the ratio between them. */
 export function hiresSizes(state) {
-  const start = resolveResolution(state.aspect, state.hiresStartMp ?? 0.5);
-  const final = resolveResolution(state.aspect, state.hiresFinalMp ?? state.megapixels);
+  const start = resolveResolution(state.aspect, state.hiresStartMp ?? 0.7);
+  const final = resolveResolution(state.aspect, state.hiresFinalMp ?? 1.6);
   return { start, final, scale: Math.round(final.width / start.width * 1000) / 1000 };
 }
 
 /** Steps this run will actually sample at, given the turbo selection. */
 export function effectiveSteps(state, avail) {
   const t = effectiveTurbo(state, avail).mode;
-  if (t === "pdd" && hiresActive(state, avail)) return 8;
+  if (hiresActive(state, avail)) return 8;
   if (t === "larryvrh") return Math.max(1, Math.round(state.turboSteps ?? 4));
   if (t === "lightx2v") return Math.max(1, Math.round(state.slaTurboSteps ?? 6));
   // Turbo LoRA (Basic): an ordinary step count — any turbo LoRA can be loaded, so there is
@@ -717,6 +718,11 @@ export function explainGenerationError(message) {
   if (/must match the size of tensor b \(2\)/.test(m) || /adaln/i.test(m)) {
     return "The turbo LoRA doesn't match this mode's base model — turbo LoRAs are fl2v-only. "
          + "Switch Acceleration to SolAttn, Spectrum or None.";
+  }
+  if (/doesn't match the broadcast shape/.test(m)) {
+    return "The model returned a wrong-sized result. If this happened on the last step of 7+1 hi-res finish, "
+         + "H3 Memory Optimization doesn't work with this model — tick "
+         + "\"Bypass H3 Memory Optimization on the last step\" under Turbo → 7+1 and run again.";
   }
   if (/failed to extract audio/i.test(m)) {
     return "A reference video has no audio track but its soundtrack was requested — untick "
@@ -1268,8 +1274,11 @@ export function defaultState(saved) {
     aspect:      saved.aspect      || "9:16 Portrait",
     megapixels:  saved.megapixels  ?? 1.0,
     hiresFinish:  !!saved.hiresFinish,
-    hiresStartMp: saved.hiresStartMp ?? 0.5,
-    hiresFinalMp: saved.hiresFinalMp ?? saved.megapixels ?? 1.0,
+    hiresLastFixed: !!saved.hiresLastFixed,   // last step on the fixed model below instead of the generation model
+    hiresLastModel: saved.hiresLastModel || "",
+    hiresNoOpt:   !!saved.hiresNoOpt,   // last step runs without H3 Memory Optimization / Sol-Attn
+    hiresStartMp: saved.hiresStartMp ?? 0.7,
+    hiresFinalMp: saved.hiresFinalMp ?? 1.6,
     hiresChunkRows: saved.hiresChunkRows ?? 2048,   // H3 Memory Optimization "Activation chunk rows" of the 7+1 last step
     clipFrames:  saved.clipFrames  ?? DEFAULT_FRAMES,
     clipLengthCustom:    !!saved.clipLengthCustom,
@@ -1370,6 +1379,16 @@ export function defaultState(saved) {
     slaDenseLastSteps: saved.slaDenseLastSteps ?? 0,
     slaProtectAudio:   saved.slaProtectAudio   ?? true,
     slaRunEnabled:     saved.slaRunEnabled     ?? true,
+
+    // H3-Optimizations (Attention accordion). Missing here, these were dropped on every reload.
+    h3Optimizer:          saved.h3Optimizer          || "none",
+    h3MemChunkRows:       saved.h3MemChunkRows       ?? 4096,
+    h3MemPrecision:       saved.h3MemPrecision       || "Auto",
+    h3MemQkvStreaming:    saved.h3MemQkvStreaming    || "Auto",
+    h3MemLowVram:         !!saved.h3MemLowVram,
+    h3SparseBudget:       saved.h3SparseBudget       ?? 0.15,
+    h3SparseDenserEdges:  saved.h3SparseDenserEdges !== false,
+    h3SparseLayerBudgets: saved.h3SparseLayerBudgets || "",
     useMemEffSage: saved.useMemEffSage ?? true,
     useTorchPatch: saved.useTorchPatch ?? true,
     fp16Accum:     saved.fp16Accum     ?? true,

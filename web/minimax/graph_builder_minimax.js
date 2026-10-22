@@ -105,6 +105,7 @@ const N = {
   hrLock:     "MM:hr_audio_lock",
   hrShift:    "MM:hr_sigma_shift",
   hrPdd:      "MM:hr_turbo_lora",
+  hrUnet:     "MM:hr_unet",
   hrMem:      "MM:hr_h3_mem",
   hrSparse:   "MM:hr_block_sparse",
   hrGuider:   "MM:hr_guider",
@@ -301,7 +302,7 @@ function saveOneTakeCheckpoint(g, state, avail, checkpointName, latent = [N.samp
  * Returns the final latent link.
  */
 function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio) {
-  for (const n of ["MinimaxH3LatentUpscaler3D", "H3MemoryOptimization", "BlockSparseAttention"])
+  for (const n of ["MinimaxH3LatentUpscaler3D", "BlockSparseAttention", ...(state.hiresNoOpt ? [] : ["H3MemoryOptimization"])])
     if (!has(avail, n)) throw new Error(`7+1 hi-res finish needs ${n} — install it, or switch 7+1 off.`);
 
   g[N.hrSep] = { class_type: "LTXVSeparateAVLatent", inputs: { av_latent: [N.sampler, 1] } };
@@ -321,7 +322,14 @@ function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio)
     latent = [N.hrLock, 0];
   }
 
-  let m = [N.unet, 0];
+  // The last step may run on its own checkpoint (Settings → Models → 7+1 last step model).
+  const fixedUnet = !!state.hiresLastFixed;
+  if (fixedUnet) {
+    if (!state.hiresLastModel || state.hiresLastModel === "none")
+      throw new Error("7+1 last step is set to a fixed model but none is selected — open ⚙ Settings → Models.");
+    g[N.hrUnet] = unetNode(state.hiresLastModel);
+  }
+  let m = [fixedUnet ? N.hrUnet : N.unet, 0];
   (state.loras || []).forEach((lora, i) => {
     if (!lora?.name || lora.name === "none" || lora.enabled === false) return;
     const strength = parseFloat(lora.strength ?? 1.0);
@@ -329,24 +337,35 @@ function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio)
     g[N.hrLora(i)] = { class_type: "LoraLoaderModelOnly", inputs: { model: m, lora_name: lora.name, strength_model: strength } };
     m = [N.hrLora(i), 0];
   });
-  g[N.hrPdd] = { class_type: "LoraLoaderModelOnly", inputs: {
-    model: m, lora_name: pddFileForMode(state), strength_model: state.pddLoraStrength ?? 1.0,
-  }};
-  g[N.hrShift] = { class_type: "MiniMaxH3SigmaShift", inputs: { model: [N.hrPdd, 0], shift_video: 12, shift_audio: 3 } };
-  g[N.hrMem] = { class_type: "H3MemoryOptimization", inputs: {
-    model: [N.hrShift, 0],
-    fused_qkv: "auto", preserve_precision: true, embedding_memory_mode: "Auto",
-    mlp_memory: "auto", chunk_rows: Math.round(state.hiresChunkRows ?? 2048), precision_mode: "Preserve native",
-    qkv_streaming_mode: "Forced", kitchen_v_memory_mode: "Lower VRAM (slower)",
-  }};
+  // Turbo None: the checkpoint already is the 8-step model, so no LoRA and the user's own shift.
+  const pdd = effectiveTurbo(state, avail).mode === "pdd";
+  if (pdd) {
+    g[N.hrPdd] = { class_type: "LoraLoaderModelOnly", inputs: {
+      model: m, lora_name: pddFileForMode(state), strength_model: state.pddLoraStrength ?? 1.0,
+    }};
+    m = [N.hrPdd, 0];
+  }
+  g[N.hrShift] = { class_type: "MiniMaxH3SigmaShift", inputs: { model: m,
+    shift_video: pdd ? 12 : (state.shiftVideo ?? 12), shift_audio: pdd ? 3 : (state.shiftAudio ?? 3) } };
+  let stageModel = [N.hrShift, 0];
+  if (!state.hiresNoOpt) {
+    g[N.hrMem] = { class_type: "H3MemoryOptimization", inputs: {
+      model: stageModel,
+      fused_qkv: "auto", preserve_precision: true, embedding_memory_mode: "Auto",
+      mlp_memory: "auto", chunk_rows: Math.round(state.hiresChunkRows ?? 2048), precision_mode: "Preserve native",
+      qkv_streaming_mode: "Forced", kitchen_v_memory_mode: "Lower VRAM (slower)",
+    }};
+    stageModel = [N.hrMem, 0];
+  }
   g[N.hrSparse] = { class_type: "BlockSparseAttention", inputs: {
-    model: [N.hrMem, 0],
+    model: stageModel,
     selection: "sol-attn", "selection.tau": 1.3,
     start_percent: 0.2, end_percent: 1, dense_blocks: "",
-    min_tokens: 12288, extra_tokens: 256, sink_conditioning: "exact_kv_and_rows", verbose: false,
+    min_tokens: 12288, extra_tokens: 256, sink_conditioning: "exact_kv_and_rows", verbose: true,
   }};
+  stageModel = [N.hrSparse, 0];
 
-  g[N.hrGuider] = { class_type: "BasicGuider", inputs: { model: [N.hrSparse, 0], conditioning: condLink } };
+  g[N.hrGuider] = { class_type: "BasicGuider", inputs: { model: stageModel, conditioning: condLink } };
   g[N.hrSampler] = { class_type: "SamplerCustomAdvanced", inputs: {
     noise: [N.noise, 0], guider: [N.hrGuider, 0], sampler: [N.sampSel, 0],
     sigmas: lowSigmas, latent_image: latent,
