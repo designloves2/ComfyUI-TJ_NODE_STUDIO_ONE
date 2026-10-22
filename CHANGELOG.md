@@ -2,7 +2,7 @@
 
 ---
 
-## Unreleased
+## v1.46.0
 
 - **MiniMax H3 / LTX 2.5: Auto Prompt.** A checkbox in the prompt header: on Generate, every enabled clip's whole prompt is sent to the LLM as one request (Prompt Write settings) and replaced by the answer before the run starts - no review, no split. H3 uses the Ref2VA guide in Reference mode and the T2VA/I2VA/FL2VA/L2VA guide otherwise (`web/minimax/system_prompt_h3.js`); LTX applies the written plan to the clip. A failure stops the run.
 - The H3 / LTX prompt header is now two rows: title and clip count on top, the buttons below in one non-wrapping line (H3: Picture / Subject / Shot left, the rest right; LTX: all right).
