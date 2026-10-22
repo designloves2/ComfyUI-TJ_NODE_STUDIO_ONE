@@ -2,8 +2,12 @@
 
 ---
 
-## Unreleased
+## v1.45.0
 
+- **MiniMax H3: 7+1 hi-res finish also works with Turbo None** (an 8-step checkpoint with the turbo baked in): steps are fixed at 8, no turbo LoRA is added in the last step and your own shift is used. Start / Final MP now keep their values when 7+1 is switched off and on, and default to 0.7 / 1.6.
+- **7+1 last step model**: Settings -> Models gets "UNET - 7+1 last step"; under Turbo -> 7+1 a slot switch (Same as generation / Fixed model) runs the last step on that checkpoint instead. Use it to finish a model that does not work with the optimizers on one that does.
+- **7+1: Bypass H3 Memory Optimization on the last step** checkbox (Sol-Attn stays on), and a clear message for the shape error ("doesn't match the broadcast shape") some FastH3 checkpoints raise there.
+- **Presets now store every setting of the Turbo, Attention, H3 optimizer, Block cache, Spectrum and Model patches sections** (not only which one is on). **H3 optimizer (VRAM / sparse)** and its Memory / Sparse values were also dropped on every reload; they are kept now. Presets saved earlier keep working and leave the missing values as they are.
 - **Inpaint masks: the current painting is always the mask.** A mask saved earlier was reused on Generate, so strokes painted afterwards were lost. Anima, Z-Image and Moss (shared mask editor) now drop the saved mask after every stroke; Klein, Qwen Edit 2511 and SDXL re-save the canvas on every Generate (an uploaded mask is kept when nothing is painted).
 - **Moss Image: the MOSS-Image prompt-enhancer system prompt** (verbatim from ComfyUI's MOSS-Image templates) is now what Prompt Enhance / Auto Enhance send on on Moss instead of the generic Model Format prompt: T2I / I2I / INPAINT send the T2I template's text, R2I (bboxes) sends the bboxes template's own (`web/moss/system_prompt_moss.js`). `attachLLMPanel` takes an optional `systemPrompt` for this; Refine keeps its own instruction.
 
