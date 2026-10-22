@@ -788,6 +788,7 @@ export function defaultState(saved) {
     aspect:      saved.aspect      || "16:9 Landscape",
     megapixels:  saved.megapixels  ?? 0.5,
     hiresFinish:  !!saved.hiresFinish,
+    autoPrompt:   !!saved.autoPrompt,   // write every clip's prompt with the LLM right before Generate
     hiresStartMp: saved.hiresStartMp ?? 0.5,
     hiresFinalMp: saved.hiresFinalMp ?? saved.megapixels ?? 1.0,
     hiresChunkRows: saved.hiresChunkRows ?? 2048,   // H3 Memory Optimization "Activation chunk rows" of the 7+1 last step

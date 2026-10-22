@@ -1228,11 +1228,15 @@ This cannot be undone.`,
     return cards;
   }
 
-  async function doWrite() {
-    if (busy) return;
+  // `auto` (Auto Prompt, run when Generate is pressed): nothing is asked or reviewed - the clip's whole
+  // text goes to the model as one request and the plan is applied to that clip straight away.
+  // Problems throw so Generate stops.
+  async function doWrite(opts) {
+    const auto = opts?.auto === true;
+    if (busy) return false;
     const problem = briefProblem();
-    if (problem) { ctx.showPopup?.(problem, true); return; }
-    const target = targetSel.value;
+    if (problem) { if (auto) throw new Error(problem); ctx.showPopup?.(problem, true); return false; }
+    const target = auto ? "one" : targetSel.value;
     const lens = clipLens(target);
     const head = (state.promptHeader || "").trim();
     const clipTexts = target === "one"
@@ -1240,7 +1244,10 @@ This cannot be undone.`,
       : (state.prompts || []).map(p => promptText(normPrompt(p)));
     const base = [head, ...clipTexts].map(s => (s || "").trim()).filter(Boolean).join("\n\n");
     const imgs = target === "one" ? timelineImages(selected) : [];
-    if (!base && !imgs.length) { ctx.showPopup?.("Write something first (or add an image to the timeline).", true); return; }
+    if (!base && !imgs.length) {
+      if (auto) return false;
+      ctx.showPopup?.("Write something first (or add an image to the timeline).", true); return false;
+    }
     busy = true;
     enhBtn.disabled = true;
     setEditorBusy(true, "✨ Writing the prompt…");
@@ -1255,6 +1262,12 @@ This cannot be undone.`,
       const text = await callBrief(isDirector() ? LTX_WRITE_SYSTEM : LTX_WRITE_PLAIN_SYSTEM,buildWriteRequest(target, lens, base, notes), Math.min(16000, 1800 * lens.length + 1500));
       if (!text) throw new Error("empty response");
       const plan = parsePlan(text, lens);
+      if (auto) {
+        await applyPlan(plan, "one");
+        statusTag.textContent = "written";
+        statusTag.style.color = C.ok;
+        return true;
+      }
       openPlanReview({
         title: target === "all" ? `Plan — ${plan.clips.length} clip${plan.clips.length > 1 ? "s" : ""}` : `Plan — clip ${selected + 1}`,
         cards: planCards(plan, lens),
@@ -1269,6 +1282,7 @@ This cannot be undone.`,
     } catch (e) {
       statusTag.textContent = `⚠ ${String(e.message).slice(0, 90)}`;
       statusTag.style.color = C.err;
+      if (auto) throw new Error(`Auto Prompt failed: ${e.message}`);
       ctx.showPopup?.(`Prompt Write failed: ${e.message}`, true);
     } finally {
       progressStop();
@@ -1450,6 +1464,15 @@ This cannot be undone.`,
      * screen's own Prompt Write button. */
     openWrite(idx) {
       openTransient(idx, doWrite);
+    },
+    /** Auto Prompt: write every enabled clip's prompt in one go, no review. Throws on the first failure. */
+    async autoWrite() {
+      if (!state.prompts || !state.prompts.length) return;
+      for (const { i } of activePrompts(state)) {
+        selected = i; loadSelected();
+        await doWrite({ auto: true });
+      }
+      ctx.persist(); renderAll();
     },
   };
 }

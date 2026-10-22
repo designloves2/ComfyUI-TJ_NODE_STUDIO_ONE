@@ -1075,8 +1075,19 @@ app.registerExtension({
       const promptHdr  = el("div", { style: { display: "flex", alignItems: "center", gap: "6px", height: "18px" } });
       const promptTitle = el("div", { text: "PROMPTS", style: { color: C.muted, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.04em" } });
       const promptCount = el("span", { style: { color: C.muted, fontSize: "10px" } });
-      promptHdr.append(promptTitle, promptCount);
+      // The title and the clip count sit on their own line; the buttons get the line below.
+      const promptTitleRow = el("div", { style: { display: "flex", alignItems: "center", gap: "6px", height: "18px", flexShrink: "0" } });
+      promptTitleRow.append(promptTitle, promptCount);
       let lastFocusedPromptTA = null;
+
+      const autoPromptChk = el("input", { type: "checkbox", style: { cursor: "pointer", margin: "0" } });
+      autoPromptChk.checked = !!state.autoPrompt;
+      autoPromptChk.addEventListener("change", () => { state.autoPrompt = autoPromptChk.checked; persist(); });
+      const autoPromptLbl = el("label", {
+        title: "Right before Generate, send each clip's whole prompt to the LLM (Prompt Write settings) and generate from the result. No review - the prompt is replaced in place.",
+        style: { display: "flex", alignItems: "center", gap: "4px", fontSize: "10px", color: C.muted, cursor: "pointer" },
+      }, [autoPromptChk, el("span", { text: "Auto Prompt" })]);
+      promptHdr.appendChild(autoPromptLbl);
 
       const commonBtn = el("button", { type: "button", text: "🌐 Global", title: "Edit the global prompt shared by every clip", style: {
         cursor: "pointer", fontFamily: "inherit", fontSize: "10px",
@@ -1112,7 +1123,7 @@ app.registerExtension({
       const editBtn = el("button", { type: "button", text: "📝 Prompt Edit", title: "Open the full prompt editor (with local enhance)", style: {
         cursor: "pointer", fontFamily: "inherit", fontSize: "10px",
         padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text,
-        border: `1px solid ${BRAND}`, fontWeight: "600", marginLeft: "auto",
+        border: `1px solid ${BRAND}`, fontWeight: "600",
       }});
       editBtn.addEventListener("click", () => promptEditOv?.show());
       promptHdr.appendChild(editBtn);
@@ -1154,7 +1165,12 @@ app.registerExtension({
         textShadow: "0 0 12px rgba(181,123,255,0.5)",
       }});
       promptListWrap.append(promptList, promptBusyOv);
-      promptWrap.append(promptHdr, promptListWrap);
+      const promptRight = el("div", { style: { display: "flex", alignItems: "center", gap: "6px", marginLeft: "auto" } });
+      while (promptHdr.firstChild) promptRight.appendChild(promptHdr.firstChild);
+      promptHdr.appendChild(promptRight);
+      promptHdr.querySelectorAll("button, label").forEach(c => { c.style.whiteSpace = "nowrap"; c.style.flexShrink = "0"; });
+      promptCount.style.whiteSpace = "nowrap";
+      promptWrap.append(promptTitleRow, promptHdr, promptListWrap);
       // Shared by the main-screen Refine/Prompt Write buttons AND the Prompt Edit popup —
       // whichever one is running an LLM call locks every clip's prompt field here too,
       // since they all edit the same underlying state.prompts.
@@ -1302,6 +1318,7 @@ app.registerExtension({
         // just says so instead of showing an empty box.
         const isPostprocess = state.generationMode === "postprocess";
         commonBtn.style.display = refineBtn.style.display = writeBtn.style.display = editBtn.style.display = isPostprocess ? "none" : "";
+        autoPromptLbl.style.display = isPostprocess ? "none" : "flex";
         addBtn.style.display = resetTAHBtn.style.display = isPostprocess ? "none" : "";
         promptTitle.textContent = isPostprocess ? "POSTPROCESS" : "PROMPTS";
         promptList.style.gap = "4px";
@@ -2769,6 +2786,15 @@ app.registerExtension({
             else if (state.seedMode === "increment") { state.seed = (state.seed || 0) + 1; seedInput.value = state.seed; }
             else if (state.seedMode === "decrement") { state.seed = Math.max(0, (state.seed || 0) - 1); seedInput.value = state.seed; }
             persist();
+          }
+
+          // Auto Prompt: the prompts are rewritten before the run is frozen into `rs`, so what
+          // gets rendered is what ends up in the panel. A failure stops the run.
+          if (!resume && state.autoPrompt && promptEditOv) {
+            genBtn.textContent = "⏳ Writing prompts…";
+            await promptEditOv.autoWrite();
+            renderPrompts();
+            genBtn.textContent = "⏳ Preparing…";
           }
 
           // Queueing is the moment the panel becomes "the settings I last used" — more so

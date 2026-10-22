@@ -18,6 +18,7 @@ import { libraryRefFor, libraryContextCached } from "../shared/reflib_llm.js";
 import { reflib } from "../shared/reflib_api.js";
 import { attachAtComplete } from "../shared/reflib_at.js";
 import { getMediaFiles, getSystemPrompt, uploadImage, uploadMedia, analyzeImagesNative, writeBriefNative, analyzeImagesOpenRouter, writeBriefOpenRouter, analyzeImageLlama, writeBriefLlama, analyzeImagesCustom, writeBriefCustom, listPromptSets, getPromptSet, savePromptSet, deletePromptSet, missingInputFiles } from "./api_minimax.js";
+import { H3_SYSTEM_PROMPT_BASE, H3_SYSTEM_PROMPT_REF } from "./system_prompt_h3.js";
 
 // A prompt entry may still arrive as a plain string (mid-migration data); normalize once.
 function normPrompt(p) {
@@ -1594,14 +1595,18 @@ ${name}`, style: {
       .join("\n");
   }
 
-  async function doWrite() {
-    if (busy) return;
+  // `auto` (Auto Prompt, run when Generate is pressed): nothing is asked or reviewed - the clip's whole
+  // text goes to the model as one request and the whole answer replaces it. Problems throw so Generate stops.
+  async function doWrite(opts) {
+    const auto = opts?.auto === true;
+    const stop = (msg) => { if (auto) throw new Error(msg); ctx.showPopup?.(msg, true); };
+    if (busy) return false;
     deriveModes(); renderImageRow(); renderModelSel();
     // Same resolver the render loop uses, so Prompt Write always looks at the pictures
     // this clip will actually be made from.
     const images = await attachedImagesResolved();
     const lib = await libraryContextForClip();
-    if (lib?.error) { ctx.showPopup?.(`Library references: ${lib.error}`, true); return; }
+    if (lib?.error) { stop(`Library references: ${lib.error}`); return false; }
     // Brief and Vision each choose their own backend (native CLIP vs OpenRouter vs the
     // local Llama GGUF backend the image nodes' shared Enhance panel already has).
     const briefOR  = (state.h3BriefBackend  || state.h3LlmBackend) === "openrouter";
@@ -1610,22 +1615,25 @@ ${name}`, style: {
     const visionLlama = (state.h3VisionBackend || state.h3LlmBackend) === "llamagguf";
     const briefCustom  = (state.h3BriefBackend  || state.h3LlmBackend) === "custom";
     const visionCustom = (state.h3VisionBackend || state.h3LlmBackend) === "custom";
-    if (!briefOR && !briefLlama && !briefCustom && !state.nativeBriefClip) { ctx.showPopup?.("No brief CLIP set - pick one in Settings, or switch the Brief backend to OpenRouter/Llama GGUF.", true); return; }
-    if (images.length && !visionOR && !visionLlama && !visionCustom && !state.nativeVisionClip) { ctx.showPopup?.("No vision CLIP set - pick one in Settings, or switch the Vision backend to OpenRouter/Llama GGUF.", true); return; }
-    if (briefLlama && !state.h3LlamaBriefModel) { ctx.showPopup?.("No Llama GGUF brief model set - pick one in Settings.", true); return; }
-    if (images.length && visionLlama && !state.h3LlamaVisionModel) { ctx.showPopup?.("No Llama GGUF vision model set - pick one in Settings.", true); return; }
-    if (briefCustom && !(state.h3CustomBriefBase && state.h3CustomBriefModel)) { ctx.showPopup?.("Connect Custom (Brief) needs an API base URL and a model ID - set them in Settings.", true); return; }
-    if (images.length && visionCustom && !(state.h3CustomVisionBase && state.h3CustomVisionModel)) { ctx.showPopup?.("Connect Custom (Vision) needs an API base URL and a model ID - set them in Settings.", true); return; }
+    if (!briefOR && !briefLlama && !briefCustom && !state.nativeBriefClip) { stop("No brief CLIP set - pick one in Settings, or switch the Brief backend to OpenRouter/Llama GGUF."); return false; }
+    if (images.length && !visionOR && !visionLlama && !visionCustom && !state.nativeVisionClip) { stop("No vision CLIP set - pick one in Settings, or switch the Vision backend to OpenRouter/Llama GGUF."); return false; }
+    if (briefLlama && !state.h3LlamaBriefModel) { stop("No Llama GGUF brief model set - pick one in Settings."); return false; }
+    if (images.length && visionLlama && !state.h3LlamaVisionModel) { stop("No Llama GGUF vision model set - pick one in Settings."); return false; }
+    if (briefCustom && !(state.h3CustomBriefBase && state.h3CustomBriefModel)) { stop("Connect Custom (Brief) needs an API base URL and a model ID - set them in Settings."); return false; }
+    if (images.length && visionCustom && !(state.h3CustomVisionBase && state.h3CustomVisionModel)) { stop("Connect Custom (Vision) needs an API base URL and a model ID - set them in Settings."); return false; }
 
-    const target = targetSel.value;
+    const target = auto ? "one" : targetSel.value;
     writeTarget = target;
     // A clip that already has its own header and sound / music is written from all three together.
     const clipOwn = target === "one" && ownFraming() ? state.prompts[selected] : null;
     const base = [clipOwn?.header, editor.value, clipOwn?.footer].map(s => (s || "").trim()).filter(Boolean).join("\n\n");
     if (!base && !images.length && !lib) {
-      ctx.showPopup?.("Write something first (or add an image).", true); return;
+      if (auto) return false;
+      stop("Write something first (or add an image)."); return false;
     }
     autoOneTake(base);
+    // The model gets the guide for the mode being rendered: Reference (Ref2VA) has its own, the rest share one.
+    const sys = auto ? (state.generationMode === "reference" ? H3_SYSTEM_PROMPT_REF : H3_SYSTEM_PROMPT_BASE) : systemPrompt;
     busy = true;
     enhBtn.disabled = true;
     setEditorBusy(true, "✨ Writing the prompt…");
@@ -1635,15 +1643,22 @@ ${name}`, style: {
 
       progressStage("Writing brief...");
       const text = (briefCustom
-        ? await writeBriefCustom(systemPrompt, buildUserPrompt(base, imageSummary, lib), { baseUrl: state.h3CustomBriefBase, model: state.h3CustomBriefModel, context: state.h3CustomBriefCtx })
+        ? await writeBriefCustom(sys, buildUserPrompt(base, imageSummary, lib), { baseUrl: state.h3CustomBriefBase, model: state.h3CustomBriefModel, context: state.h3CustomBriefCtx })
         : briefLlama
         ? await writeBriefLlama(buildUserPrompt(base, imageSummary, lib), state.h3LlamaBriefModel, state.h3LlamaNCtx, state.h3LlamaMaxTokens)
         : briefOR
-        ? await writeBriefOpenRouter(systemPrompt, buildUserPrompt(base, imageSummary, lib), state.h3OrModelBrief || state.h3OrModel,
+        ? await writeBriefOpenRouter(sys, buildUserPrompt(base, imageSummary, lib), state.h3OrModelBrief || state.h3OrModel,
             // a full brief per clip is long: the room for the answer grows with the clip count
             Math.min(16000, 2200 * (writeTarget === "one" ? 1 : Math.max(1, targetPlan().shots)) + 1500))
-        : await writeBriefNative(state.nativeBriefClip, systemPrompt, buildUserPrompt(base, imageSummary, lib))).trim();
+        : await writeBriefNative(state.nativeBriefClip, sys, buildUserPrompt(base, imageSummary, lib))).trim();
       if (!text) throw new Error("empty response");
+      if (auto) {
+        state.prompts[selected] = normPrompt(state.prompts[selected]);
+        state.prompts[selected].text = text;                     // header / sound-music left alone
+        statusTag.textContent = "written";
+        statusTag.style.color = C.ok;
+        return true;
+      }
       // Never write straight in - show what came back and let the user decide.
       openReview(text, target);
       statusTag.textContent = "review the result";
@@ -1651,6 +1666,7 @@ ${name}`, style: {
     } catch (e) {
       statusTag.textContent = `⚠ ${String(e.message).slice(0, 90)}`;
       statusTag.style.color = C.err;
+      if (auto) throw new Error(`Auto Prompt failed: ${e.message}`);
       ctx.showPopup?.(`Prompt Write failed: ${e.message}`, true);
     } finally {
       progressStop();
@@ -2261,6 +2277,15 @@ ${name}`, style: {
      * screen's own Prompt Write button. */
     openWrite(idx) {
       openTransient(idx, doWrite);
+    },
+    /** Auto Prompt: write every enabled clip's prompt in one go, no review. Throws on the first failure. */
+    async autoWrite() {
+      if (!state.prompts || !state.prompts.length) return;
+      for (const { i } of activePrompts(state)) {
+        selected = i; loadSelected();
+        await doWrite({ auto: true });
+      }
+      ctx.persist(); renderAll(); onApply?.();
     },
   };
 }

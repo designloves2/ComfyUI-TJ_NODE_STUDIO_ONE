@@ -1082,7 +1082,9 @@ app.registerExtension({
       const promptHdr  = el("div", { style: { display: "flex", alignItems: "center", gap: "6px", height: "18px" } });
       const promptTitle = el("div", { text: "PROMPTS", style: { color: C.muted, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.04em" } });
       const promptCount = el("span", { style: { color: C.muted, fontSize: "10px" } });
-      promptHdr.append(promptTitle, promptCount);
+      // The title and the clip count sit on their own line; the buttons get the line below.
+      const promptTitleRow = el("div", { style: { display: "flex", alignItems: "center", gap: "6px", height: "18px", flexShrink: "0" } });
+      promptTitleRow.append(promptTitle, promptCount);
       // Insert-at-cursor tags — <Picture N>, <Subject N>, <Shot N> — into whichever clip
       // textarea below was last focused. "N" is inserted literally; the user replaces it
       // with the actual number themselves.
@@ -1096,7 +1098,7 @@ app.registerExtension({
         ta.setSelectionRange(s + token.length, s + token.length);
         ta.dispatchEvent(new Event("input", { bubbles: true }));
       }
-      const tagBtnRow = el("div", { style: { display: "flex", gap: "4px", marginLeft: "auto" } },
+      const tagBtnRow = el("div", { style: { display: "flex", gap: "4px" } },
         ["Picture", "Subject", "Shot"].map(tag => {
           const b = el("button", { type: "button", text: tag, title: `Insert <${tag} N> into the last-focused clip prompt`, style: {
             cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "3px 8px",
@@ -1113,6 +1115,15 @@ app.registerExtension({
           return b;
         }));
       promptHdr.appendChild(tagBtnRow);
+
+      const autoPromptChk = el("input", { type: "checkbox", style: { cursor: "pointer", margin: "0" } });
+      autoPromptChk.checked = !!state.autoPrompt;
+      autoPromptChk.addEventListener("change", () => { state.autoPrompt = autoPromptChk.checked; persist(); });
+      const autoPromptLbl = el("label", {
+        title: "Right before Generate, send each clip's whole prompt to the LLM (Prompt Write settings; Reference mode uses the Ref2VA guide, the other modes the FL2VA/T2VA/I2VA/L2VA one) and generate from the result. No review, no split - the prompt is replaced in place.",
+        style: { display: "flex", alignItems: "center", gap: "4px", fontSize: "10px", color: C.muted, cursor: "pointer" },
+      }, [autoPromptChk, el("span", { text: "Auto Prompt" })]);
+      promptHdr.appendChild(autoPromptLbl);
 
       const commonBtn = el("button", { type: "button", text: "🧩 Common", title: "Edit the header / sound-music text shared by every clip", style: {
         cursor: "pointer", fontFamily: "inherit", fontSize: "10px",
@@ -1148,7 +1159,7 @@ app.registerExtension({
       const editBtn = el("button", { type: "button", text: "📝 Prompt Edit", title: "Open the full prompt editor (with local enhance)", style: {
         cursor: "pointer", fontFamily: "inherit", fontSize: "10px",
         padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text,
-        border: `1px solid ${BRAND}`, fontWeight: "600", marginLeft: "auto",
+        border: `1px solid ${BRAND}`, fontWeight: "600",
       }});
       editBtn.addEventListener("click", () => {
         if (state.generationMode === "ltxupscale") { openLtxPromptEdit(); return; }
@@ -1237,7 +1248,13 @@ app.registerExtension({
         textShadow: "0 0 12px rgba(181,123,255,0.5)",
       }});
       promptListWrap.append(promptList, promptBusyOv);
-      promptWrap.append(promptHdr, promptListWrap);
+      // Picture / Subject / Shot stay on the left; every other control is pushed to the right as one group.
+      const promptRight = el("div", { style: { display: "flex", alignItems: "center", gap: "6px", marginLeft: "auto" } });
+      for (const c of [...promptHdr.children]) if (c !== tagBtnRow) promptRight.appendChild(c);
+      promptHdr.appendChild(promptRight);
+      promptHdr.querySelectorAll("button, label").forEach(c => { c.style.whiteSpace = "nowrap"; c.style.flexShrink = "0"; });
+      promptCount.style.whiteSpace = "nowrap";
+      promptWrap.append(promptTitleRow, promptHdr, promptListWrap);
       // Shared by the main-screen Refine/Prompt Write buttons AND the Prompt Edit popup —
       // whichever one is running an LLM call locks every clip's prompt field here too,
       // since they all edit the same underlying state.prompts.
@@ -1372,6 +1389,7 @@ app.registerExtension({
         // just says so instead of showing an empty/irrelevant box.
         const hideShotControls = isLtx || isFaceRefine || isPostprocess || isImageGen;
         commonBtn.style.display  = hideShotControls ? "none" : "";
+        autoPromptLbl.style.display = hideShotControls ? "none" : "flex";
         splitBtn.style.display   = hideShotControls ? "none" : "";
         addBtn.style.display     = hideShotControls ? "none" : "";
         resetTAHBtn.style.display = hideShotControls ? "none" : "";
@@ -6152,6 +6170,15 @@ app.registerExtension({
             else if (state.seedMode === "increment") { state.seed = (state.seed || 0) + 1; seedInput.value = state.seed; }
             else if (state.seedMode === "decrement") { state.seed = Math.max(0, (state.seed || 0) - 1); seedInput.value = state.seed; }
             persist();
+          }
+
+          // Auto Prompt: the prompts are rewritten before the run is frozen into `rs`, so what
+          // gets rendered is what ends up in the panel. A failure stops the run.
+          if (!resume && state.autoPrompt && promptEditOv) {
+            genBtn.textContent = "⏳ Writing prompts…";
+            await promptEditOv.autoWrite();
+            renderPrompts();
+            genBtn.textContent = "⏳ Preparing…";
           }
 
           // Queueing is the moment the panel becomes "the settings I last used" — more so
