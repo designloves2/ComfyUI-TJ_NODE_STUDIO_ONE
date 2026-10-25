@@ -113,6 +113,12 @@ const N = {
   hrGuider:   "MM:hr_guider",
   hrSampler:  "MM:hr_sampler",
   hrCond:     "MM:hr_cond",
+  hrEnc:      "MM:hr_encode",
+  hrAv0:      "MM:hr_av_source",
+  hrAudSep:   "MM:hr_audio_sep",
+  hrFirst:    "MM:hr_first_frame",
+  hrLast:     "MM:hr_last_frame",
+  hrDecode:   "MM:hr_decode",
   hrLora:     (i) => `MM:hr_lora${i}`,
 };
 
@@ -304,8 +310,10 @@ function saveOneTakeCheckpoint(g, state, avail, checkpointName, latent = [N.samp
  * With state.hiresUpscaler === "kimchy" the upscale and the last step are one KimchyH3ZeroSplitMP
  * node instead (it upscales the video latent and refines it itself, audio passes through).
  * Returns the final latent link.
+ * `avLatent` is the stage-1 AV latent (default: the clip sampler's x0). `schedule` builds the last
+ * sigma interval here from the stage's own shifted model when there is no stage 1 to take it from.
  */
-function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio) {
+function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio, avLatent = [N.sampler, 1], schedule = null) {
   const kimchy = state.hiresUpscaler === "kimchy";
   if (kimchy && !has(avail, "KimchyH3ZeroSplitMP"))
     throw new Error("7+1 H3 Kimchy Up Scaler needs the ComfyUI-Kimchy-Minimax-H3-Suite pack — install it (github.com/AI-KIMCHY/ComfyUI-Kimchy-Minimax-H3-Suite), or pick H3 Latent Upscaler.");
@@ -316,7 +324,7 @@ function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio)
 
   let latent = null;
   if (!kimchy) {
-    g[N.hrSep] = { class_type: "LTXVSeparateAVLatent", inputs: { av_latent: [N.sampler, 1] } };
+    g[N.hrSep] = { class_type: "LTXVSeparateAVLatent", inputs: { av_latent: avLatent } };
     g[N.hrUp] = { class_type: "MinimaxH3LatentUpscaler3D", inputs: {
       latent: [N.hrSep, 0],
       model_name: "minimax_h3_latent_upscaler_3d_bf16.safetensors",
@@ -360,6 +368,11 @@ function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio)
   g[N.hrShift] = { class_type: "MiniMaxH3SigmaShift", inputs: { model: m,
     shift_video: pdd ? 12 : (state.shiftVideo ?? 12), shift_audio: pdd ? 3 : (state.shiftAudio ?? 3) } };
   let stageModel = [N.hrShift, 0];
+  if (schedule) {
+    g[N.sched] = { class_type: "BasicScheduler", inputs: { model: stageModel, scheduler: schedule.scheduler || "simple", steps: 8, denoise: 1 } };
+    g[N.hrSplit] = { class_type: "SplitSigmas", inputs: { sigmas: [N.sched, 0], step: 7 } };
+    lowSigmas = [N.hrSplit, 1];
+  }
   if (!state.hiresNoOpt) {
     g[N.hrMem] = { class_type: "H3MemoryOptimization", inputs: {
       model: stageModel,
@@ -375,7 +388,7 @@ function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio)
     if (!(mp >= 1 && mp <= 8.5)) throw new Error("H3 Kimchy Up Scaler supports Final MP 1.0 – 8.5.");
     g[N.hrNeg] = { class_type: "ConditioningZeroOut", inputs: { conditioning: condLink } };
     g[N.hrKim] = { class_type: "KimchyH3ZeroSplitMP", inputs: {
-      model: stageModel, conditioning: condLink, latent: [N.sampler, 1],
+      model: stageModel, conditioning: condLink, latent: avLatent,
       noise: [N.noise, 0], sampler: [N.sampSel, 0], sigmas: lowSigmas, negative: [N.hrNeg, 0],
       model_name: "minimax_h3_latent_upscaler_3d_bf16.safetensors",
       upscale_by: "megapixels", target_megapixels: mp, scale: 2, align: 32, precision: "fp16", cfg: 1, color_match: true,
@@ -396,6 +409,60 @@ function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio)
     sigmas: lowSigmas, latent_image: latent,
   }};
   return [N.hrSampler, 0];
+}
+
+/**
+ * Postprocess → Latent Upscale (Use H3): a finished 8-step clip goes back through the 7+1 last step.
+ * The frames are VAE-encoded, the video latent is upscaled, and only the final sigma interval is run
+ * on the stage-2 model chain, with the first and last frame as keyframes (FL2VA). The clip's own
+ * soundtrack is encoded into the latent (Audio Lock) and passed through unchanged.
+ * o = { images, audio, hasAudio, promptText, frames, finalSize: {width, height}, seed }
+ * Returns { images, audio } for the rest of the Postprocess chain.
+ */
+export function addH3LastStep(g, state0, avail, o) {
+  const state = { ...state0, generationMode: "firstlast", hiresFinish: true };
+  if (!hiresActive(state, avail))
+    throw new Error("Latent Upscale (Use H3) needs an 8-step model: Turbo = PDD, or Turbo None with an 8-step checkpoint.");
+  if (!String(o.promptText || "").trim()) throw new Error("Latent Upscale (Use H3): the prompt is empty.");
+  const unet = requireModels(state);
+  g[N.unet] = unetNode(unet);
+  g[N.clip] = { class_type: "CLIPLoader", inputs: { clip_name: state.clipName, type: "minimax", device: "default" } };
+  g[N.vaeV] = { class_type: "VAELoader", inputs: { vae_name: state.vaeVideo } };
+  g[N.vaeA] = { class_type: "VAELoader", inputs: { vae_name: state.vaeAudio } };
+
+  const { width, height } = o.finalSize;
+  g[N.hrFirst] = { class_type: "ImageFromBatch", inputs: { image: o.images, batch_index: 0, length: 1 } };
+  // ImageFromBatch clamps the index to the last frame.
+  g[N.hrLast] = { class_type: "ImageFromBatch", inputs: { image: o.images, batch_index: 4095, length: 1 } };
+  g[N.hrCond] = { class_type: "MiniMaxH3ImageToVideo", inputs: {
+    clip: [N.clip, 0], vae: [N.vaeV, 0], prompt: String(o.promptText).trim(), width, height, length: o.frames,
+    first_frame: [N.hrFirst, 0], last_frame: [N.hrLast, 0],
+  }};
+
+  g[N.hrEnc] = { class_type: "VAEEncode", inputs: { pixels: o.images, vae: [N.vaeV, 0] } };
+  let lockAudio = false;
+  let audioSource = [N.hrCond, 1];
+  if (o.hasAudio) {
+    if (!has(avail, "TJ_H3_AudioLock")) throw new Error("Latent Upscale (Use H3) needs the TJ_H3_AudioLock node (TJ_NODE pack) to carry the clip's audio.");
+    g[N.audioLock] = { class_type: "TJ_H3_AudioLock", inputs: {
+      av_latent: [N.hrCond, 1], audio: o.audio, audio_vae: [N.vaeA, 0],
+      mode: "lock", strength: state.audioLockStrength ?? 0.5, fit: state.audioLockFit || "pad_silence",
+      get_name_av_latent: "(none)", get_name_audio: "(none)", get_name_audio_vae: "(none)", auto_set: false,
+    }};
+    audioSource = [N.audioLock, 0];
+    lockAudio = true;
+  }
+  g[N.hrAudSep] = { class_type: "LTXVSeparateAVLatent", inputs: { av_latent: audioSource } };
+  g[N.hrAv0] = { class_type: "LTXVConcatAVLatent", inputs: { video_latent: [N.hrEnc, 0], audio_latent: [N.hrAudSep, 1] } };
+
+  g[N.noise] = { class_type: "RandomNoise", inputs: { noise_seed: o.seed ?? 0 } };
+  const pdd = effectiveTurbo(state, avail).mode === "pdd";
+  g[N.sampSel] = { class_type: "KSamplerSelect", inputs: { sampler_name: pdd ? "euler" : (state.sampler || "er_sde") } };
+
+  const latent = buildHiresStage(g, state, avail, { final: { width, height } }, [N.hrCond, 0], null, lockAudio,
+    [N.hrAv0, 0], { scheduler: state.scheduler });
+  g[N.hrDecode] = { class_type: "VAEDecode", inputs: { samples: latent, vae: [N.vaeV, 0] } };
+  return { images: [N.hrDecode, 0], audio: o.audio };
 }
 
 function requireModels(state) {
@@ -1931,6 +1998,11 @@ export function buildPostprocessGraph(opts, avail) {
       buildFlashVSR(g, PPX.fvsrPipe, PPX.fvsr, upscale.flashvsr || {}, images);
       images = [PPX.fvsr, 0];
       upscaleUsedInfo = flashvsrUsed(upscale.flashvsr || {});
+    } else if (upscale.method === "h3lat") {
+      const r = addH3LastStep(g, upscale.h3State, avail, { images, audio, ...upscale.h3 });
+      images = r.images;
+      upscaleUsedInfo = { method: "h3lat", upscaler: upscale.h3State.hiresUpscaler === "kimchy" ? "kimchy" : "h3",
+        width: upscale.h3.finalSize.width, height: upscale.h3.finalSize.height };
     } else if (upscale.method === "ltx") {
       // LTX 2.5 latent upscale + refine on the frames so far; the clip's audio goes through LTX's audio VAE.
       const r = buildLtxUpscaleGraph(upscale.ltxState, avail, { into: { g, images, audio }, fps });

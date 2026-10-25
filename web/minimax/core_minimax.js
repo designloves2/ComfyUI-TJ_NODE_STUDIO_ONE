@@ -334,6 +334,14 @@ export function hiresActive(state, avail) {
   return !!state.hiresFinish && (effectiveTurbo(state, avail).mode === "pdd" || (state.turboMode || "none") === "none");
 }
 
+/** Width x height for `mp` megapixels at a source clip's own aspect ratio, 32-aligned. */
+export function sizeForMp(srcW, srcH, mp) {
+  const ratio = (srcW || 16) / (srcH || 9);
+  const h = Math.sqrt(Math.max(0.1, mp) * 1_000_000 / ratio);
+  const snap = v => Math.max(32, Math.round(v / 32) * 32);
+  return { width: snap(h * ratio), height: snap(h) };
+}
+
 /** Start / Final MP of the selected 7+1 upscaler — A and B keep separate values. */
 export function hiresMp(state) {
   return state.hiresUpscaler === "kimchy"

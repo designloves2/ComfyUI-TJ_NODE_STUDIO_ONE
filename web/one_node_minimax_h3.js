@@ -21,7 +21,7 @@ import {
   TURBO_MODES, ATTN_BACKENDS, ATTN_FORWARDS, BLOCK_CACHES, H3_OPTIMIZERS, FBC_MODES,
   attnBlockedReason, attnForwardBlockedReason, attnForwardOverlapNote, blockCacheBlockedReason,
   h3OptimizerBlockedReason, h3OptimizerOverlapNote,
-  effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, hiresMp, migrateLegacyAccel,
+  effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, hiresMp, sizeForMp, migrateLegacyAccel,
   continuityModesFor, generationModesFor, configIssues, ltxUpscaleReady, ltxUpscaleMissing,
   faceRefineReady, faceRefineMissing, postprocessReady, IMAGE_GEN_MODES, imageGenSubModeReady,
   CHARSHEET_PROMPT_TEMPLATE,
@@ -1493,7 +1493,7 @@ app.registerExtension({
       // "matches the original" is the whole job — for a gallery pick we already have the
       // clip's saved prompt; for an upload the vision model reconstructs one.
       let _ltxBusy = false;
-      async function grabSampleFrames(srcFile = state.ltxSource) {
+      async function grabSampleFrames(srcFile = state.ltxSource, perSec = 1.5, maxN = 10, minN = 3) {
         // client-side: sample several frames spread across the clip (not just frame 0) and
         // upload each as a PNG — one frame alone can't show action or camera movement, and
         // the LTX-2.5 prompt format needs both. Roughly 1.5 frames/sec of clip, clamped so
@@ -1509,7 +1509,7 @@ app.registerExtension({
           setTimeout(() => rej(new Error("Source video load timed out.")), 15000);
         });
         const dur = Math.max(0.1, v.duration || 0);
-        const count = Math.min(10, Math.max(3, Math.round(dur * 1.5)));
+        const count = Math.min(maxN, Math.max(minN, Math.round(dur * perSec)));
         const cv = document.createElement("canvas");
         cv.width = v.videoWidth || 1024; cv.height = v.videoHeight || 576;
         const ctx2d = cv.getContext("2d");
@@ -2527,6 +2527,18 @@ app.registerExtension({
         } finally { state.ltxPrompt = keep.p; state.ltxSource = keep.s; }
       }
 
+      // Prompt for Postprocess → Latent Upscale (Use H3): a ONE STUDIO H3 clip keeps its own brief;
+      // anything else (LTX prompt, reference-mode brief, no meta) is written as an H3 first/last brief from frames.
+      async function ppH3Prompt(seconds) {
+        const meta = String(state.ppSourceFullMeta?.prompt || "").trim();
+        const own = meta && /integrated_multimodal_description|\[Shot 1\]/.test(meta)
+          && !/<(?:Picture|Video|Audio)\b|@\w/.test(meta) && state.ppSourceFullMeta?.mode !== "reference";
+        if (own) return meta;
+        if (!promptEditOv?.writeFromVideo) throw new Error("Prompt writer is not ready.");
+        const frames = await grabSampleFrames(state.ppSource, 1, 8, 2);
+        return await promptEditOv.writeFromVideo({ base: meta, frames, seconds, onStage: (t) => setStatus(`Postprocess: ${t}`) });
+      }
+
       function renderLtxUpscaleLeft() {
         const prevScroll = leftPanel.scrollTop;
         clear(leftPanel);
@@ -3438,10 +3450,11 @@ app.registerExtension({
         const RTX_KEYS_SOLO = { mode: "rtxSizeMode", quality: "rtxQuality", scale: "rtxScale", short: "rtxShort", long: "rtxLong", w: "rtxW", h: "rtxH", anchor: "rtxCropAnchor" };
         const RTX_KEYS_PASS2 = { mode: "pp2RtxSizeMode", quality: "pp2RtxQuality", scale: "pp2RtxScale", short: "pp2RtxShort", long: "pp2RtxLong", w: "pp2RtxW", h: "pp2RtxH", anchor: "pp2RtxCropAnchor" };
         const PP_UPSCALE_METHODS = [
+          { value: "h3lat",    label: "Latent Upscale (Use H3)" },
           { value: "flashvsr", label: "FlashVSR" },
-          { value: "rtx",      label: "RTX VSR (TJ)" },
+          { value: "ltx",      label: "LTX 2.5 Upscale" },
+          { value: "rtx",      label: "RTX VSR(TJ)" },
           { value: "model",    label: "Model" },
-          { value: "ltx",      label: "Upscale by LTX 2.5" },
         ];
         leftPanel.appendChild(accordion("ppUpscale", "C. Upscale",
           state.ppUpscaleOn ? ((state.upscaleMode && state.upscaleMode !== "none" ? state.upscaleMode : "model")
@@ -3464,6 +3477,22 @@ app.registerExtension({
               ]));
             } else if (method === "rtx") {
               kids.push(...rtxSizeControls(RTX_KEYS_SOLO));
+            } else if (method === "h3lat") {
+              // Which upscaler does the latent upscale: same A / B choice as the 7+1 last step, each with its own Final MP
+              const kim = state.hiresUpscaler === "kimchy";
+              const half = (text, on, tip, v) => el("div", { text, title: tip, style: {
+                flex: "1", textAlign: "center", padding: "4px 6px", fontSize: "11px", cursor: "pointer",
+                background: on ? "#7c3aed" : "transparent", color: on ? "#fff" : C.muted, fontWeight: on ? "700" : "400",
+              }, onclick: () => { state.hiresUpscaler = v; persist(); renderLeft(); } });
+              kids.push(col([label("Upscaler"),
+                el("div", { style: { display: "flex", border: `1px solid ${C.border}`, borderRadius: "6px", overflow: "hidden" } },
+                  [half("H3 Latent Upscaler", !kim, "A : 기존 방식 : H3 Latent Up Scaler", "h3"),
+                   half("H3 Kimchy Up Scaler", kim, "B : 신규 추가 : H3 Kimchy Up Scaler", "kimchy")])]));
+              kids.push(col([label("Final MP"), numberField(hiresMp(state).final,
+                v => { state[kim ? "hiresKimFinalMp" : "hiresFinalMp"] = Math.max(0.1, v); persist(); }, 0.1)]));
+              kids.push(el("div", { text: "Re-runs only the last step of an 8-step H3 clip at the new size, with its first and last frame as keyframes. Uses the Models / Turbo settings of the H3 modes. "
+                + "A ONE STUDIO clip's own prompt is used; any other clip is read from its frames and written as an H3 brief.",
+                style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
             } else if (method === "ltx") {
               if (!ltxUpscaleReady(state)) {
                 kids.push(el("div", { text: "⚙ Set the LTX 2.5 models first (Settings → LTX 2.5 Upscale) — missing: " + ltxUpscaleMissing(state).join(", "),
@@ -3640,18 +3669,40 @@ app.registerExtension({
           // Generate always runs the whole clip — the range fields only ever apply to
           // Preview's own short-look run, never to a real/final one.
           const ppMethod = (state.upscaleMode && state.upscaleMode !== "none") ? state.upscaleMode : "flashvsr";
-          let ltxState = null;
+          let ltxState = null, h3State = null, h3Opts = null, usedPrompt = "";
+          let h3Cap = 0;
+          if (state.ppUpscaleOn && ppMethod === "h3lat") {
+            const info = _ppSrcInfo || {};
+            const sm0 = state.ppSourceMeta || {};
+            const fps0 = info.fps || sm0.fps || FPS;
+            let total = info.frames || sm0.frames || Math.round((info.duration || sm0.duration || 0) * fps0);
+            if (!total) throw new Error("Could not read the clip's length — pick the source again.");
+            const range = Math.round(Math.max(0, (state.ppPreviewEnd || 0) - (state.ppPreviewStart || 0)) * fps0);
+            if (!full && range > 0) total = Math.min(total, range);
+            // H3 clip lengths are 17n + 5 frames; extra tail frames are dropped
+            const frames = Math.floor((total - 5) / 17) * 17 + 5;
+            if (frames < 5) throw new Error("The clip is too short for Latent Upscale (Use H3).");
+            h3Cap = frames;
+            const w0 = info.width || sm0.w, h0 = info.height || sm0.h;
+            const finalSize = sizeForMp(w0, h0, hiresMp(state).final);
+            setStatus("Postprocess: writing the H3 prompt…");
+            usedPrompt = await ppH3Prompt(frames / FPS);
+            h3State = { ...state };
+            h3Opts = { promptText: usedPrompt, frames, finalSize, hasAudio: info.has_audio !== false, seed: randomSeed() };
+          }
           if (state.ppUpscaleOn && ppMethod === "ltx") {
             if (!ltxUpscaleReady(state)) throw new Error("Set the LTX 2.5 models in ⚙ Settings first — missing: " + ltxUpscaleMissing(state).join(", "));
             setStatus("Postprocess: writing the LTX prompt…");
-            ltxState = { ...state, ltxPrompt: await ppLtxPrompt() };
+            usedPrompt = await ppLtxPrompt();
+            ltxState = { ...state, ltxPrompt: usedPrompt };
           }
           const startS = full ? 0 : Math.max(0, state.ppPreviewStart || 0);
           const endS = full ? 0 : Math.max(0, state.ppPreviewEnd || 0);
           const srcMeta = state.ppSourceMeta || (_ppSrcInfo ? { fps: _ppSrcInfo.fps, w: _ppSrcInfo.width, h: _ppSrcInfo.height } : {});
           const srcFps = srcMeta.fps || FPS;
           const skipFirstFrames = Math.round(startS * srcFps);
-          const frameLoadCap = endS > startS ? Math.round((endS - startS) * srcFps) : 0;
+          let frameLoadCap = endS > startS ? Math.round((endS - startS) * srcFps) : 0;
+          if (h3Cap) frameLoadCap = frameLoadCap ? Math.min(frameLoadCap, h3Cap) : h3Cap;
 
           // A preview writes into ComfyUI's own temp/ dir (save_output:false below), under
           // one fixed subfolder shared by every tool's preview runs — so Settings → Output
@@ -3669,7 +3720,7 @@ app.registerExtension({
             upscale: {
               enabled: state.ppUpscaleOn,
               method: (state.upscaleMode && state.upscaleMode !== "none") ? state.upscaleMode : "flashvsr",
-              ltxState,
+              ltxState, h3State, h3: h3Opts,
               twoPass: !!state.ppUpscale2On,
               pass2: {
                 rtxSizeMode: state.pp2RtxSizeMode || "scale", rtxScale: state.pp2RtxScale, rtxShort: state.pp2RtxShort,
@@ -3738,6 +3789,8 @@ app.registerExtension({
               const patched = {
                 ...(state.ppSourceFullMeta || {}),
                 created: Date.now(), postProcess: built.usedSteps.join(" + "), postSource: state.ppSource,
+                ...(built.upscaleUsedInfo ? { postUpscale: built.upscaleUsedInfo } : {}),
+                ...(usedPrompt ? { postPrompt: usedPrompt } : {}),
               };
               delete patched.elapsedSec;
               delete patched.sourceW; delete patched.sourceH;

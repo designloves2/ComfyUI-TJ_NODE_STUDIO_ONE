@@ -2278,6 +2278,50 @@ ${name}`, style: {
     openWrite(idx) {
       openTransient(idx, doWrite);
     },
+    /**
+     * An H3 first/last-frame brief for a finished video (Postprocess → Latent Upscale (Use H3)).
+     * `frames` are input-folder images sampled in order across the clip (about one per second);
+     * `base` is the clip's saved prompt when it has one — an LTX prompt or a reference-mode brief is
+     * rewritten as a standalone brief, otherwise the brief is written from the frames alone.
+     */
+    async writeFromVideo({ base = "", frames, seconds, onStage = () => {} }) {
+      const get = (b) => state[b] || state.h3LlmBackend;
+      const briefOR = get("h3BriefBackend") === "openrouter", briefLlama = get("h3BriefBackend") === "llamagguf", briefCustom = get("h3BriefBackend") === "custom";
+      const visionOR = get("h3VisionBackend") === "openrouter", visionLlama = get("h3VisionBackend") === "llamagguf", visionCustom = get("h3VisionBackend") === "custom";
+      if (!briefOR && !briefLlama && !briefCustom && !state.nativeBriefClip) throw new Error("No brief CLIP set - pick one in Settings, or switch the Brief backend to OpenRouter/Llama GGUF.");
+      if (!visionOR && !visionLlama && !visionCustom && !state.nativeVisionClip) throw new Error("No vision CLIP set - pick one in Settings, or switch the Vision backend to OpenRouter/Llama GGUF.");
+      if (briefLlama && !state.h3LlamaBriefModel) throw new Error("No Llama GGUF brief model set - pick one in Settings.");
+      if (visionLlama && !state.h3LlamaVisionModel) throw new Error("No Llama GGUF vision model set - pick one in Settings.");
+      if (briefCustom && !(state.h3CustomBriefBase && state.h3CustomBriefModel)) throw new Error("Connect Custom (Brief) needs an API base URL and a model ID - set them in Settings.");
+      if (visionCustom && !(state.h3CustomVisionBase && state.h3CustomVisionModel)) throw new Error("Connect Custom (Vision) needs an API base URL and a model ID - set them in Settings.");
+      const summary = await describeImages(frames, onStage);
+      onStage("Writing brief...");
+      const user = [
+        "Mode: First/Last frame",
+        `Target duration: ${seconds.toFixed(2)} seconds total, split into 1 shot(s) of ~${seconds.toFixed(2)}s each.`,
+        "", "Reference manifest:", "None", "",
+        "The following frames were sampled in order from an existing video, about one per second: image 1 is the STARTING frame, "
+          + "the last one is the ENDING frame, the ones between show what happens in the middle. Write the brief as a first/last-frame shot "
+          + "that describes this video from the starting description to the ending one.",
+        "", summary, "",
+        "Creative brief:",
+        base
+          ? `${base}\n\n(This text may use reference tags (<Picture N>, @name) or another model's phrasing. Rewrite it as a standalone brief: describe what the frames show instead of any reference tag.)`
+          : "(no text supplied — base the brief on the frame analysis above)",
+        "", "Final grounding check: stay grounded in what the frames actually show. Do not invent unrelated actions, props, on-screen text, dialogue, or locations. "
+          + "Return only the complete brief text, no commentary outside it.",
+      ].join("\n");
+      const sys = H3_SYSTEM_PROMPT_BASE;
+      const text = (briefCustom
+        ? await writeBriefCustom(sys, user, { baseUrl: state.h3CustomBriefBase, model: state.h3CustomBriefModel, context: state.h3CustomBriefCtx })
+        : briefLlama
+        ? await writeBriefLlama(user, state.h3LlamaBriefModel, state.h3LlamaNCtx, state.h3LlamaMaxTokens)
+        : briefOR
+        ? await writeBriefOpenRouter(sys, user, state.h3OrModelBrief || state.h3OrModel, 3700)
+        : await writeBriefNative(state.nativeBriefClip, sys, user)).trim();
+      if (!text) throw new Error("empty response");
+      return text;
+    },
     /** Auto Prompt: write every enabled clip's prompt in one go, no review. Throws on the first failure. */
     async autoWrite() {
       if (!state.prompts || !state.prompts.length) return;
