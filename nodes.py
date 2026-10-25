@@ -5,6 +5,7 @@ import os
 import sys
 import re
 import json
+import gc
 import glob
 import asyncio
 import base64
@@ -23,6 +24,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from PIL import Image
+import comfy.model_management
 import folder_paths
 from aiohttp import web
 from server import PromptServer
@@ -1976,6 +1978,24 @@ async def studio_llm_models(request):
                                   "text_encoders": text_encoders, "clip_loader_types": clip_loader_types, **_or})
 
 
+def _wait_prompt_worker_idle(timeout=20.0):
+    """The native vision pass finishes on the websocket before the prompt worker has released its
+    Gemma (graph cleanup / VRAM unload). Loading llama.cpp inside that window crashed the process
+    (access violation), so give the worker a moment to finish. A long render just times out."""
+    queue = PromptServer.instance.prompt_queue
+    end = time.time() + timeout
+    while time.time() < end and queue.get_current_queue_volatile()[0]:
+        time.sleep(0.25)
+    time.sleep(1.5)
+
+
+def _release_llama():
+    """The next step may be a native ComfyUI model (queued right after this response), so hand the
+    llama.cpp VRAM back before returning."""
+    gc.collect()
+    comfy.model_management.soft_empty_cache(force=True)
+
+
 @PromptServer.instance.routes.post("/tj_studio_one/llm/enhance")
 async def studio_llm_enhance(request):
     import asyncio
@@ -2018,6 +2038,14 @@ async def studio_llm_enhance(request):
         loop = asyncio.get_event_loop()
         model_backend = "ComfyUI TextGenerate" if (data.get("backend") or "").lower() == "comfy" else "GGUF / llama.cpp"
         def _run():
+            if model_backend == "GGUF / llama.cpp":
+                _wait_prompt_worker_idle()
+            try:
+                return _enhance_once()
+            finally:
+                if model_backend == "GGUF / llama.cpp":
+                    _release_llama()
+        def _enhance_once():
             result = TJ_PromptEnhancer().enhance(
                 get_name="(none)", set_name="studio_one_enhance",
                 raw_prompt=user_text if (data.get("refine_instruction") or data.get("system_override")) else data.get("prompt", ""),
@@ -2118,6 +2146,14 @@ async def studio_llm_image_to_prompt(request):
         loop = asyncio.get_event_loop()
         model_backend = "ComfyUI TextGenerate" if (data.get("backend") or "").lower() == "comfy" else "GGUF / llama.cpp"
         def _run():
+            if model_backend == "GGUF / llama.cpp":
+                _wait_prompt_worker_idle()
+            try:
+                return _describe_once()
+            finally:
+                if model_backend == "GGUF / llama.cpp":
+                    _release_llama()
+        def _describe_once():
             return TJ_ImageToPrompt().describe(
                 get_name="(none)", set_name="studio_one_i2p",
                 image=image_tensor,
