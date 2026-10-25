@@ -21,7 +21,7 @@ import {
   TURBO_MODES, ATTN_BACKENDS, ATTN_FORWARDS, BLOCK_CACHES, H3_OPTIMIZERS, FBC_MODES,
   attnBlockedReason, attnForwardBlockedReason, attnForwardOverlapNote, blockCacheBlockedReason,
   h3OptimizerBlockedReason, h3OptimizerOverlapNote,
-  effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, hiresMp, sizeForMp, ppH3State, kimchyTileCount, migrateLegacyAccel,
+  effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, hiresMp, sizeForMp, ppH3State, ppH3Kind, kimchyTileCount, migrateLegacyAccel,
   continuityModesFor, generationModesFor, configIssues, ltxUpscaleReady, ltxUpscaleMissing,
   faceRefineReady, faceRefineMissing, postprocessReady, IMAGE_GEN_MODES, imageGenSubModeReady,
   CHARSHEET_PROMPT_TEMPLATE,
@@ -3478,17 +3478,36 @@ app.registerExtension({
             } else if (method === "rtx") {
               kids.push(...rtxSizeControls(RTX_KEYS_SOLO));
             } else if (method === "h3lat") {
-              // Own model / turbo / upscaler settings (pp*), independent of the main H3 modes.
+              // The 7+1 last-step options, kept separately for Postprocess (pp*). The models come from Settings;
+              // the Turbo LoRAs are this panel's own.
               const kim = state.ppH3Upscaler === "kimchy";
-              const unets = ["none", ...((ctx.availableModels?.diffusion_models) || []).filter(x => x !== "none")];
+              const kind = ppH3Kind(state.ppSourceFullMeta);
               const loraOptsPp = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
-              kids.push(col([label("Model (FL2VA)"), select(unets.map(m => ({ value: m, label: m })),
-                state.ppH3Unet || "none", v => { state.ppH3Unet = v; persist(); })]));
+              const baseName = (p) => String(p || "").split(/[\\/]/).pop();
               kids.push(col([label("Turbo"), select([{ value: "pdd", label: "Turbo LoRA (Basic)" }, { value: "none", label: "None (8-step checkpoint)" }],
                 state.ppH3TurboMode, v => { state.ppH3TurboMode = v; persist(); renderLeft(); })]));
               if (state.ppH3TurboMode === "pdd") {
-                kids.push(col([label("Turbo LoRA"), loraSelect(loraOptsPp, state.ppH3PddFile || "none", v => { state.ppH3PddFile = v; persist(); }).el]));
+                kids.push(col([label(`Turbo LoRA (Basic)${kind === "fl" ? " ●" : ""}`),
+                  loraSelect(loraOptsPp, state.ppH3PddFile || "none", v => { state.ppH3PddFile = v; persist(); }).el]));
+                kids.push(col([label(`Turbo LoRA (Reference)${kind === "ref" ? " ●" : ""}`),
+                  loraSelect(loraOptsPp, state.ppH3PddFileReference || "none", v => { state.ppH3PddFileReference = v; persist(); }).el]));
                 kids.push(col([label("lora strength"), numberField(state.ppH3PddStrength ?? 1.0, v => { state.ppH3PddStrength = v; persist(); }, 0.05)]));
+              }
+              {
+                // slot-style switch, same as the 7+1 "Last step model": left = the main model of this clip's family, right = the fixed one
+                const fixed = !!state.ppH3LastFixed;
+                const slot = (text, on) => el("div", { text, style: {
+                  flex: "1", textAlign: "center", padding: "4px 6px", fontSize: "11px", cursor: "pointer",
+                  background: on ? "#7c3aed" : "transparent", color: on ? "#fff" : C.muted, fontWeight: on ? "700" : "400",
+                }, onclick: () => { state.ppH3LastFixed = !fixed; persist(); renderLeft(); } });
+                const mainModel = baseName(kind === "ref" ? state.unetReference : state.unetFirstLast);
+                const fixedModel = baseName(state.hiresLastModel);
+                kids.push(col([label("Model"),
+                  el("div", { style: { display: "flex", border: `1px solid ${C.border}`, borderRadius: "6px", overflow: "hidden" } },
+                    [slot("Same as generation", !fixed), slot("Fixed model", fixed)]),
+                  el("div", { text: fixed ? (fixedModel || "⚠ none set — Settings → Models → 7+1 last step")
+                                          : (mainModel || `⚠ none set — Settings → Models (${kind === "ref" ? "Reference" : "First/Last"})`),
+                    style: { fontSize: "10px", color: (fixed ? fixedModel : mainModel) ? C.muted : C.warn, wordBreak: "break-all" } })]));
               }
               const half = (text, on, tip, v) => el("div", { text, title: tip, style: {
                 flex: "1", textAlign: "center", padding: "4px 6px", fontSize: "11px", cursor: "pointer",
@@ -3498,15 +3517,15 @@ app.registerExtension({
                 el("div", { style: { display: "flex", border: `1px solid ${C.border}`, borderRadius: "6px", overflow: "hidden" } },
                   [half("H3 Latent Upscaler", !kim, "A : 기존 방식 : H3 Latent Up Scaler", "h3"),
                    half("H3 Kimchy Up Scaler", kim, "B : 신규 추가 : H3 Kimchy Up Scaler", "kimchy")])]));
+              kids.push(checkboxRow("Bypass H3 Memory Optimization", !!state.ppH3NoOpt, v => { state.ppH3NoOpt = v; persist(); },
+                { title: "Skip only the H3 Memory Optimization node. Use it with FastH3 checkpoints." }));
               kids.push(col([label("Final MP"), numberField(kim ? state.ppH3KimFinalMp : state.ppH3FinalMp,
                 v => { state[kim ? "ppH3KimFinalMp" : "ppH3FinalMp"] = Math.max(0.1, v); persist(); }, 0.1)]));
               kids.push(col([label("Activation chunk rows"), numberField(state.ppH3ChunkRows ?? 2048,
                 v => { state.ppH3ChunkRows = Math.max(256, Math.round(v)); persist(); }, 256)]));
-              kids.push(checkboxRow("Bypass H3 Memory Optimization", !!state.ppH3NoOpt, v => { state.ppH3NoOpt = v; persist(); },
-                { title: "Skip only the H3 Memory Optimization node. Use it with FastH3 checkpoints." }));
-              kids.push(el("div", { text: "Re-runs only the last step of an 8-step H3 clip at the new size. These settings are separate from the main H3 modes. "
-                + (kim ? "The Kimchy upscaler samples in tiles, so it runs on the prompt alone (no first / last keyframes). " : "The first and last frame are used as keyframes. ")
-                + "A ONE STUDIO clip's own prompt is used; any other clip is read from its frames and written as an H3 brief.",
+              kids.push(el("div", { text: `Re-runs only the last step of an 8-step H3 clip at the new size. This clip runs as ${kind === "ref" ? "Reference (REF2VA)" : "First/Last (FL2VA)"} (● marks the LoRA it uses). `
+                + (kim ? "The Kimchy upscaler samples in tiles, so it runs on the prompt alone (no first / last keyframes). " : (kind === "fl" ? "The first and last frame are used as keyframes. " : ""))
+                + "These settings are separate from the main H3 modes. A ONE STUDIO clip's own prompt is used; any other clip is read from its frames and written as an H3 brief.",
                 style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
             } else if (method === "ltx") {
               if (!ltxUpscaleReady(state)) {
@@ -3670,7 +3689,7 @@ app.registerExtension({
         const steps = ["ppDeblurOn", "ppDenoiseOn", "ppUpscaleOn", "ppSkinRetouchOn", "ppGrainOn", "ppInterpolateOn", "ppResizeOn"];
         if (!steps.some(k => state[k])) { showPopup("Enable at least one effect (A-F) first.", true); return; }
         ppRunning = true; ppStopRequested = false;
-        let kimTimer = null;
+        let kimTimer = null, kimExec = null;
         const busyBtn = full ? ppGenBtn : ppPreviewBtn;
         ppGenBtn.disabled = true; ppPreviewBtn.disabled = true;
         busyBtn.textContent = "⏳ Running…"; busyBtn.style.opacity = "0.6";
@@ -3702,11 +3721,11 @@ app.registerExtension({
             if (frames < 5) throw new Error("The clip is too short for Latent Upscale (Use H3).");
             h3Cap = frames;
             const w0 = info.width || sm0.w, h0 = info.height || sm0.h;
-            if (!state.ppH3Unet || state.ppH3Unet === "none") throw new Error("Pick the Model for Latent Upscale (Use H3) in the Upscale panel.");
-            const finalSize = sizeForMp(w0, h0, hiresMp(ppH3State(state)).final);
+            const kind = ppH3Kind(state.ppSourceFullMeta);
+            const finalSize = sizeForMp(w0, h0, hiresMp(ppH3State(state, kind)).final);
             setStatus("Postprocess: writing the H3 prompt…");
             usedPrompt = await ppH3Prompt(frames / FPS);
-            h3State = ppH3State(state);
+            h3State = ppH3State(state, kind);
             if (state.ppH3Upscaler === "kimchy") kimTiles = kimchyTileCount(w0, h0, hiresMp(h3State).final);
             h3Opts = { promptText: usedPrompt, frames, finalSize, hasAudio: info.has_audio !== false, seed: randomSeed() };
           }
@@ -3781,20 +3800,28 @@ app.registerExtension({
 
           setStatus(`Postprocess: ${built.usedSteps.join(" + ")}…`);
           const fmtDur = (ms) => { const t = Math.round(ms / 1000); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`; };
-          // tile 1 also covers the Kimchy node's load and upscale, so the estimate leans on the tiles after it
+          // one tile = one single-step sample, shown like the console bar: "1/1 [00:45<00:00, 45.12s/it]"
+          const fmtIt = (ms) => `${(ms / 1000).toFixed(2)}s/it`;
+          // tile 1 also covers the Kimchy node's load and latent upscale, so the estimate leans on the tiles after it
           const kimLine = () => {
             const cur = Math.min(kimDone + 1, kimTiles);
             const parts = [`Postprocess: Kimchy tile ${cur}/${kimTiles}`];
-            if (kimDone < kimTiles) parts.push(fmtDur(Date.now() - kimMark));
-            if (kimDurs.length) parts.push(`last ${fmtDur(kimDurs[kimDurs.length - 1])}`);
+            if (kimDone < kimTiles) parts.push(`running ${fmtDur(Date.now() - kimMark)}`);
+            if (kimDurs.length) parts.push(`tile ${kimDurs.length} took ${fmtDur(kimDurs[kimDurs.length - 1])} (${fmtIt(kimDurs[kimDurs.length - 1])}${kimDurs.length === 1 ? ", incl. load" : ""})`);
             const base = kimDurs.length > 1 ? kimDurs.slice(1) : kimDurs;
             if (base.length && kimDone < kimTiles) {
               const avg = base.reduce((a, d) => a + d, 0) / base.length;
-              parts.push(`ETA ~${fmtDur(Math.max(0, avg * (kimTiles - kimDone) - (Date.now() - kimMark)))}`);
+              parts.push(`avg ${fmtIt(avg)}`, `ETA ~${fmtDur(Math.max(0, avg * (kimTiles - kimDone) - (Date.now() - kimMark)))}`);
             }
             return parts.join(" · ") + (kimDone >= kimTiles ? " — finishing" : "");
           };
-          if (kimTiles) { kimMark = Date.now(); kimTimer = setInterval(() => { if (kimDone < kimTiles) setStatus(kimLine()); }, 1000); }
+          if (kimTiles) {
+            kimMark = Date.now();
+            // the clock for tile 1 starts when the Kimchy node starts, not when the queue was submitted
+            kimExec = (ev) => { const d = ev.detail; if ((d && d.node != null ? d.node : d) === "MM:hr_kimchy_upscale") kimMark = Date.now(); };
+            api.addEventListener("executing", kimExec);
+            kimTimer = setInterval(() => { if (kimDone < kimTiles) setStatus(kimLine()); }, 1000);
+          }
           const res = await queuePrompt(built.graph, {
             onProgress: (v, m, nodeId) => {
               // the Kimchy upscaler runs one single-step sampler per tile, so each tile is one tick of 1/1
@@ -3863,6 +3890,7 @@ app.registerExtension({
         } finally {
           hideBusyBanner();
           clearInterval(kimTimer);
+          if (kimExec) api.removeEventListener("executing", kimExec);
           ppRunning = false; ppStopRequested = false;
           ppGenBtn.disabled = false; ppGenBtn.textContent = "▶ Generate"; ppGenBtn.style.opacity = "1";
           ppPreviewBtn.disabled = false; ppPreviewBtn.textContent = "Preview"; ppPreviewBtn.style.opacity = "1";

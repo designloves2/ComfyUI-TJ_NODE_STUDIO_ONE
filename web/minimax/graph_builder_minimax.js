@@ -420,7 +420,8 @@ function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio,
  * Returns { images, audio } for the rest of the Postprocess chain.
  */
 export function addH3LastStep(g, state0, avail, o) {
-  const state = { ...state0, generationMode: "firstlast", hiresFinish: true };
+  const state = { ...state0, hiresFinish: true };
+  const ref = state.generationMode === "reference";
   if (!hiresActive(state, avail))
     throw new Error("Latent Upscale (Use H3) needs an 8-step model: Turbo = PDD, or Turbo None with an 8-step checkpoint.");
   if (!String(o.promptText || "").trim()) throw new Error("Latent Upscale (Use H3): the prompt is empty.");
@@ -431,11 +432,14 @@ export function addH3LastStep(g, state0, avail, o) {
   g[N.vaeA] = { class_type: "VAELoader", inputs: { vae_name: state.vaeAudio } };
 
   const { width, height } = o.finalSize;
-  g[N.hrCond] = { class_type: "MiniMaxH3ImageToVideo", inputs: {
-    clip: [N.clip, 0], vae: [N.vaeV, 0], prompt: String(o.promptText).trim(), width, height, length: o.frames,
-  }};
-  // First and last frame as keyframes. Not for the Kimchy upscaler: it samples in tiles and cannot cut a keyframe block.
-  if (state.hiresUpscaler !== "kimchy") {
+  g[N.hrCond] = ref
+    ? { class_type: "MiniMaxH3ReferenceToVideo", inputs: {
+        clip: [N.clip, 0], vae: [N.vaeV, 0], audio_vae: [N.vaeA, 0], prompt: String(o.promptText).trim(),
+        width, height, length: o.frames, ref_image_size: "match" } }
+    : { class_type: "MiniMaxH3ImageToVideo", inputs: {
+        clip: [N.clip, 0], vae: [N.vaeV, 0], prompt: String(o.promptText).trim(), width, height, length: o.frames } };
+  // First and last frame as keyframes (First/Last models only). Not for the Kimchy upscaler: it samples in tiles and cannot cut a keyframe block.
+  if (!ref && state.hiresUpscaler !== "kimchy") {
     g[N.hrFirst] = { class_type: "ImageFromBatch", inputs: { image: o.images, batch_index: 0, length: 1 } };
     // ImageFromBatch clamps the index to the last frame.
     g[N.hrLast] = { class_type: "ImageFromBatch", inputs: { image: o.images, batch_index: 4095, length: 1 } };

@@ -358,15 +358,25 @@ export function kimchyTileCount(srcW, srcH, mp) {
 }
 
 /** The state the 7+1 last-step builders read, for Postprocess → Latent Upscale (Use H3): its own settings, not the main ones. */
-export function ppH3State(s) {
+export function ppH3State(s, kind = "fl") {
   return {
-    generationMode: "firstlast", hiresFinish: true,
-    unetFirstLast: s.ppH3Unet, clipName: s.clipName, vaeVideo: s.vaeVideo, vaeAudio: s.vaeAudio,
-    turboMode: s.ppH3TurboMode, pddFile: s.ppH3PddFile, pddLoraStrength: s.ppH3PddStrength,
+    // "ref" = a Reference-mode H3 clip (Ref2VA model + its LoRA slot); everything else is First/Last (FL2VA)
+    generationMode: kind === "ref" ? "reference" : "firstlast", hiresFinish: true,
+    // the models come from Settings: the main one per mode, or the fixed 7+1 last step model
+    unetFirstLast: s.unetFirstLast, unetReference: s.unetReference,
+    hiresLastFixed: !!s.ppH3LastFixed, hiresLastModel: s.hiresLastModel,
+    clipName: s.clipName, vaeVideo: s.vaeVideo, vaeAudio: s.vaeAudio,
+    // the LoRAs are Postprocess's own
+    turboMode: s.ppH3TurboMode, pddFile: s.ppH3PddFile, pddFileReference: s.ppH3PddFileReference, pddLoraStrength: s.ppH3PddStrength,
     hiresUpscaler: s.ppH3Upscaler, hiresFinalMp: s.ppH3FinalMp, hiresKimFinalMp: s.ppH3KimFinalMp,
     hiresChunkRows: s.ppH3ChunkRows, hiresNoOpt: s.ppH3NoOpt,
     loras: [], sampler: "euler", scheduler: "simple", shiftVideo: 12, shiftAudio: 3,
   };
+}
+
+/** Which model family Postprocess → Latent Upscale (Use H3) runs a clip on: "ref" for a Reference-mode H3 clip, else "fl". */
+export function ppH3Kind(meta) {
+  return meta && meta.mode === "reference" ? "ref" : "fl";
 }
 
 /** Width x height for `mp` megapixels at a source clip's own aspect ratio, 32-aligned. */
@@ -1678,9 +1688,10 @@ export function defaultState(saved) {
 
     // Postprocess → Latent Upscale (Use H3) keeps its own model / turbo / upscaler settings. A new field starts from the
     // main value once, then never follows it.
-    ppH3Unet: saved.ppH3Unet ?? saved.unetFirstLast ?? "",
     ppH3TurboMode: saved.ppH3TurboMode ?? (saved.turboMode === "pdd" ? "pdd" : "none"),
     ppH3PddFile: saved.ppH3PddFile ?? saved.pddFile ?? "",
+    ppH3PddFileReference: saved.ppH3PddFileReference ?? saved.pddFileReference ?? "",
+    ppH3LastFixed: !!saved.ppH3LastFixed,
     ppH3PddStrength: saved.ppH3PddStrength ?? saved.pddLoraStrength ?? 1.0,
     ppH3Upscaler: saved.ppH3Upscaler === "kimchy" ? "kimchy" : "h3",
     ppH3FinalMp: saved.ppH3FinalMp ?? 1.6,
