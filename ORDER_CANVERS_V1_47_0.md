@@ -1,0 +1,15 @@
+# WORK ORDER for the Canvers session (control tower: TJ_STUDIO_ONE-10월, user-authorised)
+
+Map node v1.47.0 to Canvers. Spec file (source of truth, read it completely):
+`C:\AI\ComfyUI-Easy-Install\ComfyUI\custom_nodes\ComfyUI-TJ_NODE_STUDIO_ONE\SPEC_RELAY_V1_47_0.md` (node repo, commit 2ca285b "release: v1.47.0", pushed; commits 9c834c5..2ca285b). Read the node code it names; grep it, do not guess.
+
+Canvers is card/graph based, so map by behaviour, not by the node's tabs. Do:
+
+1. **"H3 Turbo · 7+1" card:** add the upscaler choice (spec section 1): select values `h3` / `kimchy`, labels "H3 Latent Upscaler" / "H3 Kimchy Up Scaler", tooltips "A : 기존 방식 : H3 Latent Up Scaler" / "B : 신규 추가 : H3 Kimchy Up Scaler"; Start/Final MP kept per upscaler (A 0.7 / 1.6, Kimchy 0.5 / 2.0; the fields edit the selected upscaler's pair); Kimchy graph in `src/backend/h3.ts` exactly as in the spec (`KimchyH3ZeroSplitMP` inputs, no Separate / Upscale / Concat / AudioLock / BlockSparse for it, Final MP 1.0-8.5 check, stage-2 conditioning without first/last frames for First/Last clips, missing-pack message). Add `KimchyH3ZeroSplitMP` to the optional-node / availability lists and the install note.
+2. **Postprocess cards:** you have an upscale family of cards. Add/adjust so the same methods exist in the node's order: "Latent Upscale (Use H3)" (spec 2b: re-run of the last step of a finished 8-step H3 clip; pp* options, FL2VA / Reference LoRA slots, model switch "Same as generation" / "Fixed model", upscaler A/B, Kimchy latent upscale neural / bicubic / trilinear, Final MP, chunk rows, Memory Optimization bypass; prompt rule: clip meta first, else frames -> LLM -> H3 brief) and "LTX 2.5 Upscale" with Split mode (spec 2a). If a card for one of them cannot exist in your model (e.g. no per-clip meta), say so and propose the closest mapping to the control tower; do not skip silently.
+3. **Meta of an upscale result:** `postUpscale`, `postPrompt`, `hires {startW, startH, scale}` (spec 2c) so a Canvers result is marked like a 7+1 clip wherever you show borders/badges; never set `hiresFinish`.
+4. **Recovery after a reload / session cut for long video jobs** (spec section 3): Canvers already reconnects; make sure every long video job (generation, upscale, face refine, postprocess, split runs) re-attaches to the in-flight prompt AND still writes its metadata and final file naming (VHS "-audio" suffix; no silent copy / PNG: keep `VHS_KeepIntermediate=false` and `VHS_MetadataImage=false` in extra_data).
+
+Rules: do NOT edit the node repo; node/server needs go to the control tower. Port exactly (labels, keys, order, texts). Test in a real browser run (ComfyUI untouched beyond what the test needs; never reboot ComfyUI while a job runs; shared 16 GB GPU: short tests, delete throwaway outputs).
+Commit / push / release / version bump of Canvers: NOT authorised while the user sleeps; leave finished work uncommitted and tell the control tower.
+When done send the control tower ONE report: per item ported / not applicable / not verified, files changed, anything to look at. If the spec and the node code disagree, ask first. Nothing may be skipped silently.
