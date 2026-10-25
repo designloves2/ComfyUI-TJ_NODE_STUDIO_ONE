@@ -34,7 +34,7 @@ import { downloadAgentJob, agentStamp } from "./shared/agent_job.js";
 import { panel, label, button, select, loraSelect, numberField, slider, row, col, modeBar, iconBtn, openVideoFullscreen }
   from "./klein/ui_common.js";
 import {
-  queuePrompt, waitForHistory, historyEntry, interrupt, freeMemory, setLastResult, stitchClips, getVideoInfo,
+  queuePrompt, waitForHistory, historyEntry, fixAudioSuffixes, interrupt, freeMemory, setLastResult, stitchClips, getVideoInfo,
   copyOutputToInput, getNodeAvailability, getModels, saveMeta, pickChainFrame, getLoraTriggers, deleteImage,
   getMediaFiles, uploadMedia, getVramStats, listVideos,
   saveConfig, analyzeImagesNative, analyzeImagesOpenRouter, writeBriefNative, writeBriefOpenRouter, getMediaInfo,
@@ -3844,6 +3844,12 @@ app.registerExtension({
               if (oi?.frames) { patched.frames = oi.frames; patched.durationSeconds = oi.frames / (oi.fps || FPS); }
               if (oi?.fps)    patched.fps = oi.fps;
             } catch { /* keep the source geometry rather than fail */ }
+            // An H3 latent upscale is the 7+1 route taken afterwards, so it is marked the same way:
+            // the gallery card border (and its colour) reads `hires`, not a tag.
+            if (info.upscaleUsedInfo?.method === "h3lat") {
+              const sw = info.sourceMeta?.w, fw = patched.w || info.upscaleUsedInfo.width;
+              patched.hires = { startW: sw, startH: info.sourceMeta?.h, scale: sw ? Math.round(fw / sw * 1000) / 1000 : null };
+            }
             await saveMeta(o.filename, o.subfolder || (state.saveSubfolder || SUBFOLDER), patched);
           } catch {}
         }
@@ -4016,7 +4022,7 @@ app.registerExtension({
         prog.start();
         try {
           const res = entry?.status?.completed
-            ? { byNode: entry.outputs || {} }
+            ? { byNode: await fixAudioSuffixes(entry.outputs || {}) }
             : await waitForHistory(R.promptId, { onProgress: prog.onProgress });
           await ppFinish(res, R);
         } catch (e) {

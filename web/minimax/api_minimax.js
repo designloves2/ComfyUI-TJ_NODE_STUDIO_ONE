@@ -290,6 +290,32 @@ export async function stripAudioSuffix(filename, subfolder) {
   } catch { return { filename, subfolder }; }
 }
 
+// Every save path in this pack produces a plain filename_prefix except
+// VHS_VideoCombine, whose real final file always carries its own "-audio" suffix
+// when the clip has sound — fixed once here so every caller downstream (metadata,
+// gallery listing, chunked stitching) sees the same plain-name shape regardless of
+// which save node actually ran.
+export async function fixAudioSuffixes(byNode) {
+  for (const key in byNode) {
+    const out = byNode[key];
+    for (const arr of [out?.images, out?.gifs]) {
+      if (!Array.isArray(arr)) continue;
+      for (const item of arr) {
+        if (!item?.filename) continue;
+        // The rename endpoint only ever resolves paths inside the real output/ dir
+        // (see _make_rename_handler in nodes.py) — a preview's save_output:false
+        // result comes back with type "temp" and 404s there every time, harmlessly
+        // but noisily (console spam on every single preview run). Only attempt it
+        // for a real output-type item.
+        if ((item.type || "output") !== "output") continue;
+        const r = await stripAudioSuffix(item.filename, item.subfolder || "");
+        item.filename = r.filename;
+      }
+    }
+  }
+  return byNode;
+}
+
 export async function openImageFolder(filename, subfolder) {
   const r = await api.fetchApi(`${API}/open_folder`, {
     method: "POST",
@@ -492,31 +518,6 @@ export function queuePrompt(promptGraph, { onProgress, onNode, onQueued, sampler
         try { onNode?.(d.node, d.output); } catch {}
       }
     };
-    // Every save path in this pack produces a plain filename_prefix except
-    // VHS_VideoCombine, whose real final file always carries its own "-audio" suffix
-    // when the clip has sound — fixed once here so every caller downstream (metadata,
-    // gallery listing, chunked stitching) sees the same plain-name shape regardless of
-    // which save node actually ran.
-    async function fixAudioSuffixes(byNode) {
-      for (const key in byNode) {
-        const out = byNode[key];
-        for (const arr of [out?.images, out?.gifs]) {
-          if (!Array.isArray(arr)) continue;
-          for (const item of arr) {
-            if (!item?.filename) continue;
-            // The rename endpoint only ever resolves paths inside the real output/ dir
-            // (see _make_rename_handler in nodes.py) — a preview's save_output:false
-            // result comes back with type "temp" and 404s there every time, harmlessly
-            // but noisily (console spam on every single preview run). Only attempt it
-            // for a real output-type item.
-            if ((item.type || "output") !== "output") continue;
-            const r = await stripAudioSuffix(item.filename, item.subfolder || "");
-            item.filename = r.filename;
-          }
-        }
-      }
-      return byNode;
-    }
     const onSuccess = async (ev) => {
       const d = ev.detail || {};
       if (d.prompt_id && promptId && d.prompt_id !== promptId) return;
@@ -627,7 +628,7 @@ export async function waitForHistory(promptId, { onProgress, pollMs = 1500, samp
             .map(m => Array.isArray(m) ? m.join(" ") : String(m)).join("; ");
           throw new Error(msg || "generation failed");
         }
-        if (entry.status.completed) return { byNode: entry.outputs || {} };
+        if (entry.status.completed) return { byNode: await fixAudioSuffixes(entry.outputs || {}) };
       }
       await new Promise(res => setTimeout(res, pollMs));
     }
