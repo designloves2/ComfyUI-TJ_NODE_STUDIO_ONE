@@ -174,6 +174,8 @@ REPOS=(
     "https://github.com/Carasibana/ComfyUI-H3-FaceRefine"
     # H3 3D latent upscaler - MiniMax H3 7+1 hi-res finish and Image Generator.
     "https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler"
+    # Kimchy H3 Up Scaler - MiniMax H3 7+1 hi-res finish, Upscaler B (KimchyH3ZeroSplitMP). Apache-2.0, external pack.
+    "https://github.com/AI-KIMCHY/ComfyUI-Kimchy-Minimax-H3-Suite"
 )
 
 # ComfyUI Manager names a folder after the pack's pyproject `name`, which is often not

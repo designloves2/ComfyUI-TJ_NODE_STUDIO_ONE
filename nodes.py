@@ -3316,6 +3316,8 @@ MMH3_OPTIONAL_NODES = [
     # first pass and the final-res decode.
     "MinimaxH3LatentUpscaler3D",
     "BlockSparseAttention",
+    # 7+1 Upscaler B — AI-KIMCHY/ComfyUI-Kimchy-Minimax-H3-Suite
+    "KimchyH3ZeroSplitMP",
     # Image Generator's "Use Fizgig Latent" option (shootthesound/ComfyUI-Fizgig-H3-Still)
     "FizgigH3StillLatent", "FizgigH3StillDecode",
     # Character Sheet's grid-assembly step (buildCharacterSheetGridGraph) — batches the

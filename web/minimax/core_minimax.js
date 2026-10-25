@@ -1277,6 +1277,7 @@ export function defaultState(saved) {
     autoPrompt:   !!saved.autoPrompt,   // write every clip's prompt with the LLM right before Generate
     hiresLastFixed: !!saved.hiresLastFixed,   // last step on the fixed model below instead of the generation model
     hiresLastModel: saved.hiresLastModel || "",
+    hiresUpscaler: saved.hiresUpscaler === "kimchy" ? "kimchy" : "h3",   // 7+1 stage 2: h3 = H3 Latent Up Scaler, kimchy = H3 Kimchy Up Scaler
     hiresNoOpt:   !!saved.hiresNoOpt,   // last step runs without H3 Memory Optimization / Sol-Attn
     hiresStartMp: saved.hiresStartMp ?? 0.7,
     hiresFinalMp: saved.hiresFinalMp ?? 1.6,

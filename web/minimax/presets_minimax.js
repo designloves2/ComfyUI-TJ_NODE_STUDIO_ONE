@@ -102,7 +102,7 @@ const RECIPE_KEYS = [
   "fp16Accum",
   // 7+1 hi-res finish: the checkbox and its two sizes travel with a saved recipe, but it is
   // not a matching axis — a built-in preset never turns it on or off.
-  "hiresFinish", "hiresNoOpt", "hiresLastFixed", "hiresStartMp", "hiresFinalMp", "hiresChunkRows",
+  "hiresFinish", "hiresUpscaler", "hiresNoOpt", "hiresLastFixed", "hiresStartMp", "hiresFinalMp", "hiresChunkRows",
 ];
 
 // Shallow-clones an array of plain objects (loras); anything else passes through as-is.

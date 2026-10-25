@@ -58,6 +58,8 @@ export const MMH3_OPTIONAL_NODES = [
   // Image Generator (T2I/Ref2I) — 2nd-pass latent upscale (preview-res -> final-res)
   "MinimaxH3LatentUpscaler3D",
   "BlockSparseAttention",
+  // 7+1 Upscaler B — AI-KIMCHY/ComfyUI-Kimchy-Minimax-H3-Suite
+  "KimchyH3ZeroSplitMP",
   // Image Generator's "Use Fizgig Latent" option — shootthesound/ComfyUI-Fizgig-H3-Still
   // (true one-frame H3 latent + a decode that doesn't band a lone frame)
   "FizgigH3StillLatent", "FizgigH3StillDecode",

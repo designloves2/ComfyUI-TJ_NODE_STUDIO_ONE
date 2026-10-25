@@ -169,8 +169,10 @@ rem H3 Face Refine (face track / crop / per-frame denoise / stitch) - MiniMax H3
 set REPOS[27]=https://github.com/Carasibana/ComfyUI-H3-FaceRefine
 rem H3 3D latent upscaler - MiniMax H3 7+1 hi-res finish and Image Generator.
 set REPOS[28]=https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler
+rem Kimchy H3 Up Scaler - MiniMax H3 7+1 hi-res finish, Upscaler B (KimchyH3ZeroSplitMP). Apache-2.0, external pack.
+set REPOS[29]=https://github.com/AI-KIMCHY/ComfyUI-Kimchy-Minimax-H3-Suite
 
-set COUNT=29
+set COUNT=30
 set /a LAST=COUNT-1
 
 :: ComfyUI Manager names a folder after the pack's pyproject "name", not the repo name.

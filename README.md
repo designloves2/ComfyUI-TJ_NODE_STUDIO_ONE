@@ -324,6 +324,7 @@ chmod +x install_requirements.sh
 | [ComfyUI-VOSR2](https://github.com/ylchen333/ComfyUI-VOSR2) 🧪 | 1스텝 이미지 초해상 (모델 ~7 GB는 첫 실행 때 `models/vosr2`로 자동 다운로드)<br><sub>one-step image super-resolution (the ~7 GB model downloads itself into `models/vosr2` on first run)</sub>| 모든 이미지 노드 UPSCALE 탭의 VOSR2<br><sub>VOSR2 in the UPSCALE tab of every image node</sub>|
 | [ComfyUI-H3-FaceRefine](https://github.com/Carasibana/ComfyUI-H3-FaceRefine) 🧪 | 얼굴 추적·크롭·프레임별 디노이즈·스티치<br><sub>face track / crop / per-frame denoise / stitch</sub>| MiniMax H3 Face Refine MMH3 (선택)<br><sub>optional</sub>|
 | [Comfyui_Minimax_h3_latent_Upscaler](https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler) 🧪 | H3 latent 3D 업스케일 (`MinimaxH3LatentUpscaler3D`)<br><sub>H3 3D latent upscaler</sub>| MiniMax H3 7+1 하이레스 · Image Generator<br><sub>7+1 hi-res finish / Image Generator</sub>|
+| [ComfyUI-Kimchy-Minimax-H3-Suite](https://github.com/AI-KIMCHY/ComfyUI-Kimchy-Minimax-H3-Suite) 🧪 | Kimchy H3 업스케일러 (`KimchyH3ZeroSplitMP`) — 별도 설치되는 외부 프로젝트, [Apache License 2.0](https://github.com/AI-KIMCHY/ComfyUI-Kimchy-Minimax-H3-Suite/blob/main/LICENSE). Studio One은 이 노드를 의존성으로 호출만 합니다<br><sub>Kimchy H3 upscaler — separate external project (Apache-2.0); Studio One only calls its node</sub>| MiniMax H3 7+1 하이레스 업스케일러 B (선택)<br><sub>7+1 hi-res finish, Upscaler B (optional)</sub>|
 
 ---
 

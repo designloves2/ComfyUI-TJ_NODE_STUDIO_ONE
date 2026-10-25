@@ -101,6 +101,8 @@ const N = {
   hrSplit:    "MM:hr_split_sigmas",
   hrSep:      "MM:hr_separate",
   hrUp:       "MM:hr_latent_upscale",
+  hrKim:      "MM:hr_kimchy_upscale",
+  hrNeg:      "MM:hr_kimchy_negative",
   hrCat:      "MM:hr_concat",
   hrLock:     "MM:hr_audio_lock",
   hrShift:    "MM:hr_sigma_shift",
@@ -299,27 +301,37 @@ function saveOneTakeCheckpoint(g, state, avail, checkpointName, latent = [N.samp
  * interval refines it on a model chain rebuilt for that one step: same UNET, user LoRAs and
  * turbo LoRA, then H3 Memory Optimization and Sol-Attn block-sparse attention with fixed
  * values (the bigger latent is what makes them necessary). The conditioning is stage 1's.
+ * With state.hiresUpscaler === "kimchy" the upscale and the last step are one KimchyH3ZeroSplitMP
+ * node instead (it upscales the video latent and refines it itself, audio passes through).
  * Returns the final latent link.
  */
 function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio) {
-  for (const n of ["MinimaxH3LatentUpscaler3D", "BlockSparseAttention", ...(state.hiresNoOpt ? [] : ["H3MemoryOptimization"])])
+  const kimchy = state.hiresUpscaler === "kimchy";
+  if (kimchy && !has(avail, "KimchyH3ZeroSplitMP"))
+    throw new Error("7+1 Upscaler B (H3 Kimchy Up Scaler) needs the ComfyUI-Kimchy-Minimax-H3-Suite pack — install it (github.com/AI-KIMCHY/ComfyUI-Kimchy-Minimax-H3-Suite), or pick A.");
+  const needed = kimchy ? [] : ["MinimaxH3LatentUpscaler3D", "BlockSparseAttention"];
+  if (!state.hiresNoOpt) needed.push("H3MemoryOptimization");
+  for (const n of needed)
     if (!has(avail, n)) throw new Error(`7+1 hi-res finish needs ${n} — install it, or switch 7+1 off.`);
 
-  g[N.hrSep] = { class_type: "LTXVSeparateAVLatent", inputs: { av_latent: [N.sampler, 1] } };
-  g[N.hrUp] = { class_type: "MinimaxH3LatentUpscaler3D", inputs: {
-    latent: [N.hrSep, 0],
-    model_name: "minimax_h3_latent_upscaler_3d_bf16.safetensors",
-    mode: "target dimensions", "mode.width": hires.final.width, "mode.height": hires.final.height,
-    align: 32, enable_temporal_chunking: true, force_unload: true, device: "cuda", precision: "fp16",
-  }};
-  g[N.hrCat] = { class_type: "LTXVConcatAVLatent", inputs: {
-    video_latent: [N.hrUp, 0], audio_latent: [N.hrSep, 1],
-  }};
-  let latent = [N.hrCat, 0];
-  // The separate/concat round trip drops the lock's denoise mask, so lock the same audio again.
-  if (lockAudio) {
-    g[N.hrLock] = { class_type: "TJ_H3_AudioLock", inputs: { ...g[N.audioLock].inputs, av_latent: latent } };
-    latent = [N.hrLock, 0];
+  let latent = null;
+  if (!kimchy) {
+    g[N.hrSep] = { class_type: "LTXVSeparateAVLatent", inputs: { av_latent: [N.sampler, 1] } };
+    g[N.hrUp] = { class_type: "MinimaxH3LatentUpscaler3D", inputs: {
+      latent: [N.hrSep, 0],
+      model_name: "minimax_h3_latent_upscaler_3d_bf16.safetensors",
+      mode: "target dimensions", "mode.width": hires.final.width, "mode.height": hires.final.height,
+      align: 32, enable_temporal_chunking: true, force_unload: true, device: "cuda", precision: "fp16",
+    }};
+    g[N.hrCat] = { class_type: "LTXVConcatAVLatent", inputs: {
+      video_latent: [N.hrUp, 0], audio_latent: [N.hrSep, 1],
+    }};
+    latent = [N.hrCat, 0];
+    // The separate/concat round trip drops the lock's denoise mask, so lock the same audio again.
+    if (lockAudio) {
+      g[N.hrLock] = { class_type: "TJ_H3_AudioLock", inputs: { ...g[N.audioLock].inputs, av_latent: latent } };
+      latent = [N.hrLock, 0];
+    }
   }
 
   // The last step may run on its own checkpoint (Settings → Models → 7+1 last step model).
@@ -356,6 +368,19 @@ function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio)
       qkv_streaming_mode: "Forced", kitchen_v_memory_mode: "Lower VRAM (slower)",
     }};
     stageModel = [N.hrMem, 0];
+  }
+  if (kimchy) {
+    // The Kimchy node takes the memory-optimised model without Sol-Attn and the whole stage-1 AV latent.
+    const mp = state.hiresFinalMp ?? 1.6;
+    if (!(mp >= 1 && mp <= 8.5)) throw new Error("Upscaler B (H3 Kimchy Up Scaler) supports Final MP 1.0 – 8.5.");
+    g[N.hrNeg] = { class_type: "ConditioningZeroOut", inputs: { conditioning: condLink } };
+    g[N.hrKim] = { class_type: "KimchyH3ZeroSplitMP", inputs: {
+      model: stageModel, conditioning: condLink, latent: [N.sampler, 1],
+      noise: [N.noise, 0], sampler: [N.sampSel, 0], sigmas: lowSigmas, negative: [N.hrNeg, 0],
+      model_name: "minimax_h3_latent_upscaler_3d_bf16.safetensors",
+      upscale_by: "megapixels", target_megapixels: mp, scale: 2, align: 32, precision: "fp16", cfg: 1, color_match: true,
+    }};
+    return [N.hrKim, 0];
   }
   g[N.hrSparse] = { class_type: "BlockSparseAttention", inputs: {
     model: stageModel,

@@ -4573,6 +4573,21 @@ app.registerExtension({
                       style: { fontSize: "10px", color: name ? C.muted : C.warn, wordBreak: "break-all" } })] : []),
                   ]);
                 })(),
+                (() => {
+                  // capsule switch: A = H3 Latent Up Scaler (default), B = H3 Kimchy Up Scaler
+                  const kim = state.hiresUpscaler === "kimchy";
+                  const half = (text, on, tip, v) => el("div", { text, title: tip, style: {
+                    flex: "1", textAlign: "center", padding: "4px 14px", fontSize: "11px", cursor: "pointer",
+                    background: on ? "#7c3aed" : "transparent", color: on ? "#fff" : C.muted, fontWeight: on ? "700" : "400",
+                  }, onclick: () => { state.hiresUpscaler = v; persist(); renderLeft(); } });
+                  return col([label("Upscaler"),
+                    el("div", { style: { display: "flex", width: "110px", border: `1px solid ${C.border}`, borderRadius: "999px", overflow: "hidden" } },
+                      [half("A", !kim, "A : 기존 방식 : H3 Latent Up Scaler", "h3"),
+                       half("B", kim, "B : 신규 추가 : H3 Kimchy Up Scaler", "kimchy")]),
+                    ...(kim ? [warn("KimchyH3ZeroSplitMP"),
+                      hint("B runs the upscale and the last step in one node (Sol-Attn is not used). Final MP must be 1.0 – 8.5.")] : []),
+                  ]);
+                })(),
                 checkboxRow("Bypass H3 Memory Optimization on the last step", !!state.hiresNoOpt, v => {
                   state.hiresNoOpt = v; persist(); renderLeft();
                 }, { title: "Skip only the H3 Memory Optimization node on the last (large) step. Sol-Attn stays on. Use it if the last step fails with a shape error." }),
@@ -5614,7 +5629,7 @@ app.registerExtension({
           aspect: st.aspect,
           megapixels: st.megapixels,
           hiresFinish: hiresActive(st, ctx.availability),
-          hiresStartMp: st.hiresStartMp, hiresFinalMp: st.hiresFinalMp, hiresChunkRows: st.hiresChunkRows,
+          hiresStartMp: st.hiresStartMp, hiresFinalMp: st.hiresFinalMp, hiresChunkRows: st.hiresChunkRows, hiresUpscaler: st.hiresUpscaler,
           frames: st.clipFrames,
           steps: st.steps,
           sampler: st.sampler,
@@ -6727,6 +6742,7 @@ app.registerExtension({
         if (meta.hiresStartMp != null) state.hiresStartMp = meta.hiresStartMp;
         if (meta.hiresFinalMp != null) state.hiresFinalMp = meta.hiresFinalMp;
         if (meta.hiresChunkRows != null) state.hiresChunkRows = meta.hiresChunkRows;
+        state.hiresUpscaler = meta.hiresUpscaler === "kimchy" ? "kimchy" : "h3";
         if (meta.frames) { state.clipFrames = meta.frames; state.clipLengthCustom = false; }
         if (meta.steps != null) state.steps = meta.steps;
         if (meta.sampler) state.sampler = meta.sampler;
