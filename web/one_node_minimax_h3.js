@@ -21,7 +21,7 @@ import {
   TURBO_MODES, ATTN_BACKENDS, ATTN_FORWARDS, BLOCK_CACHES, H3_OPTIMIZERS, FBC_MODES,
   attnBlockedReason, attnForwardBlockedReason, attnForwardOverlapNote, blockCacheBlockedReason,
   h3OptimizerBlockedReason, h3OptimizerOverlapNote,
-  effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, hiresMp, sizeForMp, ppH3State, ppH3Kind, kimchyTileCount, migrateLegacyAccel,
+  effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, hiresMp, sizeForMp, ppH3State, ppH3Kind, PP_H3_UP_MODELS, kimchyTileCount, migrateLegacyAccel,
   continuityModesFor, generationModesFor, configIssues, ltxUpscaleReady, ltxUpscaleMissing,
   faceRefineReady, faceRefineMissing, postprocessReady, IMAGE_GEN_MODES, imageGenSubModeReady,
   CHARSHEET_PROMPT_TEMPLATE,
@@ -3538,6 +3538,11 @@ app.registerExtension({
                 el("div", { style: { display: "flex", border: `1px solid ${C.border}`, borderRadius: "6px", overflow: "hidden" } },
                   [half("H3 Latent Upscaler", !kim, "A : 기존 방식 : H3 Latent Up Scaler", "h3"),
                    half("H3 Kimchy Up Scaler", kim, "B : 신규 추가 : H3 Kimchy Up Scaler", "kimchy")])]));
+              if (kim) kids.push(col([label("Latent upscale"), select([
+                { value: "neural", label: "Neural (Kimchy's trained upscaler)" },
+                { value: "bicubic", label: "Bicubic (plain interpolation)" },
+                { value: "trilinear", label: "Trilinear (plain interpolation)" }],
+                state.ppH3UpModel, v => { state.ppH3UpModel = v; persist(); })]));
               kids.push(checkboxRow("Bypass H3 Memory Optimization", !!state.ppH3NoOpt, v => { state.ppH3NoOpt = v; persist(); },
                 { title: "Skip only the H3 Memory Optimization node. Use it with FastH3 checkpoints." }));
               kids.push(col([label("Final MP"), numberField(kim ? state.ppH3KimFinalMp : state.ppH3FinalMp,
@@ -3706,20 +3711,154 @@ app.registerExtension({
 
       let ppRunning = false;
       let ppStopRequested = false;
+
+      // ── Postprocess run: progress, finish, busy state ───────────────────────────
+      // They take `info` (what the run needs to be shown and finished) instead of reading the
+      // closure of one click, so a run that was queued before a reload can be picked up again.
+      function ppProgress(info) {
+        let kimDone = 0, kimMark = 0, kimTimer = null, kimExec = null;
+        const kimDurs = [];
+        const fmtDur = (ms) => { const t = Math.round(ms / 1000); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`; };
+        // one tile = one single-step sample, shown like the console bar: "1/1 [00:45<00:00, 45.12s/it]"
+        const fmtIt = (ms) => `${(ms / 1000).toFixed(2)}s/it`;
+        // tile 1 also covers the Kimchy node's load and latent upscale, so the estimate leans on the tiles after it
+        const kimLine = () => {
+          const cur = Math.min(kimDone + 1, info.kimTiles);
+          const parts = [`Postprocess: Kimchy tile ${cur}/${info.kimTiles}`];
+          if (kimDone < info.kimTiles) parts.push(`running ${fmtDur(Date.now() - kimMark)}`);
+          if (kimDurs.length) parts.push(`tile ${kimDurs.length} took ${fmtDur(kimDurs[kimDurs.length - 1])} (${fmtIt(kimDurs[kimDurs.length - 1])}${kimDurs.length === 1 ? ", incl. load" : ""})`);
+          const base = kimDurs.length > 1 ? kimDurs.slice(1) : kimDurs;
+          if (base.length && kimDone < info.kimTiles) {
+            const avg = base.reduce((a, d) => a + d, 0) / base.length;
+            parts.push(`avg ${fmtIt(avg)}`, `ETA ~${fmtDur(Math.max(0, avg * (info.kimTiles - kimDone) - (Date.now() - kimMark)))}`);
+          }
+          return parts.join(" · ") + (kimDone >= info.kimTiles ? " — finishing" : "");
+        };
+        // the bar counts finished tiles, plus a share of the running one once an average is known
+        const kimBar = () => {
+          const base = kimDurs.length > 1 ? kimDurs.slice(1) : kimDurs;
+          const avg = base.length ? base.reduce((a, d) => a + d, 0) / base.length : 0;
+          const part = avg ? Math.min(0.95, (Date.now() - kimMark) / avg) : 0;
+          const frac = (kimDone + (kimDone < info.kimTiles ? part : 0)) / info.kimTiles;
+          const lo = info.kimLo || info.barBase;
+          barInner.style.width = `${Math.min(100, lo + (98 - lo) * frac).toFixed(1)}%`;
+        };
+        return {
+          start() {
+            if (!info.kimTiles) return;
+            kimMark = Date.now();
+            // the clock for tile 1 starts when the Kimchy node starts, not when the queue was submitted
+            kimExec = (ev) => { const d = ev.detail; if ((d && d.node != null ? d.node : d) === "MM:hr_kimchy_upscale") kimMark = Date.now(); };
+            api.addEventListener("executing", kimExec);
+            kimTimer = setInterval(() => { if (kimDone < info.kimTiles) { setStatus(kimLine()); kimBar(); } }, 1000);
+          },
+          stop() {
+            clearInterval(kimTimer);
+            if (kimExec) api.removeEventListener("executing", kimExec);
+          },
+          onProgress: (v, m, nodeId) => {
+            // the Kimchy upscaler runs one single-step sampler per tile, so each tile is one tick of 1/1
+            if (info.kimTiles && nodeId === "MM:hr_kimchy_upscale" && m === 1) {
+              if (v >= 1) { kimDurs.push(Date.now() - kimMark); kimMark = Date.now(); kimDone++; }
+              setStatus(kimLine()); kimBar();
+              return;
+            }
+            // Latent Upscale (Use H3): the sampler is the step at the clip's own size (Kimchy) or the last step (H3 Latent Upscaler)
+            if (info.h3 && nodeId === "MM:hr_sampler") {
+              const hi = info.kimTiles ? info.kimLo : 95;
+              barInner.style.width = `${(info.barBase + (hi - info.barBase) * (v / (m || 1))).toFixed(1)}%`;
+              setStatus(`Postprocess: ${info.kimTiles ? "step 1 at the clip's own size" : "last step"} — ${Math.round((v / (m || 1)) * 100)}%`);
+              return;
+            }
+            barInner.style.width = `${Math.round(info.barBase + (100 - info.barBase) * (v / (m || 1)))}%`;
+            setStatus(`Postprocess: ${info.usedSteps.join(" + ")} — ${Math.round((v / (m || 1)) * 100)}%`);
+          },
+        };
+      }
+
+      function ppBusyOn(info) {
+        ppRunning = true; ppStopRequested = false;
+        const busyBtn = info.full ? ppGenBtn : ppPreviewBtn;
+        ppGenBtn.disabled = true; ppPreviewBtn.disabled = true;
+        busyBtn.textContent = "⏳ Running…"; busyBtn.style.opacity = "0.6";
+        showBusyBanner(info.full ? "후보정을 반영하여 처리중입니다. 잠시 기다려주세요."
+          : "미리보기 처리중입니다. 잠시 기다려주세요.", info.source);
+      }
+      async function ppBusyOff() {
+        hideBusyBanner(); stopClock();
+        ppRunning = false; ppStopRequested = false;
+        ppGenBtn.disabled = false; ppGenBtn.textContent = "▶ Generate"; ppGenBtn.style.opacity = "1";
+        ppPreviewBtn.disabled = false; ppPreviewBtn.textContent = "Preview"; ppPreviewBtn.style.opacity = "1";
+        try { await freeMemory(); } catch {}
+      }
+
+      // Show the result and write its metadata. Used by the click that queued the run and by the
+      // reattach after a reload — the meta is written here, by the page, so it must not depend on
+      // the page that queued the run still being open.
+      async function ppFinish(res, info) {
+        const o = res.byNode[info.saveNode]?.images?.[0] || res.byNode[info.saveNode]?.gifs?.[0];
+        if (!o) throw new Error("No output produced.");
+        // A Preview run's VHS_VideoCombine has save_output:false, so ComfyUI reports it
+        // back with type "temp", not "output" — a hardcoded type=output 404s for it.
+        // &t=Date.now() busts the browser's HTTP cache: a preview's counter resets
+        // every backend restart (and VHS's own numbering can repeat), so two different
+        // preview runs can share the exact same filename/subfolder/type — without this,
+        // the SECOND (and every later) preview click just re-shows the FIRST run's
+        // cached response, no matter what Start/End/effects actually changed.
+        const url = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=${encodeURIComponent(o.type || "output")}&t=${Date.now()}`;
+        // A Preview run's result file only covers [startS, endS) of the source clip — the
+        // Compare viewer needs that same window on the ORIGINAL side too, or it plays the
+        // whole untrimmed source against a few trimmed seconds (see openCompareViewer's
+        // own range comment). A real/final Generate run covers the whole clip, same as
+        // the original, so no range restriction there.
+        showResultVideo(url, { final: true, compareRange: (!info.full && info.endS > info.startS) ? { start: info.startS, end: info.endS } : null });
+        if (info.full) {
+          // A full-range run (not a short preview) writes real metadata — spreads the
+          // SOURCE clip's own full meta (prompt, seed, loras, everything) forward first,
+          // same shape the gallery's own post-process tools use (writePostMeta in
+          // ui_gallery_minimax.js), so Reuse/the bottom-left info strip pick it up; only
+          // then overwrite created/postProcess/postSource and recompute geometry/fps for
+          // whatever the job actually produced (an upscale/resize step changes those).
+          try {
+            const patched = {
+              ...(info.sourceFullMeta || {}),
+              created: Date.now(), postProcess: info.usedSteps.join(" + "), postSource: info.source,
+              ...(info.upscaleUsedInfo ? { postUpscale: info.upscaleUsedInfo } : {}),
+              ...(info.usedPrompt ? { postPrompt: info.usedPrompt } : {}),
+            };
+            delete patched.elapsedSec;
+            delete patched.sourceW; delete patched.sourceH;
+            try {
+              const oi = await getVideoInfo(o.filename, o.subfolder || "", "output");
+              if (oi?.width || oi?.height) {
+                const srcW = info.sourceMeta?.w, srcH = info.sourceMeta?.h;
+                if ((oi.width && oi.width !== srcW) || (oi.height && oi.height !== srcH)) {
+                  patched.sourceW = srcW; patched.sourceH = srcH;
+                }
+                if (oi.width)  patched.w = oi.width;
+                if (oi.height) patched.h = oi.height;
+              }
+              if (oi?.frames) { patched.frames = oi.frames; patched.durationSeconds = oi.frames / (oi.fps || FPS); }
+              if (oi?.fps)    patched.fps = oi.fps;
+            } catch { /* keep the source geometry rather than fail */ }
+            await saveMeta(o.filename, o.subfolder || (state.saveSubfolder || SUBFOLDER), patched);
+          } catch {}
+        }
+        barInner.style.width = "100%";
+        setStatus(`✓ Postprocess done (${info.usedSteps.join(" + ")})${info.full ? "" : " — preview only, not saved to the gallery"}.`);
+        showPopup(info.full ? "Postprocess finished — the new file is in the gallery."
+          : "Preview ready — compare it, then hit ▶ Generate to produce and save the full clip.", false);
+      }
+
       async function runPostprocess({ full = true } = {}) {
         if (ppRunning) return;
         if (!state.ppSource) { showPopup("Pick a source clip first.", true); return; }
         const steps = ["ppDeblurOn", "ppDenoiseOn", "ppUpscaleOn", "ppSkinRetouchOn", "ppGrainOn", "ppInterpolateOn", "ppResizeOn"];
         if (!steps.some(k => state[k])) { showPopup("Enable at least one effect (A-F) first.", true); return; }
-        ppRunning = true; ppStopRequested = false;
-        let kimTimer = null, kimExec = null;
-        const busyBtn = full ? ppGenBtn : ppPreviewBtn;
-        ppGenBtn.disabled = true; ppPreviewBtn.disabled = true;
-        busyBtn.textContent = "⏳ Running…"; busyBtn.style.opacity = "0.6";
+        let prog = null;
+        ppBusyOn({ full, source: state.ppSource });
         setStatus("Postprocess running…");
         barInner.style.width = "0%"; startClock();
-        showBusyBanner(full ? "후보정을 반영하여 처리중입니다. 잠시 기다려주세요."
-          : "미리보기 처리중입니다. 잠시 기다려주세요.", state.ppSource);
         try {
           if (!ctx.availability || !Object.keys(ctx.availability).length) {
             const av = await getNodeAvailability();
@@ -3729,10 +3868,8 @@ app.registerExtension({
           // Preview's own short-look run, never to a real/final one.
           const ppMethod = (state.upscaleMode && state.upscaleMode !== "none") ? state.upscaleMode : "flashvsr";
           let ltxState = null, h3State = null, h3Opts = null, usedPrompt = "";
-          let h3Cap = 0, kimTiles = 0, kimDone = 0, barBase = 0;   // barBase: share of the bar the prompt stages already used
+          let h3Cap = 0, kimTiles = 0, barBase = 0;   // barBase: share of the bar the prompt stages already used
           let kimLo = 0;   // where the Kimchy tile step starts on the bar (after the first step)
-          const kimDurs = [];
-          let kimMark = 0;
           if (state.ppUpscaleOn && ppMethod === "h3lat") {
             const info = _ppSrcInfo || {};
             const sm0 = state.ppSourceMeta || {};
@@ -3754,7 +3891,8 @@ app.registerExtension({
             barBase = 25; barInner.style.width = "25%";
             h3State = ppH3State(state, kind);
             if (state.ppH3Upscaler === "kimchy") { kimTiles = kimchyTileCount(w0, h0, hiresMp(h3State).final); kimLo = 55; }
-            h3Opts = { promptText: usedPrompt, frames, srcSize: { width: w0, height: h0 }, finalSize, hasAudio: info.has_audio !== false, seed: randomSeed() };
+            h3Opts = { promptText: usedPrompt, frames, srcSize: { width: w0, height: h0 }, finalSize, hasAudio: info.has_audio !== false, seed: randomSeed(),
+              upscalerModel: PP_H3_UP_MODELS[state.ppH3UpModel] };
           }
           if (state.ppUpscaleOn && ppMethod === "ltx") {
             if (!ltxUpscaleReady(state)) throw new Error("Set the LTX 2.5 models in ⚙ Settings first — missing: " + ltxUpscaleMissing(state).join(", "));
@@ -3827,120 +3965,64 @@ app.registerExtension({
           }, ctx.availability || {});
 
           setStatus(`Postprocess: ${built.usedSteps.join(" + ")}…`);
-          const fmtDur = (ms) => { const t = Math.round(ms / 1000); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`; };
-          // one tile = one single-step sample, shown like the console bar: "1/1 [00:45<00:00, 45.12s/it]"
-          const fmtIt = (ms) => `${(ms / 1000).toFixed(2)}s/it`;
-          // tile 1 also covers the Kimchy node's load and latent upscale, so the estimate leans on the tiles after it
-          const kimLine = () => {
-            const cur = Math.min(kimDone + 1, kimTiles);
-            const parts = [`Postprocess: Kimchy tile ${cur}/${kimTiles}`];
-            if (kimDone < kimTiles) parts.push(`running ${fmtDur(Date.now() - kimMark)}`);
-            if (kimDurs.length) parts.push(`tile ${kimDurs.length} took ${fmtDur(kimDurs[kimDurs.length - 1])} (${fmtIt(kimDurs[kimDurs.length - 1])}${kimDurs.length === 1 ? ", incl. load" : ""})`);
-            const base = kimDurs.length > 1 ? kimDurs.slice(1) : kimDurs;
-            if (base.length && kimDone < kimTiles) {
-              const avg = base.reduce((a, d) => a + d, 0) / base.length;
-              parts.push(`avg ${fmtIt(avg)}`, `ETA ~${fmtDur(Math.max(0, avg * (kimTiles - kimDone) - (Date.now() - kimMark)))}`);
-            }
-            return parts.join(" · ") + (kimDone >= kimTiles ? " — finishing" : "");
+          const info = {
+            nodeId: self.id, saveNode: built.saveNode, usedSteps: built.usedSteps,
+            upscaleUsedInfo: built.upscaleUsedInfo || null, usedPrompt, full, startS, endS,
+            source: state.ppSource, sourceMeta: state.ppSourceMeta, sourceFullMeta: state.ppSourceFullMeta,
+            kimTiles, kimLo, barBase, h3: !!h3Opts,
           };
-          // the bar counts finished tiles, plus a share of the running one once an average is known
-          const kimBar = () => {
-            const base = kimDurs.length > 1 ? kimDurs.slice(1) : kimDurs;
-            const avg = base.length ? base.reduce((a, d) => a + d, 0) / base.length : 0;
-            const part = avg ? Math.min(0.95, (Date.now() - kimMark) / avg) : 0;
-            const frac = (kimDone + (kimDone < kimTiles ? part : 0)) / kimTiles;
-            const lo = kimLo || barBase;
-            barInner.style.width = `${Math.min(100, lo + (98 - lo) * frac).toFixed(1)}%`;
-          };
-          if (kimTiles) {
-            kimMark = Date.now();
-            // the clock for tile 1 starts when the Kimchy node starts, not when the queue was submitted
-            kimExec = (ev) => { const d = ev.detail; if ((d && d.node != null ? d.node : d) === "MM:hr_kimchy_upscale") kimMark = Date.now(); };
-            api.addEventListener("executing", kimExec);
-            kimTimer = setInterval(() => { if (kimDone < kimTiles) { setStatus(kimLine()); kimBar(); } }, 1000);
-          }
+          prog = ppProgress(info);
+          prog.start();
           const res = await queuePrompt(built.graph, {
-            onProgress: (v, m, nodeId) => {
-              // the Kimchy upscaler runs one single-step sampler per tile, so each tile is one tick of 1/1
-              if (kimTiles && nodeId === "MM:hr_kimchy_upscale" && m === 1) {
-                if (v >= 1) { kimDurs.push(Date.now() - kimMark); kimMark = Date.now(); kimDone++; }
-                setStatus(kimLine()); kimBar();
-                return;
-              }
-              // Latent Upscale (Use H3): the sampler is the step at the clip's own size (Kimchy) or the last step (H3 Latent Upscaler)
-              if (h3Opts && nodeId === "MM:hr_sampler") {
-                const hi = kimTiles ? kimLo : 95;
-                barInner.style.width = `${(barBase + (hi - barBase) * (v / (m || 1))).toFixed(1)}%`;
-                setStatus(`Postprocess: ${kimTiles ? "step 1 at the clip's own size" : "last step"} — ${Math.round((v / (m || 1)) * 100)}%`);
-                return;
-              }
-              barInner.style.width = `${Math.round(barBase + (100 - barBase) * (v / (m || 1)))}%`;
-              setStatus(`Postprocess: ${built.usedSteps.join(" + ")} — ${Math.round((v / (m || 1)) * 100)}%`);
-            },
+            onProgress: prog.onProgress,
+            // what a reload needs to reattach to this run and finish it (state is saved with the node)
+            onQueued: (pid) => { state._ppRelay = { ...info, promptId: pid, startedAt: Date.now() }; persist(); },
           });
-          const o = res.byNode[built.saveNode]?.images?.[0] || res.byNode[built.saveNode]?.gifs?.[0];
-          if (!o) throw new Error("No output produced.");
-          // A Preview run's VHS_VideoCombine has save_output:false, so ComfyUI reports it
-          // back with type "temp", not "output" — a hardcoded type=output 404s for it.
-          // &t=Date.now() busts the browser's HTTP cache: a preview's counter resets
-          // every backend restart (and VHS's own numbering can repeat), so two different
-          // preview runs can share the exact same filename/subfolder/type — without this,
-          // the SECOND (and every later) preview click just re-shows the FIRST run's
-          // cached response, no matter what Start/End/effects actually changed.
-          const url = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=${encodeURIComponent(o.type || "output")}&t=${Date.now()}`;
-          // A Preview run's result file only covers [startS, endS) of the source clip — the
-          // Compare viewer needs that same window on the ORIGINAL side too, or it plays the
-          // whole untrimmed source against a few trimmed seconds (see openCompareViewer's
-          // own range comment). A real/final Generate run covers the whole clip, same as
-          // the original, so no range restriction there.
-          showResultVideo(url, { final: true, compareRange: (!full && endS > startS) ? { start: startS, end: endS } : null });
-          if (full) {
-            // A full-range run (not a short preview) writes real metadata — spreads the
-            // SOURCE clip's own full meta (prompt, seed, loras, everything) forward first,
-            // same shape the gallery's own post-process tools use (writePostMeta in
-            // ui_gallery_minimax.js), so Reuse/the bottom-left info strip pick it up; only
-            // then overwrite created/postProcess/postSource and recompute geometry/fps for
-            // whatever the job actually produced (an upscale/resize step changes those).
-            try {
-              const patched = {
-                ...(state.ppSourceFullMeta || {}),
-                created: Date.now(), postProcess: built.usedSteps.join(" + "), postSource: state.ppSource,
-                ...(built.upscaleUsedInfo ? { postUpscale: built.upscaleUsedInfo } : {}),
-                ...(usedPrompt ? { postPrompt: usedPrompt } : {}),
-              };
-              delete patched.elapsedSec;
-              delete patched.sourceW; delete patched.sourceH;
-              try {
-                const oi = await getVideoInfo(o.filename, o.subfolder || "", "output");
-                if (oi?.width || oi?.height) {
-                  const srcW = state.ppSourceMeta?.w, srcH = state.ppSourceMeta?.h;
-                  if ((oi.width && oi.width !== srcW) || (oi.height && oi.height !== srcH)) {
-                    patched.sourceW = srcW; patched.sourceH = srcH;
-                  }
-                  if (oi.width)  patched.w = oi.width;
-                  if (oi.height) patched.h = oi.height;
-                }
-                if (oi?.frames) { patched.frames = oi.frames; patched.durationSeconds = oi.frames / (oi.fps || FPS); }
-                if (oi?.fps)    patched.fps = oi.fps;
-              } catch { /* keep the source geometry rather than fail */ }
-              await saveMeta(o.filename, o.subfolder || (state.saveSubfolder || SUBFOLDER), patched);
-            } catch {}
-          }
-          barInner.style.width = "100%";
-          setStatus(`✓ Postprocess done (${built.usedSteps.join(" + ")})${full ? "" : " — preview only, not saved to the gallery"}.`);
-          showPopup(full ? "Postprocess finished — the new file is in the gallery."
-            : "Preview ready — compare it, then hit ▶ Generate to produce and save the full clip.", false);
+          await ppFinish(res, info);
         } catch (e) {
           setStatus(`Error: ${e?.message || e}`);
           showPopup(e?.message || String(e), true);
         } finally {
-          hideBusyBanner(); stopClock();
-          clearInterval(kimTimer);
-          if (kimExec) api.removeEventListener("executing", kimExec);
-          ppRunning = false; ppStopRequested = false;
-          ppGenBtn.disabled = false; ppGenBtn.textContent = "▶ Generate"; ppGenBtn.style.opacity = "1";
-          ppPreviewBtn.disabled = false; ppPreviewBtn.textContent = "Preview"; ppPreviewBtn.style.opacity = "1";
-          try { await freeMemory(); } catch {}
+          prog?.stop();
+          if (state._ppRelay) { state._ppRelay = null; persist(); }
+          await ppBusyOff();
+        }
+      }
+
+      // A Postprocess run that was in flight when the page reloaded: ComfyUI kept working, so reattach to that
+      // exact prompt, show its progress again and — the part that must not be lost — write its metadata.
+      async function resumePostprocess() {
+        const R = state._ppRelay;
+        if (!R || !R.promptId || ppRunning) return;
+        if (R.nodeId != null && String(R.nodeId) !== String(self.id)) return;   // another node's run
+        const entry = await historyEntry(R.promptId);
+        let queued = false;
+        try {
+          const d = await (await api.fetchApi("/queue")).json();
+          queued = [...(d.queue_running || []), ...(d.queue_pending || [])].some(item => item[1] === R.promptId);
+        } catch {}
+        if (!entry && !queued) {
+          state._ppRelay = null; persist();
+          setStatus("Postprocess: the run did not survive the reload (ComfyUI has no record of it).");
+          return;
+        }
+        ppBusyOn(R);
+        setStatus("Postprocess: reattaching to the run that was in flight…");
+        startClock(); if (R.startedAt) runStart = R.startedAt;
+        const prog = ppProgress(R);
+        prog.start();
+        try {
+          const res = entry?.status?.completed
+            ? { byNode: entry.outputs || {} }
+            : await waitForHistory(R.promptId, { onProgress: prog.onProgress });
+          await ppFinish(res, R);
+        } catch (e) {
+          setStatus(`Error: ${e?.message || e}`);
+          showPopup(e?.message || String(e), true);
+        } finally {
+          prog.stop();
+          state._ppRelay = null; persist();
+          await ppBusyOff();
         }
       }
 
@@ -7233,6 +7315,8 @@ app.registerExtension({
           runState: saved.runState, inFlightPromptId,
         });
       })();
+
+      resumePostprocess();
 
       // Same idea for a segmented LTX Upscale run: state._ltxRelay carries the plan +
       // finished parts + the in-flight segment's prompt_id. A tab-switch reload that

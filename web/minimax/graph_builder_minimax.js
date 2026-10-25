@@ -510,7 +510,7 @@ export function addH3LastStep(g, state0, avail, o) {
   g[N.hrKim] = { class_type: "KimchyH3ZeroSplitMP", inputs: {
     model: memModel, conditioning: cond2, latent: step1,
     noise: [N.noise, 0], sampler: [N.sampSel, 0], sigmas: lowSigmas, negative: [N.hrNeg, 0],
-    model_name: "minimax_h3_latent_upscaler_3d_bf16.safetensors",
+    model_name: o.upscalerModel || "minimax_h3_latent_upscaler_3d_bf16.safetensors",
     upscale_by: "megapixels", target_megapixels: mp, scale: 2, align: 32, precision: "fp16", cfg: 1, color_match: true,
   }};
   latent = [N.hrKim, 0];

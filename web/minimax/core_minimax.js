@@ -374,6 +374,9 @@ export function ppH3State(s, kind = "fl") {
   };
 }
 
+/** The Kimchy node's `model_name` for each upscale choice (undefined = its trained network, the graph default). */
+export const PP_H3_UP_MODELS = { neural: undefined, bicubic: "None (Bicubic)", trilinear: "None (Trilinear)" };
+
 /** Which model family Postprocess → Latent Upscale (Use H3) runs a clip on: "ref" for a Reference-mode H3 clip, else "fl". */
 export function ppH3Kind(meta) {
   return meta && meta.mode === "reference" ? "ref" : "fl";
@@ -1688,12 +1691,20 @@ export function defaultState(saved) {
 
     // Postprocess → Latent Upscale (Use H3) keeps its own model / turbo / upscaler settings. A new field starts from the
     // main value once, then never follows it.
+    // A run that was in flight when the page went away: what is needed to reattach to it and finish it.
+    // Not listed here, the whitelist would drop them on the reload that makes them necessary.
+    _relay: saved._relay ?? null,         // clip generation
+    _ltxRelay: saved._ltxRelay ?? null,   // LTX Upscale
+    _ppRelay: saved._ppRelay ?? null,     // Postprocess
+    _frRelay: saved._frRelay ?? null,     // Face Refine
     ppH3TurboMode: saved.ppH3TurboMode ?? (saved.turboMode === "pdd" ? "pdd" : "none"),
     ppH3PddFile: saved.ppH3PddFile ?? saved.pddFile ?? "",
     ppH3PddFileReference: saved.ppH3PddFileReference ?? saved.pddFileReference ?? "",
     ppH3LastFixed: !!saved.ppH3LastFixed,
     ppH3PddStrength: saved.ppH3PddStrength ?? saved.pddLoraStrength ?? 1.0,
     ppH3Upscaler: saved.ppH3Upscaler === "kimchy" ? "kimchy" : "h3",
+    // what the Kimchy node upscales the latent with: its trained network, or plain interpolation
+    ppH3UpModel: ["bicubic", "trilinear"].includes(saved.ppH3UpModel) ? saved.ppH3UpModel : "neural",
     ppH3FinalMp: saved.ppH3FinalMp ?? 1.6,
     ppH3KimFinalMp: saved.ppH3KimFinalMp ?? 2.0,
     ppH3ChunkRows: saved.ppH3ChunkRows ?? 2048,
