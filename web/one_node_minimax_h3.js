@@ -2505,6 +2505,47 @@ app.registerExtension({
         return ltxLoraWrap;
       }
 
+      // Split mode of the LTX 2.5 upscale (a long clip is cut into pieces that run one after another, then joined).
+      // `durNow` gives the source clip's length in seconds.
+      function ltxSplitControls(durNow) {
+        // Two ways to say the same plan: "seconds" derives the piece count from a
+        // target size (rounded to whatever avoids a stub piece a few frames long);
+        // "count" takes the piece count directly — no rounding surprise, and no
+        // reloading the whole model just to run a handful of leftover frames.
+        const segWrap = el("div", {});
+        function renderSegWrap() {
+          clear(segWrap);
+          const mode = state.ltxSegmentMode === "count" ? "count" : "seconds";
+          const segHint = el("div", { style: { fontSize: "13px", fontWeight: "700", color: BRAND, whiteSpace: "nowrap" } });
+          const updateSegHint = () => {
+            const d = durNow();
+            if (mode === "count") {
+              const n = Math.max(1, Math.round(Number(state.ltxSegmentCount) || 1));
+              if (n <= 1) segHint.textContent = "1 = whole clip, one pass";
+              else if (!d) segHint.textContent = `${n} piece(s) — pick a source to see the length`;
+              else segHint.textContent = `${n} piece(s) → ~${(d / n).toFixed(1)}s each      Total : ${d.toFixed(1)}s clip`;
+            } else {
+              const s = Math.max(0, Number(state.ltxSegmentSeconds) || 0);
+              if (!s) segHint.textContent = "0 = whole clip, one pass";
+              else if (!d) segHint.textContent = `${s}s per piece — pick a source to see the piece count`;
+              else segHint.textContent = `${s}s per piece → ${Math.max(1, Math.round(d / s))} piece(s)      Total : ${d.toFixed(1)}s clip`;
+            }
+          };
+          updateSegHint();
+          const modeSel = select([{ value: "seconds", label: "By seconds" }, { value: "count", label: "By count" }], mode, v => { state.ltxSegmentMode = v; persist(); renderSegWrap(); });
+          const valueField = mode === "count" ? numberField(state.ltxSegmentCount ?? 2, v => { state.ltxSegmentCount = Math.max(1, Math.round(v)); persist(); updateSegHint(); }, 1) : numberField(state.ltxSegmentSeconds ?? 5, v => { state.ltxSegmentSeconds = Math.max(0, Math.round(v)); persist(); updateSegHint(); }, 1);
+        const captionLabel = label(mode === "count" ? "Piece count (1 = whole clip)" : "Seconds per piece (0 = whole clip)");
+        segWrap.append(el("div", { style: { display: "flex", flexDirection: "column", gap: "4px" } }, [
+          el("div", { style: { display: "flex", alignItems: "center", gap: "4px" } }, [label("Split mode"), el("span", { text: "❔", title: "Splitting a long/large clip into fixed-length pieces upscales each on its own queue turn (VRAM freed between turns) then ffmpeg-concats — each piece is first-frame-anchored + low-denoise so the joins are seamless.", style: { cursor: "help", fontSize: "11px" } })]),
+          row([col([modeSel]), col([valueField])]),
+          captionLabel,
+          segHint,
+        ]));
+        }
+        renderSegWrap();
+        return segWrap;
+      }
+
       // Steps / Denoise / Sampler / Scheduler of the LTX refine pass, shared like the LoRA list.
       function ltxRefineRows() {
         return [
@@ -2676,45 +2717,7 @@ app.registerExtension({
         leftPanel.appendChild(panel([
           label("UPSCALE SETTING"),
           ...ltxRefineRows(),
-          (() => {
-            // Two ways to say the same plan: "seconds" derives the piece count from a
-            // target size (rounded to whatever avoids a stub piece a few frames long);
-            // "count" takes the piece count directly — no rounding surprise, and no
-            // reloading the whole model just to run a handful of leftover frames.
-            const durNow = () => (_ltxSrcInfo && _ltxSrcInfo.duration) || (state.ltxSourceMeta && state.ltxSourceMeta.duration) || 0;
-            const segWrap = el("div", {});
-            function renderSegWrap() {
-              clear(segWrap);
-              const mode = state.ltxSegmentMode === "count" ? "count" : "seconds";
-              const segHint = el("div", { style: { fontSize: "13px", fontWeight: "700", color: BRAND, whiteSpace: "nowrap" } });
-              const updateSegHint = () => {
-                const d = durNow();
-                if (mode === "count") {
-                  const n = Math.max(1, Math.round(Number(state.ltxSegmentCount) || 1));
-                  if (n <= 1) segHint.textContent = "1 = whole clip, one pass";
-                  else if (!d) segHint.textContent = `${n} piece(s) — pick a source to see the length`;
-                  else segHint.textContent = `${n} piece(s) → ~${(d / n).toFixed(1)}s each      Total : ${d.toFixed(1)}s clip`;
-                } else {
-                  const s = Math.max(0, Number(state.ltxSegmentSeconds) || 0);
-                  if (!s) segHint.textContent = "0 = whole clip, one pass";
-                  else if (!d) segHint.textContent = `${s}s per piece — pick a source to see the piece count`;
-                  else segHint.textContent = `${s}s per piece → ${Math.max(1, Math.round(d / s))} piece(s)      Total : ${d.toFixed(1)}s clip`;
-                }
-              };
-              updateSegHint();
-              const modeSel = select([{ value: "seconds", label: "By seconds" }, { value: "count", label: "By count" }], mode, v => { state.ltxSegmentMode = v; persist(); renderSegWrap(); });
-              const valueField = mode === "count" ? numberField(state.ltxSegmentCount ?? 2, v => { state.ltxSegmentCount = Math.max(1, Math.round(v)); persist(); updateSegHint(); }, 1) : numberField(state.ltxSegmentSeconds ?? 5, v => { state.ltxSegmentSeconds = Math.max(0, Math.round(v)); persist(); updateSegHint(); }, 1);
-            const captionLabel = label(mode === "count" ? "Piece count (1 = whole clip)" : "Seconds per piece (0 = whole clip)");
-            segWrap.append(el("div", { style: { display: "flex", flexDirection: "column", gap: "4px" } }, [
-              el("div", { style: { display: "flex", alignItems: "center", gap: "4px" } }, [label("Split mode"), el("span", { text: "❔", title: "Splitting a long/large clip into fixed-length pieces upscales each on its own queue turn (VRAM freed between turns) then ffmpeg-concats — each piece is first-frame-anchored + low-denoise so the joins are seamless.", style: { cursor: "help", fontSize: "11px" } })]),
-              row([col([modeSel]), col([valueField])]),
-              captionLabel,
-              segHint,
-            ]));
-            }
-            renderSegWrap();
-            return segWrap;
-          })(),
+          ltxSplitControls(() => (_ltxSrcInfo && _ltxSrcInfo.duration) || (state.ltxSourceMeta && state.ltxSourceMeta.duration) || 0),
           el("div", { text: "2x latent upscale + a light refine. Verified defaults: 4 steps / 0.15 denoise / euler_ancestral / simple. ~0.8MP / 8s per piece on 16GB (~6 min each).",
             style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
         ]));
@@ -3573,8 +3576,10 @@ app.registerExtension({
                 kids.push(el("div", { text: "⚙ Set the LTX 2.5 models first (Settings → LTX 2.5 Upscale) — missing: " + ltxUpscaleMissing(state).join(", "),
                   style: { fontSize: "11px", color: C.warn, lineHeight: "1.5" } }));
               }
-              kids.push(label("UPSCALE SETTING"), ...ltxRefineRows(), label("LTX LoRA"), makeLtxLoraWrap(),
-                el("div", { text: "The whole clip goes through in one pass. The prompt comes from the clip's own ONE STUDIO meta, otherwise it is written from sampled frames.",
+              kids.push(label("UPSCALE SETTING"), ...ltxRefineRows(),
+                ltxSplitControls(() => (_ppSrcInfo && _ppSrcInfo.duration) || (state.ppSourceMeta && state.ppSourceMeta.duration) || 0),
+                label("LTX LoRA"), makeLtxLoraWrap(),
+                el("div", { text: "The prompt comes from the clip's own ONE STUDIO meta, otherwise it is written from sampled frames. Split mode cuts a long clip into pieces (each continues from the last frame of the one before) and joins them; Preview always runs the range in one pass.",
                   style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
             } else {
               kids.push(row([col([label("Model"), select(
@@ -3722,6 +3727,39 @@ app.registerExtension({
       ppPreviewWrap.appendChild(ppPreviewBtn);
       ppPreviewWrap.appendChild(row([ppGenBtn, ppStopBtn]));
 
+      // The pieces Split mode cuts a clip into: [{ window: { skip, cap } | null, suffix }].
+      async function ltxSegmentPasses(rs, sourceFile, srcMeta) {
+        const segMode = rs.ltxSegmentMode === "count" ? "count" : "seconds";
+        const sSec = Math.max(0, Number(rs.ltxSegmentSeconds) || 0);
+        const segCount = Math.max(1, Math.round(Number(rs.ltxSegmentCount) || 1));
+        let passes = [{ window: null, suffix: "" }];
+        if ((segMode === "count" && segCount > 1) || (segMode === "seconds" && sSec > 0)) {
+          let srcInfo = null;
+          try { srcInfo = await getVideoInfo(sourceFile, "", "input"); } catch {}
+          const sFps = (srcInfo && srcInfo.fps) || srcMeta?.fps || FPS;
+          const total = (srcInfo && srcInfo.frames) || Math.round((srcMeta?.duration || 0) * sFps) || 0;
+          // LTX 2.5's video VAE only takes 8n+1 pixel frames cleanly (not H3's 17k+5)
+          const snap8n1 = (n) => 8 * Math.max(0, Math.round((n - 1) / 8)) + 1;
+          // "count" takes the piece count directly; "seconds" derives it from the target size so a leftover of a
+          // single frame never becomes a piece of its own (it would reload the whole model for nothing)
+          const nPieces = segMode === "count"
+            ? Math.min(segCount, Math.max(1, Math.floor(total / 9)))
+            : Math.max(1, Math.round(total / Math.max(9, snap8n1(sSec * sFps))));
+          if (nPieces > 1 && total > 9) {
+            const pieceLen = Math.max(9, snap8n1(Math.round(total / nPieces)));
+            passes = [];
+            let skip = 0;
+            for (let k = 0; k < nPieces; k++) {
+              const cap = k === nPieces - 1 ? (total - skip) : pieceLen;   // only the last piece takes a raw remainder
+              if (cap <= 0) break;
+              passes.push({ window: { skip, cap }, suffix: `_seg${String(k).padStart(2, "0")}` });
+              skip += cap;
+            }
+          }
+        }
+        return { passes, segSec: sSec };
+      }
+
       let ppRunning = false;
       let ppStopRequested = false;
 
@@ -3745,6 +3783,7 @@ app.registerExtension({
             const avg = base.reduce((a, d) => a + d, 0) / base.length;
             parts.push(`avg ${fmtIt(avg)}`, `ETA ~${fmtDur(Math.max(0, avg * (info.kimTiles - kimDone) - (Date.now() - kimMark)))}`);
           }
+          if (info.resumed) parts.push("reconnected: tile numbers restart here, the run itself is unaffected");
           return parts.join(" · ") + (kimDone >= info.kimTiles ? " — finishing" : "");
         };
         // the bar counts finished tiles, plus a share of the running one once an average is known
@@ -3869,6 +3908,60 @@ app.registerExtension({
           : "Preview ready — compare it, then hit ▶ Generate to produce and save the full clip.", false);
       }
 
+      // LTX 2.5 upscale in pieces. R = { args, passes, parts, curPromptId, info } is also the run record kept in
+      // state._ppRelay, so a reload resumes with the next piece (or reattaches to the one in flight).
+      async function ppRunSegments(R) {
+        const N = R.passes.length, info = R.info;
+        const folder = R.args.folder, prefix = `${R.args.folder}/${R.args.stem}${R.args.saveSuffix}`;
+        let inFlightId = R.resumed ? R.curPromptId : null;
+        for (let i = R.parts.length; i < N; i++) {
+          if (ppStopRequested) throw new Error("Stopped.");
+          const p = R.passes[i];
+          const prog = (v, m) => {
+            const frac = (i + (m ? v / m : 0)) / N;
+            barInner.style.width = `${(info.barBase + (100 - info.barBase) * frac).toFixed(1)}%`;
+            setStatus(`Postprocess: LTX segment ${i + 1}/${N}${m ? ` — ${Math.round((v / m) * 100)}%` : ""}`);
+          };
+          setStatus(`Postprocess: LTX segment ${i + 1}/${N} (frames ${p.window.skip}–${p.window.skip + p.window.cap})`);
+          // each piece continues from the last frame of the one before, or the joins show
+          let anchorImage = null;
+          if (i > 0) {
+            setStatus(`Postprocess: LTX segment ${i + 1}/${N} — reading the previous segment's last frame…`);
+            anchorImage = await getClipLastFrame(R.parts[i - 1].filename, R.parts[i - 1].subfolder || "");
+          }
+          const built = buildPostprocessGraph({
+            ...R.args, skipFirstFrames: (R.args.skipFirstFrames || 0) + p.window.skip, frameLoadCap: p.window.cap,
+            saveSuffix: p.suffix, upscale: { ...R.args.upscale, ltxAnchor: anchorImage },
+          }, ctx.availability || {});
+          let r = null;
+          if (inFlightId) {
+            setStatus(`Postprocess: reconnecting to segment ${i + 1}/${N} after the reload…`);
+            r = await resolveInFlightSegment(inFlightId, prog);
+            inFlightId = null;
+          }
+          if (!r) {
+            r = await queuePrompt(built.graph, {
+              onProgress: prog, samplerNode: "LX:sampler",
+              onQueued: (pid) => { R.curPromptId = pid; if (state._ppRelay) { state._ppRelay.curPromptId = pid; persist(); } },
+            });
+          }
+          const out = r.byNode[built.saveNode]?.images?.[0] || r.byNode[built.saveNode]?.gifs?.[0];
+          if (!out) throw new Error(`Postprocess segment ${i + 1} produced no output.`);
+          R.parts.push({ filename: out.filename, subfolder: out.subfolder || folder });
+          if (state._ppRelay) { state._ppRelay.parts = R.parts; state._ppRelay.curPromptId = null; persist(); }
+          try { await freeMemory(); } catch {}
+        }
+        let vid = R.parts[0];
+        if (R.parts.length > 1) {
+          setStatus(`Postprocess: joining ${R.parts.length} segments with ffmpeg…`);
+          const st = await stitchClips(R.parts.map(q => ({ filename: q.filename, subfolder: q.subfolder || "" })), prefix, null, null, null);
+          vid = { filename: st.filename, subfolder: st.subfolder || "", type: "output" };
+          // the pieces were scratch: drop them so the gallery keeps only the joined clip
+          for (const q of R.parts) { try { await deleteImage(q.filename, q.subfolder || ""); } catch {} }
+        }
+        await ppFinish({ byNode: { [info.saveNode]: { images: [vid] } } }, info);
+      }
+
       async function runPostprocess({ full = true } = {}) {
         if (ppRunning) return;
         if (!state.ppSource) { showPopup("Pick a source clip first.", true); return; }
@@ -3933,7 +4026,7 @@ app.registerExtension({
           // one fixed subfolder shared by every tool's preview runs — so Settings → Output
           // can report its total size and clear it in one shot without touching anything
           // in the real output/ gallery.
-          const built = buildPostprocessGraph({
+          const ppArgs = {
             inputFile: state.ppSource,
             folder: full ? (state.saveSubfolder || SUBFOLDER) : TEMP_PREVIEW_SUBFOLDER,
             stem: state.ppSource.replace(/\.[^.]+$/, ""),
@@ -3981,7 +4074,8 @@ app.registerExtension({
               megapixels: state.resizeMegapixels, targetWidth: state.resizeTargetWidth,
               targetHeight: state.resizeTargetHeight, cropMode: state.resizeCropMode,
             },
-          }, ctx.availability || {});
+          };
+          const built = buildPostprocessGraph(ppArgs, ctx.availability || {});
 
           setStatus(`Postprocess: ${built.usedSteps.join(" + ")}…`);
           const info = {
@@ -3990,6 +4084,13 @@ app.registerExtension({
             source: state.ppSource, sourceMeta: state.ppSourceMeta, sourceFullMeta: state.ppSourceFullMeta,
             kimTiles, kimLo, barBase, h3: !!h3Opts,
           };
+          const segPlan = (state.ppUpscaleOn && ppMethod === "ltx" && full) ? await ltxSegmentPasses(state, state.ppSource, state.ppSourceMeta) : null;
+          if (segPlan && segPlan.passes.length > 1) {
+            state._ppRelay = { v: 2, seg: true, args: ppArgs, passes: segPlan.passes, parts: [], curPromptId: null, info: { ...info }, startedAt: Date.now() };
+            persist();
+            await ppRunSegments(state._ppRelay);
+            return;
+          }
           prog = ppProgress(info);
           prog.start();
           const res = await queuePrompt(built.graph, {
@@ -4012,8 +4113,22 @@ app.registerExtension({
       // exact prompt, show its progress again and — the part that must not be lost — write its metadata.
       async function resumePostprocess() {
         const R = state._ppRelay;
-        if (!R || !R.promptId || ppRunning) return;
+        if (!R || (!R.promptId && !R.seg) || ppRunning) return;
         if (R.nodeId != null && String(R.nodeId) !== String(self.id)) return;   // another node's run
+        // Two copies of the node (the workflow's own and a re-created one) would both pick the run up and finish it twice.
+        const runKey = String(R.startedAt || R.promptId);
+        if (window.__tjPpResumed === runKey) return;
+        window.__tjPpResumed = runKey;
+        if (R.seg) {
+          ppBusyOn(R.info);
+          setStatus("Postprocess: continuing the split upscale after the reload…");
+          startClock(); if (R.startedAt) runStart = R.startedAt;
+          R.resumed = true;
+          try { await ppRunSegments(R); }
+          catch (e) { setStatus(`Error: ${e?.message || e}`); showPopup(e?.message || String(e), true); }
+          finally { state._ppRelay = null; persist(); await ppBusyOff(); }
+          return;
+        }
         const entry = await historyEntry(R.promptId);
         let queued = false;
         try {
@@ -4028,7 +4143,7 @@ app.registerExtension({
         ppBusyOn(R);
         setStatus("Postprocess: reattaching to the run that was in flight…");
         startClock(); if (R.startedAt) runStart = R.startedAt;
-        const prog = ppProgress(R);
+        const prog = ppProgress({ ...R, resumed: true });
         prog.start();
         try {
           const res = entry?.status?.completed
@@ -6119,7 +6234,7 @@ app.registerExtension({
         try {
           const e = await historyEntry(pid);
           if (e && e.status && e.status.completed && e.status.status_str !== "error") {
-            return { byNode: e.outputs || {} };
+            return { byNode: await fixAudioSuffixes(e.outputs || {}) };
           }
         } catch {}
         try {

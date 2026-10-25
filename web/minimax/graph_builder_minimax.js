@@ -2064,7 +2064,7 @@ export function buildPostprocessGraph(opts, avail) {
         width: upscale.h3.finalSize.width, height: upscale.h3.finalSize.height };
     } else if (upscale.method === "ltx") {
       // LTX 2.5 latent upscale + refine on the frames so far; the clip's audio goes through LTX's audio VAE.
-      const r = buildLtxUpscaleGraph(upscale.ltxState, avail, { into: { g, images, audio }, fps });
+      const r = buildLtxUpscaleGraph(upscale.ltxState, avail, { into: { g, images, audio }, fps, anchorImage: upscale.ltxAnchor || null });
       images = r.images; audio = r.audio;
       upscaleUsedInfo = { method: "ltx", steps: Math.max(1, Math.round(upscale.ltxState.ltxSteps ?? 4)),
         denoise: upscale.ltxState.ltxDenoise ?? 0.15 };
