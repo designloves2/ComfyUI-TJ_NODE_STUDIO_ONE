@@ -334,10 +334,18 @@ export function hiresActive(state, avail) {
   return !!state.hiresFinish && (effectiveTurbo(state, avail).mode === "pdd" || (state.turboMode || "none") === "none");
 }
 
+/** Start / Final MP of the selected 7+1 upscaler — A and B keep separate values. */
+export function hiresMp(state) {
+  return state.hiresUpscaler === "kimchy"
+    ? { start: state.hiresKimStartMp ?? 0.5, final: state.hiresKimFinalMp ?? 2.0 }
+    : { start: state.hiresStartMp ?? 0.7, final: state.hiresFinalMp ?? 1.6 };
+}
+
 /** Stage-1 size, the size the latent upscaler lands on (both 32-aligned), and the ratio between them. */
 export function hiresSizes(state) {
-  const start = resolveResolution(state.aspect, state.hiresStartMp ?? 0.7);
-  const final = resolveResolution(state.aspect, state.hiresFinalMp ?? 1.6);
+  const mp = hiresMp(state);
+  const start = resolveResolution(state.aspect, mp.start);
+  const final = resolveResolution(state.aspect, mp.final);
   return { start, final, scale: Math.round(final.width / start.width * 1000) / 1000 };
 }
 
@@ -1281,6 +1289,8 @@ export function defaultState(saved) {
     hiresNoOpt:   !!saved.hiresNoOpt,   // last step runs without H3 Memory Optimization / Sol-Attn
     hiresStartMp: saved.hiresStartMp ?? 0.7,
     hiresFinalMp: saved.hiresFinalMp ?? 1.6,
+    hiresKimStartMp: saved.hiresKimStartMp ?? 0.5,   // each 7+1 upscaler remembers its own Start / Final MP
+    hiresKimFinalMp: saved.hiresKimFinalMp ?? 2.0,
     hiresChunkRows: saved.hiresChunkRows ?? 2048,   // H3 Memory Optimization "Activation chunk rows" of the 7+1 last step
     clipFrames:  saved.clipFrames  ?? DEFAULT_FRAMES,
     clipLengthCustom:    !!saved.clipLengthCustom,

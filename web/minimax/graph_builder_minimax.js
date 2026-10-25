@@ -371,7 +371,7 @@ function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio)
   }
   if (kimchy) {
     // The Kimchy node takes the memory-optimised model without Sol-Attn and the whole stage-1 AV latent.
-    const mp = state.hiresFinalMp ?? 1.6;
+    const mp = hiresMp(state).final;
     if (!(mp >= 1 && mp <= 8.5)) throw new Error("H3 Kimchy Up Scaler supports Final MP 1.0 – 8.5.");
     g[N.hrNeg] = { class_type: "ConditioningZeroOut", inputs: { conditioning: condLink } };
     g[N.hrKim] = { class_type: "KimchyH3ZeroSplitMP", inputs: {

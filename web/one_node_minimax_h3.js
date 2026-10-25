@@ -4592,10 +4592,10 @@ app.registerExtension({
                   state.hiresNoOpt = v; persist(); renderLeft();
                 }, { title: "Skip only the H3 Memory Optimization node on the last (large) step. Sol-Attn stays on. Use it if the last step fails with a shape error." }),
                 row([
-                  col([label("Start MP"), numberField(state.hiresStartMp ?? 0.7,
-                    v => { state.hiresStartMp = Math.max(0.1, v); persist(); hiresLine.textContent = hiresText(); refreshPlan(); }, 0.1)]),
-                  col([label("Final MP"), numberField(state.hiresFinalMp ?? 1.6,
-                    v => { state.hiresFinalMp = Math.max(0.1, v); persist(); hiresLine.textContent = hiresText(); refreshPlan(); }, 0.1)]),
+                  col([label("Start MP"), numberField(hiresMp(state).start,
+                    v => { state[state.hiresUpscaler === "kimchy" ? "hiresKimStartMp" : "hiresStartMp"] = Math.max(0.1, v); persist(); hiresLine.textContent = hiresText(); refreshPlan(); }, 0.1)]),
+                  col([label("Final MP"), numberField(hiresMp(state).final,
+                    v => { state[state.hiresUpscaler === "kimchy" ? "hiresKimFinalMp" : "hiresFinalMp"] = Math.max(0.1, v); persist(); hiresLine.textContent = hiresText(); refreshPlan(); }, 0.1)]),
                 ]),
                 col([label("Activation chunk rows"), numberField(state.hiresChunkRows ?? 2048,
                   v => { state.hiresChunkRows = Math.max(256, Math.round(v)); persist(); }, 256)]),
@@ -5629,7 +5629,7 @@ app.registerExtension({
           aspect: st.aspect,
           megapixels: st.megapixels,
           hiresFinish: hiresActive(st, ctx.availability),
-          hiresStartMp: st.hiresStartMp, hiresFinalMp: st.hiresFinalMp, hiresChunkRows: st.hiresChunkRows, hiresUpscaler: st.hiresUpscaler,
+          hiresStartMp: st.hiresStartMp, hiresFinalMp: st.hiresFinalMp, hiresKimStartMp: st.hiresKimStartMp, hiresKimFinalMp: st.hiresKimFinalMp, hiresChunkRows: st.hiresChunkRows, hiresUpscaler: st.hiresUpscaler,
           frames: st.clipFrames,
           steps: st.steps,
           sampler: st.sampler,
@@ -6741,6 +6741,8 @@ app.registerExtension({
         state.hiresFinish = !!meta.hiresFinish;
         if (meta.hiresStartMp != null) state.hiresStartMp = meta.hiresStartMp;
         if (meta.hiresFinalMp != null) state.hiresFinalMp = meta.hiresFinalMp;
+        if (meta.hiresKimStartMp != null) state.hiresKimStartMp = meta.hiresKimStartMp;
+        if (meta.hiresKimFinalMp != null) state.hiresKimFinalMp = meta.hiresKimFinalMp;
         if (meta.hiresChunkRows != null) state.hiresChunkRows = meta.hiresChunkRows;
         state.hiresUpscaler = meta.hiresUpscaler === "kimchy" ? "kimchy" : "h3";
         if (meta.frames) { state.clipFrames = meta.frames; state.clipLengthCustom = false; }
