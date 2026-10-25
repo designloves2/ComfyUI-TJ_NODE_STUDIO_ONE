@@ -2,6 +2,17 @@
 
 ---
 
+## v1.47.0
+
+- **MiniMax H3 7+1: Upscaler switch.** Under Turbo -> 7+1 (Turbo LoRA or Turbo None) a slot switch picks the last-step upscaler: **H3 Latent Upscaler** (the existing one, default) or **H3 Kimchy Up Scaler** (new; tiles the picture, so 2.0 MP is fine where the Latent Upscaler's sweet spot on a 16 GB card is 1.6 MP). Each upscaler keeps its own Start / Final MP (0.7 / 1.6 and 0.5 / 2.0 by default). Kimchy needs the external `ComfyUI-Kimchy-Minimax-H3-Suite` pack (Apache-2.0, added to `install_requirements`); without it the Latent Upscaler path is untouched and Kimchy says what to install. In a First/Last clip the Kimchy stage-2 gets the prompt only (a keyframe block cannot be cut into tiles).
+- **Postprocess -> C. Upscale: new order and names** - Latent Upscale (Use H3), FlashVSR, LTX 2.5 Upscale, RTX VSR(TJ), Model. The top-level "Upscale by LTX 2.5" tab is gone: it is now a method of Postprocess with its UPSCALE SETTING, **Split mode** (long clips in pieces, each continuing from the last frame of the one before, joined with ffmpeg) and LTX LoRA; 2nd pass RTX VSR (TJ) is the post finish. A saved "Upscale by LTX 2.5" mode opens Postprocess.
+- **Postprocess -> Latent Upscale (Use H3):** re-runs the last step of a finished 8-step H3 clip. Its own Turbo LoRA slots (FL2VA / Reference), "Same as generation / Fixed model" model switch (models come from Settings), upscaler A / B, Final MP, chunk rows, Memory Optimization bypass and, for Kimchy, the latent upscale (neural / bicubic / trilinear). A ONE STUDIO clip's own prompt is used; otherwise frames -> LLM -> H3 brief. The result carries `hires` so its gallery card has the 7+1 border colour, plus `postUpscale` and `postPrompt`. A warning appears when the ratio is too small for the neural upscaler (about x1.1 leaves a diagonal grid) and above 1.6 MP for the Latent Upscaler.
+- **Postprocess progress**: a stage bar for the prompt steps, the Kimchy tile counter with s/it, the source's first frame behind the busy banner.
+- **Postprocess run recovery after a reload** (also split runs): the page reattaches to the run that was in flight, shows its progress again and writes its metadata. The recovery records of clip generation and LTX Upscale (`_relay`, `_ltxRelay`) were being dropped on every reload by the state whitelist; they are kept now.
+- **Prompt Write no longer crashes ComfyUI** when the vision and brief models use different runtimes (native Gemma, then llama.cpp): the llama.cpp load now waits for the previous model to be released.
+
+---
+
 ## v1.46.0
 
 - **MiniMax H3 / LTX 2.5: Auto Prompt.** A checkbox in the prompt header: on Generate, every enabled clip's whole prompt is sent to the LLM as one request (Prompt Write settings) and replaced by the answer before the run starts - no review, no split. H3 uses the Ref2VA guide in Reference mode and the T2VA/I2VA/FL2VA/L2VA guide otherwise (`web/minimax/system_prompt_h3.js`); LTX applies the written plan to the clip. A failure stops the run.

@@ -577,6 +577,9 @@ export function lastUsedAt() {
 export function defaultState(saved) {
   saved = saved || {};
   return {
+    // A run that was in flight when the page went away: not listed in this whitelist, the record would be
+    // dropped by the very reload that makes it necessary.
+    _relay: saved._relay ?? null,
     // models
     unetFirstLast: saved.unetFirstLast || "",
     unetReference: saved.unetReference || "",
