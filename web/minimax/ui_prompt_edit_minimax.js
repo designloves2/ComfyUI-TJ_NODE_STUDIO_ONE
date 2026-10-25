@@ -2322,7 +2322,7 @@ ${name}`, style: {
       if (!text) throw new Error("empty response");
       // The model sometimes still labels the frames: drop a line that only maps a picture tag to a time,
       // and turn any tag left inside a sentence into plain words.
-      return text.split("\n").filter(l => !/<Picture \d+>.*\b(mark|second|frame)\b/i.test(l) || l.length > 220)
+      return text.split("\n").filter(l => !/<Picture \d+>.*\b(mark|second|frame)\b|\b(aligns? with|fully referenced|into the target video)\b/i.test(l) || l.length > 220)
         .join("\n").replace(/<Picture \d+>/g, "the frame").replace(/\n{3,}/g, "\n\n").trim();
     },
     /** Auto Prompt: write every enabled clip's prompt in one go, no review. Throws on the first failure. */

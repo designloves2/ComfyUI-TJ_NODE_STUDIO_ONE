@@ -2549,8 +2549,15 @@ app.registerExtension({
           && !/<(?:Picture|Video|Audio)\b|@\w/.test(meta) && state.ppSourceFullMeta?.mode !== "reference";
         if (own) return meta;
         if (!promptEditOv?.writeFromVideo) throw new Error("Prompt writer is not ready.");
+        barInner.style.width = "3%"; setStatus("Postprocess: sampling frames…");
         const frames = await grabSampleFrames(state.ppSource, 1, 8, 2);
-        return await promptEditOv.writeFromVideo({ base: meta, frames, seconds, onStage: (t) => setStatus(`Postprocess: ${t}`) });
+        // the bar steps through the prompt stages (frames 3% → analysis 8–18% → brief 20%); rendering fills the rest
+        const onStage = (t) => {
+          const m = /Analyzing image (\d+)\/(\d+)/.exec(t);
+          barInner.style.width = /Writing/.test(t) ? "20%" : m ? `${8 + 10 * m[1] / m[2]}%` : /Analyzing/.test(t) ? "8%" : barInner.style.width;
+          setStatus(`Postprocess: ${t}`);
+        };
+        return await promptEditOv.writeFromVideo({ base: meta, frames, seconds, onStage });
       }
 
       function renderLtxUpscaleLeft() {
@@ -3720,7 +3727,7 @@ app.registerExtension({
           // Preview's own short-look run, never to a real/final one.
           const ppMethod = (state.upscaleMode && state.upscaleMode !== "none") ? state.upscaleMode : "flashvsr";
           let ltxState = null, h3State = null, h3Opts = null, usedPrompt = "";
-          let h3Cap = 0, kimTiles = 0, kimDone = 0;
+          let h3Cap = 0, kimTiles = 0, kimDone = 0, barBase = 0;   // barBase: share of the bar the prompt stages already used
           const kimDurs = [];
           let kimMark = 0;
           if (state.ppUpscaleOn && ppMethod === "h3lat") {
@@ -3740,14 +3747,16 @@ app.registerExtension({
             const finalSize = sizeForMp(w0, h0, hiresMp(ppH3State(state, kind)).final);
             setStatus("Postprocess: writing the H3 prompt…");
             usedPrompt = await ppH3Prompt(frames / FPS);
+            barBase = 25; barInner.style.width = "25%";
             h3State = ppH3State(state, kind);
             if (state.ppH3Upscaler === "kimchy") kimTiles = kimchyTileCount(w0, h0, hiresMp(h3State).final);
             h3Opts = { promptText: usedPrompt, frames, finalSize, hasAudio: info.has_audio !== false, seed: randomSeed() };
           }
           if (state.ppUpscaleOn && ppMethod === "ltx") {
             if (!ltxUpscaleReady(state)) throw new Error("Set the LTX 2.5 models in ⚙ Settings first — missing: " + ltxUpscaleMissing(state).join(", "));
-            setStatus("Postprocess: writing the LTX prompt…");
+            setStatus("Postprocess: writing the LTX prompt…"); barInner.style.width = "10%";
             usedPrompt = await ppLtxPrompt();
+            barBase = 25; barInner.style.width = "25%";
             ltxState = { ...state, ltxPrompt: usedPrompt };
           }
           const startS = full ? 0 : Math.max(0, state.ppPreviewStart || 0);
@@ -3835,7 +3844,8 @@ app.registerExtension({
             const base = kimDurs.length > 1 ? kimDurs.slice(1) : kimDurs;
             const avg = base.length ? base.reduce((a, d) => a + d, 0) / base.length : 0;
             const part = avg ? Math.min(0.95, (Date.now() - kimMark) / avg) : 0;
-            barInner.style.width = `${Math.min(100, ((kimDone + (kimDone < kimTiles ? part : 0)) / kimTiles) * 100).toFixed(1)}%`;
+            const frac = (kimDone + (kimDone < kimTiles ? part : 0)) / kimTiles;
+            barInner.style.width = `${Math.min(100, barBase + (100 - barBase) * frac).toFixed(1)}%`;
           };
           if (kimTiles) {
             kimMark = Date.now();
@@ -3852,7 +3862,7 @@ app.registerExtension({
                 setStatus(kimLine()); kimBar();
                 return;
               }
-              barInner.style.width = `${Math.round((v / (m || 1)) * 100)}%`;
+              barInner.style.width = `${Math.round(barBase + (100 - barBase) * (v / (m || 1)))}%`;
               setStatus(`Postprocess: ${built.usedSteps.join(" + ")} — ${Math.round((v / (m || 1)) * 100)}%`);
             },
           });
