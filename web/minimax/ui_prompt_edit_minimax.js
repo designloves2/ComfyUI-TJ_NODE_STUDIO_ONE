@@ -2309,7 +2309,7 @@ ${name}`, style: {
           ? `${base}\n\n(This text may use reference tags (<Picture N>, @name) or another model's phrasing. Rewrite it as a standalone brief: describe what the frames show instead of any reference tag.)`
           : "(no text supplied — base the brief on the frame analysis above)",
         "", "Final grounding check: stay grounded in what the frames actually show. Do not invent unrelated actions, props, on-screen text, dialogue, or locations. "
-          + "Return only the complete brief text, no commentary outside it.",
+          + "Return only the complete brief text, no commentary outside it. The brief has no reference images: never write <Picture N>, <Video N>, \"Image N\" or a line that maps a picture to a time.",
       ].join("\n");
       const sys = H3_SYSTEM_PROMPT_BASE;
       const text = (briefCustom
@@ -2320,7 +2320,10 @@ ${name}`, style: {
         ? await writeBriefOpenRouter(sys, user, state.h3OrModelBrief || state.h3OrModel, 3700)
         : await writeBriefNative(state.nativeBriefClip, sys, user)).trim();
       if (!text) throw new Error("empty response");
-      return text;
+      // The model sometimes still labels the frames: drop a line that only maps a picture tag to a time,
+      // and turn any tag left inside a sentence into plain words.
+      return text.split("\n").filter(l => !/<Picture \d+>.*\b(mark|second|frame)\b/i.test(l) || l.length > 220)
+        .join("\n").replace(/<Picture \d+>/g, "the frame").replace(/\n{3,}/g, "\n\n").trim();
     },
     /** Auto Prompt: write every enabled clip's prompt in one go, no review. Throws on the first failure. */
     async autoWrite() {

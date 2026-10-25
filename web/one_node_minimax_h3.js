@@ -411,8 +411,22 @@ app.registerExtension({
         color: "#b57bff", fontSize: "16px", fontWeight: "700",
         textShadow: "0 0 12px rgba(181,123,255,0.5)",
       }});
-      function showBusyBanner(text) { busyBanner.textContent = text; busyBanner.style.display = "flex"; }
-      function hideBusyBanner() { busyBanner.style.display = "none"; }
+      // The source clip's first frame behind the banner, so a long wait does not look like an empty screen.
+      const busyBackdrop = el("video", { muted: true, playsInline: true, preload: "metadata", style: {
+        display: "none", position: "absolute", inset: "0", width: "100%", height: "100%",
+        objectFit: "contain", background: "#000", zIndex: "4",
+      }});
+      function showBusyBanner(text, backdropFile = "") {
+        busyBanner.textContent = text; busyBanner.style.display = "flex";
+        if (backdropFile) {
+          busyBackdrop.src = `/view?filename=${encodeURIComponent(backdropFile)}&type=input#t=0.1`;
+          busyBackdrop.style.display = "block";
+        }
+      }
+      function hideBusyBanner() {
+        busyBanner.style.display = "none";
+        busyBackdrop.style.display = "none"; busyBackdrop.removeAttribute("src");
+      }
       // width/height 100% (not max-*) so a small latent preview is scaled UP to fill the
       // box on its long edge; object-fit keeps the aspect ratio.
       const FIT = { width: "100%", height: "100%", objectFit: "contain", display: "none" };
@@ -439,7 +453,7 @@ app.registerExtension({
         color: "#fff", border: "none", borderRadius: "4px", width: "22px", height: "22px",
         cursor: "pointer", fontSize: "12px", padding: "0", display: "none",
       }});
-      previewBox.append(placeholder, frDetectBanner, fvsrBanner, hiresBanner, busyBanner, previewImg, previewVid, resultVid, badge, fsBtn, compareBtn);
+      previewBox.append(placeholder, frDetectBanner, fvsrBanner, hiresBanner, busyBackdrop, busyBanner, previewImg, previewVid, resultVid, badge, fsBtn, compareBtn);
 
       let lastResultURL = null;
       // Captured in showResultVideo() at the moment a result becomes the shown preview —
@@ -3694,8 +3708,9 @@ app.registerExtension({
         ppGenBtn.disabled = true; ppPreviewBtn.disabled = true;
         busyBtn.textContent = "⏳ Running…"; busyBtn.style.opacity = "0.6";
         setStatus("Postprocess running…");
+        barInner.style.width = "0%"; startClock();
         showBusyBanner(full ? "후보정을 반영하여 처리중입니다. 잠시 기다려주세요."
-          : "미리보기 처리중입니다. 잠시 기다려주세요.");
+          : "미리보기 처리중입니다. 잠시 기다려주세요.", state.ppSource);
         try {
           if (!ctx.availability || !Object.keys(ctx.availability).length) {
             const av = await getNodeAvailability();
@@ -3815,21 +3830,29 @@ app.registerExtension({
             }
             return parts.join(" · ") + (kimDone >= kimTiles ? " — finishing" : "");
           };
+          // the bar counts finished tiles, plus a share of the running one once an average is known
+          const kimBar = () => {
+            const base = kimDurs.length > 1 ? kimDurs.slice(1) : kimDurs;
+            const avg = base.length ? base.reduce((a, d) => a + d, 0) / base.length : 0;
+            const part = avg ? Math.min(0.95, (Date.now() - kimMark) / avg) : 0;
+            barInner.style.width = `${Math.min(100, ((kimDone + (kimDone < kimTiles ? part : 0)) / kimTiles) * 100).toFixed(1)}%`;
+          };
           if (kimTiles) {
             kimMark = Date.now();
             // the clock for tile 1 starts when the Kimchy node starts, not when the queue was submitted
             kimExec = (ev) => { const d = ev.detail; if ((d && d.node != null ? d.node : d) === "MM:hr_kimchy_upscale") kimMark = Date.now(); };
             api.addEventListener("executing", kimExec);
-            kimTimer = setInterval(() => { if (kimDone < kimTiles) setStatus(kimLine()); }, 1000);
+            kimTimer = setInterval(() => { if (kimDone < kimTiles) { setStatus(kimLine()); kimBar(); } }, 1000);
           }
           const res = await queuePrompt(built.graph, {
             onProgress: (v, m, nodeId) => {
               // the Kimchy upscaler runs one single-step sampler per tile, so each tile is one tick of 1/1
               if (kimTiles && nodeId === "MM:hr_kimchy_upscale" && m === 1) {
                 if (v >= 1) { kimDurs.push(Date.now() - kimMark); kimMark = Date.now(); kimDone++; }
-                setStatus(kimLine());
+                setStatus(kimLine()); kimBar();
                 return;
               }
+              barInner.style.width = `${Math.round((v / (m || 1)) * 100)}%`;
               setStatus(`Postprocess: ${built.usedSteps.join(" + ")} — ${Math.round((v / (m || 1)) * 100)}%`);
             },
           });
@@ -3881,6 +3904,7 @@ app.registerExtension({
               await saveMeta(o.filename, o.subfolder || (state.saveSubfolder || SUBFOLDER), patched);
             } catch {}
           }
+          barInner.style.width = "100%";
           setStatus(`✓ Postprocess done (${built.usedSteps.join(" + ")})${full ? "" : " — preview only, not saved to the gallery"}.`);
           showPopup(full ? "Postprocess finished — the new file is in the gallery."
             : "Preview ready — compare it, then hit ▶ Generate to produce and save the full clip.", false);
@@ -3888,7 +3912,7 @@ app.registerExtension({
           setStatus(`Error: ${e?.message || e}`);
           showPopup(e?.message || String(e), true);
         } finally {
-          hideBusyBanner();
+          hideBusyBanner(); stopClock();
           clearInterval(kimTimer);
           if (kimExec) api.removeEventListener("executing", kimExec);
           ppRunning = false; ppStopRequested = false;
