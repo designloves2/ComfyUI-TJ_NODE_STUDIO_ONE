@@ -3547,6 +3547,16 @@ app.registerExtension({
                 { title: "Skip only the H3 Memory Optimization node. Use it with FastH3 checkpoints." }));
               kids.push(col([label("Final MP"), numberField(kim ? state.ppH3KimFinalMp : state.ppH3FinalMp,
                 v => { state[kim ? "ppH3KimFinalMp" : "ppH3FinalMp"] = Math.max(0.1, v); persist(); renderLeft(); }, 0.1)]));
+              // The neural latent upscaler is made for about 2x; at a ratio near 1 it leaves a diagonal grid on fine textures.
+              {
+                const sm = state.ppSourceMeta || {};
+                const mpNow = kim ? state.ppH3KimFinalMp : state.ppH3FinalMp;
+                const ratio = sm.w && sm.h ? Math.sqrt(mpNow * 1e6 / (sm.w * sm.h)) : 0;
+                if (ratio && ratio < 1.3 && !(kim && state.ppH3UpModel !== "neural")) kids.push(el("div", {
+                  text: `⚠ This is a ×${ratio.toFixed(2)} upscale. The neural upscaler is made for about ×2 and leaves a diagonal grid on fine textures (hair, fabric) near ×1. `
+                    + (kim ? "Raise Final MP, or switch Latent upscale to Bicubic for a small ratio." : "Raise Final MP, or use the Kimchy upscaler with Bicubic for a small ratio."),
+                  style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
+              }
               // the Kimchy node samples in tiles, so it can go past what fits in VRAM; the whole-picture step cannot
               if (!kim && (state.ppH3FinalMp ?? 1.6) > 1.6) kids.push(el("div", { text: "⚠ On a 16 GB VRAM card, above 1.6 MP the H3 Latent Upscaler can run out of VRAM and spill to the CPU (an hour or more). 1.6 is its sweet spot; the Kimchy upscaler handles 2.0.",
                 style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
