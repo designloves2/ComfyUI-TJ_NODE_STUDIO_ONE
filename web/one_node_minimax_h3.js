@@ -4577,15 +4577,15 @@ app.registerExtension({
                   // capsule switch: A = H3 Latent Up Scaler (default), B = H3 Kimchy Up Scaler
                   const kim = state.hiresUpscaler === "kimchy";
                   const half = (text, on, tip, v) => el("div", { text, title: tip, style: {
-                    flex: "1", textAlign: "center", padding: "4px 14px", fontSize: "11px", cursor: "pointer",
+                    flex: "1", textAlign: "center", padding: "4px 6px", fontSize: "11px", cursor: "pointer",
                     background: on ? "#7c3aed" : "transparent", color: on ? "#fff" : C.muted, fontWeight: on ? "700" : "400",
                   }, onclick: () => { state.hiresUpscaler = v; persist(); renderLeft(); } });
                   return col([label("Upscaler"),
-                    el("div", { style: { display: "flex", width: "110px", border: `1px solid ${C.border}`, borderRadius: "999px", overflow: "hidden" } },
-                      [half("A", !kim, "A : 기존 방식 : H3 Latent Up Scaler", "h3"),
-                       half("B", kim, "B : 신규 추가 : H3 Kimchy Up Scaler", "kimchy")]),
+                    el("div", { style: { display: "flex", border: `1px solid ${C.border}`, borderRadius: "6px", overflow: "hidden" } },
+                      [half("H3 Latent Upscaler", !kim, "A : 기존 방식 : H3 Latent Up Scaler", "h3"),
+                       half("H3 Kimchy Up Scaler", kim, "B : 신규 추가 : H3 Kimchy Up Scaler", "kimchy")]),
                     ...(kim ? [warn("KimchyH3ZeroSplitMP"),
-                      hint("B runs the upscale and the last step in one node (Sol-Attn is not used). Final MP must be 1.0 – 8.5.")] : []),
+                      hint("Kimchy runs the upscale and the last step in one node (Sol-Attn is not used). Final MP must be 1.0 – 8.5.")] : []),
                   ]);
                 })(),
                 checkboxRow("Bypass H3 Memory Optimization on the last step", !!state.hiresNoOpt, v => {

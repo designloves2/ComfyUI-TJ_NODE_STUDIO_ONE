@@ -308,7 +308,7 @@ function saveOneTakeCheckpoint(g, state, avail, checkpointName, latent = [N.samp
 function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio) {
   const kimchy = state.hiresUpscaler === "kimchy";
   if (kimchy && !has(avail, "KimchyH3ZeroSplitMP"))
-    throw new Error("7+1 Upscaler B (H3 Kimchy Up Scaler) needs the ComfyUI-Kimchy-Minimax-H3-Suite pack — install it (github.com/AI-KIMCHY/ComfyUI-Kimchy-Minimax-H3-Suite), or pick A.");
+    throw new Error("7+1 H3 Kimchy Up Scaler needs the ComfyUI-Kimchy-Minimax-H3-Suite pack — install it (github.com/AI-KIMCHY/ComfyUI-Kimchy-Minimax-H3-Suite), or pick H3 Latent Upscaler.");
   const needed = kimchy ? [] : ["MinimaxH3LatentUpscaler3D", "BlockSparseAttention"];
   if (!state.hiresNoOpt) needed.push("H3MemoryOptimization");
   for (const n of needed)
@@ -372,7 +372,7 @@ function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio)
   if (kimchy) {
     // The Kimchy node takes the memory-optimised model without Sol-Attn and the whole stage-1 AV latent.
     const mp = state.hiresFinalMp ?? 1.6;
-    if (!(mp >= 1 && mp <= 8.5)) throw new Error("Upscaler B (H3 Kimchy Up Scaler) supports Final MP 1.0 – 8.5.");
+    if (!(mp >= 1 && mp <= 8.5)) throw new Error("H3 Kimchy Up Scaler supports Final MP 1.0 – 8.5.");
     g[N.hrNeg] = { class_type: "ConditioningZeroOut", inputs: { conditioning: condLink } };
     g[N.hrKim] = { class_type: "KimchyH3ZeroSplitMP", inputs: {
       model: stageModel, conditioning: condLink, latent: [N.sampler, 1],
