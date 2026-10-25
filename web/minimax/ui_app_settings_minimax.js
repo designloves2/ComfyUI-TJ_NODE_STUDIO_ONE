@@ -929,6 +929,7 @@ export function createSettingsOverlay(state, ctx) {
   getConfig().then(cfg => {
     const take = (k, v) => { if ((!state[k] || state[k] === "none") && v && v !== "none") state[k] = v; };
     take("unetFirstLast", cfg.unet_first_last);
+    take("ppH3Unet",      cfg.unet_first_last);   // Postprocess keeps its own copy, filled once
     take("unetReference", cfg.unet_reference);
     take("hiresLastModel", cfg.hires_last_model);
     take("clipName",      cfg.clip_name);
@@ -1017,6 +1018,7 @@ export function createSettingsOverlay(state, ctx) {
     if (cfg.sla_turbo_steps != null)      state.slaTurboSteps     = cfg.sla_turbo_steps;
     if (Array.isArray(cfg.user_presets)) state.userPresets = cfg.user_presets;
     take("pddFile",            cfg.pdd_file);
+    take("ppH3PddFile",        cfg.pdd_file);
     take("pddFileReference",   cfg.pdd_file_reference);
     if (cfg.pdd_nfe != null)              state.pddNfe            = String(cfg.pdd_nfe);
     if (cfg.pdd_lora_strength != null)    state.pddLoraStrength   = cfg.pdd_lora_strength;

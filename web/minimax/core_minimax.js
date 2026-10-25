@@ -334,6 +334,41 @@ export function hiresActive(state, avail) {
   return !!state.hiresFinish && (effectiveTurbo(state, avail).mode === "pdd" || (state.turboMode || "none") === "none");
 }
 
+/**
+ * How many tiles the Kimchy upscaler samples for a source of srcW x srcH at `mp` megapixels: it cuts the upscaled
+ * latent into 44 x 56 windows (kimchy_upscaler_mp.py: compute_target_hw_by_mode / compute_window_coords).
+ */
+export function kimchyTileCount(srcW, srcH, mp) {
+  const curW = Math.floor(srcW / 16) * 16, curH = Math.floor(srcH / 16) * 16;
+  const aspect = curW / curH;
+  const rawH = Math.sqrt(Math.max(1, Math.min(8.5, mp)) * 1_000_000 / aspect), rawW = rawH * aspect;
+  const px = v => Math.max(32, Math.round(v / 32) * 32);
+  const lat = v => Math.max(2, Math.floor(px(v) / 16 / 2) * 2);
+  const coords = (total, win, overlap) => {
+    if (total <= win) return [0];
+    const stride = Math.max(2, Math.floor((win - overlap) / 2) * 2);
+    const out = [];
+    for (let c = 0; c < total - win; c += stride) out.push(c);
+    if (!out.length || out[out.length - 1] !== total - win) out.push(total - win);
+    return out;
+  };
+  const H = lat(rawH), W = lat(rawW);
+  const winH = Math.min(H, 44), winW = Math.min(W, 56);
+  return coords(H, winH, Math.min(12, Math.floor(winH / 3))).length * coords(W, winW, Math.min(16, Math.floor(winW / 3))).length;
+}
+
+/** The state the 7+1 last-step builders read, for Postprocess → Latent Upscale (Use H3): its own settings, not the main ones. */
+export function ppH3State(s) {
+  return {
+    generationMode: "firstlast", hiresFinish: true,
+    unetFirstLast: s.ppH3Unet, clipName: s.clipName, vaeVideo: s.vaeVideo, vaeAudio: s.vaeAudio,
+    turboMode: s.ppH3TurboMode, pddFile: s.ppH3PddFile, pddLoraStrength: s.ppH3PddStrength,
+    hiresUpscaler: s.ppH3Upscaler, hiresFinalMp: s.ppH3FinalMp, hiresKimFinalMp: s.ppH3KimFinalMp,
+    hiresChunkRows: s.ppH3ChunkRows, hiresNoOpt: s.ppH3NoOpt,
+    loras: [], sampler: "euler", scheduler: "simple", shiftVideo: 12, shiftAudio: 3,
+  };
+}
+
 /** Width x height for `mp` megapixels at a source clip's own aspect ratio, 32-aligned. */
 export function sizeForMp(srcW, srcH, mp) {
   const ratio = (srcW || 16) / (srcH || 9);
@@ -1641,6 +1676,17 @@ export function defaultState(saved) {
     charSheetCellH: saved.charSheetCellH || 0,
     sheetVideoSaveSubfolder: saved.sheetVideoSaveSubfolder || "",
 
+    // Postprocess → Latent Upscale (Use H3) keeps its own model / turbo / upscaler settings. A new field starts from the
+    // main value once, then never follows it.
+    ppH3Unet: saved.ppH3Unet ?? saved.unetFirstLast ?? "",
+    ppH3TurboMode: saved.ppH3TurboMode ?? (saved.turboMode === "pdd" ? "pdd" : "none"),
+    ppH3PddFile: saved.ppH3PddFile ?? saved.pddFile ?? "",
+    ppH3PddStrength: saved.ppH3PddStrength ?? saved.pddLoraStrength ?? 1.0,
+    ppH3Upscaler: saved.ppH3Upscaler === "kimchy" ? "kimchy" : "h3",
+    ppH3FinalMp: saved.ppH3FinalMp ?? 1.6,
+    ppH3KimFinalMp: saved.ppH3KimFinalMp ?? 2.0,
+    ppH3ChunkRows: saved.ppH3ChunkRows ?? 2048,
+    ppH3NoOpt: !!saved.ppH3NoOpt,
     ppSource: saved.ppSource || "",
     ppSourceKind: saved.ppSourceKind || "gallery",
     ppSourceMeta: saved.ppSourceMeta || null,

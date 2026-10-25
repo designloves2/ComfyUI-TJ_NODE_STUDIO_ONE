@@ -431,13 +431,17 @@ export function addH3LastStep(g, state0, avail, o) {
   g[N.vaeA] = { class_type: "VAELoader", inputs: { vae_name: state.vaeAudio } };
 
   const { width, height } = o.finalSize;
-  g[N.hrFirst] = { class_type: "ImageFromBatch", inputs: { image: o.images, batch_index: 0, length: 1 } };
-  // ImageFromBatch clamps the index to the last frame.
-  g[N.hrLast] = { class_type: "ImageFromBatch", inputs: { image: o.images, batch_index: 4095, length: 1 } };
   g[N.hrCond] = { class_type: "MiniMaxH3ImageToVideo", inputs: {
     clip: [N.clip, 0], vae: [N.vaeV, 0], prompt: String(o.promptText).trim(), width, height, length: o.frames,
-    first_frame: [N.hrFirst, 0], last_frame: [N.hrLast, 0],
   }};
+  // First and last frame as keyframes. Not for the Kimchy upscaler: it samples in tiles and cannot cut a keyframe block.
+  if (state.hiresUpscaler !== "kimchy") {
+    g[N.hrFirst] = { class_type: "ImageFromBatch", inputs: { image: o.images, batch_index: 0, length: 1 } };
+    // ImageFromBatch clamps the index to the last frame.
+    g[N.hrLast] = { class_type: "ImageFromBatch", inputs: { image: o.images, batch_index: 4095, length: 1 } };
+    g[N.hrCond].inputs.first_frame = [N.hrFirst, 0];
+    g[N.hrCond].inputs.last_frame = [N.hrLast, 0];
+  }
 
   g[N.hrEnc] = { class_type: "VAEEncode", inputs: { pixels: o.images, vae: [N.vaeV, 0] } };
   let lockAudio = false;
@@ -955,9 +959,15 @@ export function buildClipGraph(state, avail, opts = {}) {
   // so stage 2 (a bigger latent) needs its own copy built at the final size. Plain text
   // conditioning carries no image tokens and is shared.
   const mode = state.generationMode || "t2v";
-  const hrCond = hires && (mode === "reference"
+  // The Kimchy upscaler samples the picture in tiles, and a First/Last keyframe is a full-picture token block
+  // that cannot be cut into tiles, so for it stage 2 gets the prompt alone.
+  const kimFl = hires && state.hiresUpscaler === "kimchy" && mode === "firstlast";
+  const hrCond = hires && (mode === "reference" || kimFl
     || (mode === "firstlast" && (firstFrame || lastFrame || state.assetRef?.first || state.assetRef?.last)));
-  if (hrCond) buildConditioning(g, state, fullPrompt, outW, outH, frames, condOpts, avail, N.hrCond);
+  if (hrCond) {
+    if (kimFl) buildConditioning(g, { ...state, assetRef: null }, fullPrompt, outW, outH, frames, { ...condOpts, firstFrame: null, lastFrame: null }, avail, N.hrCond);
+    else buildConditioning(g, state, fullPrompt, outW, outH, frames, condOpts, avail, N.hrCond);
+  }
 
   // ── sampling ───────────────────────────────────────────────────────────────
   // The dedicated turbo sampler belongs to the larryvrh pack and only makes sense with
