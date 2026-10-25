@@ -3730,6 +3730,7 @@ app.registerExtension({
           const ppMethod = (state.upscaleMode && state.upscaleMode !== "none") ? state.upscaleMode : "flashvsr";
           let ltxState = null, h3State = null, h3Opts = null, usedPrompt = "";
           let h3Cap = 0, kimTiles = 0, kimDone = 0, barBase = 0;   // barBase: share of the bar the prompt stages already used
+          let kimLo = 0;   // where the Kimchy tile step starts on the bar (after the first step)
           const kimDurs = [];
           let kimMark = 0;
           if (state.ppUpscaleOn && ppMethod === "h3lat") {
@@ -3752,6 +3753,7 @@ app.registerExtension({
             usedPrompt = await ppH3Prompt(frames / FPS);
             barBase = 25; barInner.style.width = "25%";
             h3State = ppH3State(state, kind);
+            if (state.ppH3Upscaler === "kimchy") { kimTiles = kimchyTileCount(w0, h0, hiresMp(h3State).final); kimLo = 55; }
             h3Opts = { promptText: usedPrompt, frames, srcSize: { width: w0, height: h0 }, finalSize, hasAudio: info.has_audio !== false, seed: randomSeed() };
           }
           if (state.ppUpscaleOn && ppMethod === "ltx") {
@@ -3847,7 +3849,8 @@ app.registerExtension({
             const avg = base.length ? base.reduce((a, d) => a + d, 0) / base.length : 0;
             const part = avg ? Math.min(0.95, (Date.now() - kimMark) / avg) : 0;
             const frac = (kimDone + (kimDone < kimTiles ? part : 0)) / kimTiles;
-            barInner.style.width = `${Math.min(100, barBase + (100 - barBase) * frac).toFixed(1)}%`;
+            const lo = kimLo || barBase;
+            barInner.style.width = `${Math.min(100, lo + (98 - lo) * frac).toFixed(1)}%`;
           };
           if (kimTiles) {
             kimMark = Date.now();
@@ -3862,6 +3865,13 @@ app.registerExtension({
               if (kimTiles && nodeId === "MM:hr_kimchy_upscale" && m === 1) {
                 if (v >= 1) { kimDurs.push(Date.now() - kimMark); kimMark = Date.now(); kimDone++; }
                 setStatus(kimLine()); kimBar();
+                return;
+              }
+              // Latent Upscale (Use H3): the sampler is the step at the clip's own size (Kimchy) or the last step (H3 Latent Upscaler)
+              if (h3Opts && nodeId === "MM:hr_sampler") {
+                const hi = kimTiles ? kimLo : 95;
+                barInner.style.width = `${(barBase + (hi - barBase) * (v / (m || 1))).toFixed(1)}%`;
+                setStatus(`Postprocess: ${kimTiles ? "step 1 at the clip's own size" : "last step"} — ${Math.round((v / (m || 1)) * 100)}%`);
                 return;
               }
               barInner.style.width = `${Math.round(barBase + (100 - barBase) * (v / (m || 1)))}%`;
