@@ -7,7 +7,7 @@
 //
 // Optional third-party nodes are gated on `avail` (from /minimax_h3_one/node_availability):
 // a missing pack disables that one feature rather than failing the whole prompt.
-import { SUBFOLDER, FPS, resolveResolution, computeRtxTarget, effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, turboLoraForMode, pddFileForMode, blockCacheBlockedReason, h3OptimizerBlockedReason, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES } from "./core_minimax.js";
+import { SUBFOLDER, FPS, resolveResolution, computeRtxTarget, effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, hiresMp, turboLoraForMode, pddFileForMode, blockCacheBlockedReason, h3OptimizerBlockedReason, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES } from "./core_minimax.js";
 
 // Builds the RTXVideoSuperResolution node (+ an optional ImageCrop node ahead of it for
 // the "wh" size mode's forced crop, per computeRtxTarget) and returns the final image

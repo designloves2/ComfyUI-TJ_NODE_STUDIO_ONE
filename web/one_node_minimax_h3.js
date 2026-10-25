@@ -21,7 +21,7 @@ import {
   TURBO_MODES, ATTN_BACKENDS, ATTN_FORWARDS, BLOCK_CACHES, H3_OPTIMIZERS, FBC_MODES,
   attnBlockedReason, attnForwardBlockedReason, attnForwardOverlapNote, blockCacheBlockedReason,
   h3OptimizerBlockedReason, h3OptimizerOverlapNote,
-  effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, migrateLegacyAccel,
+  effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, hiresMp, migrateLegacyAccel,
   continuityModesFor, generationModesFor, configIssues, ltxUpscaleReady, ltxUpscaleMissing,
   faceRefineReady, faceRefineMissing, postprocessReady, IMAGE_GEN_MODES, imageGenSubModeReady,
   CHARSHEET_PROMPT_TEMPLATE,
