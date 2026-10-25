@@ -119,7 +119,7 @@ const N = {
   hrFirst:    "MM:hr_first_frame",
   hrLast:     "MM:hr_last_frame",
   hrDecode:   "MM:hr_decode",
-  hrKimSig:   "MM:hr_kimchy_sigmas",
+  hrCond2:    "MM:hr_cond_final",
   hrLora:     (i) => `MM:hr_lora${i}`,
 };
 
@@ -420,42 +420,52 @@ function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio,
 }
 
 /**
- * Postprocess → Latent Upscale (Use H3): a finished 8-step clip is re-run through the last sigma interval.
- * The frames are VAE-encoded and that one step runs at the clip's own size, with the whole picture in view and the
- * first and last frame as keyframes (FL2VA). Only then is the latent upscaled (H3 Latent Upscaler, or the Kimchy node
- * used as a pure upscaler: with a single sigma it returns the upscaled latent without sampling). The clip's own
- * soundtrack is encoded into the latent (Audio Lock) and passed through unchanged.
+ * Postprocess → Latent Upscale (Use H3): a finished 8-step clip goes back through the last sigma interval.
+ * H3 Latent Upscaler: video → VAE encode → latent upscale → the last step at the final size (the 7+1 stage 2, whole
+ * picture, first and last frame as keyframes) → decode.
+ * H3 Kimchy Up Scaler: video → VAE encode → one step at the clip's own size (whole picture, keyframes) → Kimchy
+ * (upscale, then its tile step) → decode. The Kimchy node cuts the picture into tiles and a keyframe block cannot be
+ * cut with it, so its tile step runs on the prompt alone; the step before it is what carries the images.
+ * Clip audio is locked into the latent and the clip's own soundtrack passes through unchanged.
  * o = { images, audio, hasAudio, promptText, frames, srcSize: {width, height}, finalSize: {width, height}, seed }
  * Returns { images, audio } for the rest of the Postprocess chain.
  */
 export function addH3LastStep(g, state0, avail, o) {
   const state = { ...state0, hiresFinish: true };
   const ref = state.generationMode === "reference";
+  const kimchy = state.hiresUpscaler === "kimchy";
   if (!hiresActive(state, avail))
     throw new Error("Latent Upscale (Use H3) needs an 8-step model: Turbo = PDD, or Turbo None with an 8-step checkpoint.");
   if (!String(o.promptText || "").trim()) throw new Error("Latent Upscale (Use H3): the prompt is empty.");
+  if (kimchy && !has(avail, "KimchyH3ZeroSplitMP"))
+    throw new Error("H3 Kimchy Up Scaler needs the ComfyUI-Kimchy-Minimax-H3-Suite pack — install it (github.com/AI-KIMCHY/ComfyUI-Kimchy-Minimax-H3-Suite), or pick H3 Latent Upscaler.");
+  if (!kimchy && !has(avail, "MinimaxH3LatentUpscaler3D")) throw new Error("Latent Upscale (Use H3) needs MinimaxH3LatentUpscaler3D — install it.");
   const unet = requireModels(state);
   g[N.unet] = unetNode(unet);
   g[N.clip] = { class_type: "CLIPLoader", inputs: { clip_name: state.clipName, type: "minimax", device: "default" } };
   g[N.vaeV] = { class_type: "VAELoader", inputs: { vae_name: state.vaeVideo } };
   g[N.vaeA] = { class_type: "VAELoader", inputs: { vae_name: state.vaeAudio } };
 
-  // conditioning at the clip's own size: it has to match the encoded latent
-  const { width, height } = o.srcSize;
-  g[N.hrCond] = ref
-    ? { class_type: "MiniMaxH3ReferenceToVideo", inputs: {
-        clip: [N.clip, 0], vae: [N.vaeV, 0], audio_vae: [N.vaeA, 0], prompt: String(o.promptText).trim(),
-        width, height, length: o.frames, ref_image_size: "match" } }
-    : { class_type: "MiniMaxH3ImageToVideo", inputs: {
-        clip: [N.clip, 0], vae: [N.vaeV, 0], prompt: String(o.promptText).trim(), width, height, length: o.frames } };
-  if (!ref) {
-    // First and last frame as keyframes (First/Last models). The step is sampled whole, so no tiling gets in the way.
-    g[N.hrFirst] = { class_type: "ImageFromBatch", inputs: { image: o.images, batch_index: 0, length: 1 } };
-    // ImageFromBatch clamps the index to the last frame.
-    g[N.hrLast] = { class_type: "ImageFromBatch", inputs: { image: o.images, batch_index: 4095, length: 1 } };
-    g[N.hrCond].inputs.first_frame = [N.hrFirst, 0];
-    g[N.hrCond].inputs.last_frame = [N.hrLast, 0];
-  }
+  const prompt = String(o.promptText).trim();
+  // keyframes and references are encoded at the canvas size inside the conditioning, so each size has its own
+  const condAt = (id, size, keyframes) => {
+    g[id] = ref
+      ? { class_type: "MiniMaxH3ReferenceToVideo", inputs: {
+          clip: [N.clip, 0], vae: [N.vaeV, 0], audio_vae: [N.vaeA, 0], prompt,
+          width: size.width, height: size.height, length: o.frames, ref_image_size: "match" } }
+      : { class_type: "MiniMaxH3ImageToVideo", inputs: {
+          clip: [N.clip, 0], vae: [N.vaeV, 0], prompt, width: size.width, height: size.height, length: o.frames } };
+    if (!ref && keyframes) {
+      g[id].inputs.first_frame = [N.hrFirst, 0];
+      g[id].inputs.last_frame = [N.hrLast, 0];
+    }
+    return [id, 0];
+  };
+  g[N.hrFirst] = { class_type: "ImageFromBatch", inputs: { image: o.images, batch_index: 0, length: 1 } };
+  // ImageFromBatch clamps the index to the last frame.
+  g[N.hrLast] = { class_type: "ImageFromBatch", inputs: { image: o.images, batch_index: 4095, length: 1 } };
+  // A samples once at the final size; Kimchy samples first at the clip's own size
+  const cond1 = condAt(N.hrCond, kimchy ? o.srcSize : o.finalSize, true);
 
   g[N.hrEnc] = { class_type: "VAEEncode", inputs: { pixels: o.images, vae: [N.vaeV, 0] } };
   let lockAudio = false;
@@ -477,39 +487,34 @@ export function addH3LastStep(g, state0, avail, o) {
   const pdd = effectiveTurbo(state, avail).mode === "pdd";
   g[N.sampSel] = { class_type: "KSamplerSelect", inputs: { sampler_name: pdd ? "euler" : (state.sampler || "er_sde") } };
 
-  // the last step at the clip's own size
-  const sampled = buildHiresStage(g, state, avail, { final: o.srcSize }, [N.hrCond, 0], null, lockAudio,
-    [N.hrAv0, 0], { scheduler: state.scheduler }, true);
-  g[N.hrSep] = { class_type: "LTXVSeparateAVLatent", inputs: { av_latent: sampled } };
-
-  // then the latent goes up to the final size
-  let up;
-  if (state.hiresUpscaler === "kimchy") {
-    if (!has(avail, "KimchyH3ZeroSplitMP"))
-      throw new Error("H3 Kimchy Up Scaler needs the ComfyUI-Kimchy-Minimax-H3-Suite pack — install it (github.com/AI-KIMCHY/ComfyUI-Kimchy-Minimax-H3-Suite), or pick H3 Latent Upscaler.");
-    const mp = hiresMp(state).final;
-    if (!(mp >= 1 && mp <= 8.5)) throw new Error("H3 Kimchy Up Scaler supports Final MP 1.0 – 8.5.");
-    // sigmas of one value: the node only upscales and returns, it samples nothing
-    g[N.hrKimSig] = { class_type: "SplitSigmas", inputs: { sigmas: [N.sched, 0], step: 8 } };
-    g[N.hrNeg] = { class_type: "ConditioningZeroOut", inputs: { conditioning: [N.hrCond, 0] } };
-    g[N.hrKim] = { class_type: "KimchyH3ZeroSplitMP", inputs: {
-      model: [N.hrShift, 0], conditioning: [N.hrCond, 0], latent: [N.hrSep, 0],
-      noise: [N.noise, 0], sampler: [N.sampSel, 0], sigmas: [N.hrKimSig, 1], negative: [N.hrNeg, 0],
-      model_name: "minimax_h3_latent_upscaler_3d_bf16.safetensors",
-      upscale_by: "megapixels", target_megapixels: mp, scale: 2, align: 32, precision: "fp16", cfg: 1, color_match: true,
-    }};
-    up = [N.hrKim, 0];
-  } else {
-    if (!has(avail, "MinimaxH3LatentUpscaler3D")) throw new Error("Latent Upscale (Use H3) needs MinimaxH3LatentUpscaler3D — install it.");
-    g[N.hrUp] = { class_type: "MinimaxH3LatentUpscaler3D", inputs: {
-      latent: [N.hrSep, 0],
-      model_name: "minimax_h3_latent_upscaler_3d_bf16.safetensors",
-      mode: "target dimensions", "mode.width": o.finalSize.width, "mode.height": o.finalSize.height,
-      align: 32, enable_temporal_chunking: true, force_unload: true, device: "cuda", precision: "fp16",
-    }};
-    up = [N.hrUp, 0];
+  let latent;
+  if (!kimchy) {
+    latent = buildHiresStage(g, state, avail, { final: o.finalSize }, cond1, null, lockAudio,
+      [N.hrAv0, 0], { scheduler: state.scheduler });
+    g[N.hrDecode] = { class_type: "VAEDecode", inputs: { samples: latent, vae: [N.vaeV, 0] } };
+    return { images: [N.hrDecode, 0], audio: o.audio };
   }
-  g[N.hrDecode] = { class_type: "VAEDecode", inputs: { samples: up, vae: [N.vaeV, 0] } };
+
+  // Kimchy, step 1: the clip's own size
+  const step1 = buildHiresStage(g, state, avail, { final: o.srcSize }, cond1, null, lockAudio,
+    [N.hrAv0, 0], { scheduler: state.scheduler }, true);
+  const lowSigmas = [N.hrSplit, 1];
+  // the stage model after Memory Optimization (no Sol-Attn), as the Kimchy node takes it
+  const memModel = state.hiresNoOpt ? [N.hrShift, 0] : [N.hrMem, 0];
+
+  // Kimchy, step 2: it upscales and samples tile by tile, so its prompt stands alone
+  const cond2 = condAt(N.hrCond2, o.finalSize, false);
+  g[N.hrNeg] = { class_type: "ConditioningZeroOut", inputs: { conditioning: cond2 } };
+  const mp = hiresMp(state).final;
+  if (!(mp >= 1 && mp <= 8.5)) throw new Error("H3 Kimchy Up Scaler supports Final MP 1.0 – 8.5.");
+  g[N.hrKim] = { class_type: "KimchyH3ZeroSplitMP", inputs: {
+    model: memModel, conditioning: cond2, latent: step1,
+    noise: [N.noise, 0], sampler: [N.sampSel, 0], sigmas: lowSigmas, negative: [N.hrNeg, 0],
+    model_name: "minimax_h3_latent_upscaler_3d_bf16.safetensors",
+    upscale_by: "megapixels", target_megapixels: mp, scale: 2, align: 32, precision: "fp16", cfg: 1, color_match: true,
+  }};
+  latent = [N.hrKim, 0];
+  g[N.hrDecode] = { class_type: "VAEDecode", inputs: { samples: latent, vae: [N.vaeV, 0] } };
   return { images: [N.hrDecode, 0], audio: o.audio };
 }
 

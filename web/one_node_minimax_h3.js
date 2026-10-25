@@ -3544,7 +3544,9 @@ app.registerExtension({
                 v => { state[kim ? "ppH3KimFinalMp" : "ppH3FinalMp"] = Math.max(0.1, v); persist(); }, 0.1)]));
               kids.push(col([label("Activation chunk rows"), numberField(state.ppH3ChunkRows ?? 2048,
                 v => { state.ppH3ChunkRows = Math.max(256, Math.round(v)); persist(); }, 256)]));
-              kids.push(el("div", { text: `Re-runs only the last step of an 8-step H3 clip at the clip's own size${kind === "fl" ? ", with its first and last frame as keyframes" : ""}, then upscales the latent to Final MP. `
+              kids.push(el("div", { text: (kim
+                  ? `Kimchy: encodes the clip, runs one step at its own size${kind === "fl" ? " (first and last frame as keyframes)" : ""}, then the Kimchy node upscales to Final MP and runs its tile step on the prompt alone. `
+                  : `Re-runs only the last step of an 8-step H3 clip: upscales the latent to Final MP, then runs that step${kind === "fl" ? " with the first and last frame as keyframes" : ""}. `)
                 + `This clip runs as ${kind === "ref" ? "Reference (REF2VA)" : "First/Last (FL2VA)"} (● marks the LoRA it uses). `
                 + "These settings are separate from the main H3 modes. A ONE STUDIO clip's own prompt is used; any other clip is read from its frames and written as an H3 brief.",
                 style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
@@ -3744,7 +3746,7 @@ app.registerExtension({
             h3Cap = frames;
             const w0 = info.width || sm0.w, h0 = info.height || sm0.h;
             const kind = ppH3Kind(state.ppSourceFullMeta);
-            if (w0 % 32 || h0 % 32) throw new Error(`Latent Upscale (Use H3) needs a clip whose width and height are multiples of 32 (this one is ${w0}×${h0}).`);
+            if (state.ppH3Upscaler === "kimchy" && (w0 % 32 || h0 % 32)) throw new Error(`Latent Upscale (Use H3) needs a clip whose width and height are multiples of 32 (this one is ${w0}×${h0}).`);
             const finalSize = sizeForMp(w0, h0, hiresMp(ppH3State(state, kind)).final);
             setStatus("Postprocess: writing the H3 prompt…");
             usedPrompt = await ppH3Prompt(frames / FPS);
