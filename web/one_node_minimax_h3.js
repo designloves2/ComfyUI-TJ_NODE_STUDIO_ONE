@@ -7335,7 +7335,9 @@ app.registerExtension({
         });
       })();
 
-      resumePostprocess();
+      // Wait until the node is on the graph (it has no id while it is being constructed) and the workflow's saved
+      // state has been put back, so the run record and the node id are the ones from before the reload.
+      setTimeout(resumePostprocess, 1500);
 
       // Same idea for a segmented LTX Upscale run: state._ltxRelay carries the plan +
       // finished parts + the in-flight segment's prompt_id. A tab-switch reload that
