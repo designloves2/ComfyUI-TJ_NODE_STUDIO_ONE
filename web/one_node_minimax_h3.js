@@ -3546,7 +3546,10 @@ app.registerExtension({
               kids.push(checkboxRow("Bypass H3 Memory Optimization", !!state.ppH3NoOpt, v => { state.ppH3NoOpt = v; persist(); },
                 { title: "Skip only the H3 Memory Optimization node. Use it with FastH3 checkpoints." }));
               kids.push(col([label("Final MP"), numberField(kim ? state.ppH3KimFinalMp : state.ppH3FinalMp,
-                v => { state[kim ? "ppH3KimFinalMp" : "ppH3FinalMp"] = Math.max(0.1, v); persist(); }, 0.1)]));
+                v => { state[kim ? "ppH3KimFinalMp" : "ppH3FinalMp"] = Math.max(0.1, v); persist(); renderLeft(); }, 0.1)]));
+              // the Kimchy node samples in tiles, so it can go past what fits in VRAM; the whole-picture step cannot
+              if (!kim && (state.ppH3FinalMp ?? 1.6) > 1.6) kids.push(el("div", { text: "⚠ Above 1.6 MP the H3 Latent Upscaler can run out of VRAM and spill to the CPU (an hour or more). 1.6 is its sweet spot; the Kimchy upscaler handles 2.0.",
+                style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
               kids.push(col([label("Activation chunk rows"), numberField(state.ppH3ChunkRows ?? 2048,
                 v => { state.ppH3ChunkRows = Math.max(256, Math.round(v)); persist(); }, 256)]));
               kids.push(el("div", { text: (kim
