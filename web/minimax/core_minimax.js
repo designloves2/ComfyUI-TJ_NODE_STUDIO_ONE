@@ -610,7 +610,6 @@ export const GENERATION_MODES = [
   // splitting them into their own "Post-process" menu is a UI-layer decision to revisit
   // once Face Refine's own UI lands, not a data-model change.
   { key: "facerefine",  label: "Face Refine MMH3",   hint: "re-render a small/distant face per frame (H3)" },
-  { key: "ltxupscale",  label: "Upscale by LTX 2.5",   hint: "2x refine an existing clip (LTX 2.5)" },
   { key: "postprocess", label: "Postprocess",   hint: "chain Deblur/Denoise/Upscale/Grain/Interpolate/Resize on an existing clip" },
   { key: "imagegen",    label: "Image Generator", hint: "single-image T2I / Reference / Character Sheet (H3 fl2va/ref2va)" },
 ];
@@ -1058,11 +1057,6 @@ export function configIssues(state) {
 export function generationModesFor(state) {
   const a = modelAvailability(state);
   return GENERATION_MODES.map(m => {
-    if (m.key === "ltxupscale") {
-      const ok = ltxUpscaleReady(state);
-      return { ...m, enabled: ok, reason: ok ? "" :
-        `Set the LTX 2.5 models in ⚙ Settings (missing: ${ltxUpscaleMissing(state).join(", ")})` };
-    }
     if (m.key === "postprocess" || m.key === "imagegen") {
       return { ...m, enabled: true, reason: "" };
     }
@@ -1181,7 +1175,8 @@ export function defaultState(saved) {
     })) : [],
 
     // modes
-    generationMode: saved.generationMode || "t2v",
+    // "Upscale by LTX 2.5" is no longer a mode of its own: it lives in Postprocess → C. Upscale
+    generationMode: saved.generationMode === "ltxupscale" ? "postprocess" : (saved.generationMode || "t2v"),
 
     // ── LTX 2.5 Upscale mode (generationMode "ltxupscale") ────────────────────
     // A standalone 2x latent-upscale + light refine pass over a finished/uploaded clip.
