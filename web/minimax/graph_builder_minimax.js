@@ -1108,29 +1108,33 @@ const L = {
  * @param state  UI snapshot
  * @param avail  node availability map
  * @param opts   { nodeId, sourceFile, fps }  sourceFile = filename in ComfyUI's input/
+ *               { into: { g, images, audio }, fps } instead adds the refine to an existing graph
+ *               (Postprocess → C. Upscale) and returns { images, audio } rather than saving.
  */
 export function buildLtxUpscaleGraph(state, avail, opts = {}) {
-  const { nodeId, sourceFile, fps = FPS, window = null, saveSuffix = "", anchorImage = null } = opts;
+  const { nodeId, sourceFile, fps = FPS, window = null, saveSuffix = "", anchorImage = null, into = null } = opts;
   // window = { skip, cap } — one segment of the source when the clip is split for VRAM.
-  if (!sourceFile) throw new Error("LTX Upscale: pick a source clip (gallery or upload).");
+  if (!sourceFile && !into) throw new Error("LTX Upscale: pick a source clip (gallery or upload).");
   const need = { ltxUnet: "LTX unet", ltxLatentUpscaler: "latent upscaler", ltxClip: "text encoder",
                  ltxVaeVideo: "video VAE", ltxVaeAudio: "audio VAE" };
   const missing = Object.keys(need).filter(k => !state[k] || state[k] === "none").map(k => need[k]);
   if (missing.length) throw new Error(`LTX Upscale: set these in ⚙ Settings → LTX 2.5 Upscale — ${missing.join(", ")}`);
 
-  const g = {};
+  const g = into ? into.g : {};
   const folder = (state.saveSubfolder || SUBFOLDER).replace(/\\/g, "/");
   const stem = state.filenamePrefix || "MMH3";
   const isGguf = (s) => String(s || "").toLowerCase().endsWith(".gguf");
 
   // ── source ─────────────────────────────────────────────────────────────────
-  g[L.load] = { class_type: "VHS_LoadVideo", inputs: {
+  if (!into) g[L.load] = { class_type: "VHS_LoadVideo", inputs: {
     video: sourceFile, force_rate: 0, custom_width: 0, custom_height: 0,
     frame_load_cap: window ? Math.max(1, window.cap | 0) : 0,
     skip_first_frames: window ? Math.max(0, window.skip | 0) : 0,
     select_every_nth: 1, format: "AnimateDiff",
   }};
   // IMAGE = [L.load, 0], frame_count = [L.load, 1], audio = [L.load, 2]
+  const srcImages = into ? into.images : [L.load, 0];
+  const srcAudio = into ? into.audio : [L.load, 2];
 
   // ── loaders ────────────────────────────────────────────────────────────────
   g[L.unet] = isGguf(state.ltxUnet)
@@ -1206,7 +1210,7 @@ export function buildLtxUpscaleGraph(state, avail, opts = {}) {
   }};
 
   // ── latent: encode → 2x latent upscale → first-frame anchor → concat with audio ──
-  g[L.enc] = { class_type: "VAEEncode", inputs: { pixels: [L.load, 0], vae: vaeV } };
+  g[L.enc] = { class_type: "VAEEncode", inputs: { pixels: srcImages, vae: vaeV } };
   g[L.upsamp] = { class_type: "LTXVLatentUpsampler", inputs: {
     samples: [L.enc, 0], upscale_model: [L.upmodel, 0], vae: vaeV,
   }};
@@ -1219,12 +1223,12 @@ export function buildLtxUpscaleGraph(state, avail, opts = {}) {
   if (anchorImage) {
     g[L.firstF] = { class_type: "LoadImage", inputs: { image: anchorImage } };
   } else {
-    g[L.firstF] = { class_type: "ImageFromBatch", inputs: { image: [L.load, 0], batch_index: 0, length: 1 } };
+    g[L.firstF] = { class_type: "ImageFromBatch", inputs: { image: srcImages, batch_index: 0, length: 1 } };
   }
   g[L.i2v] = { class_type: "LTXVImgToVideoInplace", inputs: {
     strength: 1, bypass: false, vae: vaeV, image: [L.firstF, 0], latent: [L.upsamp, 0],
   }};
-  g[L.audEnc] = { class_type: "LTXVAudioVAEEncode", inputs: { audio: [L.load, 2], audio_vae: vaeA } };
+  g[L.audEnc] = { class_type: "LTXVAudioVAEEncode", inputs: { audio: srcAudio, audio_vae: vaeA } };
   g[L.concat] = { class_type: "LTXVConcatAVLatent", inputs: {
     video_latent: [L.i2v, 0], audio_latent: [L.audEnc, 0],
   }};
@@ -1252,6 +1256,7 @@ export function buildLtxUpscaleGraph(state, avail, opts = {}) {
   }};
   g[L.decA] = { class_type: "LTXVAudioVAEDecode", inputs: { samples: [L.sep, 1], audio_vae: vaeA } };
   let images = [L.decV, 0];
+  if (into) return { images, audio: [L.decA, 0] };
 
   // ── optional RTX finisher (reuses the H3 node's deblur / RTX VSR settings) ──
   let deblurUsed = null, upscaleUsed = null;
@@ -1892,6 +1897,7 @@ export function buildPostprocessGraph(opts, avail) {
     frame_load_cap: frameLoadCap, skip_first_frames: skipFirstFrames, select_every_nth: 1,
   }};
   let images = [PPX.load, 0];
+  let audio = [PPX.load, 2];
   let fps = FPS;
 
   // A. Deblur — TJ_RTXDeblur, the STUDIO_ONE-native key already wired into every other
@@ -1925,6 +1931,12 @@ export function buildPostprocessGraph(opts, avail) {
       buildFlashVSR(g, PPX.fvsrPipe, PPX.fvsr, upscale.flashvsr || {}, images);
       images = [PPX.fvsr, 0];
       upscaleUsedInfo = flashvsrUsed(upscale.flashvsr || {});
+    } else if (upscale.method === "ltx") {
+      // LTX 2.5 latent upscale + refine on the frames so far; the clip's audio goes through LTX's audio VAE.
+      const r = buildLtxUpscaleGraph(upscale.ltxState, avail, { into: { g, images, audio }, fps });
+      images = r.images; audio = r.audio;
+      upscaleUsedInfo = { method: "ltx", steps: Math.max(1, Math.round(upscale.ltxState.ltxSteps ?? 4)),
+        denoise: upscale.ltxState.ltxDenoise ?? 0.15 };
     } else if (upscale.method === "rtx") {
       if (!has(avail, "TJ_NODE_RTXVSR")) throw new Error("RTX VSR (TJ_NODE_RTXVSR) is not installed.");
       const t = computeRtxTarget({
@@ -2077,7 +2089,7 @@ export function buildPostprocessGraph(opts, avail) {
 
   if (!usedSteps.length) throw new Error("Nothing to do — enable at least one Postprocess effect.");
 
-  saveVideoNode(g, { video: PPX.video, save: PPX.save }, images, [PPX.load, 2], fps,
+  saveVideoNode(g, { video: PPX.video, save: PPX.save }, images, audio, fps,
     `${folder}/${stem}${saveSuffix}`, avail, preview);
   return { graph: g, saveNode: PPX.save, usedSteps, upscaleUsedInfo };
 }

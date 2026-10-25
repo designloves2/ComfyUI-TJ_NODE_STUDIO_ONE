@@ -1493,15 +1493,15 @@ app.registerExtension({
       // "matches the original" is the whole job — for a gallery pick we already have the
       // clip's saved prompt; for an upload the vision model reconstructs one.
       let _ltxBusy = false;
-      async function grabSampleFrames() {
+      async function grabSampleFrames(srcFile = state.ltxSource) {
         // client-side: sample several frames spread across the clip (not just frame 0) and
         // upload each as a PNG — one frame alone can't show action or camera movement, and
         // the LTX-2.5 prompt format needs both. Roughly 1.5 frames/sec of clip, clamped so
         // a short clip still gets a minimum spread and a long one doesn't balloon the
         // vision call — LTX Upscale's own ceiling is ~8s/pass anyway.
-        if (!state.ltxSource) throw new Error("No source clip.");
+        if (!srcFile) throw new Error("No source clip.");
         const v = document.createElement("video");
-        v.src = `/view?filename=${encodeURIComponent(state.ltxSource)}&type=input`;
+        v.src = `/view?filename=${encodeURIComponent(srcFile)}&type=input`;
         v.muted = true; v.crossOrigin = "anonymous";
         await new Promise((res, rej) => {
           v.addEventListener("loadeddata", res, { once: true });
@@ -2452,6 +2452,81 @@ app.registerExtension({
         card.style.aspectRatio = (w / h) >= 1 ? `${w} / ${h}` : "1 / 1";
       }
 
+      // LTX LoRA list editor, shared by the LTX Upscale mode and Postprocess → Upscale by LTX 2.5.
+      function makeLtxLoraWrap() {
+        const loraOpts = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
+        const ltxL = state.ltxLoras ||= [];
+        const ltxLoraWrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } });
+        function renderLtxLoras() {
+          clear(ltxLoraWrap);
+          ltxL.forEach((l, i) => {
+            const off = l.enabled === false;
+            const card = el("div", { style: {
+              border: `1px solid ${off ? C.dim : C.border}`, borderRadius: "6px", padding: "6px",
+              display: "flex", flexDirection: "column", gap: "5px", opacity: off ? "0.55" : "1" } });
+            const head = el("div", { style: { display: "flex", alignItems: "center", gap: "5px" } });
+            const tog = el("button", { type: "button", text: off ? "OFF" : "ON", style: {
+              flexShrink: "0", cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "3px 9px",
+              borderRadius: "10px", border: "none", fontWeight: "700", background: off ? "#444" : BRAND, color: "#fff" },
+              onclick: () => { l.enabled = off; persist(); renderLtxLoras(); } });
+            const strWrap = el("div", { style: { flexShrink: "0", width: "62px" } });
+            strWrap.appendChild(numberField(l.strength ?? 1.0, v => { l.strength = v; persist(); }, 0.05));
+            const del = el("button", { type: "button", text: "✕", title: "Remove", style: {
+              flexShrink: "0", cursor: "pointer", background: "transparent", color: C.err, border: "none", fontSize: "11px", padding: "2px 4px" },
+              onclick: () => { ltxL.splice(i, 1); persist(); renderLtxLoras(); } });
+            head.append(tog, el("div", { style: { flex: "1" } }), strWrap, del);
+            const sel = loraSelect(loraOpts, l.name || "none", v => { l.name = v; persist(); });
+            card.append(head, sel.el);
+            ltxLoraWrap.appendChild(card);
+          });
+          const add = el("button", { type: "button", text: "+ Add LoRA", style: {
+            cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 10px", borderRadius: "6px",
+            background: C.bg2, color: C.text, border: `1px solid ${C.border}` },
+            onclick: () => { ltxL.push({ name: "none", strength: 1.0, enabled: true }); persist(); renderLtxLoras(); } });
+          ltxLoraWrap.appendChild(add);
+          ltxLoraWrap.appendChild(el("div", { text: "Loads on the LTX 2.5 unet (before the attention patch). Separate from the H3 LoRA list.",
+            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
+        }
+        renderLtxLoras();
+        return ltxLoraWrap;
+      }
+
+      // Steps / Denoise / Sampler / Scheduler of the LTX refine pass, shared like the LoRA list.
+      function ltxRefineRows() {
+        return [
+          row([
+            col([label("Steps"), numberField(state.ltxSteps ?? 4, v => { state.ltxSteps = Math.max(1, Math.round(v)); persist(); }, 1)]),
+            col([label("Denoise"), numberField(state.ltxDenoise ?? 0.15, v => { state.ltxDenoise = Math.min(1, Math.max(0.01, v)); persist(); }, 0.01)]),
+          ]),
+          row([
+            col([label("Sampler"), select(LTX_SAMPLERS.map(s => ({ value: s, label: s })),
+              state.ltxSampler || "euler_ancestral", v => { state.ltxSampler = v; persist(); })]),
+            col([label("Scheduler"), select(LTX_SCHEDULERS.map(s => ({ value: s, label: s })),
+              state.ltxScheduler || "simple", v => { state.ltxScheduler = v; persist(); })]),
+          ]),
+        ];
+      }
+
+      // Prompt for Postprocess → Upscale by LTX 2.5: a ONE STUDIO clip carries its own prompt in its
+      // meta (an H3 brief is rewritten as an LTX prompt); any other clip is read from sampled frames.
+      async function ppLtxPrompt() {
+        const keep = { p: state.ltxPrompt, s: state.ltxSource };
+        try {
+          const meta = String(state.ppSourceFullMeta?.prompt || "").trim();
+          state.ltxSource = state.ppSource;
+          if (meta && /\[Shot|<Picture|subject_definitions|technical_settings|integrated_multimodal_description/.test(meta)) {
+            state.ltxPrompt = meta; await ltxConvertToLtx();
+            if (state.ltxPrompt.trim() === meta) throw new Error("Could not rewrite the clip's saved H3 prompt for LTX — check ⚙ Settings → LLM Setting → LTX Upscale.");
+          } else if (meta) {
+            state.ltxPrompt = meta;
+          } else {
+            state.ltxPrompt = ""; await ltxWritePrompt();
+            if (!state.ltxPrompt.trim()) throw new Error("Could not write an LTX prompt from the clip's frames — check ⚙ Settings → LLM Setting → LTX Upscale.");
+          }
+          return state.ltxPrompt.trim();
+        } finally { state.ltxPrompt = keep.p; state.ltxSource = keep.s; }
+      }
+
       function renderLtxUpscaleLeft() {
         const prevScroll = leftPanel.scrollTop;
         clear(leftPanel);
@@ -2567,16 +2642,7 @@ app.registerExtension({
         // ── refine sampling ──────────────────────────────────────────────────
         leftPanel.appendChild(panel([
           label("UPSCALE SETTING"),
-          row([
-            col([label("Steps"), numberField(state.ltxSteps ?? 4, v => { state.ltxSteps = Math.max(1, Math.round(v)); persist(); }, 1)]),
-            col([label("Denoise"), numberField(state.ltxDenoise ?? 0.15, v => { state.ltxDenoise = Math.min(1, Math.max(0.01, v)); persist(); }, 0.01)]),
-          ]),
-          row([
-            col([label("Sampler"), select(LTX_SAMPLERS.map(s => ({ value: s, label: s })),
-              state.ltxSampler || "euler_ancestral", v => { state.ltxSampler = v; persist(); })]),
-            col([label("Scheduler"), select(LTX_SCHEDULERS.map(s => ({ value: s, label: s })),
-              state.ltxScheduler || "simple", v => { state.ltxScheduler = v; persist(); })]),
-          ]),
+          ...ltxRefineRows(),
           (() => {
             // Two ways to say the same plan: "seconds" derives the piece count from a
             // target size (rounded to whatever avoids a stub piece a few frames long);
@@ -2621,40 +2687,8 @@ app.registerExtension({
         ]));
 
         // ── LTX LoRA (own list — different model from H3) ────────────────────
-        const loraOpts = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
         const ltxL = state.ltxLoras ||= [];
-        const ltxLoraWrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } });
-        function renderLtxLoras() {
-          clear(ltxLoraWrap);
-          ltxL.forEach((l, i) => {
-            const off = l.enabled === false;
-            const card = el("div", { style: {
-              border: `1px solid ${off ? C.dim : C.border}`, borderRadius: "6px", padding: "6px",
-              display: "flex", flexDirection: "column", gap: "5px", opacity: off ? "0.55" : "1" } });
-            const head = el("div", { style: { display: "flex", alignItems: "center", gap: "5px" } });
-            const tog = el("button", { type: "button", text: off ? "OFF" : "ON", style: {
-              flexShrink: "0", cursor: "pointer", fontFamily: "inherit", fontSize: "10px", padding: "3px 9px",
-              borderRadius: "10px", border: "none", fontWeight: "700", background: off ? "#444" : BRAND, color: "#fff" },
-              onclick: () => { l.enabled = off; persist(); renderLtxLoras(); } });
-            const strWrap = el("div", { style: { flexShrink: "0", width: "62px" } });
-            strWrap.appendChild(numberField(l.strength ?? 1.0, v => { l.strength = v; persist(); }, 0.05));
-            const del = el("button", { type: "button", text: "✕", title: "Remove", style: {
-              flexShrink: "0", cursor: "pointer", background: "transparent", color: C.err, border: "none", fontSize: "11px", padding: "2px 4px" },
-              onclick: () => { ltxL.splice(i, 1); persist(); renderLtxLoras(); } });
-            head.append(tog, el("div", { style: { flex: "1" } }), strWrap, del);
-            const sel = loraSelect(loraOpts, l.name || "none", v => { l.name = v; persist(); });
-            card.append(head, sel.el);
-            ltxLoraWrap.appendChild(card);
-          });
-          const add = el("button", { type: "button", text: "+ Add LoRA", style: {
-            cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "5px 10px", borderRadius: "6px",
-            background: C.bg2, color: C.text, border: `1px solid ${C.border}` },
-            onclick: () => { ltxL.push({ name: "none", strength: 1.0, enabled: true }); persist(); renderLtxLoras(); } });
-          ltxLoraWrap.appendChild(add);
-          ltxLoraWrap.appendChild(el("div", { text: "Loads on the LTX 2.5 unet (before the attention patch). Separate from the H3 LoRA list.",
-            style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
-        }
-        renderLtxLoras();
+        const ltxLoraWrap = makeLtxLoraWrap();
         leftPanel.appendChild(accordion("ltxlora", "LTX LoRA",
           ltxL.filter(l => l?.name && l.name !== "none" && l.enabled !== false).length
             ? `${ltxL.filter(l => l?.name && l.name !== "none" && l.enabled !== false).length} on` : "OFF",
@@ -3407,6 +3441,7 @@ app.registerExtension({
           { value: "flashvsr", label: "FlashVSR" },
           { value: "rtx",      label: "RTX VSR (TJ)" },
           { value: "model",    label: "Model" },
+          { value: "ltx",      label: "Upscale by LTX 2.5" },
         ];
         leftPanel.appendChild(accordion("ppUpscale", "C. Upscale",
           state.ppUpscaleOn ? ((state.upscaleMode && state.upscaleMode !== "none" ? state.upscaleMode : "model")
@@ -3429,6 +3464,14 @@ app.registerExtension({
               ]));
             } else if (method === "rtx") {
               kids.push(...rtxSizeControls(RTX_KEYS_SOLO));
+            } else if (method === "ltx") {
+              if (!ltxUpscaleReady(state)) {
+                kids.push(el("div", { text: "⚙ Set the LTX 2.5 models first (Settings → LTX 2.5 Upscale) — missing: " + ltxUpscaleMissing(state).join(", "),
+                  style: { fontSize: "11px", color: C.warn, lineHeight: "1.5" } }));
+              }
+              kids.push(label("UPSCALE SETTING"), ...ltxRefineRows(), label("LTX LoRA"), makeLtxLoraWrap(),
+                el("div", { text: "The whole clip goes through in one pass. The prompt comes from the clip's own ONE STUDIO meta, otherwise it is written from sampled frames.",
+                  style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
             } else {
               kids.push(row([col([label("Model"), select(
                 (ctx.availableModels?.upscale_models || ["none"]).map(m => ({ value: m, label: m })),
@@ -3596,6 +3639,13 @@ app.registerExtension({
           }
           // Generate always runs the whole clip — the range fields only ever apply to
           // Preview's own short-look run, never to a real/final one.
+          const ppMethod = (state.upscaleMode && state.upscaleMode !== "none") ? state.upscaleMode : "flashvsr";
+          let ltxState = null;
+          if (state.ppUpscaleOn && ppMethod === "ltx") {
+            if (!ltxUpscaleReady(state)) throw new Error("Set the LTX 2.5 models in ⚙ Settings first — missing: " + ltxUpscaleMissing(state).join(", "));
+            setStatus("Postprocess: writing the LTX prompt…");
+            ltxState = { ...state, ltxPrompt: await ppLtxPrompt() };
+          }
           const startS = full ? 0 : Math.max(0, state.ppPreviewStart || 0);
           const endS = full ? 0 : Math.max(0, state.ppPreviewEnd || 0);
           const srcMeta = state.ppSourceMeta || (_ppSrcInfo ? { fps: _ppSrcInfo.fps, w: _ppSrcInfo.width, h: _ppSrcInfo.height } : {});
@@ -3619,6 +3669,7 @@ app.registerExtension({
             upscale: {
               enabled: state.ppUpscaleOn,
               method: (state.upscaleMode && state.upscaleMode !== "none") ? state.upscaleMode : "flashvsr",
+              ltxState,
               twoPass: !!state.ppUpscale2On,
               pass2: {
                 rtxSizeMode: state.pp2RtxSizeMode || "scale", rtxScale: state.pp2RtxScale, rtxShort: state.pp2RtxShort,
