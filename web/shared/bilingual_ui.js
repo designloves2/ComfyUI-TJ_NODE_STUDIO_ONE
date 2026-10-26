@@ -71,6 +71,7 @@ export function attachBilingual(ta, { target, key: keyOrFn, persist = () => {}, 
       persist();
       onInput?.();
     } else if (e.type === "input") {
+      o[K()] = ta.value;   // a popup box has no handler of its own: the English slot follows what is typed
       o[newestKey(K())] = "en";
       persist();
     }

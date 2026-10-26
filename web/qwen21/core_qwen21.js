@@ -58,6 +58,7 @@ export function defaultState(saved) {
 
     prompt:        saved.prompt        || "",
     promptsByMode: saved.promptsByMode || {},
+    promptSlots: saved.promptSlots || {},
     negativePrompt: saved.negativePrompt || "",
     promptSuffix:  saved.promptSuffix  || "",
 

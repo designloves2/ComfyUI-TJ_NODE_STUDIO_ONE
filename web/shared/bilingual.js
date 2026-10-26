@@ -48,7 +48,8 @@ export function unmaskProtected(translated, tokens) {
   let ok = true;
   const out = String(translated || "").replace(MARK_RE, (_, n) => {
     const i = Number(n);
-    if (!(i in tokens) || seen.has(i)) { ok = false; return ""; }
+    if (!(i in tokens)) return "";   // a marker the model made up
+    if (seen.has(i)) { ok = false; return ""; }
     seen.add(i);
     return tokens[i];
   });
@@ -72,13 +73,16 @@ export function detectLang(text) {
 
 const LANG_NAME = { en: "English", ko: "Korean" };
 
-export const TRANSLATE_SYSTEM = (to) => [
+export const TRANSLATE_SYSTEM = (to, withMarkers = true) => [
   `You translate text between Korean and English for AI image and video prompts. Translate the user's text into ${LANG_NAME[to]}.`,
   "Rules:",
   "- Output only the translation: no preamble, no notes, no quotes around it, no markdown.",
-  "- The text contains markers like ⟦0⟧ ⟦1⟧. Copy every marker exactly as written, once each, in a sensible place. Never translate, remove, renumber or merge them.",
+  ...(withMarkers ? [
+    "- The text contains markers like ⟦0⟧ ⟦1⟧. Copy every marker exactly as written, once each, in a sensible place. Never translate, remove, renumber or merge them.",
+    "- A marker at the start of a line stays at the start of that line.",
+  ] : []),
   "- Keep the structure: line breaks, blank lines, headings, labels such as Opening / Tail / Ambient sound / Music, and the order of the sentences.",
-  "- A marker at the start of a line stays at the start of that line. Translate faithfully: do not add, drop or change any action, object, person or sound.",
+  "- Translate faithfully: do not add, drop or change any action, object, person or sound.",
   "- Keep proper names, numbers, units and technical words (camera, lens, grade, fps) as they are or in their usual form.",
   `- Write natural ${LANG_NAME[to]}, concrete and visual, in the same register as the original.`,
 ].join("\n");
@@ -129,7 +133,7 @@ export async function translateText(text, to, llm, opts = {}) {
   // nothing left to translate (only protected parts / no letters)
   if (!HAS_LETTERS.test(masked.replace(MARK_RE, ""))) return src;
   const { lines, leads } = splitLineLeads(masked);
-  const ask = async (t) => cleanLlmText(await llm(TRANSLATE_SYSTEM(to), t));
+  const ask = async (t) => cleanLlmText(await llm(TRANSLATE_SYSTEM(to, tokens.length > 0), t));
   const finish = (outLines) => {
     const back = unmaskProtected(joinLeads(outLines, leads), tokens);
     return back == null ? null : back.trim();

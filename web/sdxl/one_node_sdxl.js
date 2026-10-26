@@ -20,6 +20,7 @@ import { mountUpscaleLeft }       from "./ui_upscale_sdxl.js";
 import { attachLLMPanel }         from "../shared/llm_panel.js";
 import { attachNodeState, restoreNodeState } from "../shared/node_state.js";
 import { attachPanZoom, createCompareView } from "../shared/pan_zoom.js";
+import { createImagePromptBilingual } from "../shared/bilingual_image.js";
 
 // ── Layout ─────────────────────────────────────────────────────────────────────
 const TOPBAR_H    = 40;
@@ -407,8 +408,7 @@ app.registerExtension({
         resize: "none", outline: "none",
       }});
       const pxApply = button("✓ Apply", () => {
-        setModePrompt(state.mode, pxTA.value);
-        promptTA.value = pxTA.value; persist(); updateCount();
+        imgBil.refresh(); persist(); updateCount();
         promptExpandEl.style.display = "none";
       }, "primary");
       const pxClose = button("✕ Close", () => { promptExpandEl.style.display = "none"; }, "danger");
@@ -444,6 +444,7 @@ app.registerExtension({
       }});
       promptHdr.appendChild(tplBtn);
 
+      const imgBil=createImagePromptBilingual({state,getModePrompt,setModePrompt,persist,onError:m=>alert(m)});
       const promptTA = el("textarea", { placeholder: "Describe the image…", style: {
         flex: "1", width: "100%", boxSizing: "border-box",
         background: C.bg2, color: C.text, border: `1px solid ${C.border}`, borderRadius: "6px",
@@ -453,7 +454,7 @@ app.registerExtension({
       function getModePrompt(mode)    { return state.promptsByMode?.[mode] || ""; }
       function setModePrompt(mode, v) { if (!state.promptsByMode) state.promptsByMode = {}; state.promptsByMode[mode] = v; state.prompt = v; }
 
-      promptTA.value = getModePrompt(state.mode);
+      imgBil.refresh();
       function updateCount() {
         const n = getModePrompt(state.mode).trim().length;
         charCount.textContent = ` (${n} chars${n < 20 ? " ⚠" : ""})`;
@@ -463,12 +464,12 @@ app.registerExtension({
       promptTA.addEventListener("input", () => { setModePrompt(state.mode, promptTA.value); persist(); updateCount(); });
       promptTA.addEventListener("focus", () => promptTA.style.borderColor = BRAND);
       promptTA.addEventListener("blur",  () => promptTA.style.borderColor = C.border);
-      ctx.updatePromptTA = () => { promptTA.value = getModePrompt(state.mode); updateCount(); };
+      ctx.updatePromptTA = () => { imgBil.refresh(); updateCount(); };
       // Default Model Format for THIS node's Prompt Edit — ported from Qwen Image 2.1's
       // pilot. Applied inside attachLLMPanel once its model list actually loads.
-      const llmApi = attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA: () => promptTA, openSettings: () => settingsOv?.show(), defaultModelFormat: "SDXL (tags + weights)" });
+      const llmApi = attachLLMPanel({bilingual:imgBil.panel, promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA: () => promptTA, openSettings: () => settingsOv?.show(), defaultModelFormat: "SDXL (tags + weights)" });
 
-      promptWrap.appendChild(promptHdr); promptWrap.appendChild(promptTA);
+      promptWrap.appendChild(promptHdr); promptWrap.appendChild(imgBil.attach(promptTA).el);
       rightPanel.appendChild(previewBox); rightPanel.appendChild(sendToWrap); rightPanel.appendChild(promptWrap);
       mainRow.appendChild(leftOuter); mainRow.appendChild(rightPanel);
       root.appendChild(mainRow);
@@ -507,7 +508,7 @@ app.registerExtension({
           case "upscale":  modeHandle = mountUpscaleLeft(leftPanel,  state, ctx); break;
         }
         leftOuter.appendChild(seedGenWrap);
-        promptTA.value = getModePrompt(mode);
+        imgBil.refresh();
         promptTA.placeholder = "Describe what you want to generate…";
         updateCount();
         restorePreview(); renderSendTo(); applyCompareBtnStyle();
@@ -550,7 +551,7 @@ app.registerExtension({
           try {
             pxTA.value = getModePrompt(state.mode);
             await llmApi.enhance();
-            setModePrompt(state.mode, pxTA.value); promptTA.value = pxTA.value; persist(); updateCount();
+            imgBil.refresh(); persist(); updateCount();
           } catch (err) {
             showPopup(`Auto Enhance failed: ${err.message}`);
             running = false; genBtn.disabled = false; genBtn.textContent = "▶ Generate";
@@ -562,6 +563,13 @@ app.registerExtension({
         }
 
         // beforeGenerate
+        try { genBtn.textContent = "⏳ Translating…"; await imgBil.ensure(); } catch(err) {
+          showPopup(err.message);
+          running = false; genBtn.disabled = false; genBtn.textContent = "▶ Generate";
+          loadingOv.style.display = "none";
+          if (!modeResults[state.mode]) resetPreview();
+          return;
+        }
         try { await modeHandle.beforeGenerate?.(); } catch(err) {
           showPopup(err.message);
           running = false; genBtn.disabled = false; genBtn.textContent = "▶ Generate";
@@ -635,7 +643,7 @@ app.registerExtension({
       import("../klein/ui_prompt_templates.js").then(mod => {
         if (!mod.createTemplateOverlay) return;
         const tOv = mod.createTemplateOverlay(state, ctx, txt => {
-          setModePrompt(state.mode, txt); promptTA.value = txt; persist(); updateCount();
+          imgBil.setEnglish(txt); persist(); updateCount();
         }, "sdxl");
         root.appendChild(tOv.el);
         tplBtn.onclick = () => tOv.show();
@@ -660,7 +668,7 @@ app.registerExtension({
       // Every panel, repainted from `state` — used after a workflow restores settings.
       // renderMode() rebuilds the left panel, but the seed and prompt fields live
       // outside it — a restore has to put those back by hand.
-      self._tjRepaint = () => { seedInput.value = state.seed ?? 0; promptTA.value = getModePrompt(state.mode); updateCount?.(); renderPills(); renderMode(); };
+      self._tjRepaint = () => { seedInput.value = state.seed ?? 0; imgBil.refresh(); updateCount?.(); renderPills(); renderMode(); };
       renderPills();
       renderMode();
     };

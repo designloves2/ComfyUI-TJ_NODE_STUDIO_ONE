@@ -23,6 +23,7 @@ import { mountFaceswapLeft }      from "./ui_faceswap_klein.js";
 import { mountUpscaleLeft }       from "./ui_upscale_klein.js";
 import { attachNodeState, restoreNodeState } from "../shared/node_state.js";
 import { attachPanZoom, createCompareView } from "../shared/pan_zoom.js";
+import { createImagePromptBilingual } from "../shared/bilingual_image.js";
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 const TOPBAR_H    = 40;
@@ -578,8 +579,7 @@ app.registerExtension({
         resize: "none", outline: "none",
       }});
       const pxApply = button("✓ 적용", () => {
-        setModePrompt(state.mode, pxTA.value);
-        promptTA.value = pxTA.value; persist(); updateCount();
+        imgBil.refresh(); persist(); updateCount();
         promptExpandEl.style.display = "none";
       }, "primary");
       const pxClose = button("✕ 닫기", () => {
@@ -597,7 +597,8 @@ app.registerExtension({
       };
       // Default Model Format for THIS node's Prompt Edit — ported from Qwen Image 2.1's
       // pilot. Applied inside attachLLMPanel once its model list actually loads.
-      const llmApi = attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA: () => promptTA, openSettings: () => settingsOv?.show(), defaultModelFormat: "Flux & Chroma (natural language)" });
+      const imgBil=createImagePromptBilingual({state,getModePrompt,setModePrompt,persist,onError:m=>alert(m)});
+      const llmApi = attachLLMPanel({bilingual:imgBil.panel, promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA: () => promptTA, openSettings: () => settingsOv?.show(), defaultModelFormat: "Flux & Chroma (natural language)" });
 
       // ── Prompt area ────────────────────────────────────────────────────────
       const promptWrap = el("div", { style: {
@@ -647,7 +648,7 @@ app.registerExtension({
         if (!state.promptsByMode) state.promptsByMode = {};
         state.promptsByMode[effectiveKey(mode)] = v; state.prompt = v;
       }
-      promptTA.value = getModePrompt(state.mode);
+      imgBil.refresh();
       function updateCount() {
         const n = getModePrompt(state.mode).trim().length;
         charCount.textContent = ` (${n} chars${n < 30 ? " ⚠" : ""})`;
@@ -659,7 +660,7 @@ app.registerExtension({
       promptTA.addEventListener("blur",  () => promptTA.style.borderColor = C.border);
 
       ctx.updatePromptTA = () => {
-        promptTA.value = getModePrompt(state.mode);
+        imgBil.refresh();
         promptTA.placeholder = effectiveKey(state.mode) === "outpaint"
           ? "Scene description only — system prompt is auto-added"
           : "Describe what you want to generate…";
@@ -667,7 +668,7 @@ app.registerExtension({
       };
 
       promptWrap.appendChild(promptHdr);
-      promptWrap.appendChild(promptTA);
+      promptWrap.appendChild(imgBil.attach(promptTA).el);
 
       rightPanel.appendChild(previewBox);
       rightPanel.appendChild(sendToWrap);
@@ -731,7 +732,7 @@ app.registerExtension({
           const fsDefault = "Replace the head in image 1 with the head from image 2, adapting the facial features to match the artistic style, focus, and environmental lighting of the image 1.";
           setModePrompt("faceswap", fsDefault); persist();
         }
-        promptTA.value = getModePrompt(mode);
+        imgBil.refresh();
         promptTA.placeholder = "Describe what you want to generate…";
         updateCount();
         restorePreview();
@@ -771,7 +772,7 @@ app.registerExtension({
           try {
             pxTA.value = getModePrompt(state.mode);
             await llmApi.enhance();
-            setModePrompt(state.mode, pxTA.value); promptTA.value = pxTA.value; persist(); updateCount();
+            imgBil.refresh(); persist(); updateCount();
           } catch (err) {
             alert(`Auto Enhance failed: ${err.message}`); running = false; genBtn.disabled = false; genBtn.textContent = "▶ Generate"; loadingOv.style.display = "none"; if (!modeResults[state.mode]) resetPreview(); return;
           }
@@ -792,6 +793,12 @@ app.registerExtension({
         }
 
         // beforeGenerate 검증
+        try { genBtn.textContent = "⏳ Translating…"; await imgBil.ensure(); } catch(err) {
+          alert(err.message); running = false;
+          genBtn.disabled = false; genBtn.textContent = "▶ Generate";
+          loadingOv.style.display = "none"; if (!modeResults[state.mode]) resetPreview();
+          return;
+        }
         try { await modeHandle.beforeGenerate?.(); } catch(err) {
           alert(err.message); running = false;
           genBtn.disabled = false; genBtn.textContent = "▶ Generate";
@@ -907,7 +914,7 @@ app.registerExtension({
       import("./ui_prompt_templates.js").then(mod => {
         if (!mod.createTemplateOverlay) return;
         const tOv = mod.createTemplateOverlay(state, ctx, txt => {
-          setModePrompt(state.mode, txt); promptTA.value = txt; persist(); updateCount();
+          imgBil.setEnglish(txt); persist(); updateCount();
         }, "klein");
         root.appendChild(tOv.el);
         tplBtn.onclick = () => tOv.show();
@@ -934,7 +941,7 @@ app.registerExtension({
       // Every panel, repainted from `state` — used after a workflow restores settings.
       // renderMode() rebuilds the left panel, but the seed and prompt fields live
       // outside it — a restore has to put those back by hand.
-      self._tjRepaint = () => { seedInput.value = state.seed ?? 0; promptTA.value = getModePrompt(state.mode); updateCount?.(); renderPills(); renderMode(); updateKVBtn?.(); syncCompareBtn?.(); };
+      self._tjRepaint = () => { seedInput.value = state.seed ?? 0; imgBil.refresh(); updateCount?.(); renderPills(); renderMode(); updateKVBtn?.(); syncCompareBtn?.(); };
       // Initial render
       renderPills();
       renderMode();

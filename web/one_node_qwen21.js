@@ -38,6 +38,7 @@ import { t, getLang, setLang }                                            from "
 import { SAMPLERS, SCHEDULERS } from "./shared/sampler_lists.js";
 import { mountUpscaleMethodTabs, mountVosrPanel } from "./shared/vosr_upscale.js";
 import { attachPanZoom, createCompareView } from "./shared/pan_zoom.js";
+import { createImagePromptBilingual } from "./shared/bilingual_image.js";
 
 // ── Layout (same constants pattern as 2511) ────────────────────────────────────
 const TOPBAR_H    = 40;
@@ -364,7 +365,7 @@ app.registerExtension({
       const pxHdr = el("div",{style:{display:"flex",alignItems:"center",gap:"8px",flexShrink:"0"}});
       pxHdr.appendChild(el("div",{text:"🔍 Prompt — Full Screen Edit",style:{color:"#fff",fontSize:"13px",fontWeight:"700",flex:"1"}}));
       const pxTA = el("textarea",{style:{flex:"1",background:C.bg2,color:C.text,border:`1px solid ${BRAND}`,borderRadius:"6px",padding:"10px",fontSize:"13px",fontFamily:"inherit",resize:"none",outline:"none"}});
-      const pxApply = button("✓ Apply", () => { setModePrompt(state.mode, pxTA.value); promptTA.value = pxTA.value; persist(); updateCount(); promptExpandEl.style.display="none"; }, "primary");
+      const pxApply = button("✓ Apply", () => { imgBil.refresh(); persist(); updateCount(); promptExpandEl.style.display="none"; }, "primary");
       const pxClose = button("✕ Close", () => { promptExpandEl.style.display="none"; }, "danger");
       pxHdr.appendChild(pxApply); pxHdr.appendChild(pxClose);
       promptExpandEl.appendChild(pxHdr); promptExpandEl.appendChild(pxTA);
@@ -395,11 +396,12 @@ app.registerExtension({
       tplBtn.style.cssText += `padding:3px 8px;font-size:11px;margin-left:4px;background:${BRAND};border:none;color:#fff;font-weight:700;`;
       promptHdr.appendChild(tplBtn);
 
+      const imgBil=createImagePromptBilingual({state,getModePrompt,setModePrompt,persist,onError:m=>alert(m)});
       const promptTA = el("textarea",{placeholder:"Describe what you want to generate…",style:{flex:"1",width:"100%",boxSizing:"border-box",background:C.bg2,color:C.text,border:`1px solid ${C.border}`,borderRadius:"6px",padding:"7px",fontSize:"13px",fontFamily:"inherit",outline:"none",resize:"none",overflowY:"auto"}});
 
       function getModePrompt(mode){ if(!state.promptsByMode) state.promptsByMode={}; if(!(mode in state.promptsByMode)) state.promptsByMode[mode]=""; return state.promptsByMode[mode]; }
       function setModePrompt(mode,v){ if(!state.promptsByMode) state.promptsByMode={}; state.promptsByMode[mode]=v; state.prompt=v; }
-      promptTA.value = getModePrompt(state.mode);
+      imgBil.refresh();
       function updateCount(){ const n=getModePrompt(state.mode).trim().length; charCount.textContent=` (${n} chars${n<20?" ⚠":""})`; charCount.style.color = n<20 ? C.warn : C.muted; }
       updateCount();
       promptTA.addEventListener("input", () => { setModePrompt(state.mode, promptTA.value); persist(); updateCount(); });
@@ -407,9 +409,9 @@ app.registerExtension({
       // 실행하면 자동으로 Model Format의 기본값은 Qwen 2.1관련 항목이 기본값으로
       // 되어있어야되고." Applied inside attachLLMPanel once its model list actually
       // loads (never overwrites a value the user deliberately picked).
-      const llmApi = attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA: () => promptTA, openSettings: () => settingsOv?.show(), defaultModelFormat: "Qwen Image 2.1 (T2I)" });
+      const llmApi = attachLLMPanel({bilingual:imgBil.panel, promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA: () => promptTA, openSettings: () => settingsOv?.show(), defaultModelFormat: "Qwen Image 2.1 (T2I)" });
 
-      promptWrap.appendChild(promptHdr); promptWrap.appendChild(promptTA);
+      promptWrap.appendChild(promptHdr); promptWrap.appendChild(imgBil.attach(promptTA).el);
       rightPanel.appendChild(previewBox); rightPanel.appendChild(sendToWrap); rightPanel.appendChild(promptWrap);
       mainRow.appendChild(leftOuter); mainRow.appendChild(rightPanel);
       root.appendChild(mainRow);
@@ -1000,7 +1002,7 @@ app.registerExtension({
           case "upscale": modeHandle = mountUpscale(leftPanel); break;
         }
         leftOuter.appendChild(seedGenWrap);
-        promptTA.value = getModePrompt(mode); updateCount();
+        imgBil.refresh(); updateCount();
         restorePreview(); renderSendTo();
       }
 
@@ -1024,7 +1026,7 @@ app.registerExtension({
           try {
             pxTA.value = getModePrompt(state.mode);
             await llmApi.enhance();
-            setModePrompt(state.mode, pxTA.value); promptTA.value = pxTA.value; persist(); updateCount();
+            imgBil.refresh(); persist(); updateCount();
           } catch (err) {
             alert(`Auto Enhance failed: ${err.message}`); running=false; genBtn.disabled=false; genBtn.textContent="▶ Generate"; loadingOv.style.display="none"; if(!modeResults[state.mode]) resetPreview(); return;
           }
@@ -1037,6 +1039,10 @@ app.registerExtension({
         // PromptDB pipe / prompt_override: applied only while the graph is built, then restored (the UI never changes).
         let pipeOv = null;
         try { pipeOv = await resolvePipeOverrides(self, state); if (pipeOv) showPopup(pipeOv.summary, false); } catch {}
+
+        try { genBtn.textContent = "⏳ Translating…"; await imgBil.ensure(); } catch(err) {
+          alert(err.message); running = false; genBtn.disabled = false; genBtn.textContent = "▶ Generate"; loadingOv.style.display = "none"; if (!modeResults[state.mode]) resetPreview(); return;
+        }
 
         let prompt;
         try {
@@ -1135,7 +1141,7 @@ app.registerExtension({
 
       import("./klein/ui_prompt_templates.js").then(mod=>{
         if(!mod.createTemplateOverlay)return;
-        const tOv=mod.createTemplateOverlay(state,ctx,txt=>{setModePrompt(state.mode,txt);promptTA.value=txt;persist();updateCount();},"qwen21");
+        const tOv=mod.createTemplateOverlay(state,ctx,txt=>{imgBil.setEnglish(txt);persist();updateCount();},"qwen21");
         root.appendChild(tOv.el);
         tplBtn.onclick=()=>tOv.show();
       }).catch(()=>{});
@@ -1151,7 +1157,7 @@ app.registerExtension({
       });
 
       self.addDOMWidget("q21v1_ui","div",root,{serialize:false,computeSize:()=>[UI_W, UI_H]});
-      self._tjRepaint = () => { seedInput.value = state.seed ?? 0; promptTA.value = getModePrompt(state.mode); updateCount?.(); renderPills(); renderMode(); };
+      self._tjRepaint = () => { seedInput.value = state.seed ?? 0; imgBil.refresh(); updateCount?.(); renderPills(); renderMode(); };
       renderPills(); renderMode();
 
       // Populate model lists once

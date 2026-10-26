@@ -25,6 +25,7 @@ import { createGalleryOverlay }   from "./ui_gallery.js";
 import { createTemplateOverlay }  from "../klein/ui_prompt_templates.js";
 import { attachNodeState, restoreNodeState } from "../shared/node_state.js";
 import { attachPanZoom, createCompareView } from "../shared/pan_zoom.js";
+import { createImagePromptBilingual } from "../shared/bilingual_image.js";
 
 // ── Layout ────────────────────────────────────────────────────────────────
 const TOPBAR_H   = 40;
@@ -488,6 +489,7 @@ app.registerExtension({
 
       promptHdr.appendChild(expandBtn); promptHdr.appendChild(tplBtn);
 
+      const imgBil=createImagePromptBilingual({state,getModePrompt,setModePrompt,persist,onError:m=>alert(m)});
       const promptTA=el("textarea",{
         placeholder:"Describe the image…",
         style:{
@@ -504,7 +506,7 @@ app.registerExtension({
         if(!state.promptsByMode) state.promptsByMode={};
         state.promptsByMode[mode]=val; state.prompt=val;
       }
-      promptTA.value=getModePrompt(state.mode);
+      imgBil.refresh();
       function updateCount(){
         const n=getModePrompt(state.mode).trim().length;
         charCount.textContent=` (${n} chars${n<30?" ⚠":""})`;
@@ -514,7 +516,7 @@ app.registerExtension({
       promptTA.addEventListener("input",()=>{setModePrompt(state.mode,promptTA.value);persist();updateCount();});
       promptTA.addEventListener("focus",()=>promptTA.style.borderColor=C.lime);
       promptTA.addEventListener("blur", ()=>promptTA.style.borderColor=C.border);
-      promptWrap.appendChild(promptHdr); promptWrap.appendChild(promptTA);
+      promptWrap.appendChild(promptHdr); promptWrap.appendChild(imgBil.attach(promptTA).el);
 
       rightPanel.appendChild(previewBox);
       rightPanel.appendChild(sendToWrap);
@@ -601,7 +603,7 @@ app.registerExtension({
           try{
             pxTA.value=getModePrompt(state.mode);
             await llmApi.enhance();
-            setModePrompt(state.mode,pxTA.value); promptTA.value=pxTA.value; persist(); updateCount();
+            imgBil.refresh(); persist(); updateCount();
           }catch(err){
             showPopup(`Auto Enhance failed: ${err.message}`);
             genBtn.disabled=false; genBtn.textContent="▶ Generate";
@@ -614,6 +616,7 @@ app.registerExtension({
         loadingOv.style.display="flex";
         let originalURL=null;
         try{
+          genBtn.textContent="⏳ Translating…"; await imgBil.ensure();
           await modeHandle.beforeGenerate?.();
           if(compareEnabled && typeof modeHandle.getSourceURL==="function") originalURL=modeHandle.getSourceURL();
           if(state.seedMode==="randomize") state.seed=randomSeed();
@@ -643,7 +646,7 @@ app.registerExtension({
       function renderMode(){
         clear(leftPanel);
         restorePreview(); renderSendTo();
-        promptTA.value=getModePrompt(state.mode); updateCount();
+        imgBil.refresh(); updateCount();
         if(state.mode==="t2i"||state.mode==="i2i") modeHandle=mountT2II2ILeft(leftPanel,state,ctx);
         else if(state.mode==="inpaint")            modeHandle=mountInpaintLeft(leftPanel,state,ctx);
         else if(state.mode==="rebg")               modeHandle=mountReBGLeft(leftPanel,state,ctx);
@@ -688,7 +691,7 @@ app.registerExtension({
       }, onGallerySendTo);
 
       templateOv=createTemplateOverlay(state,ctx,(prompt)=>{
-        setModePrompt(state.mode,prompt); promptTA.value=prompt; persist(); updateCount();
+        imgBil.setEnglish(prompt); updateCount();
       },"zimage");
 
       // Prompt expand overlay
@@ -700,8 +703,7 @@ app.registerExtension({
       const pxTopRow=el("div",{style:{display:"flex",alignItems:"center",gap:"8px",flexShrink:"0"}});
       pxTopRow.appendChild(el("div",{text:"🔍 Prompt — Full Screen Edit",style:{color:"#fff",fontSize:"14px",fontWeight:"700",flex:"1"}}));
       const pxApply=button("✓ Apply",()=>{
-        setModePrompt(state.mode,pxTA.value);
-        promptTA.value=pxTA.value; persist(); updateCount();
+        imgBil.refresh(); persist(); updateCount();
         promptExpandEl.style.display="none";
       },"primary");
       const pxClose=button("✕",()=>{promptExpandEl.style.display="none";},"danger");
@@ -724,7 +726,7 @@ app.registerExtension({
       };
       // Default Model Format for THIS node's Prompt Edit — ported from Qwen Image 2.1's
       // pilot. Applied inside attachLLMPanel once its model list actually loads.
-      const llmApi = attachLLMPanel({promptExpandEl,pxTA,getModePrompt,setModePrompt,state,persist,updateCount,getPromptTA:()=>promptTA,openSettings:()=>settingsOv?.show(),defaultModelFormat:"Z-Image & Lumina-2 (LLM text encoder)"});
+      const llmApi = attachLLMPanel({bilingual:imgBil.panel,promptExpandEl,pxTA,getModePrompt,setModePrompt,state,persist,updateCount,getPromptTA:()=>promptTA,openSettings:()=>settingsOv?.show(),defaultModelFormat:"Z-Image & Lumina-2 (LLM text encoder)"});
 
       // ── Help overlay ─────────────────────────────────────────────────────
       const HELP_SECTIONS = [

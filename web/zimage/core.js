@@ -42,7 +42,9 @@ export function defaultState(saved) {
     autoEnhance: saved.autoEnhance ?? false,
 
     prompt: saved.prompt || "",          // legacy fallback
-    promptsByMode: saved.promptsByMode || {}, // per-mode independent prompts
+    promptsByMode: saved.promptsByMode || {},
+    promptSlots: saved.promptSlots || {}, // per-mode independent prompts
+    promptSlots: saved.promptSlots || {},
     negativePrompt: saved.negativePrompt || "",
     promptSuffix: saved.promptSuffix || "",
 
