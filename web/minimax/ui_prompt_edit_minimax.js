@@ -1402,7 +1402,7 @@ ${name}`, style: {
   // images re-attached, exactly like their version ("media is intentionally not
   // attached"). The OUTPUT stays our own shot-separated brief format throughout; only
   // the prompt-construction technique is borrowed.
-  function buildRefineUserPrompt(currentPrompt, instruction, imageSummary, lib = null) {
+  function buildRefineUserPrompt(currentPrompt, instruction, imageSummary, lib = null, common = null) {
     const lines = [
       "Rewrite the current H3 brief according to the revision instruction. "
       + "Return only the complete revised brief. Do not discuss the changes.",
@@ -1411,6 +1411,18 @@ ${name}`, style: {
       currentPrompt || "(empty)",
       "",
     ];
+    // The Common opening / tail is put around this prompt when the clip is made, so it is not in the text above:
+    // show it, or the rewrite repeats or contradicts it.
+    const commonHeader = (common?.header || "").trim(), commonFooter = (common?.footer || "").trim();
+    if (commonHeader || commonFooter) {
+      lines.push(
+        "Common prompt (placed before and after the current prompt when the video is made — read it so the revised "
+        + "brief fits it: do not repeat it, do not contradict it, and do not include it in your answer):",
+        ...(commonHeader ? ["Opening:", commonHeader] : []),
+        ...(commonFooter ? ["Tail:", commonFooter] : []),
+        "",
+      );
+    }
     if (imageSummary) {
       lines.push(
         state.briefImageMode === "fl"
@@ -1737,7 +1749,7 @@ ${name}`, style: {
     try {
       const imageSummary = await describeImages(images, (t) => { refineBtnLabel.textContent = t; statusTag.textContent = t; });
       refineBtnLabel.textContent = "Refining...";
-      const userPrompt = buildRefineUserPrompt(current, lastRefineInstruction, imageSummary, lib);
+      const userPrompt = buildRefineUserPrompt(current, lastRefineInstruction, imageSummary, lib, clipFraming(state, selected));
       const text = (briefCustom
         ? await writeBriefCustom(systemPrompt, userPrompt, { baseUrl: state.h3CustomBriefBase, model: state.h3CustomBriefModel, context: state.h3CustomBriefCtx })
         : briefLlama
