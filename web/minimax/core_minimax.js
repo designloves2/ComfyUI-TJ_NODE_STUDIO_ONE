@@ -188,6 +188,33 @@ export function shiftShots(text, offsetSec, startNo) {
 export const shotCount = (text) => shotBlocks(text).length;
 
 /**
+ * A long text whose shot times run over the WHOLE piece (a long shot) cut into consecutive clips by time: clip k covers
+ * [lens[0] + ... + lens[k-1], + lens[k]). A shot belongs to the clip its start time falls in (the first shot starts at 0, a shot
+ * with no time continues from the one before). Every clip starts over: its shots are numbered from 1 and timed from its own
+ * start. Returns [{ text, from, to }] for the clips that got at least one shot (from / to in seconds of the whole piece).
+ */
+export function splitShotsByTime(text, lens) {
+  const raw = String(text || "");
+  const blocks = shotBlocks(raw);
+  if (!blocks.length || !lens.length) return [];
+  const edges = [];
+  let acc = 0;
+  for (const l of lens) { edges.push(acc); acc += l; }
+  const buckets = lens.map(() => []);
+  let last = 0;
+  blocks.forEach((b, k) => {
+    const start = k === 0 ? 0 : (b.start ?? last);
+    last = start;
+    let w = 0;
+    while (w + 1 < edges.length && edges[w + 1] <= start + 0.001) w++;
+    buckets[w].push(raw.slice(b.from, b.to).replace(/\s+$/, ""));
+  });
+  return buckets
+    .map((list, w) => ({ text: list.length ? rebaseShots(list.join("\n")) : "", from: edges[w], to: edges[w] + lens[w] }))
+    .filter(c => c.text);
+}
+
+/**
  * Writes the shot times of one clip in half-second steps. A time between two half seconds goes to the
  * nearest one; a time exactly halfway (x.25 / x.75) goes the way the clip's own real render length rounds
  * to its half-second value - the clip rendered longer than its half-second value (rounded down) sends

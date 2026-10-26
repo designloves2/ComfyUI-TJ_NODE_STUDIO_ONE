@@ -6,7 +6,7 @@
 //
 // The brief-writing instruction is the same "Minimax H3 (Video)" system prompt TJ_NODE
 // ships, fetched from the backend (with a built-in fallback when TJ_NODE isn't present).
-import { C, BRAND, el, clear, clipSecondsFor, clipFramesFor, clipTimeline, snapHalf, snapClipSec, clipSecForTyped, shotRanges, rebaseShots, shiftShots, shotCount, snapShotTimes, oneTakeLlmOn, oneTakeRules, oneTakeFixShots, oneTakeIssues, activePrompts, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt, imageBriefMax, promptText, promptFirstFrame, promptEnabled, clipAssets, clipFraming, promptOverrides, normalizeAssetRef } from "./core_minimax.js";
+import { C, BRAND, el, clear, clipSecondsFor, clipFramesFor, clipTimeline, snapHalf, snapClipSec, clipSecForTyped, shotRanges, rebaseShots, shiftShots, shotCount, splitShotsByTime, ONE_TAKE_OVERLAP_SEC, snapShotTimes, oneTakeLlmOn, oneTakeRules, oneTakeFixShots, oneTakeIssues, activePrompts, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt, imageBriefMax, promptText, promptFirstFrame, promptEnabled, clipAssets, clipFraming, promptOverrides, normalizeAssetRef } from "./core_minimax.js";
 import { panel, label, button, select, row, col } from "../klein/ui_common.js";
 import { buildClipMediaSlots } from "./ui_clip_media_slots.js";
 import { openVideoGalleryPicker } from "./ui_video_picker_minimax.js";
@@ -1342,6 +1342,13 @@ ${name}`, style: {
   }
 
   let writeTarget = "all";   // set by doWrite: "one" = this clip, "all" = split into all clips
+  // What the Write in progress is (the Prompt Write menu): "single" = the normal Write; "longshot" = ONE prompt whose shot times run
+  // over the whole piece, cut into clips in the result window; "onetake" = clips written with the One-Take rules from a total length.
+  // The result window keeps the kind (reviewWriteKind) so it applies the answer the same way.
+  let writeKind = "single", reviewWriteKind = "single";
+  const oneTakeNow = () => writeKind === "onetake" || oneTakeLlmOn(state);
+  const oneTakeReview = () => reviewWriteKind === "onetake" || oneTakeLlmOn(state);
+  const fmtClock = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${(s - Math.floor(s / 60) * 60).toFixed(3).padStart(6, "0")}`;
   function buildUserPrompt(baseText, imageSummary, lib = null) {
     const one = writeTarget === "one";
     const t0 = targetPlan();
@@ -1365,7 +1372,22 @@ ${name}`, style: {
         ? `Target duration: ${t.seconds.toFixed(2)} seconds total, split into ${t.shots} shot(s) of ~${t.clipSec.toFixed(2)}s each.`
         : `Target duration: ${t.seconds.toFixed(2)} seconds total, split into ${t.shots} clips of ${lens.map(s => `${s.toFixed(2)}s`).join(", ")}.`,
     ];
-    if (t.shots > 1) {
+    if (writeKind === "longshot" && !one) {
+      // a long shot: ONE brief timed over the whole piece (the clips are cut from it afterwards)
+      const edges = []; let acc = 0;
+      for (const l of lens) { edges.push(acc); acc += l; }
+      lines.push(
+        `LONG SHOT. Write ONE brief for the whole piece, ${t.seconds.toFixed(1)} seconds in total, as one continuous long shot. `
+        + `Shot times run over the WHOLE piece: "At MM:SS.mmm" is counted from the start of the piece (from 00:00.000 up to ${fmtClock(t.seconds)}), `
+        + "never restarted for a clip.",
+        `The piece will afterwards be cut into ${t.shots} consecutive clips (${edges.map((e, k) => `${fmtClock(e)}-${fmtClock(e + lens[k])}`).join(", ")}). `
+        + "Start a new [Shot N] inside every one of those windows, at about the time the window opens, so every clip gets its own opening "
+        + "and the shots cover the whole length without gaps. Keep the same people, place, light and style from one window to the next.",
+        "Write the shared header sections (subject_definitions, summary, retention_analysis, SCENARIO, technical_settings) once, then the "
+        + "[Shot N] blocks in order (the first [Shot 1] has no timestamp), then overall_soundscape and non_diegetic_music once. "
+        + "Do not separate clips with --- : this is a single brief.",
+      );
+    } else if (t.shots > 1) {
       lines.push(
         `Write exactly ${t.shots} clips, separated by a line containing only ---. Every clip is its own video: write each one `
         + "as a full brief with the labels subject_definitions:, summary:, retention_analysis:, SCENARIO:, technical_settings:, "
@@ -1375,7 +1397,7 @@ ${name}`, style: {
         + "The shots of a clip must add up to that clip's own length.",
       );
     }
-    if (oneTakeLlmOn(state)) {
+    if (oneTakeNow()) {
       // The clip before the one being written (target "one"): how it ends is what this one has to open with.
       let prevEnding = "";
       if (one && selected > 0) {
@@ -1651,6 +1673,7 @@ ${name}`, style: {
     const auto = opts?.auto === true;
     const stop = (msg) => { if (auto) throw new Error(msg); ctx.showPopup?.(msg, true); };
     if (busy) return false;
+    writeKind = !auto && (opts?.kind === "longshot" || opts?.kind === "onetake") ? opts.kind : "single";
     deriveModes(); renderImageRow(); renderModelSel();
     // Same resolver the render loop uses, so Prompt Write always looks at the pictures
     // this clip will actually be made from.
@@ -1672,7 +1695,8 @@ ${name}`, style: {
     if (briefCustom && !(state.h3CustomBriefBase && state.h3CustomBriefModel)) { stop("Connect Custom (Brief) needs an API base URL and a model ID - set them in Settings."); return false; }
     if (images.length && visionCustom && !(state.h3CustomVisionBase && state.h3CustomVisionModel)) { stop("Connect Custom (Vision) needs an API base URL and a model ID - set them in Settings."); return false; }
 
-    const target = auto ? "one" : targetSel.value;
+    // a long shot / One-Take write is always for the whole piece (the dropdown only decides a normal Write)
+    const target = auto ? "one" : writeKind !== "single" ? "all" : targetSel.value;
     writeTarget = target;
     // A clip that already has its own header and sound / music is written from all three together.
     const clipOwn = target === "one" && ownFraming() ? state.prompts[selected] : null;
@@ -1724,7 +1748,112 @@ ${name}`, style: {
       setEditorBusy(false);
     }
   }
-  enhBtn.addEventListener("click", doWrite);
+  // ── Prompt Write menu ─────────────────────────────────────────────────────
+  // The Write button first asks which kind of prompt to write: Single Shot (the normal Write), Long Shot (one prompt over a total
+  // length you give, cut into clips in the result window) or One-Take (clips chained into one unbroken take: total length, written
+  // with the One-Take rules, then cut into clips in the result window).
+  const writeMenuOv = el("div", { style: {
+    display: "none", position: "absolute", inset: "0", zIndex: "11", background: "rgba(0,0,0,0.6)",
+    alignItems: "center", justifyContent: "center", boxSizing: "border-box",
+  }});
+  const writeMenuPanel = el("div", { style: {
+    width: "min(560px, 92%)", display: "flex", flexDirection: "column", gap: "8px", padding: "14px", boxSizing: "border-box",
+    background: "rgba(11,11,11,0.985)", border: `1px solid ${BRAND}`, borderRadius: "10px", boxShadow: "0 8px 30px rgba(0,0,0,0.6)",
+  }});
+  writeMenuOv.appendChild(writeMenuPanel);
+  let writeMenuDone = null;
+  function closeWriteMenu(result) {
+    writeMenuOv.style.display = "none";
+    const done = writeMenuDone; writeMenuDone = null;
+    done?.(result);
+  }
+  writeMenuOv.addEventListener("click", (e) => { if (e.target === writeMenuOv) closeWriteMenu(null); });
+  const menuSmallBtn = (text, on, primary = false) => {
+    const b = el("button", { type: "button", text, style: {
+      cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "7px 14px", borderRadius: "6px",
+      background: primary ? BRAND : C.bg2, color: primary ? "#fff" : C.text, border: primary ? "none" : `1px solid ${C.border}`,
+      fontWeight: primary ? "700" : "400" } });
+    b.addEventListener("click", on);
+    return b;
+  };
+  function writeKindBtn(title, desc, on) {
+    const b = el("button", { type: "button", style: {
+      cursor: "pointer", fontFamily: "inherit", textAlign: "left", display: "flex", flexDirection: "column", gap: "3px",
+      padding: "10px 12px", borderRadius: "8px", background: C.bg1, border: `1px solid ${C.border}`, color: C.text } }, [
+      el("div", { text: title, style: { fontSize: "12.5px", fontWeight: "700", color: BRAND } }),
+      el("div", { text: desc, style: { fontSize: "10.5px", color: C.muted, lineHeight: "1.5" } }),
+    ]);
+    b.addEventListener("mouseenter", () => { b.style.borderColor = BRAND; });
+    b.addEventListener("mouseleave", () => { b.style.borderColor = C.border; });
+    b.addEventListener("click", on);
+    return b;
+  }
+  function showWriteKinds() {
+    clear(writeMenuPanel);
+    writeMenuPanel.append(
+      el("div", { text: "✨ Prompt Write — which kind?", style: { color: "#fff", fontSize: "13px", fontWeight: "700" } }),
+      writeKindBtn("Single Shot Write", "One clip. The normal Write: this clip, or split into all clips (the dropdown next to the Write button).",
+        () => closeWriteMenu({ kind: "single" })),
+      writeKindBtn("Long Shot Write", "One long shot over a total length you give. The whole prompt is written on that timeline, then cut into clips in the result window - each clip gets its own shot numbers and times.",
+        () => showWriteTotal("longshot")),
+      writeKindBtn("One-Take Write", "Clips chained into one unbroken take. You give the total length; it is written with the One-Take rules (the end of each clip copied into the start of the next), then cut into clips in the result window.",
+        () => showWriteTotal("onetake")),
+      el("div", { style: { display: "flex", justifyContent: "flex-end" } }, [menuSmallBtn("Cancel", () => closeWriteMenu(null))]),
+    );
+  }
+  function showWriteTotal(kind) {
+    clear(writeMenuPanel);
+    const plan = ctx.currentPlan?.() || { count: 1, clipSec: 8 };
+    const input = el("input", { type: "text", placeholder: "30s, 0:30, 1분 20초", style: {
+      width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+      borderRadius: "6px", padding: "8px 10px", fontSize: "13px", fontFamily: "inherit", outline: "none" } });
+    input.value = state.targetLength || "";
+    const hint = el("div", { style: { fontSize: "11px", color: C.muted, lineHeight: "1.5" } });
+    const paint = () => {
+      const secs = parseTargetSeconds(input.value);
+      if (!(secs > 0)) { hint.style.color = C.muted; hint.textContent = "Type the total length."; return; }
+      const n = Math.max(1, Math.round(secs / plan.clipSec));
+      hint.style.color = C.text;
+      hint.textContent = `→ ${n} clip(s) × ${plan.clipSec.toFixed(2)} s = ${(n * plan.clipSec).toFixed(1)} s`
+        + (kind === "onetake" ? ` · the stitched video is about ${(n * plan.clipSec - (n - 1) * ONE_TAKE_OVERLAP_SEC).toFixed(1)} s (the ${ONE_TAKE_OVERLAP_SEC.toFixed(3)} s overlap of every clip after the first is removed)` : "");
+    };
+    input.addEventListener("input", paint);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+    const go = () => {
+      const secs = parseTargetSeconds(input.value);
+      if (!(secs > 0)) { hint.style.color = C.err; hint.textContent = "Type the total length first."; return; }
+      closeWriteMenu({ kind, totalSec: secs });
+    };
+    paint();
+    writeMenuPanel.append(
+      el("div", { text: kind === "longshot" ? "✨ Long Shot Write — total length" : "✨ One-Take Write — total length", style: { color: "#fff", fontSize: "13px", fontWeight: "700" } }),
+      el("div", { text: kind === "longshot"
+        ? "How long is the whole long shot? The prompt is written with times counted over this whole length."
+        : "How long should the whole take be? The clips are written one after another with the One-Take rules.", style: { fontSize: "10.5px", color: C.muted, lineHeight: "1.5" } }),
+      input, hint,
+      el("div", { style: { display: "flex", justifyContent: "space-between", gap: "8px" } }, [
+        menuSmallBtn("← Back", showWriteKinds),
+        el("div", { style: { display: "flex", gap: "8px" } }, [menuSmallBtn("Cancel", () => closeWriteMenu(null)), menuSmallBtn("✨ Write", go, true)]),
+      ]),
+    );
+    setTimeout(() => input.focus(), 40);
+  }
+  function askWriteKind() {
+    return new Promise((resolve) => { writeMenuDone = resolve; showWriteKinds(); writeMenuOv.style.display = "flex"; });
+  }
+  async function onWriteClick() {
+    if (busy) return false;
+    const pick = await askWriteKind();
+    if (!pick) return false;
+    if (pick.kind !== "single") {
+      // the plan (how many clips, how long) reads the target length field
+      lenIn.value = `${Math.round(pick.totalSec * 100) / 100}s`;
+      state.targetLength = lenIn.value;
+      ctx.persist(); renderLenTag();
+    }
+    return doWrite({ kind: pick.kind });
+  }
+  enhBtn.addEventListener("click", onWriteClick);
 
   let lastRefineInstruction = "";
   async function doRefine() {
@@ -1947,8 +2076,14 @@ ${name}`, style: {
     if (reviewMode === "one") {
       rvBody.appendChild(reviewCard("one", `→ CLIP ${selected + 1} (whole brief, one paragraph)`, reviewText));
     } else {
-      const briefs = reviewMode === "split" && reviewTarget === "all" ? clipBriefs(reviewText) : null;
-      if (briefs) {
+      const briefs = reviewMode === "split" && reviewTarget === "all" && reviewWriteKind !== "longshot" ? clipBriefs(reviewText) : null;
+      const windows = reviewMode === "split" && reviewTarget === "all" && reviewWriteKind === "longshot" && p.shots.length ? longShotClips() : null;
+      if (windows) {
+        // a long shot: the shots are cut into clips by the time window each one starts in; every clip starts over at [Shot 1]
+        if (p.header) rvBody.appendChild(reviewCard("header", "COMMON — HEADER", p.header));
+        windows.forEach((c, i) => rvBody.appendChild(reviewCard(`shot:${i}`, `CLIP ${i + 1} — ${fmtClockShort(c.from)}~${fmtClockShort(c.to)} of the long shot`, c.text)));
+        if (p.footer) rvBody.appendChild(reviewCard("footer", "COMMON — SOUND / MUSIC", p.footer));
+      } else if (briefs) {
         briefs.forEach((b, i) => {
           if (b.header) rvBody.appendChild(reviewCard("header", `CLIP ${i + 1} — THIS CLIP — HEADER`, b.header));
           rvBody.appendChild(reviewCard(`shot:${i}`, `CLIP ${i + 1}`, rebaseShots(b.shots.join("\n\n"))));
@@ -1965,9 +2100,10 @@ ${name}`, style: {
 
     // Info line — for "all" enhance, call out when the model wrote a different shot count
     // than the target asked for (the small brief model often does).
-    const structured = reviewTarget === "all" ? clipBriefs(reviewText) : null;
+    const lw = reviewMode === "split" && reviewTarget === "all" && reviewWriteKind === "longshot" && p.shots.length ? longShotClips() : null;
+    const structured = reviewTarget === "all" && !lw ? clipBriefs(reviewText) : null;
     const want = reviewTarget === "all" ? targetPlan().shots : 0;
-    const got = structured ? structured.length : (p.shots.length || 1);
+    const got = structured ? structured.length : lw ? lw.length : (p.shots.length || 1);
     let info = `${reviewText.length} chars`;
     if (reviewTarget === "all") {
       info += structured ? ` · ${got} clips` : ` · ${got} shot${got > 1 ? "s" : ""}`;
@@ -1975,7 +2111,7 @@ ${name}`, style: {
     } else {
       info += ` → clip ${selected + 1}`;
     }
-    if (oneTakeLlmOn(state) && reviewMode !== "one") {
+    if (oneTakeReview() && reviewMode !== "one") {
       const clips = structured ? structured.map(b => [b.header, ...b.shots, b.footer].join("\n"))
         : reviewTarget === "all" ? (p.shots.length ? p.shots : [reviewText]).map((s, i) => (i === 0 ? [p.header, s] : [s]).join("\n"))
         : [[p.header, ...p.shots, p.footer].join("\n")];
@@ -1987,9 +2123,17 @@ ${name}`, style: {
     rvSummary.textContent =
       reviewMode === "one"   ? `Whole brief → clip ${selected + 1}'s text. Header / tail untouched.`
     : reviewMode === "manual" ? (reviewSel.size ? `Applying ${reviewSel.size} selected part(s).` : "Click the cards to apply.")
+    : lw                      ? `Cuts the long shot into ${got} clip(s) by time - each starts over at [Shot 1] with its own shot numbers and times. Replaces all prompts${p.header ? " + common header" : ""}${p.footer ? " + tail" : ""}.`
     : structured              ? `Replaces all prompts with ${got} clips, each with its own header and sound / music (override on).`
     : reviewTarget === "all"  ? `Replaces all prompts with ${got}${p.header ? " + header" : ""}${p.footer ? " + tail" : ""}.`
     :                           `Replaces clip ${selected + 1}${p.header || p.footer ? (ownFraming() ? " and this clip's header / sound" : " and the common parts") : ""}.`;
+  }
+
+  // The clip windows of a long shot: one clip length after another, as many as the planned clip count.
+  const fmtClockShort = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+  function longShotClips() {
+    const lens = Array.from({ length: Math.max(1, targetPlan().shots) }, (_, k) => clipSecondsFor(state, k));
+    return splitShotsByTime(reviewParsed.shots.join("\n\n"), lens);
   }
 
   // N clips written as N full briefs separated by --- (each with its own header sections, [Shot N]
@@ -2031,6 +2175,7 @@ ${name}`, style: {
 
   function openReview(text, target, kind) {
     reviewText = text; reviewTarget = target; reviewKind = kind || "write";
+    reviewWriteKind = reviewKind === "refine" ? "single" : writeKind;
     rvHdrTitle.textContent = reviewKind === "refine" ? "🔧 Prompt Refine result" : "✨ Prompt Write result";
     rvAgain.textContent = reviewKind === "refine" ? "↻ Refine again" : "↻ Write again";
     reviewParsed = parseBrief(text);
@@ -2088,8 +2233,16 @@ ${name}`, style: {
       state.prompts[selected] = normPrompt(state.prompts[selected]);
       putEn(state.prompts[selected], "text", reviewText);        // header/footer left alone
     } else if (reviewMode === "split") {
-      const briefs = reviewTarget === "all" ? clipBriefs(reviewText) : null;
-      if (briefs) {
+      const briefs = reviewTarget === "all" && reviewWriteKind !== "longshot" ? clipBriefs(reviewText) : null;
+      const windows = reviewTarget === "all" && reviewWriteKind === "longshot" && p.shots.length ? longShotClips() : null;
+      if (windows && windows.length) {
+        // long shot: one clip per time window, each starting over at [Shot 1] (the times counted from its own start)
+        if (p.header) putEn(state, "promptHeader", p.header);
+        if (p.footer) putEn(state, "promptFooter", p.footer);
+        state.prompts = keepTimes(windows.map(c => ({ text: c.text, firstFrame: "", enabled: true })), oldPrompts);
+        selected = 0;
+        for (const c of state.prompts) if (c.text) koTodo.push([c, "text"]);
+      } else if (briefs) {
         // Every clip gets its own header sections, [Shot] blocks and sound / music.
         state.prompts = keepTimes(briefs.map(b => seedOverride({
           text: rebaseShots(b.shots.join("\n\n")), firstFrame: "", enabled: true,
@@ -2129,7 +2282,7 @@ ${name}`, style: {
         }
       }
     }
-    if (reviewMode !== "one" && oneTakeLlmOn(state)) {
+    if (reviewMode !== "one" && oneTakeReview()) {
       const fold = (i) => { const c = state.prompts[i]; if (c && typeof c === "object") c.text = oneTakeFixShots(c.text, c.header); };
       if (reviewTarget === "all") (state.prompts || []).forEach((_, i) => fold(i)); else fold(selected);
     }
@@ -2154,7 +2307,7 @@ ${name}`, style: {
   });
   rvAgain.addEventListener("click", () => {
     reviewOv.style.display = "none";
-    runTransient(reviewKind === "refine" ? doRefine : doWrite);
+    runTransient(reviewKind === "refine" ? doRefine : () => doWrite({ kind: reviewWriteKind }));   // "Write again" keeps the kind
   });
 
   // ── split dialog ───────────────────────────────────────────────────────────
@@ -2477,7 +2630,7 @@ ${name}`, style: {
   // Prompt Write / Refine stay in view whether LOCAL ENHANCE is folded or not.
   footer.append(splitBtn, mergeBtn, previewBtn, planTag, enhBtn, refineBtn, button("✓ Done", () => hide(), "primary"));
 
-  ov.append(hdr, setsWrap, commonWrap, body, enhWrap, footer, splitOv, mergeOv, reviewOv);
+  ov.append(hdr, setsWrap, commonWrap, body, enhWrap, footer, splitOv, mergeOv, writeMenuOv, reviewOv);
 
   function refreshPlanTag() {
     const p = ctx.currentPlan?.();
@@ -2542,7 +2695,7 @@ ${name}`, style: {
     /** Same idea as openRefine(), but runs Prompt Write instead — used by the main
      * screen's own Prompt Write button. */
     openWrite(idx) {
-      openTransient(idx, doWrite);
+      openTransient(idx, onWriteClick);
     },
     /**
      * An H3 first/last-frame brief for a finished video (Postprocess → Latent Upscale (Use H3)).
