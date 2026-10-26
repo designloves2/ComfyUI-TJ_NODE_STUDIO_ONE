@@ -133,7 +133,11 @@ export async function translateText(text, to, llm, opts = {}) {
   // nothing left to translate (only protected parts / no letters)
   if (!HAS_LETTERS.test(masked.replace(MARK_RE, ""))) return src;
   const { lines, leads } = splitLineLeads(masked);
-  const ask = async (t) => cleanLlmText(await llm(TRANSLATE_SYSTEM(to, tokens.length > 0), t));
+  // markers the model may use: the ones inside the text it is given (line leads are kept out of it)
+  const sent = new Set(lines.join(" ").match(MARK_RE)?.map(m => Number(m.replace(/\D/g, ""))));
+  // a marker the model made up is dropped
+  const ask = async (t) => cleanLlmText(await llm(TRANSLATE_SYSTEM(to, sent.size > 0), t))
+    .replace(MARK_RE, (m, n) => (sent.has(Number(n)) ? m : "")).replace(/ {2,}/g, " ").replace(/ +$/gm, "");
   const finish = (outLines) => {
     const back = unmaskProtected(joinLeads(outLines, leads), tokens);
     return back == null ? null : back.trim();
