@@ -3577,6 +3577,9 @@ async def _run_ffmpeg(cmd, timeout):
         cmd[:1] + ["-nostdin"] + cmd[1:], capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL))
 
 
+_X264_IOS = ["-c:v", "libx264", "-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "5.1"]
+
+
 @PromptServer.instance.routes.post("/minimax_h3_one/stitch")
 async def mmh3_stitch(request):
     """Concatenate the per-clip video files into one file (stream copy, no re-encode).
@@ -3663,13 +3666,16 @@ async def mmh3_stitch(request):
             # every clip is scaled/padded to the first clip's frame here.
             ffprobe0 = _ffprobe_exe()
             base_w = base_h = 0
+            base_rate = "24"
             if ffprobe0:
                 try:
                     pr = subprocess.run(
                         [ffprobe0, "-v", "error", "-select_streams", "v:0",
-                         "-show_entries", "stream=width,height", "-of", "csv=p=0:s=x", paths[0]],
+                         "-show_entries", "stream=width,height,r_frame_rate", "-of", "csv=p=0:s=x", paths[0]],
                         capture_output=True, text=True, timeout=30)
-                    base_w, base_h = (int(x) for x in (pr.stdout or "").strip().split("x")[:2])
+                    w_h_r = (pr.stdout or "").strip().split("x")
+                    base_w, base_h = int(w_h_r[0]), int(w_h_r[1])
+                    base_rate = w_h_r[2]
                 except Exception:
                     base_w = base_h = 0
             fit = (f"scale={base_w}:{base_h}:force_original_aspect_ratio=decrease,"
@@ -3702,7 +3708,9 @@ async def mmh3_stitch(request):
                 cmd += ["-map", f"{audio_input_idx}:a:0", "-shortest"]
             else:
                 cmd += ["-map", "[outa]"]
-            cmd += ["-c:v", "libx264", "-crf", "18", "-preset", "medium", "-c:a", "aac",
+            # constant frame rate + a level iPhones decode: concat of trimmed clips otherwise ends up with odd
+            # timestamps (24.08 fps) and x264 writes level 6.2, which iOS refuses to play
+            cmd += ["-fps_mode", "cfr", "-r", base_rate, *_X264_IOS, "-c:a", "aac",
                     "-movflags", "+faststart", out_path]
             proc = await _run_ffmpeg(cmd, 900)
             if proc.returncode != 0 or not os.path.isfile(out_path):
@@ -3731,13 +3739,12 @@ async def mmh3_stitch(request):
         if override_audio_path:
             # swap in the separate audio source instead of each clip's own track; always
             # re-encode since we're remapping streams across inputs, not just stream-copying.
-            cmd += ["-map", "0:v", "-map", "1:a:0", "-shortest",
-                    "-c:v", "libx264", "-crf", "18", "-preset", "medium", "-c:a", "aac"]
+            cmd += ["-map", "0:v", "-map", "1:a:0", "-shortest", *_X264_IOS, "-c:a", "aac"]
             if trim and trim > 0:
                 cmd += ["-t", f"{trim:.3f}"]
         elif trim and trim > 0:
             # re-encode when trimming so the cut lands on an exact timestamp
-            cmd += ["-t", f"{trim:.3f}", "-c:v", "libx264", "-crf", "18", "-preset", "medium", "-c:a", "aac"]
+            cmd += ["-t", f"{trim:.3f}", *_X264_IOS, "-c:a", "aac"]
         else:
             cmd += ["-c", "copy"]
         # moov before mdat — desktop browsers seek back for it, iOS Safari refuses to
@@ -3757,7 +3764,7 @@ async def mmh3_stitch(request):
             with open(list_path, "w", encoding="utf-8") as fh:
                 for p in paths:
                     fh.write("file '%s'\n" % p.replace("\\", "/").replace("'", "'\\''"))
-            cmd_re += ["-c:v", "libx264", "-crf", "18", "-preset", "medium", "-c:a", "aac"]
+            cmd_re += [*_X264_IOS, "-c:a", "aac"]
             if trim and trim > 0:
                 cmd_re += ["-t", f"{trim:.3f}"]
             cmd_re += ["-movflags", "+faststart", out_path]

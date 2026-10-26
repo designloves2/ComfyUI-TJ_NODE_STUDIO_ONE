@@ -1704,6 +1704,11 @@ export function defaultState(saved) {
     ppH3KimFinalMp: saved.ppH3KimFinalMp ?? 2.0,
     ppH3ChunkRows: saved.ppH3ChunkRows ?? 2048,
     ppH3NoOpt: !!saved.ppH3NoOpt,
+    // long clips: the Latent Upscale runs in pieces of ppH3SegSeconds (or ppH3SegCount pieces), then they are joined
+    ppH3Split: !!saved.ppH3Split,
+    ppH3SegMode: saved.ppH3SegMode === "count" ? "count" : "seconds",
+    ppH3SegSeconds: saved.ppH3SegSeconds ?? 5,
+    ppH3SegCount: saved.ppH3SegCount ?? 2,
     ppSource: saved.ppSource || "",
     ppSourceKind: saved.ppSourceKind || "gallery",
     ppSourceMeta: saved.ppSourceMeta || null,
