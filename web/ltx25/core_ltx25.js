@@ -1,4 +1,5 @@
 // core_ltx25.js — LTX 2.5 ONE STUDIO (TJ) constants, state, helpers
+import { bilingualSlots } from "../shared/bilingual.js";
 export const BRAND = "#7612DA";   // pack-wide TJ purple, same as every other ONE STUDIO node
 export const C = {
   lime: BRAND, bg0: "#0b0b0b", bg1: "#111111", bg2: "#181818",
@@ -834,10 +835,12 @@ export function defaultState(saved) {
             timeOverride: !!p?.timeOverride,
             timeSec:     Number(p?.timeSec) > 0 ? Number(p.timeSec) : 0,
             // this clip's segment timeline: the Director's widget values + the clip length they were made for
-            dir:         p?.dir && typeof p.dir === "object" ? p.dir : null })),
+            dir:         p?.dir && typeof p.dir === "object" ? p.dir : null,
+            ...bilingualSlots(p, ["text", "header", "footer"]) })),
     // clips rendered per prompt (>1 continues the same description across chained clips)
     promptHeader: saved.promptHeader || "",
     promptFooter: saved.promptFooter || "",
+    ...bilingualSlots(saved, ["promptHeader", "promptFooter"]),
     promptSuffix: saved.promptSuffix || "",
     enhCollapsed: !!saved.enhCollapsed,
 

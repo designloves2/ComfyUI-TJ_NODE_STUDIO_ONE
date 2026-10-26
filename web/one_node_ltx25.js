@@ -40,6 +40,9 @@ import { createCommonPromptOverlay } from "./ltx25/ui_common_prompt_ltx25.js";
 import { createGalleryOverlay } from "./ltx25/ui_gallery_ltx25.js";
 import { resolvePipeOverrides, applyOverridesTemp } from "./shared/promptdb_pipe.js";
 import { attachNodeState, restoreNodeState } from "./shared/node_state.js";
+import { attachBilingual } from "./shared/bilingual_ui.js";
+import { ensureEnglish, fieldNeedsEnglish } from "./shared/bilingual.js";
+import { translateLlm } from "./shared/translate_config.js";
 import { createNodeFullscreen } from "./shared/node_fullscreen.js";
 
 // ── Layout ────────────────────────────────────────────────────────────────────
@@ -1365,6 +1368,7 @@ app.registerExtension({
             persist();
           });
           ta.dataset.clipIndex = String(i);
+          const bil = attachBilingual(ta, { target: () => (state.prompts[i] = normPrompt(state.prompts[i])), key: "text", persist, onError: m => showPopup(m, true) });
           // Same "@" list as Prompt Edit: this clip's library references (nothing for a file clip).
           attachAtComplete(ta, async () => (await libraryContextCached(libraryRefFor(clipAssets(state, i), state.generationMode)))?.items || []);
           ta.addEventListener("focus", () => { ta.style.borderColor = BRAND; lastFocusedPromptTA = ta; });
@@ -1379,7 +1383,7 @@ app.registerExtension({
             else state.prompts.splice(i, 1);
             persist(); refreshPlan();
           });
-          line.append(sideCol, el("div", { style: { flex: "1", minWidth: "0", display: "flex", flexDirection: "column", gap: "3px" } }, [ta, ...(state.generationMode === "director" ? [miniBar(p, i)] : [])]), del);
+          line.append(sideCol, el("div", { style: { flex: "1", minWidth: "0", display: "flex", flexDirection: "column", gap: "3px" } }, [bil.el, ...(state.generationMode === "director" ? [miniBar(p, i)] : [])]), del);
           promptList.appendChild(line);
         });
       }
@@ -2786,6 +2790,22 @@ app.registerExtension({
             else if (state.seedMode === "increment") { state.seed = (state.seed || 0) + 1; seedInput.value = state.seed; }
             else if (state.seedMode === "decrement") { state.seed = Math.max(0, (state.seed || 0) - 1); seedInput.value = state.seed; }
             persist();
+          }
+
+          // A prompt edited in Korean only is turned into English before the run is frozen.
+          if (!resume) {
+            const jobs = [[state, "promptHeader"], [state, "promptFooter"]];
+            state.prompts.forEach((raw, i) => {
+              const p = (state.prompts[i] = normPrompt(raw));
+              if (promptEnabled(p)) jobs.push([p, "text"], [p, "header"], [p, "footer"]);
+            });
+            const need = jobs.filter(([obj, key]) => fieldNeedsEnglish(obj, key));
+            for (let n = 0; n < need.length; n++) {
+              genBtn.textContent = "⏳ Translating…";
+              setStatus(`Translating Korean prompt ${n + 1}/${need.length} to English…`);
+              await ensureEnglish(need[n][0], need[n][1], translateLlm());
+            }
+            if (need.length) { persist(); renderPrompts(); setStatus(""); genBtn.textContent = "⏳ Preparing…"; }
           }
 
           // Auto Prompt: the prompts are rewritten before the run is frozen into `rs`, so what
