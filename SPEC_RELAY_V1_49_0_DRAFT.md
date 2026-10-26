@@ -1,0 +1,44 @@
+# SPEC (DRAFT, not sent) — node commits a48d15a … beaa291 (translation toggle, Merge clips, Prompt Write menu)
+
+Status: written by the control tower while the user slept. **Nothing here has been relayed to the web twin or Canvers**; the user decides in the morning (relay needs the user's "사용자가 승인했습니다."). The node repo is not released yet (no version bump / tag).
+
+Read the node code named below; grep it, do not guess. Port exactly (labels, keys, order, texts).
+
+The web twin shares this ComfyUI server, so the **server parts below already exist for the web** (routes in `nodes.py`). Only the browser code has to be ported. Canvers is card/graph based: see section 6.
+
+## 1. Translation LLM setting (shared by every node, live)
+- Server (`nodes.py`, after `_studio_enhance`): `config_translate.json` (keys `backend` "native"|"openrouter"|"llamagguf"|"custom", `native_clip`, `or_model`, `llama_model`, `llama_n_ctx` 16384, `llama_max_tokens` 4096, `custom_base`, `custom_model`, `custom_ctx`); `GET/POST /tj_shared/translate_config` (POST merges, saves, and **pushes the websocket event `tj_translate_config`** to every open page); `POST /tj_shared/translate_llm {system, user}` → `{ok, text}` for openrouter / custom (role `"translate"` added to `_CUSTOM_LLM_ROLES`) / llamagguf (via `_studio_enhance` with `system_override`); the native CLIP backend runs in the page (`writeBriefNative`).
+- Client: `web/shared/translate_config.js` (`getTranslateConfig`, `loadTranslateConfig`, `onTranslateConfig`, `setTranslateConfig`, `translateLlm()`), Settings tab **"Translation LLM"** (`ui_app_settings_minimax.js` → `translationTab()`; tab list `["H3 Model","UpScale Model","FaceRefine Model","LLM Setting","Image LLM","Translation LLM","Preview","Output"]`): backend select (Native (ComfyUI CLIP) / OpenRouter (cloud) / Llama GGUF (local llama.cpp) / Connect Custom), the model picker of the chosen backend, the note `Used by the KO / EN button on every prompt field. Changing it here changes it in all nodes at once.` The tab re-renders when the push arrives.
+
+## 2. The KO / EN button on every prompt field
+Model: a field keeps `obj[key]` (English = what the model gets), `obj[key+"Ko"]`, `obj[key+"Newest"]` ("en"|"ko"|"" = which slot was written last), `obj[key+"View"]` ("en"|"ko").
+- Pure logic: `web/shared/bilingual.js` (port as is, including the tests in this section): `maskProtected / unmaskProtected` (protected = `<d>…</d>` dialogue, `<Picture N>` style tags, `[Shot N]` + `[Shot N] At MM:SS,` as ONE unit, `At MM:SS`, `@tokens` (ASCII part only, so a Korean particle after it stays outside), quoted text, `(tag:1.2)`, URLs, LoRA trigger words), `hasHangul / detectLang`, `TRANSLATE_SYSTEM(to)`, **`translateText`** (a marker that opens a line, i.e. `[Shot N] …`, is NEVER sent to the model — small models drop it — and is put back at the start of the same line; the whole text goes in one call; if the line count changes or a marker is lost: ask again, then line by line; still failing → throw "Translate failed: …"), field helpers `fieldText / fieldEdit / fieldSetBoth / fieldSetView / fieldStale / fieldFill / fieldNeedsEnglish / ensureEnglish / bilingualSlots`.
+- DOM: `web/shared/bilingual_ui.js` `attachBilingual(textarea, {target, key (string or function), persist, protect, onView, onError, onInput})`: wraps the textarea, "EN"/"한" button top-right, orange `↻` when the shown slot is older; in the Korean view the field's own input handler is stopped (capture-phase listener) so Korean never overwrites the English slot; toggling to an empty slot translates first.
+- Wire it to (H3, `one_node_minimax_h3.js`, `ui_prompt_edit_minimax.js`, `ui_common_prompt_minimax.js`, `shared/llm_panel.js`): main clip box; Prompt Edit editor + Header + Tail (key `header`/`footer` when the clip has its own, else `promptHeader`/`promptFooter`); Common popup; image prompt (inline box + the shared Prompt Edit panel, option `attachLLMPanel({ bilingual: { target, key, protect, onError, getMainBil } })`); character sheet prompt; Face Refine prompt (inline + popup). Saved-state whitelist must keep the new keys (`bilingualSlots` in `defaultState` for `prompts[]` text/header/footer and `promptHeader/Footer, imgPrompt, charSheetPrompt, ltxPrompt, frPrompt`).
+- **Generate guard**: before a run is frozen, every field that needs English (`fieldNeedsEnglish`: Korean edited after the English, or Hangul typed into the English box) is translated first (`ensureEnglishPrompts(scope)` for video / image / charsheet / ltx / face; status `Translating Korean prompt i/n to English…`, button `⏳ Translating…`). A failed translation stops the run with the error.
+- Write / Refine / Split / Merge apply: the English slot is written, the Korean slot cleared (`putEn`), then filled in the background (`fillKoLater`, status `writing the Korean view i/n…`). Refine and Write read the text the field SHOWS (Korean or English) and always answer in English. Undo restores the Korean slots too; shot-time snapping is applied to the Korean text as well; Prompt sets save the Korean view of the common pair (needs the `nodes.py` change `promptHeaderKo/promptFooterKo`).
+- Refine also sends the Common header/tail as read-only context (`buildRefineUserPrompt(…, common)`).
+- Measured (node, same brief, 4 backends): native Gemma4-e4b 39 s / 24 s, OpenRouter deepseek-v4-flash 14 s / 20 s, local Gemma4-12B 12 s / 9 s, Custom gemini 22 s / 12 s (EN→KO / KO→EN); every protected part kept.
+
+## 3. Merge clips (Prompt Edit footer `🔗 Merge clips…` and the main-screen `🔗 Merge clips` next to `✂ Split into clips`)
+- Dialog: clip cards in order (drag to reorder, `⋮⋮` grip), a **ticked "✂ clip break"** between two cards keeps them apart; **clear it** (`🔗 joined with the next clip`) to join them. 7 clips with breaks only after 2 and 4 → groups 1-2, 3-4, 5-6-7. Buttons `All separate`, `Merge all`, `✕`, `✓ Apply merge`; group colour stripe; summary `→ N clip(s)`.
+- Text of a group: members one after the other with `shiftShots(text, offsetSec, startNo)` (core): every shot time moves by the lengths of the clips before it, numbering continues, the first shot gets `At <offset>,`. Other fields of the group = the first member's. Total time = the sum, kept **unclamped** in `timeSec` with `timeOverride` on.
+- **Over 15 s** (`overMaxSec`): not blocked. The clip's row in the Prompt Edit list gets a red border, the time reads `<sec> sec ⚠ over 15`, the time box and its note turn red; typing a time ≤ 15 clears it live (the `input` listener), `change` snaps as before. Applies to any clip.
+- Undo `merge clips`; before opening, Korean-only edits are translated.
+
+## 4. Prompt Write menu (the Write button asks first)
+`Single Shot Write` (= today's Write), `Long Shot Write`, `One-Take Write` (modal `writeMenuOv`, descriptions as in the code). Long Shot and One-Take then ask the **total length** (`30s, 0:30, 1분 20초`; prefilled from `state.targetLength`; One-Take also shows the stitched length with the 1.625 s overlaps).
+- Long Shot request block (`buildUserPrompt`, `writeKind === "longshot"`): one brief timed over the WHOLE length, the clip windows listed, a new `[Shot N]` in every window, shared sections once, no `---`. Result window: cards per time window (`CLIP i — m:ss~m:ss of the long shot`), summary `Cuts the long shot into N clip(s) by time…`; Apply uses `splitShotsByTime(text, lens)` (core): a shot belongs to the window its start falls in, each clip restarts at `[Shot 1]`.
+- One-Take: the clip-by-clip request with `oneTakeRules` forced on for this write (the Continuity "One-Take LLM" checkbox is untouched and still drives Auto Prompt); the result is cut by `---` as before.
+- "Write again" keeps the kind. The instructions live in the user prompt (the Llama backend ignores a system prompt).
+
+## 5. Not done / limits
+- LTX inline prompt box: not wired (its mode tab was removed in v1.47.0, the box is unreachable). Postprocess prompts have no field.
+- Other image nodes (Krea2, Z-Image, Klein, SDXL, Qwen, Anima, Moss): `llm_panel.js` already takes the `bilingual` option, only the node wiring is missing.
+- Long Shot / One-Take were checked with a faked LLM reply; real model quality is not judged. The split-time example from the user ([Shot 2] At 00:03 after split) is still open: the node's `rebaseShots` already restarts at `[Shot 1]` with no time.
+
+## 6. Canvers
+Card/graph based: translation (a KO/EN switch on prompt fields) and Merge/Write menu have no direct card. Propose the closest mapping to the control tower (e.g. only the prompt field toggle + the shared Translation LLM setting) before building; do not skip silently.
+
+## Rules
+Do NOT edit the node repo. Test in a real browser run; GPU is shared 16 GB. One report per session: ported / not applicable / not verified, files changed, anything to look at.

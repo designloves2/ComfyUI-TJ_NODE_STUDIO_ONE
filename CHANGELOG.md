@@ -2,6 +2,17 @@
 
 ---
 
+## Unreleased (not tagged yet; the version number is for the owner to pick)
+
+- **Korean ↔ English button on every H3 prompt field** (clip prompts, Prompt Edit, the common header / tail, the image prompt, the character sheet prompt, the Face Refine prompt). The English text is what the model gets; the Korean text is its view. Typing in either view is kept; before a run, a field that was last edited in Korean (or has Korean typed into the English box) is translated to English first. Dialogue in `<d>…</d>`, `<Picture N>`, `[Shot N] At MM:SS`, `@tokens`, quoted text and LoRA trigger words are never translated. Prompt Write / Refine / Split / Merge write the English and fill the Korean view right after.
+- **Settings → new tab "Translation LLM"**: the translation model (Native CLIP / OpenRouter / Llama GGUF / Connect Custom) is one setting for every node, stored on the server and pushed to every open page at once.
+- **Merge clips** (Prompt Edit and next to "Split into clips"): tick / clear the "clip break" between clips to make groups (1-2, 3-4, 5-6-7 at once), drag to reorder; shots are renumbered and moved by the length of the clips before them. A clip set longer than 15 s is flagged red in the clip list (not blocked) until its time is 15 s or less.
+- **Prompt Write asks which kind**: Single Shot (as before), Long Shot (one prompt over a total length, cut into clips in the result window) or One-Take (total length, One-Take rules, cut into clips).
+- **Refine now reads the Common header / tail** too (as read-only context).
+- Prompt sets keep the Korean view of the common header / tail (takes effect after a ComfyUI restart).
+
+---
+
 ## v1.48.0
 
 - **Postprocess -> Latent Upscale (Use H3): Split mode (long clips).** Tick it, then give the seconds per piece (or a piece count): the clip is cut into pieces, each piece is upscaled on its own queue turn (VRAM is freed between turns), and the pieces are joined into one clip. Works with both upscalers. The pieces overlap by a few frames (an H3 piece is 17k+5 frames) and the join trims the overlap, so no frame is lost; the joined clip carries the source's own sound unchanged. Recoverable after a reload like the other split runs.
