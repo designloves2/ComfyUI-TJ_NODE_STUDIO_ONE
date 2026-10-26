@@ -5,6 +5,9 @@
 // written here shows up there (and vice versa).
 import { C, BRAND, el, composeClipPrompt } from "./core_minimax.js";
 import { button } from "../klein/ui_common.js";
+import { attachBilingual } from "../shared/bilingual_ui.js";
+import { fieldSetBoth } from "../shared/bilingual.js";
+import { h3ProtectWords } from "./translate_minimax.js";
 
 export function createCommonPromptOverlay(state, ctx, onApply) {
   // A popup over a dimmed backdrop, not the whole node.
@@ -24,7 +27,7 @@ export function createCommonPromptOverlay(state, ctx, onApply) {
   hdr.appendChild(el("div", { text: "sent with every clip", style: { fontSize: "10.5px", color: C.muted, flex: "1" } }));
   hdr.appendChild(button("✕ Close", () => hide(), "danger"));
 
-  function field(titleText, hintHTML, get, set) {
+  function field(titleText, hintHTML, get, set, key) {
     const wrap = el("div", { style: { flex: "1", display: "flex", flexDirection: "column", gap: "4px", minHeight: "0" } });
     const head = el("div", { style: { display: "flex", alignItems: "center", gap: "6px" } });
     head.append(
@@ -40,16 +43,18 @@ export function createCommonPromptOverlay(state, ctx, onApply) {
     ta.addEventListener("input", () => { set(ta.value); ctx.persist(); refreshTag(); });
     ta.addEventListener("focus", () => ta.style.borderColor = BRAND);
     ta.addEventListener("blur",  () => ta.style.borderColor = C.border);
-    wrap.append(head, ta);
-    return { wrap, ta };
+    // KO / EN button: the English text is what the model gets, the Korean one is its view
+    const bil = attachBilingual(ta, { target: () => state, key, persist: () => ctx.persist(), protect: () => h3ProtectWords(state), onError: (m) => ctx.showPopup?.(m, true) });
+    wrap.append(head, bil.el);
+    return { wrap, ta, bil };
   }
 
   const headerF = field("HEADER — style & opening",
     "visual style, grade, lens, opening composition",
-    () => state.promptHeader, v => state.promptHeader = v);
+    () => state.promptHeader, v => state.promptHeader = v, "promptHeader");
   const footerF = field("TAIL — sound & music",
     "<code>Ambient sound:</code> … / <code>Music:</code> …",
-    () => state.promptFooter, v => state.promptFooter = v);
+    () => state.promptFooter, v => state.promptFooter = v, "promptFooter");
 
   const body = el("div", { style: { flex: "1", display: "flex", gap: "10px", minHeight: "0" } });
   body.append(headerF.wrap, footerF.wrap);
@@ -61,8 +66,8 @@ export function createCommonPromptOverlay(state, ctx, onApply) {
     borderRadius: "6px", background: C.bg2, color: C.muted, border: `1px solid ${C.border}`,
   }});
   clearBtn.addEventListener("click", () => {
-    state.promptHeader = ""; state.promptFooter = "";
-    headerF.ta.value = ""; footerF.ta.value = "";
+    fieldSetBoth(state, "promptHeader", "", ""); fieldSetBoth(state, "promptFooter", "", "");
+    headerF.bil.refresh(); footerF.bil.refresh();
     ctx.persist(); refreshTag(); onApply?.();
   });
   foot.append(clearBtn, tag, button("✓ Done", () => hide(), "primary"));
@@ -80,8 +85,7 @@ export function createCommonPromptOverlay(state, ctx, onApply) {
   return {
     el: ov,
     show() {
-      headerF.ta.value = state.promptHeader || "";
-      footerF.ta.value = state.promptFooter || "";
+      headerF.bil.refresh(); footerF.bil.refresh();
       refreshTag();
       ov.style.display = "flex";
       setTimeout(() => headerF.ta.focus(), 50);

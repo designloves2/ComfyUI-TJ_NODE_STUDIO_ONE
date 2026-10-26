@@ -60,6 +60,10 @@ import { createGalleryOverlay } from "./minimax/ui_gallery_minimax.js";
 import { createImageGalleryOverlay } from "./minimax/ui_gallery_minimax_images.js";
 import { resolvePipeOverrides, applyOverridesTemp } from "./shared/promptdb_pipe.js";
 import { attachNodeState, restoreNodeState } from "./shared/node_state.js";
+import { attachBilingual } from "./shared/bilingual_ui.js";
+import { ensureEnglish, fieldNeedsEnglish, fieldSetBoth } from "./shared/bilingual.js";
+import { translateLlm } from "./shared/translate_config.js";
+import { h3ProtectWords } from "./minimax/translate_minimax.js";
 import { createNodeFullscreen } from "./shared/node_fullscreen.js";
 import { openAudioGalleryPicker } from "./shared/ui_audio_gallery_picker.js";
 
@@ -1487,6 +1491,11 @@ app.registerExtension({
           attachAtComplete(ta, async () => (await libraryContextCached(libraryRefFor(clipAssets(state, i), state.generationMode)))?.items || []);
           ta.addEventListener("focus", () => { ta.style.borderColor = BRAND; lastFocusedPromptTA = ta; });
           ta.addEventListener("blur",  () => ta.style.borderColor = C.border);
+          // KO / EN button: the English text is what the model gets, the Korean one is its view
+          const bil = attachBilingual(ta, {
+            target: () => (state.prompts[i] = normPrompt(state.prompts[i])), key: "text",
+            persist, protect: () => h3ProtectWords(state), onError: (m) => showPopup(m, true),
+          });
 
           const del = el("button", { type: "button", text: "✕", title: "Remove", style: {
             flexShrink: "0", cursor: "pointer", background: "transparent", color: C.muted,
@@ -1497,7 +1506,7 @@ app.registerExtension({
             else state.prompts.splice(i, 1);
             persist(); refreshPlan();
           });
-          line.append(sideCol, ta, del);
+          line.append(sideCol, bil.el, del);
           promptList.appendChild(line);
         });
       }
@@ -2056,7 +2065,9 @@ app.registerExtension({
         state.prompts.push({ text: "", firstFrame: "", enabled: true });
         persist(); refreshPlan();
       });
-      splitBtn.addEventListener("click", () => {
+      splitBtn.addEventListener("click", async () => {
+        // the split reads the English text: a Korean-only edit is translated first
+        try { await ensureEnglishPrompts("video"); } catch (e) { showPopup(e.message, true); return; }
         const joined = state.prompts.map(promptText).filter(t => t && t.trim()).join("\n\n");
         if (!joined.trim()) { showPopup("Nothing to split — write the brief in the first box.", true); return; }
         // The style preamble and the sound/music tail are what every clip needs to look
@@ -2066,8 +2077,9 @@ app.registerExtension({
         const { header, shots, footer } = parseBrief(joined);
         if (shots.length <= 1) { showPopup("Could not find clip boundaries ([Shot N], --- or blank lines).", true); return; }
         const parts = groupShots(shots, shots.length);
-        if (header) state.promptHeader = header;
-        if (footer) state.promptFooter = footer;
+        // new English text: the old Korean view of the common pair is cleared (the KO / EN button writes it again)
+        if (header) fieldSetBoth(state, "promptHeader", header, "");
+        if (footer) fieldSetBoth(state, "promptFooter", footer, "");
         state.prompts = parts.map(t => ({ text: t, firstFrame: "", enabled: true }));
         persist(); refreshPlan();
         const carried = [header && "header", footer && "tail"].filter(Boolean).join(" + ");
@@ -4556,6 +4568,7 @@ app.registerExtension({
             const av = await getNodeAvailability();
             ctx.availability = av.available || {}; ctx.availabilityInfo = av;
           }
+          await ensureEnglishPrompts("image");
           const previewRes = resolveResolution(state.imgAspect || "2:3 Portrait", state.imgPreviewMp ?? 0.2);
           const finalRes = resolveResolution(state.imgAspect || "2:3 Portrait", state.imgFinalMp ?? 1.0);
           const seed = state.seedMode === "fixed" ? (state.seed ?? 0) : randomSeed();
@@ -4630,6 +4643,7 @@ app.registerExtension({
             const av = await getNodeAvailability();
             ctx.availability = av.available || {}; ctx.availabilityInfo = av;
           }
+          await ensureEnglishPrompts("charsheet");
           const finalRes = resolveResolution(state.imgAspect || "2:3 Portrait", state.imgFinalMp ?? 1.0);
           const firstPassRes = state.charSheetUseLatentUpscale
             ? resolveResolution(state.imgAspect || "2:3 Portrait", state.charSheetFirstPassRatio ?? 0.36) : null;
@@ -6107,6 +6121,33 @@ app.registerExtension({
         return composeClipPrompt(st, clipIdx);
       }
 
+      // The models are prompted in English. A field that was last edited in Korean (or has Korean typed into its
+      // English text) is translated first; the Korean stays as the field's Korean view. `scope` picks the fields
+      // the run reads. Throws when the translation fails, which stops the run.
+      async function ensureEnglishPrompts(scope = "video") {
+        const jobs = [];
+        if (scope === "video") {
+          jobs.push([state, "promptHeader"], [state, "promptFooter"]);
+          state.prompts.forEach((raw, i) => {
+            const p = (state.prompts[i] = normPrompt(raw));
+            if (promptEnabled(p)) jobs.push([p, "text"], [p, "header"], [p, "footer"]);
+          });
+        } else {
+          const key = { image: "imgPrompt", charsheet: "charSheetPrompt", ltx: "ltxPrompt", face: "frPrompt" }[scope];
+          if (key) jobs.push([state, key]);
+        }
+        const need = jobs.filter(([obj, key]) => fieldNeedsEnglish(obj, key));
+        if (!need.length) return;
+        const llm = translateLlm(), protect = h3ProtectWords(state);
+        for (let n = 0; n < need.length; n++) {
+          setStatus(`Translating Korean prompt ${n + 1}/${need.length} to English…`);
+          await ensureEnglish(need[n][0], need[n][1], llm, { protect });
+        }
+        persist();
+        renderPrompts();
+        setStatus("");
+      }
+
       function seedForClip(i, st = state) {
         if (!st.seedPerClip) return st.seed ?? 0;
         return ((st.seed ?? 0) + i) % Number.MAX_SAFE_INTEGER;
@@ -6314,6 +6355,7 @@ app.registerExtension({
           }
           rs = R.rs; passes = R.passes; parts = R.parts.slice(); segSec = R.segSec || 0;
         } else {
+          try { await ensureEnglishPrompts("ltx"); } catch (e) { showPopup(e.message, true); return; }
           if (state.seedMode === "randomize")      { state.seed = randomSeed(); seedInput.value = state.seed; }
           else if (state.seedMode === "increment") { state.seed = (state.seed || 0) + 1; seedInput.value = state.seed; }
           else if (state.seedMode === "decrement") { state.seed = Math.max(0, (state.seed || 0) - 1); seedInput.value = state.seed; }
@@ -6527,6 +6569,7 @@ app.registerExtension({
         if (state.frSelect === "manual" && !String(state.frConfirmedPick || "").trim() && !(state.frChainPicks || []).length) {
           showPopup("Select is Manual but no face has been picked yet.", true); return;
         }
+        try { await ensureEnglishPrompts("face"); } catch (e) { showPopup(e.message, true); return; }
 
         if (state.seedMode === "randomize")      { state.seed = randomSeed(); seedInput.value = state.seed; }
         else if (state.seedMode === "increment") { state.seed = (state.seed || 0) + 1; seedInput.value = state.seed; }
@@ -6690,6 +6733,13 @@ app.registerExtension({
             genBtn.textContent = "⏳ Writing prompts…";
             await promptEditOv.autoWrite();
             renderPrompts();
+            genBtn.textContent = "⏳ Preparing…";
+          }
+
+          // Korean in a prompt field is translated to English before the run is frozen.
+          if (!resume) {
+            genBtn.textContent = "⏳ Translating…";
+            await ensureEnglishPrompts("video");
             genBtn.textContent = "⏳ Preparing…";
           }
 
@@ -7192,8 +7242,8 @@ app.registerExtension({
           // a second time, so for a stitch the shared fields are cleared and each prompt
           // stands alone. A normal clip stores the raw body instead, which does need the
           // header and footer put back around it.
-          state.promptHeader = meta.stitched ? "" : (meta.promptHeader || "");
-          state.promptFooter = meta.stitched ? "" : (meta.promptFooter || "");
+          fieldSetBoth(state, "promptHeader", meta.stitched ? "" : (meta.promptHeader || ""), "");
+          fieldSetBoth(state, "promptFooter", meta.stitched ? "" : (meta.promptFooter || ""), "");
         }
         persist();
         refreshPlan();
@@ -7368,7 +7418,7 @@ app.registerExtension({
           }
         } catch {}
         state.prompts = [{ text: String(prompt), firstFrame: seedFrame, enabled: true, override: false }];
-        state.promptHeader = ""; state.promptFooter = "";
+        fieldSetBoth(state, "promptHeader", "", ""); fieldSetBoth(state, "promptFooter", "", "");
         state.generationMode = "firstlast";
         state.continuityMode = "none";
         // Extend always renders First/Last. If the source ran in Reference mode its turbo

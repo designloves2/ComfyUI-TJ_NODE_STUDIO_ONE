@@ -1,0 +1,109 @@
+// bilingual_ui.js — the KO / EN button on a prompt field. See bilingual.js for what a bilingual field stores.
+//
+// attachBilingual(textarea, opts) wraps the textarea, puts a small "EN | 한" button on it and returns the wrapper
+// (use it where the textarea was). Typing in the Korean view writes the Korean slot only — the field's own input
+// handler is kept from running, so it can never overwrite the English text with Korean. Typing in the English view
+// goes through the field's own handler as before; this file only marks the English slot as the newest one.
+import { fieldView, fieldText, fieldEdit, fieldSetView, fieldStale, fieldFill, koKey, newestKey } from "./bilingual.js";
+import { translateLlm } from "./translate_config.js";
+
+const BTN = {
+  cursor: "pointer", fontFamily: "inherit", fontSize: "10px", fontWeight: "700", lineHeight: "1",
+  padding: "3px 6px", borderRadius: "5px", border: "1px solid rgba(255,255,255,0.18)",
+  background: "rgba(20,20,20,0.82)", color: "#e8e8e8",
+};
+
+/**
+ * @param ta       the field's <textarea> (its own input handler stays in charge of the English view)
+ * @param target   () => the object that holds the field's slots (a getter, because clip lists get re-indexed)
+ * @param key      name of the English slot on that object ("text", "promptHeader", ...), or a function that returns it
+ * @param persist  () => save the node state
+ * @param protect  () => extra words a translation must keep (LoRA triggers)
+ * @param onView   (view) => called after the view changed (a field that shows two things can redraw)
+ * @param onError  (message) => show a failed translation
+ */
+export function attachBilingual(ta, { target, key: keyOrFn, persist = () => {}, protect = () => [], onView = null, onError = null }) {
+  const wrap = document.createElement("div");
+  Object.assign(wrap.style, { position: "relative", display: "flex", flexDirection: "column", minWidth: "0", minHeight: "0" });
+  if (ta.style.flex) wrap.style.flex = ta.style.flex;
+  if (ta.style.width) wrap.style.width = ta.style.width;
+  ta.parentNode?.insertBefore(wrap, ta);
+  wrap.appendChild(ta);
+  // keeps the textarea's own height (a field with a set height) and still fills a fixed-height column
+  ta.style.flex = "1 1 auto";
+  ta.style.width = "100%";
+
+  const bar = document.createElement("div");
+  Object.assign(bar.style, { position: "absolute", top: "3px", right: "3px", display: "flex", gap: "3px", zIndex: "2", opacity: "0.9" });
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  Object.assign(toggle.style, BTN);
+  const refresh = document.createElement("button");
+  refresh.type = "button"; refresh.textContent = "↻";
+  Object.assign(refresh.style, BTN, { display: "none", color: "#ffb454", borderColor: "#ffb454" });
+  bar.append(refresh, toggle);
+  wrap.appendChild(bar);
+
+  const K = () => (typeof keyOrFn === "function" ? keyOrFn() : keyOrFn);   // a field whose slot name changes (own / common header)
+  const obj = () => target();
+  const fail = (e) => (onError || ((m) => console.warn("[bilingual]", m)))(String(e?.message || e));
+
+  function paint() {
+    const o = obj();
+    if (!o) return;
+    const view = fieldView(o, K());
+    ta.value = fieldText(o, K());
+    toggle.textContent = view === "ko" ? "한" : "EN";
+    toggle.title = view === "ko" ? "Showing Korean — click for English" : "Showing English — click for Korean";
+    const stale = fieldStale(o, K(), view);
+    refresh.style.display = stale ? "" : "none";
+    refresh.title = `This ${view === "ko" ? "Korean" : "English"} text is older than the ${view === "ko" ? "English" : "Korean"} one — click to translate it again`;
+  }
+
+  // Korean view: the field's own handler must not see this input (it would write the Korean into the English slot).
+  const typed = (e) => {
+    const o = obj();
+    if (!o) return;
+    if (fieldView(o, K()) === "ko") {
+      e.stopImmediatePropagation();
+      fieldEdit(o, K(), ta.value);
+      persist();
+    } else if (e.type === "input") {
+      o[newestKey(K())] = "en";
+      persist();
+    }
+    refresh.style.display = fieldStale(o, K(), fieldView(o, K())) ? "" : "none";
+  };
+  ta.addEventListener("input", typed, true);
+  ta.addEventListener("change", (e) => { if (fieldView(obj(), K()) === "ko") e.stopImmediatePropagation(); }, true);
+
+  let busy = false;
+  async function run(view) {
+    if (busy) return;
+    busy = true;
+    const label = toggle.textContent;
+    toggle.textContent = "…"; toggle.disabled = true; refresh.disabled = true;
+    try {
+      await fieldFill(obj(), K(), view, translateLlm(), { protect: protect() });
+      persist();
+    } catch (e) { fail(e); }
+    finally { toggle.disabled = false; refresh.disabled = false; busy = false; toggle.textContent = label; paint(); }
+  }
+
+  toggle.addEventListener("click", async () => {
+    const o = obj();
+    const next = fieldView(o, K()) === "ko" ? "en" : "ko";
+    const slot = next === "ko" ? o[koKey(K())] : o[K()];
+    const other = next === "ko" ? o[K()] : o[koKey(K())];
+    // the other language is not written yet: translate it, then show it
+    if (!String(slot || "").trim() && String(other || "").trim()) await run(next);
+    fieldSetView(o, K(), next);
+    persist();
+    paint();
+    onView?.(next);
+  });
+  refresh.addEventListener("click", () => run(fieldView(obj(), K())));
+
+  paint();
+  return { el: wrap, refresh: paint };
+}

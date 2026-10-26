@@ -1,4 +1,5 @@
 // core_minimax.js — MiniMax H3 ONE STUDIO (TJ) constants, state, helpers
+import { bilingualSlots } from "../shared/bilingual.js";
 export const BRAND = "#7612DA";   // pack-wide TJ purple, same as every other ONE STUDIO node
 export const C = {
   lime: BRAND, bg0: "#0b0b0b", bg1: "#111111", bg2: "#181818",
@@ -1378,12 +1379,15 @@ export function defaultState(saved) {
             // header/tail follow the override too - see clipFraming()
             header:      p?.header || "",
             footer:      p?.footer || "",
+            // the Korean view of the clip's text / header / tail (see shared/bilingual.js)
+            ...bilingualSlots(p, ["text", "header", "footer"]),
             // this clip's own length (Prompt Edit "clip time override") - see clipFramesFor()
             timeOverride: !!p?.timeOverride,
             timeSec:     Number(p?.timeSec) > 0 ? Number(p.timeSec) : 0 })),
     // clips rendered per prompt (>1 continues the same description across chained clips)
     promptHeader: saved.promptHeader || "",
     promptFooter: saved.promptFooter || "",
+    ...bilingualSlots(saved, ["promptHeader", "promptFooter", "imgPrompt", "charSheetPrompt", "ltxPrompt", "frPrompt"]),
     promptSuffix: saved.promptSuffix || "",
     enhCollapsed: !!saved.enhCollapsed,
 

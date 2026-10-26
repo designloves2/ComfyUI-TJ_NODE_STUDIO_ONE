@@ -1998,8 +1998,11 @@ def _release_llama():
 
 @PromptServer.instance.routes.post("/tj_studio_one/llm/enhance")
 async def studio_llm_enhance(request):
+    return await _studio_enhance(await request.json())
+
+
+async def _studio_enhance(data):
     import asyncio
-    data = await request.json()
     # "refine_instruction" turns this into a revision of data["prompt"] instead of an enhance;
     # "system_override" replaces the system prompt outright (the LTX studio writes its own).
     if data.get("system_override"):
@@ -2082,6 +2085,78 @@ async def studio_llm_enhance(request):
         if isinstance(out, (list, tuple)) and len(out) > 1:
             resp["debug_thought"] = out[1]
         return web.json_response(resp)
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+
+
+# ── Korean <-> English translation: one model setting shared by every node ─────
+# Saved once here and pushed to every open page ("tj_translate_config"), so changing it in one node changes it
+# in all of them at the same moment. The three server-side backends run through /tj_shared/translate_llm;
+# the native CLIP one runs in the page (it needs a ComfyUI TextGenerate queue).
+TRANSLATE_CONFIG_PATH = os.path.join(NODE_DIR, "config_translate.json")
+_TRANSLATE_DEFAULTS = {
+    "backend": "native", "native_clip": "", "or_model": "", "llama_model": "",
+    "llama_n_ctx": 16384, "llama_max_tokens": 4096,
+    "custom_base": "", "custom_model": "", "custom_ctx": 0,
+}
+
+
+def _translate_config():
+    saved = _load_config(TRANSLATE_CONFIG_PATH)
+    cfg = {k: (saved[k] if isinstance(saved.get(k), type(v)) else v) for k, v in _TRANSLATE_DEFAULTS.items()}
+    if cfg["backend"] not in ("native", "openrouter", "llamagguf", "custom"):
+        cfg["backend"] = "native"
+    return cfg
+
+
+@PromptServer.instance.routes.get("/tj_shared/translate_config")
+async def translate_config_get(request):
+    return web.json_response(_translate_config())
+
+
+@PromptServer.instance.routes.post("/tj_shared/translate_config")
+async def translate_config_set(request):
+    data = await request.json()
+    cfg = _translate_config()
+    for k, v in (data or {}).items():
+        if k in _TRANSLATE_DEFAULTS and isinstance(v, type(_TRANSLATE_DEFAULTS[k])):
+            cfg[k] = v
+    if cfg["backend"] not in ("native", "openrouter", "llamagguf", "custom"):
+        cfg["backend"] = "native"
+    _save_config(TRANSLATE_CONFIG_PATH, cfg)
+    PromptServer.instance.send_sync("tj_translate_config", cfg)
+    return web.json_response({"ok": True, "config": cfg})
+
+
+@PromptServer.instance.routes.post("/tj_shared/translate_llm")
+async def translate_llm(request):
+    import asyncio
+    data = await request.json()
+    system, user = str(data.get("system", "")), str(data.get("user", ""))
+    if not user.strip():
+        return web.json_response({"ok": False, "error": "nothing to translate"})
+    cfg = _translate_config()
+    loop = asyncio.get_event_loop()
+    try:
+        if cfg["backend"] == "openrouter":
+            model = cfg["or_model"].strip() or _studio_or_models()[0]
+            text = await loop.run_in_executor(None, _openrouter_chat, system, user, model, 0.2, 4096)
+        elif cfg["backend"] == "custom":
+            text = await loop.run_in_executor(None, _h3_custom_chat, "translate", cfg["custom_base"], cfg["custom_model"],
+                                              system, user, cfg["custom_ctx"], 4096, 0.2)
+        elif cfg["backend"] == "llamagguf":
+            if not cfg["llama_model"]:
+                raise RuntimeError("No Llama GGUF translate model set - pick one in Settings -> Translate.")
+            resp = await _studio_enhance({
+                "system_override": system, "prompt": user, "backend": "local", "gguf_model": cfg["llama_model"],
+                "n_ctx": cfg["llama_n_ctx"], "max_tokens": cfg["llama_max_tokens"], "temperature": 0.2, "purpose": "Video"})
+            out = json.loads(resp.body)
+            if not out.get("ok"):
+                raise RuntimeError(out.get("error") or "Llama GGUF translate failed")
+            text = out["result"]
+        else:
+            raise RuntimeError("The native CLIP translator runs in the page, not on the server.")
+        return web.json_response({"ok": True, "text": text})
     except Exception as e:
         return web.json_response({"ok": False, "error": str(e)})
 
@@ -5433,7 +5508,7 @@ def _openrouter_vision_multi(system_prompt, user_text, image_paths, model, tempe
 _H3_CUSTOM_KEYS = {}
 # Each place that offers Connect Custom has its own role (and so its own key): H3 Brief /
 # Vision / LTX Upscale, the image nodes' Prompt Enhance / Image → Prompt Write, and MusicMaker.
-_CUSTOM_LLM_ROLES = ("brief", "vision", "ltx", "img_enhance", "img_i2p", "music")
+_CUSTOM_LLM_ROLES = ("brief", "vision", "ltx", "img_enhance", "img_i2p", "music", "translate")
 
 
 def _h3_custom_base(role, base_url):

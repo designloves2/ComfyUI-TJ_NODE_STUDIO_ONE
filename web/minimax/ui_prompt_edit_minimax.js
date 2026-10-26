@@ -13,6 +13,10 @@ import { openVideoGalleryPicker } from "./ui_video_picker_minimax.js";
 import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
 import { openAudioGalleryPicker } from "../shared/ui_audio_gallery_picker.js";
 import { ask } from "../shared/ui_ask.js";
+import { attachBilingual } from "../shared/bilingual_ui.js";
+import { fieldEdit, fieldSetBoth, fieldFill, ensureEnglish, koKey } from "../shared/bilingual.js";
+import { translateLlm } from "../shared/translate_config.js";
+import { h3ProtectWords } from "./translate_minimax.js";
 import { mountLibraryRefs, emptyAssetRef, sourceToggle } from "../shared/reflib_refpanel.js";
 import { libraryRefFor, libraryContextCached } from "../shared/reflib_llm.js";
 import { reflib } from "../shared/reflib_api.js";
@@ -42,12 +46,15 @@ export function createPromptEditOverlay(state, ctx, onApply) {
   // ── undo ───────────────────────────────────────────────────────────────────
   // Splitting and enhancing rewrite every prompt at once; without this a mis-click
   // would be unrecoverable.
+  const COMMON_BIL_KEYS = ["promptHeaderKo", "promptHeaderNewest", "promptHeaderView", "promptFooterKo", "promptFooterNewest", "promptFooterView"];
   const undoStack = [];
   function snapshot(what) {
     undoStack.push({
       what,
       header: state.promptHeader || "",
       footer: state.promptFooter || "",
+      // the Korean view / newest mark / view of the common pair go back with them
+      common: Object.fromEntries(COMMON_BIL_KEYS.map(k => [k, state[k]])),
       prompts: (state.prompts || []).map(p => ({ ...normPrompt(p) })),
       selected,
     });
@@ -59,6 +66,7 @@ export function createPromptEditOverlay(state, ctx, onApply) {
     if (!s) return;
     state.promptHeader = s.header;
     state.promptFooter = s.footer;
+    for (const k of COMMON_BIL_KEYS) { if (s.common?.[k] === undefined) delete state[k]; else state[k] = s.common[k]; }
     state.prompts = s.prompts.map(p => ({ ...p }));
     selected = Math.min(s.selected, state.prompts.length - 1);
     ctx.persist();
@@ -127,8 +135,8 @@ export function createPromptEditOverlay(state, ctx, onApply) {
   const resetConfirmBtn = button("Reset", () => {
     snapshot("reset");
     state.prompts = [{ text: "", firstFrame: "", enabled: true }];
-    state.promptHeader = "";
-    state.promptFooter = "";
+    fieldSetBoth(state, "promptHeader", "", "");
+    fieldSetBoth(state, "promptFooter", "", "");
     selected = 0;
     ctx.persist();
     resetConfirmOv.style.display = "none";
@@ -227,8 +235,8 @@ export function createPromptEditOverlay(state, ctx, onApply) {
         .map(p => (typeof p === "string"
           ? { text: p, firstFrame: "", enabled: true }
           : { ...p, text: p?.text || "", firstFrame: p?.firstFrame || "", enabled: p?.enabled !== false }));
-      state.promptHeader = s.promptHeader || "";
-      state.promptFooter = s.promptFooter || "";
+      fieldSetBoth(state, "promptHeader", s.promptHeader || "", s.promptHeaderKo || "");
+      fieldSetBoth(state, "promptFooter", s.promptFooter || "", s.promptFooterKo || "");
       // Only restore the common assets when the set actually carries them, so an older
       // set saved before this existed does not wipe what is on screen.
       if (Array.isArray(s.refImages))   state.refImages   = s.refImages.slice();
@@ -391,14 +399,19 @@ This cannot be undone.`,
     () => clipFraming(state, selected).footer,
     v => { const t = framingTarget(); if (ownFraming()) t.footer = v; else t.promptFooter = v; }, "mmh3_pe_footer_h");
 
+  // KO / EN on both boxes; the slot is the clip's own header / tail when it has its own, else the common pair.
+  const headerKey = () => (ownFraming() ? "header" : "promptHeader");
+  const footerKey = () => (ownFraming() ? "footer" : "promptFooter");
+  const headerBil = attachBilingual(headerTA, { persist: () => ctx.persist(), protect: () => h3ProtectWords(state), onError: (m) => ctx.showPopup?.(m, true), target: framingTarget, key: headerKey });
+  const footerBil = attachBilingual(footerTA, { persist: () => ctx.persist(), protect: () => h3ProtectWords(state), onError: (m) => ctx.showPopup?.(m, true), target: framingTarget, key: footerKey });
   const headerLbl = el("div", { text: "COMMON — HEADER", style: { color: C.muted, fontSize: "9.5px", letterSpacing: "0.06em" } });
   const footerLbl = el("div", { text: "COMMON — SOUND / MUSIC", style: { color: C.muted, fontSize: "9.5px", letterSpacing: "0.06em" } });
 
   /** Repoint both boxes at the selected clip — call after switching clip or toggling override. */
   function refreshFraming() {
     const own = ownFraming();
-    headerTA.value = clipFraming(state, selected).header || "";
-    footerTA.value = clipFraming(state, selected).footer || "";
+    headerBil.refresh();
+    footerBil.refresh();
     headerLbl.textContent = own ? "THIS CLIP — HEADER" : "COMMON — HEADER";
     footerLbl.textContent = own ? "THIS CLIP — SOUND / MUSIC" : "COMMON — SOUND / MUSIC";
     headerLbl.style.color = own ? BRAND : C.muted;
@@ -409,13 +422,13 @@ This cannot be undone.`,
   }
 
   headerLbl.style.flex = "1"; footerLbl.style.flex = "1";
-  const headerUC = undoClearBtns(headerTA, v => { const t = framingTarget(); if (ownFraming()) t.header = v; else t.promptHeader = v; });
-  const footerUC = undoClearBtns(footerTA, v => { const t = framingTarget(); if (ownFraming()) t.footer = v; else t.promptFooter = v; });
+  const headerUC = undoClearBtns(headerTA, v => fieldEdit(framingTarget(), headerKey(), v));
+  const footerUC = undoClearBtns(footerTA, v => fieldEdit(framingTarget(), footerKey(), v));
   const lblRow = (lbl, uc) => el("div", { style: { display: "flex", alignItems: "center", gap: "6px" } }, [lbl, uc]);
   const commonWrap = el("div", { style: { flexShrink: "0", display: "flex", gap: "8px" } });
   commonWrap.append(
-    el("div", { style: { flex: "1", display: "flex", flexDirection: "column", gap: "3px" } }, [lblRow(headerLbl, headerUC), headerTA]),
-    el("div", { style: { flex: "1", display: "flex", flexDirection: "column", gap: "3px" } }, [lblRow(footerLbl, footerUC), footerTA]),
+    el("div", { style: { flex: "1", display: "flex", flexDirection: "column", gap: "3px" } }, [lblRow(headerLbl, headerUC), headerBil.el]),
+    el("div", { style: { flex: "1", display: "flex", flexDirection: "column", gap: "3px" } }, [lblRow(footerLbl, footerUC), footerBil.el]),
   );
 
   // ── body: clip list | editor ───────────────────────────────────────────────
@@ -451,11 +464,15 @@ This cannot be undone.`,
     state.prompts[selected].text = editor.value;
     ctx.persist(); updateCount(); renderList();
   });
+  // Undo / Clear write the language the field is showing (the Korean view keeps the English text as it was).
   const editorUndoClear = undoClearBtns(editor, v => {
     state.prompts[selected] = normPrompt(state.prompts[selected]);
-    state.prompts[selected].text = v;
+    fieldEdit(state.prompts[selected], "text", v);
     updateCount(); renderList();
   });
+  // KO / EN button: the English text is what the model gets, the Korean one is its view.
+  const bilOpts = { persist: () => ctx.persist(), protect: () => h3ProtectWords(state), onError: (m) => ctx.showPopup?.(m, true) };
+  const editorBil = attachBilingual(editor, { ...bilOpts, target: () => (state.prompts[selected] = normPrompt(state.prompts[selected])), key: "text" });
   editHdr.append(editTitle, charCount, editorUndoClear);
 
   // ── continue this clip from a finished clip's last frame (planned resume) ────
@@ -565,7 +582,7 @@ This cannot be undone.`,
     color: "#b57bff", fontSize: "18px", fontWeight: "700",
     textShadow: "0 0 12px rgba(181,123,255,0.5)",
   }});
-  editorWrap.append(editor, editorBusyOv);
+  editorWrap.append(editorBil.el, editorBusyOv);
   function setEditorBusy(busy, label) {
     editorBusyOv.textContent = label || "✨ Writing the prompt…";
     editorBusyOv.style.display = busy ? "flex" : "none";
@@ -601,7 +618,7 @@ This cannot be undone.`,
   }
   function timeChanged() {
     snapClipText(selected);
-    editor.value = promptText(normPrompt(state.prompts[selected]));
+    editorBil.refresh();
     ctx.persist(); renderTimeRow(); renderList(); refreshPlanTag(); refreshPreviewTag(); ctx.refreshModes?.();
   }
   timeChk.addEventListener("change", () => {
@@ -770,7 +787,7 @@ This cannot be undone.`,
     const list = state.prompts || [{ text: "", firstFrame: "", enabled: true }];
     if (selected >= list.length) selected = 0;
     const p = normPrompt(list[selected]);
-    editor.value = promptText(p);
+    editorBil.refresh();
     editorUndoClear.resetStack?.();
     editTitle.textContent = `Clip ${selected + 1}`;
     renderTimeRow();
@@ -1666,7 +1683,7 @@ ${name}`, style: {
       if (!text) throw new Error("empty response");
       if (auto) {
         state.prompts[selected] = normPrompt(state.prompts[selected]);
-        state.prompts[selected].text = text;                     // header / sound-music left alone
+        fieldSetBoth(state.prompts[selected], "text", text, "");   // header / sound-music left alone; the Korean view is written when the KO / EN button is used
         statusTag.textContent = "written";
         statusTag.style.color = C.ok;
         return true;
@@ -1966,7 +1983,12 @@ ${name}`, style: {
   // render length rounds - see snapShotTimes), so they follow the clip's length whenever it is set or changed.
   function snapClipText(i) {
     const c = (state.prompts || [])[i];
-    if (c && typeof c === "object") c.text = snapShotTimes(c.text || "", clipSecondsFor(state, i));
+    if (c && typeof c === "object") {
+      const sec = clipSecondsFor(state, i);
+      c.text = snapShotTimes(c.text || "", sec);
+      // the Korean view carries the same times ([Shot N] At MM:SS is never translated), so it follows them
+      if (c.textKo) c.textKo = snapShotTimes(c.textKo, sec);
+    }
   }
   function keepTimes(list, old) {
     list.forEach((c, i) => {
@@ -2002,6 +2024,37 @@ ${name}`, style: {
     reviewOv.style.display = "flex";
   }
 
+  // Write / Refine produce English. The Korean view of a field they wrote is cleared (it no longer matches) and
+  // written again right after the apply, with the same translator the KO / EN button uses.
+  const koTodo = [];
+  const putEn = (obj, key, en) => {
+    fieldSetBoth(obj, key, en, "");
+    if (String(en || "").trim()) koTodo.push([obj, key]);
+  };
+  function refreshBil() {
+    if (document.activeElement !== editor) editorBil.refresh();
+    if (document.activeElement !== headerTA) headerBil.refresh();
+    if (document.activeElement !== footerTA) footerBil.refresh();
+  }
+  async function fillKoLater() {
+    const todo = koTodo.splice(0);
+    if (!todo.length) return;
+    const llm = translateLlm(), protect = h3ProtectWords(state);
+    for (let n = 0; n < todo.length; n++) {
+      const [obj, key] = todo[n];
+      if (!String(obj[key] || "").trim() || String(obj[koKey(key)] || "").trim()) continue;
+      statusTag.textContent = `writing the Korean view ${n + 1}/${todo.length}…`;
+      statusTag.style.color = BRAND;
+      try { await fieldFill(obj, key, "ko", llm, { protect }); ctx.persist(); refreshBil(); }
+      catch (e) {
+        statusTag.textContent = `⚠ Korean view not written: ${String(e.message).slice(0, 80)}`;
+        statusTag.style.color = C.err;
+        return;
+      }
+    }
+    statusTag.textContent = "applied"; statusTag.style.color = C.ok;
+  }
+
   function applyReview() {
     const p = reviewParsed;
     if (reviewMode === "manual" && !reviewSel.size) {
@@ -2012,7 +2065,7 @@ ${name}`, style: {
 
     if (reviewMode === "one") {
       state.prompts[selected] = normPrompt(state.prompts[selected]);
-      state.prompts[selected].text = reviewText;                 // header/footer left alone
+      putEn(state.prompts[selected], "text", reviewText);        // header/footer left alone
     } else if (reviewMode === "split") {
       const briefs = reviewTarget === "all" ? clipBriefs(reviewText) : null;
       if (briefs) {
@@ -2022,33 +2075,36 @@ ${name}`, style: {
           header: b.header || state.promptHeader || "", footer: b.footer || state.promptFooter || "",
         })), oldPrompts);
         selected = 0;
+        for (const c of state.prompts) for (const k of ["text", "header", "footer"]) if (c[k]) koTodo.push([c, k]);
       } else if (reviewTarget === "all") {
-        if (p.header) state.promptHeader = p.header;
-        if (p.footer) state.promptFooter = p.footer;
+        if (p.header) putEn(state, "promptHeader", p.header);
+        if (p.footer) putEn(state, "promptFooter", p.footer);
         state.prompts = keepTimes(p.shots.length
           ? p.shots.map(s => ({ text: rebaseShots(s), firstFrame: "", enabled: true }))
           : [{ text: reviewText, firstFrame: "", enabled: true }], oldPrompts);
         selected = 0;
+        for (const c of state.prompts) if (c.text) koTodo.push([c, "text"]);
       } else {
         state.prompts[selected] = normPrompt(state.prompts[selected]);
         const clip = state.prompts[selected];
         // A clip with its own override keeps its header / sound in its own fields.
-        if (ownFraming()) { if (p.header) clip.header = p.header; if (p.footer) clip.footer = p.footer; }
-        else { if (p.header) state.promptHeader = p.header; if (p.footer) state.promptFooter = p.footer; }
-        clip.text = rebaseShots(p.shots.join("\n\n")) || reviewText;
+        if (ownFraming()) { if (p.header) putEn(clip, "header", p.header); if (p.footer) putEn(clip, "footer", p.footer); }
+        else { if (p.header) putEn(state, "promptHeader", p.header); if (p.footer) putEn(state, "promptFooter", p.footer); }
+        putEn(clip, "text", rebaseShots(p.shots.join("\n\n")) || reviewText);
       }
     } else {  // manual — only the ticked cards
       const ownTarget = reviewTarget !== "all" && ownFraming();
-      if (reviewSel.has("header") && p.header) { if (ownTarget) state.prompts[selected].header = p.header; else state.promptHeader = p.header; }
-      if (reviewSel.has("footer") && p.footer) { if (ownTarget) state.prompts[selected].footer = p.footer; else state.promptFooter = p.footer; }
+      if (reviewSel.has("header") && p.header) { if (ownTarget) putEn(state.prompts[selected], "header", p.header); else putEn(state, "promptHeader", p.header); }
+      if (reviewSel.has("footer") && p.footer) { if (ownTarget) putEn(state.prompts[selected], "footer", p.footer); else putEn(state, "promptFooter", p.footer); }
       const picked = (p.shots.length ? p.shots : [reviewText]).filter((_, i) => reviewSel.has(`shot:${i}`));
       if (picked.length) {
         if (reviewTarget === "all") {
           state.prompts = keepTimes(picked.map(s => ({ text: rebaseShots(s), firstFrame: "", enabled: true })), oldPrompts);
           selected = 0;
+          for (const c of state.prompts) if (c.text) koTodo.push([c, "text"]);
         } else {
           state.prompts[selected] = normPrompt(state.prompts[selected]);
-          state.prompts[selected].text = rebaseShots(picked.join("\n\n"));
+          putEn(state.prompts[selected], "text", rebaseShots(picked.join("\n\n")));
         }
       }
     }
@@ -2066,6 +2122,7 @@ ${name}`, style: {
     renderAll(); onApply?.();
     statusTag.textContent = "applied";
     statusTag.style.color = C.ok;
+    fillKoLater();
   }
 
   rvCancel.addEventListener("click", () => {
@@ -2176,8 +2233,13 @@ ${name}`, style: {
            + (diff < 0 ? " — later clips reuse the last prompt" : " — extra prompts are ignored until you raise Total seconds"));
   }
 
-  function openSplit() {
-    const parsed = parseBrief(editor.value);
+  async function openSplit() {
+    // the split reads the English text (a Korean-only edit is translated first); the Korean view is written again after
+    try {
+      state.prompts[selected] = normPrompt(state.prompts[selected]);
+      if (await ensureEnglish(state.prompts[selected], "text", translateLlm(), { protect: h3ProtectWords(state) })) { ctx.persist(); editorBil.refresh(); }
+    } catch (e) { ctx.showPopup?.(e.message, true); return; }
+    const parsed = parseBrief(promptText(normPrompt(state.prompts[selected])));
     if (!parsed.shots.length) { ctx.showPopup?.("Nothing to split.", true); return; }
     if (parsed.shots.length === 1) {
       ctx.showPopup?.("Only one shot found — nothing to split ([Shot N] markers or --- separate them).", true);
@@ -2193,15 +2255,17 @@ ${name}`, style: {
   function applySplit() {
     snapshot("split into clips");
     const groups = groupShots(splitShots, splitBreaks.size + 1, [...splitBreaks]);
-    if (splitHeader) state.promptHeader = splitHeader;
-    if (splitFooter) state.promptFooter = splitFooter;
+    if (splitHeader) putEn(state, "promptHeader", splitHeader);
+    if (splitFooter) putEn(state, "promptFooter", splitFooter);
     state.prompts = keepTimes(groups.map(g => ({ text: g, firstFrame: "", enabled: true })), state.prompts || []);
     state.prompts.forEach((_, i) => snapClipText(i));
     selected = 0;
+    for (const c of state.prompts) if (c.text) koTodo.push([c, "text"]);
     ctx.persist();
     splitOv.style.display = "none";
     renderAll(); onApply?.();
     ctx.showPopup?.(`Split into ${groups.length} clip prompt(s); common parts kept.`, false);
+    fillKoLater();
   }
 
   evenBtn.addEventListener("click", () => {
@@ -2248,8 +2312,8 @@ ${name}`, style: {
     charCount.textContent = `${(editor.value || "").length} chars · sends ${full.length}`;
   }
   function renderAll() {
-    headerTA.value = state.promptHeader || "";
-    footerTA.value = state.promptFooter || "";
+    headerBil.refresh();
+    footerBil.refresh();
     headerUC?.paint?.(); footerUC?.paint?.();
     renderList(); loadSelected(); refreshPlanTag(); refreshUndo();
   }

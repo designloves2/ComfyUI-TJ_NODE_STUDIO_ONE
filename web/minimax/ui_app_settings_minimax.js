@@ -5,6 +5,7 @@ import { C, BRAND, el, clear, SUBFOLDER } from "./core_minimax.js";
 import { panel, label, button, select, numberField, row, col } from "../klein/ui_common.js";
 import { getModels, getConfig, saveConfig, getNodeAvailability, listVideos, getTempSize, clearTempFiles } from "./api_minimax.js";
 import { customLLMControls } from "../shared/custom_llm_controls.js";
+import { getTranslateConfig, loadTranslateConfig, onTranslateConfig, setTranslateConfig } from "../shared/translate_config.js";
 import { mountLLMSettingsSection } from "../shared/llm_panel.js";
 
 function searchableSelect(options, value, onChange) {
@@ -76,7 +77,7 @@ export function createSettingsOverlay(state, ctx) {
   ov.appendChild(topRow);
 
   // ── tab bar ────────────────────────────────────────────────────────────────
-  const TABS = ["H3 Model", "UpScale Model", "FaceRefine Model", "LLM Setting", "Image LLM", "Preview", "Output"];
+  const TABS = ["H3 Model", "UpScale Model", "FaceRefine Model", "LLM Setting", "Image LLM", "Translation LLM", "Preview", "Output"];
   let activeTab = "H3 Model";
   const tabBar = el("div", { style: { display: "flex", gap: "6px", flexShrink: "0" } });
   const bodyWrap = el("div", { style: { flex: "1", overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px", paddingRight: "4px" } });
@@ -771,11 +772,91 @@ export function createSettingsOverlay(state, ctx) {
     return wrap;
   }
 
+  // Settings -> Translation LLM: the Korean <-> English model. One setting for every node: it is stored on the
+  // server and pushed to all open pages, so this tab follows any change made in another node.
+  function translationTab() {
+    const clipList = ["none", ...(modelData.text_encoders || []).filter(x => x !== "none")];
+    const nativeMissing = [];
+    if (!availability.available?.TextGenerate)           nativeMissing.push("TextGenerate");
+    if (!availability.available?.TJStudioOneTextOutput)  nativeMissing.push("TJStudioOneTextOutput");
+    const holder = el("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } });
+    const save = (patch) => setTranslateConfig(patch);
+    function render() {
+      clear(holder);
+      const t = getTranslateConfig();
+      const beSel = _selEl([
+        el("option", { value: "native",     text: "Native (ComfyUI CLIP)", ...(t.backend === "native" ? { selected: "selected" } : {}) }),
+        el("option", { value: "openrouter", text: "OpenRouter (cloud)",     ...(t.backend === "openrouter" ? { selected: "selected" } : {}) }),
+        el("option", { value: "llamagguf",  text: "Llama GGUF (local llama.cpp)", ...(t.backend === "llamagguf" ? { selected: "selected" } : {}) }),
+        el("option", { value: "custom",     text: "Connect Custom", ...(t.backend === "custom" ? { selected: "selected" } : {}) }),
+      ]);
+      beSel.addEventListener("change", () => save({ backend: beSel.value }));
+      let control;
+      if (t.backend === "llamagguf") {
+        control = el("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } });
+        control.appendChild(el("div", { text: "loading gguf models…", style: { fontSize: "11px", color: C.muted } }));
+        llamaModels().then(d => {
+          clear(control);
+          if (!d.available) {
+            control.appendChild(el("div", { html: "⚠ Local GGUF LLM not available — TJ_NODE not installed, or its llm files failed to load.",
+              style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
+            return;
+          }
+          const list = (d.gguf || []).filter(n => !/mmproj/i.test(String(n || "")));
+          if (!list.length) list.push("(none found)");
+          control.appendChild(col([label("GGUF model"), searchableSelect(list, t.llama_model || list[0], v => save({ llama_model: v })).el]));
+          control.appendChild(col([label("Context length (n_ctx)"),
+            numberField(t.llama_n_ctx ?? 16384, v => save({ llama_n_ctx: Math.max(512, Math.round(v)) }), 512)]));
+          control.appendChild(col([label("Max output tokens"),
+            numberField(t.llama_max_tokens ?? 4096, v => save({ llama_max_tokens: Math.max(256, Math.round(v)) }), 256)]));
+        });
+      } else if (t.backend === "custom") {
+        control = customLLMControls({
+          role: "translate",
+          values: { base: t.custom_base, model: t.custom_model, ctx: t.custom_ctx },
+          onChange: (p) => save({
+            ...("base" in p ? { custom_base: p.base } : {}),
+            ...("model" in p ? { custom_model: p.model } : {}),
+            ...("ctx" in p ? { custom_ctx: p.ctx } : {}),
+          }),
+          theme: { bg: C.bg2, text: C.text, border: C.border, muted: C.muted, ok: C.ok, warn: C.warn, err: C.err, brand: BRAND },
+          noteKeyWhere: "the translate backend",
+        });
+      } else if (t.backend === "openrouter") {
+        const box = el("div");
+        box.appendChild(_selEl([el("option", { value: t.or_model || "", text: t.or_model || "loading models…" })]));
+        orModels().then(ms => {
+          if (!ms.length) return;
+          clear(box);
+          box.appendChild(searchableSelect(ms, t.or_model || (ms.find(m => /gemini-2\.5-flash/.test(m)) || ms[0]), v => save({ or_model: v })).el);
+        });
+        control = col([label("OpenRouter model (translate)"), box]);
+      } else if (nativeMissing.length) {
+        control = el("div", { text: `⚠ Native needs: ${nativeMissing.join(", ")} (TJ_NODE / update ComfyUI)`,
+          style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } });
+      } else {
+        control = col([label("CLIP checkpoint"),
+          searchableSelect(clipList, t.native_clip || "none", v => save({ native_clip: v === "none" ? "" : v })).el]);
+      }
+      holder.append(
+        el("div", { text: "Translate — Korean ↔ English (the same for every node)", style: { fontSize: "11px", fontWeight: "700", color: BRAND } }),
+        col([label("Backend"), beSel]),
+        control,
+        el("div", { text: "Used by the KO / EN button on every prompt field. Changing it here changes it in all nodes at once.",
+          style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+      );
+    }
+    render();
+    loadTranslateConfig();
+    const off = onTranslateConfig(() => { if (!holder.isConnected) { off(); return; } render(); });
+    return el("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } }, [panel([holder])]);
+  }
+
   function renderBody() {
     clear(bodyWrap);
     const fn = {
       "H3 Model": h3ModelTab, "UpScale Model": upscaleModelTab, "FaceRefine Model": faceRefineModelTab,
-      "LLM Setting": samplingTab, "Image LLM": imageLlmTab, Preview: previewTab, Output: outputTab,
+      "LLM Setting": samplingTab, "Image LLM": imageLlmTab, "Translation LLM": translationTab, Preview: previewTab, Output: outputTab,
     }[activeTab];
     bodyWrap.appendChild(fn());
   }
