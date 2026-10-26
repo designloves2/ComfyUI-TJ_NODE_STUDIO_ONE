@@ -2,6 +2,15 @@
 
 ---
 
+## v1.48.0
+
+- **Postprocess -> Latent Upscale (Use H3): Split mode (long clips).** Tick it, then give the seconds per piece (or a piece count): the clip is cut into pieces, each piece is upscaled on its own queue turn (VRAM is freed between turns), and the pieces are joined into one clip. Works with both upscalers. The pieces overlap by a few frames (an H3 piece is 17k+5 frames) and the join trims the overlap, so no frame is lost; the joined clip carries the source's own sound unchanged. Recoverable after a reload like the other split runs.
+- **Joined clips play on an iPhone.** The re-encoding joins (One-Take overlap, sound replacement, Split mode) wrote H.264 level 6.2 at an odd 24.08 fps, which iOS refuses to play. They now write constant frame rate, yuv420p, High profile, level 5.1.
+- **Postprocess -> Latent Upscale (Use H3):** typing a Final MP no longer puts the panel's scroll back to the top.
+- Spec for the web twin and Canvers: `SPEC_RELAY_V1_48_0.md`.
+
+---
+
 ## v1.47.0
 
 - **MiniMax H3 7+1: Upscaler switch.** Under Turbo -> 7+1 (Turbo LoRA or Turbo None) a slot switch picks the last-step upscaler: **H3 Latent Upscaler** (the existing one, default) or **H3 Kimchy Up Scaler** (new; tiles the picture, so 2.0 MP is fine where the Latent Upscaler's sweet spot on a 16 GB card is 1.6 MP). Each upscaler keeps its own Start / Final MP (0.7 / 1.6 and 0.5 / 2.0 by default). Kimchy needs the external `ComfyUI-Kimchy-Minimax-H3-Suite` pack (Apache-2.0, added to `install_requirements`); without it the Latent Upscaler path is untouched and Kimchy says what to install. In a First/Last clip the Kimchy stage-2 gets the prompt only (a keyframe block cannot be cut into tiles).
