@@ -2010,14 +2010,16 @@ app.registerExtension({
         ta.addEventListener("input", () => { state.frPrompt = ta.value; persist(); });
         ta.addEventListener("focus", () => ta.style.borderColor = BRAND);
         ta.addEventListener("blur", () => ta.style.borderColor = C.border);
+        // KO / EN button: the English text is what the model gets, the Korean one is its view
+        const bil = attachBilingual(ta, { target: () => state, key: "frPrompt", persist, protect: () => h3ProtectWords(state), onError: (m) => showPopup(m, true) });
         promptList.style.gap = "6px";
-        promptList.append(ta);
+        promptList.append(bil.el);
       }
 
       // "Prompt Edit" in Face Refine mode → a modal: source clip on top, prompt below,
       // view/edit only (no LLM write button — Face Refine has no vision feature yet).
       function openFaceRefinePromptEdit() {
-        const snap = { p: state.frPrompt || "" };
+        const snap = { p: state.frPrompt || "", ko: state.frPromptKo, newest: state.frPromptNewest, view: state.frPromptView };
         const box = el("div", { style: {
           background: "#0e0e0e", border: `1px solid ${C.border}`, borderRadius: "10px",
           width: "760px", maxWidth: "94%", maxHeight: "90vh", display: "flex", flexDirection: "column",
@@ -2030,7 +2032,10 @@ app.registerExtension({
           position: "fixed", inset: "0", zIndex: "100050", display: "flex", alignItems: "center",
           justifyContent: "center", background: "rgba(0,0,0,0.72)" } }, [box]);
         const finish = (apply) => {
-          if (!apply) state.frPrompt = snap.p;
+          if (!apply) {
+            state.frPrompt = snap.p;
+            for (const [k, v] of [["frPromptKo", snap.ko], ["frPromptNewest", snap.newest], ["frPromptView", snap.view]]) { if (v === undefined) delete state[k]; else state[k] = v; }
+          }
           persist(); ov.remove();
           try { renderPrompts(); } catch (e) { console.warn("[MMH3] Face Refine prompt sync:", e); }
         };
@@ -2055,11 +2060,12 @@ app.registerExtension({
           fontFamily: "inherit", outline: "none", resize: "vertical" } });
         bigTA.value = state.frPrompt || "";
         bigTA.addEventListener("input", () => { state.frPrompt = bigTA.value; persist(); });
+        const bigBil = attachBilingual(bigTA, { target: () => state, key: "frPrompt", persist, protect: () => h3ProtectWords(state), onError: (m) => showPopup(m, true) });
         const presetRow = promptPresetLoadRow((text, name) => {
-          state.frPrompt = text; bigTA.value = text; persist();
+          fieldSetBoth(state, "frPrompt", text, ""); bigBil.refresh(); persist();
           showPopup(`Loaded prompt from "${name}".`, false);
         });
-        body.append(label("Prompt"), presetRow, bigTA);
+        body.append(label("Prompt"), presetRow, bigBil.el);
 
         const foot = el("div", { style: {
           display: "flex", gap: "8px", padding: "10px 12px", borderTop: `1px solid ${C.border}`, flexShrink: "0", justifyContent: "flex-end" } });
@@ -2434,7 +2440,7 @@ app.registerExtension({
         let m = (item && item.meta) || {};
         if (typeof m === "string") { try { m = JSON.parse(m); } catch { m = {}; } }
         const p = (item && item.prompt) || m.prompt || (Array.isArray(m.prompts) && m.prompts[0]) || "";
-        if (kind === "gallery" && String(p).trim()) state.frPrompt = String(p);
+        if (kind === "gallery" && String(p).trim()) fieldSetBoth(state, "frPrompt", String(p), "");
         const durM = m.durationSeconds || m.seconds || (m.frames && m.fps ? m.frames / m.fps : 0) || 0;
         state.frSourceMeta = (m.w || m.h || m.fps || m.frames || durM)
           ? { w: m.w || 0, h: m.h || 0, fps: m.fps || 0, frames: m.frames || 0, duration: durM }
