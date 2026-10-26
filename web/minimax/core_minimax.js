@@ -162,6 +162,32 @@ export function rebaseShots(text) {
 }
 
 /**
+ * A clip's shots moved later by `offsetSec` and numbered from `startNo`, for putting a clip's text after the one before
+ * it (Merge clips). Every shot time moves by the offset; the first shot, which has no time written, gets "At <offset>,".
+ * Text with no [Shot N] marker is returned as it is.
+ */
+export function shiftShots(text, offsetSec, startNo) {
+  const raw = String(text || "");
+  const blocks = shotBlocks(raw);
+  if (!blocks.length) return raw;
+  let out = raw.slice(0, blocks[0].from);
+  blocks.forEach((b, k) => {
+    const block = raw.slice(b.from, b.to);
+    const nl = block.indexOf("\n");
+    let head = nl < 0 ? block : block.slice(0, nl);
+    const rest = nl < 0 ? "" : block.slice(nl);
+    head = head.replace(SHOT_NUM_RE, (_, a, _n, c) => `${a}${startNo + k}${c}`);
+    if (b.start != null) head = head.replace(SHOT_LEAD_TIME_RE, (_, pre, _m, _s, post) => `${pre}At ${fmtShotTime(b.start + offsetSec)}${post}`);
+    else if (k === 0 && offsetSec > 0) head = head.replace(/^([ \t>*_#-]*\[{1,2}[ \t]*(?:Shot|SHOT|shot|샷)[ \t]*\d+\]{1,2}[ \t:]*)/, (m) => `${m}At ${fmtShotTime(offsetSec)}, `);
+    out += head + rest;
+  });
+  return out;
+}
+
+/** How many [Shot N] markers a clip's text has. */
+export const shotCount = (text) => shotBlocks(text).length;
+
+/**
  * Writes the shot times of one clip in half-second steps. A time between two half seconds goes to the
  * nearest one; a time exactly halfway (x.25 / x.75) goes the way the clip's own real render length rounds
  * to its half-second value - the clip rendered longer than its half-second value (rounded down) sends

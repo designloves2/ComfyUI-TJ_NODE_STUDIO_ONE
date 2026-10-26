@@ -6,7 +6,7 @@
 //
 // The brief-writing instruction is the same "Minimax H3 (Video)" system prompt TJ_NODE
 // ships, fetched from the backend (with a built-in fallback when TJ_NODE isn't present).
-import { C, BRAND, el, clear, clipSecondsFor, clipFramesFor, clipTimeline, snapHalf, snapClipSec, clipSecForTyped, shotRanges, rebaseShots, snapShotTimes, oneTakeLlmOn, oneTakeRules, oneTakeFixShots, oneTakeIssues, activePrompts, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt, imageBriefMax, promptText, promptFirstFrame, promptEnabled, clipAssets, clipFraming, promptOverrides, normalizeAssetRef } from "./core_minimax.js";
+import { C, BRAND, el, clear, clipSecondsFor, clipFramesFor, clipTimeline, snapHalf, snapClipSec, clipSecForTyped, shotRanges, rebaseShots, shiftShots, shotCount, snapShotTimes, oneTakeLlmOn, oneTakeRules, oneTakeFixShots, oneTakeIssues, activePrompts, parseBrief, groupShots, parseTargetSeconds, evenBreaks, composeClipPrompt, imageBriefMax, promptText, promptFirstFrame, promptEnabled, clipAssets, clipFraming, promptOverrides, normalizeAssetRef } from "./core_minimax.js";
 import { panel, label, button, select, row, col } from "../klein/ui_common.js";
 import { buildClipMediaSlots } from "./ui_clip_media_slots.js";
 import { openVideoGalleryPicker } from "./ui_video_picker_minimax.js";
@@ -28,6 +28,10 @@ import { H3_SYSTEM_PROMPT_BASE, H3_SYSTEM_PROMPT_REF } from "./system_prompt_h3.
 function normPrompt(p) {
   return typeof p === "string" ? { text: p, firstFrame: "", enabled: true } : p;
 }
+
+// The model renders a clip for at most this long. A clip whose set time is above it (after a merge) is flagged red.
+const MAX_CLIP_SEC = 15;
+const overMaxSec = (p) => !!(p && typeof p === "object" && p.timeOverride && p.timeSec > MAX_CLIP_SEC);
 
 export function createPromptEditOverlay(state, ctx, onApply) {
   const ov = el("div", { style: {
@@ -612,7 +616,12 @@ This cannot be undone.`,
     else timeIn.value = "";
     renderOverrideChk();
     const global = state.clipFrames ?? 192;
-    timeNote.textContent = on
+    const over = overMaxSec(p);
+    timeIn.style.borderColor = over ? C.err : C.border;
+    timeNote.style.color = over ? C.err : C.muted;
+    timeNote.textContent = over
+      ? `set to ${p.timeSec}s - the model renders at most ${MAX_CLIP_SEC}s: set ${MAX_CLIP_SEC}s or less`
+      : on
       ? `renders ${clipSecondsFor(state, selected).toFixed(2)}s (${clipFramesFor(state, selected)} frames)`
       : `global ${(global / 24).toFixed(2)}s`;
   }
@@ -627,6 +636,16 @@ This cannot be undone.`,
     p.timeOverride = timeChk.checked;
     if (timeChk.checked && !(p.timeSec > 0)) p.timeSec = clipSecForTyped((state.clipFrames ?? 192) / 24);
     timeChanged();
+  });
+  // Typing: the red flag follows the value as it is typed (a value above 15 s stays red until it is 15 s or less);
+  // on change the value is snapped to what the model can render.
+  timeIn.addEventListener("input", () => {
+    const v = parseFloat(timeIn.value);
+    if (!(v > 0) || !state.prompts[selected]) return;
+    state.prompts[selected] = normPrompt(state.prompts[selected]);
+    state.prompts[selected].timeSec = v;
+    timeIn.style.borderColor = v > MAX_CLIP_SEC ? C.err : C.border;
+    renderList();
   });
   timeIn.addEventListener("change", () => {
     state.prompts[selected] = normPrompt(state.prompts[selected]);
@@ -688,11 +707,13 @@ This cannot be undone.`,
       if (promptEnabled(p)) onCount++;
       const active = i === selected;
       const on = promptEnabled(p);
+      const overSec = overMaxSec(p);   // set longer than the model renders: red until the time is 15 s or less
       const item = el("div", { style: {
         display: "flex", gap: "4px", alignItems: "center", cursor: "grab",
-        background: active ? C.bg3 : C.bg1, border: `1px solid ${active ? BRAND : C.border}`,
+        background: active ? C.bg3 : C.bg1, border: `1px solid ${overSec ? C.err : active ? BRAND : C.border}`,
         borderRadius: "6px", padding: "6px 7px", opacity: on ? "1" : "0.5",
       }});
+      if (overSec) item.title = `This clip is set to ${p.timeSec} s; the model renders at most ${MAX_CLIP_SEC} s. Set its time to ${MAX_CLIP_SEC} s or less.`;
       const cb = el("input", { type: "checkbox" });
       cb.checked = on;
       cb.title = on ? "On — included in the run" : "Off — skipped when running";
@@ -714,9 +735,9 @@ This cannot be undone.`,
         el("div", { text: `${i + 1} - Clip Prompt #${i + 1}`,
           style: { fontSize: "10.5px", color: labelColor, fontWeight: (active || ownClip) ? "700" : "400",
                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }),
-        el("div", { text: tl.start == null ? "off" : `${fmtSec(tl.start)}~${fmtSec(tl.end)} sec${p.timeOverride ? " ⏱" : ""}`,
+        el("div", { text: tl.start == null ? "off" : overSec ? `${fmtSec(p.timeSec)} sec ⚠ over ${MAX_CLIP_SEC}` : `${fmtSec(tl.start)}~${fmtSec(tl.end)} sec${p.timeOverride ? " ⏱" : ""}`,
           title: p.timeOverride ? "This clip has its own length" : "Global clip length",
-          style: { fontSize: "9.5px", color: p.timeOverride ? "#ffb020" : C.muted } }),
+          style: { fontSize: "9.5px", color: overSec ? C.err : p.timeOverride ? "#ffb020" : C.muted, fontWeight: overSec ? "700" : "400" } }),
         // One-Take: each clip after the first overlaps the one before by 1.625 s, so its place in the stitched video is later-shorter.
         ...(tl.fstart != null ? [el("div", { text: `stitched ${fmtSec(tl.fstart)}~${fmtSec(tl.fend)} sec`,
           title: "Place in the finished One-Take video (1.625 s overlap with the previous clip removed)",
@@ -2277,6 +2298,160 @@ ${name}`, style: {
   });
   noneBtn.addEventListener("click", () => { splitBreaks = new Set(); renderSplit(); });
 
+  // ── merge dialog ───────────────────────────────────────────────────────────
+  // The clips are listed in order with a "clip break" tick after each one. A ticked break keeps two clips apart; clear it and
+  // the clip joins the one after it, so the ticks left in place give the groups (7 clips with breaks after 2 and 4 make 1-2,
+  // 3-4 and 5-6-7). Dragging a card changes the order first. A group's text is its clips' texts one after the other, the
+  // shots renumbered and moved later by the length of the clips before them. A group over 15 s is only flagged (red): it
+  // keeps its real total as its time, and turns normal again as soon as the time is set to 15 s or less.
+  const MERGE_COLORS = ["#7612DA", "#2e9d6a", "#d98a1c", "#3a86d6", "#c4437e", "#7a8a2e"];
+  const mergeOv = el("div", { style: {
+    display: "none", position: "absolute", inset: "0", zIndex: "10", background: "rgba(11,11,11,0.985)",
+    borderRadius: "inherit", flexDirection: "column", padding: "12px", gap: "8px", boxSizing: "border-box",
+  }});
+  let mergeCards = [];   // { i: index in state.prompts, brk: a break after this card }
+  let mergeDragK = -1;
+  const mergeBtnStyle = { cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "5px 11px",
+    borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}` };
+  const mergeHdr = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" } });
+  mergeHdr.appendChild(el("div", { text: "🔗 Merge clips", style: { color: "#fff", fontSize: "13px", fontWeight: "700" } }));
+  const mergeInfo = el("div", { style: { fontSize: "10.5px", color: C.muted, flex: "1" } });
+  const mergeAllSepBtn = el("button", { type: "button", text: "All separate", style: mergeBtnStyle });
+  const mergeAllOneBtn = el("button", { type: "button", text: "Merge all", style: mergeBtnStyle });
+  mergeHdr.append(mergeInfo, mergeAllSepBtn, mergeAllOneBtn, button("✕", () => closeMerge(), "danger"));
+  const mergeBody = el("div", { style: { flex: "1", overflowY: "auto", display: "flex", flexDirection: "column", gap: "0" } });
+  mergeBody.className = "mmh3-lp";
+  const mergeFoot = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" } });
+  const mergeSummary = el("div", { style: { fontSize: "11px", color: C.text, flex: "1", lineHeight: "1.5" } });
+  mergeFoot.append(mergeSummary, button("✓ Apply merge", () => applyMerge(), "primary"));
+  mergeOv.append(mergeHdr, mergeBody, mergeFoot);
+
+  const mergeClipSec = (i) => clipSecondsFor(state, i);
+  function closeMerge() {
+    mergeOv.style.display = "none";
+    if (transientMode) { ov.style.display = "none"; transientMode = false; }
+  }
+  function mergeGroups() {
+    const groups = []; let cur = [];
+    mergeCards.forEach((c, k) => { cur.push(c); if (c.brk || k === mergeCards.length - 1) { groups.push(cur); cur = []; } });
+    return groups;
+  }
+  function renderMerge() {
+    clear(mergeBody);
+    const groups = mergeGroups();
+    const groupOf = new Map();
+    groups.forEach((g, gi) => g.forEach(c => groupOf.set(c, gi)));
+    mergeInfo.textContent = `${mergeCards.length} clip(s) → ${groups.length} clip(s) · drag a card to change the order, clear a break to join a clip to the next one`;
+    mergeCards.forEach((c, k) => {
+      const gi = groupOf.get(c), g = groups[gi];
+      const total = g.reduce((s, m) => s + mergeClipSec(m.i), 0);
+      const over = g.length > 1 && total > MAX_CLIP_SEC;
+      const color = MERGE_COLORS[gi % MERGE_COLORS.length];
+      const text = promptText(normPrompt(state.prompts[c.i]));
+      const card = el("div", { style: {
+        display: "flex", gap: "7px", alignItems: "flex-start", cursor: "grab",
+        background: C.bg1, border: `1px solid ${over ? C.err : C.border}`, borderLeft: `4px solid ${over ? C.err : color}`,
+        borderRadius: "6px", padding: "7px 8px",
+      }});
+      card.draggable = true;
+      card.append(
+        el("div", { text: "⋮⋮", title: "Drag to change the order", style: { color: C.muted, fontSize: "12px", flexShrink: "0", marginTop: "1px" } }),
+        el("div", { text: `Clip ${c.i + 1}`, style: { flexShrink: "0", fontSize: "10px", fontWeight: "700", color: "#fff",
+          background: color, borderRadius: "4px", padding: "2px 6px", marginTop: "1px" } }),
+        el("div", { text: text.replace(/\s+/g, " ").slice(0, 150) + (text.length > 150 ? "…" : ""),
+          style: { flex: "1", fontSize: "10.5px", color: C.text, lineHeight: "1.55" } }),
+        el("div", { text: `${fmtSec(mergeClipSec(c.i))} s`, style: { flexShrink: "0", fontSize: "10px", color: C.muted, marginTop: "1px" } }),
+      );
+      card.addEventListener("dragstart", (e) => {
+        mergeDragK = k; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(k));
+        card.style.opacity = "0.45";
+      });
+      card.addEventListener("dragend", () => { mergeDragK = -1; renderMerge(); });
+      card.addEventListener("dragover", (e) => { if (mergeDragK >= 0) { e.preventDefault(); card.style.outline = `1px dashed ${BRAND}`; } });
+      card.addEventListener("dragleave", () => { card.style.outline = "none"; });
+      card.addEventListener("drop", (e) => {
+        e.preventDefault();
+        if (mergeDragK < 0 || mergeDragK === k) return;
+        const [moved] = mergeCards.splice(mergeDragK, 1);
+        mergeCards.splice(k, 0, moved);
+        mergeDragK = -1; renderMerge();
+      });
+      mergeBody.appendChild(card);
+
+      if (k < mergeCards.length - 1) {
+        const row = el("label", { title: "Ticked: this clip stays apart from the next one. Cleared: they become one clip.", style: {
+          alignSelf: "center", display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", margin: "3px 0",
+          fontSize: "9.5px", color: c.brk ? BRAND : C.muted } });
+        const cb = el("input", { type: "checkbox" });
+        cb.checked = c.brk; cb.style.cursor = "pointer";
+        cb.addEventListener("change", () => { c.brk = cb.checked; renderMerge(); });
+        row.append(cb, el("span", { text: c.brk ? "✂ clip break" : "🔗 joined with the next clip" }));
+        mergeBody.appendChild(row);
+      }
+    });
+    const overGroups = groups.map((g, gi) => ({ g, gi, total: g.reduce((s, m) => s + mergeClipSec(m.i), 0) }))
+      .filter(x => x.g.length > 1 && x.total > MAX_CLIP_SEC);
+    mergeSummary.innerHTML = `→ <b style="color:${BRAND}">${groups.length} clip(s)</b>`
+      + (overGroups.length
+        ? ` · <span style="color:${C.err}">${overGroups.map(x => `clip ${x.gi + 1} is ${snapHalf(x.total)} s`).join(", ")} - the model renders at most ${MAX_CLIP_SEC} s; it is kept red in the clip list until its time is ${MAX_CLIP_SEC} s or less</span>`
+        : "");
+  }
+  async function openMergeDialog() {
+    // the merge reads the English text: a Korean-only edit is translated first
+    try {
+      const llm = translateLlm(), protect = h3ProtectWords(state);
+      for (let i = 0; i < state.prompts.length; i++) {
+        state.prompts[i] = normPrompt(state.prompts[i]);
+        if (await ensureEnglish(state.prompts[i], "text", llm, { protect })) ctx.persist();
+      }
+      editorBil.refresh();
+    } catch (e) { ctx.showPopup?.(e.message, true); closeMerge(); return; }
+    if ((state.prompts || []).length < 2) { ctx.showPopup?.("Need at least two clips to merge.", true); closeMerge(); return; }
+    mergeCards = state.prompts.map((_, i) => ({ i, brk: true }));
+    renderMerge();
+    mergeOv.style.display = "flex";
+  }
+  async function applyMerge() {
+    const groups = mergeGroups();
+    const inOrder = mergeCards.every((c, k) => c.i === k);
+    if (groups.length === mergeCards.length && inOrder) { ctx.showPopup?.("Nothing to merge: every clip is still apart and in its place.", true); return; }
+    snapshot("merge clips");
+    const old = state.prompts.map(normPrompt);
+    const merged = [];
+    const next = groups.map((g) => {
+      const first = { ...old[g[0].i] };
+      if (g.length === 1) return first;
+      let offset = 0, no = 1;
+      const texts = [];
+      for (const m of g) {
+        const t = promptText(old[m.i]);
+        texts.push(shiftShots(t, offset, no));
+        no += shotCount(t);
+        offset += mergeClipSec(m.i);
+      }
+      // new English text: the Korean view of it is cleared and written again after the apply
+      delete first.textKo; delete first.textNewest; delete first.textView;
+      first.text = texts.join("\n");
+      // the real total is kept even above 15 s (flagged red in the list); the render itself stops at 15 s
+      first.timeOverride = true;
+      first.timeSec = snapHalf(offset);
+      first.enabled = g.some(m => promptEnabled(old[m.i]));
+      merged.push(first);
+      return first;
+    });
+    state.prompts = next;
+    selected = 0;
+    for (const c of merged) if (c.text) koTodo.push([c, "text"]);
+    ctx.persist();
+    closeMerge();
+    renderAll(); refreshFraming(); onApply?.();
+    const overN = next.filter(p => p.timeOverride && p.timeSec > MAX_CLIP_SEC).length;
+    ctx.showPopup?.(`Merged ${mergeCards.length} clip(s) into ${next.length}.${overN ? ` ${overN} clip(s) are over ${MAX_CLIP_SEC} s (red in the list) - set their time to ${MAX_CLIP_SEC} s or less.` : ""}`, !!overN);
+    fillKoLater();
+  }
+  mergeAllSepBtn.addEventListener("click", () => { mergeCards.forEach(c => { c.brk = true; }); renderMerge(); });
+  mergeAllOneBtn.addEventListener("click", () => { mergeCards.forEach((c, k) => { c.brk = k === mergeCards.length - 1; }); renderMerge(); });
+
   // ── footer ─────────────────────────────────────────────────────────────────
   const footer = el("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" } });
   const splitBtn = el("button", { type: "button", text: "✂ Split into clips…", style: {
@@ -2284,6 +2459,11 @@ ${name}`, style: {
     borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
   }});
   splitBtn.addEventListener("click", openSplit);
+  const mergeBtn = el("button", { type: "button", text: "🔗 Merge clips…", title: "Join clips into longer ones (several groups at once)", style: {
+    cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "6px 12px",
+    borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+  }});
+  mergeBtn.addEventListener("click", openMergeDialog);
   const planTag = el("div", { style: { fontSize: "10.5px", color: C.muted, flex: "1" } });
   const previewBtn = el("button", { type: "button", text: "👁 Preview sent text", title: "What this clip will actually send", style: {
     cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "6px 12px",
@@ -2295,9 +2475,9 @@ ${name}`, style: {
     editor.setAttribute("title", full);
   });
   // Prompt Write / Refine stay in view whether LOCAL ENHANCE is folded or not.
-  footer.append(splitBtn, previewBtn, planTag, enhBtn, refineBtn, button("✓ Done", () => hide(), "primary"));
+  footer.append(splitBtn, mergeBtn, previewBtn, planTag, enhBtn, refineBtn, button("✓ Done", () => hide(), "primary"));
 
-  ov.append(hdr, setsWrap, commonWrap, body, enhWrap, footer, splitOv, reviewOv);
+  ov.append(hdr, setsWrap, commonWrap, body, enhWrap, footer, splitOv, mergeOv, reviewOv);
 
   function refreshPlanTag() {
     const p = ctx.currentPlan?.();
@@ -2348,6 +2528,16 @@ ${name}`, style: {
      * that precedes it) fully covers it — the user never sees the tabs/editor. */
     openRefine(idx) {
       openTransient(idx, doRefine);
+    },
+    /** The merge dialog from the main screen's own Merge clips button (the popup behind it stays hidden). */
+    openMerge() {
+      const wasOpen = ov.style.display !== "none";
+      transientMode = !wasOpen;
+      ov.style.display = "flex";
+      if (!state.prompts || !state.prompts.length) state.prompts = [{ text: "", firstFrame: "", enabled: true }];
+      if (selected >= state.prompts.length) selected = 0;
+      loadSelected();
+      return openMergeDialog();
     },
     /** Same idea as openRefine(), but runs Prompt Write instead — used by the main
      * screen's own Prompt Write button. */

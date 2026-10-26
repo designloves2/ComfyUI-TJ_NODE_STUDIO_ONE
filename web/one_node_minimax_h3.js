@@ -1246,7 +1246,13 @@ app.registerExtension({
         borderRadius: "5px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
       }});
       resetTAHBtn.addEventListener("click", () => resetPromptTAHeights());
-      promptHdr.append(splitBtn, addBtn, resetTAHBtn);
+      // Merge clips: the counterpart of Split into clips; the dialog lives in Prompt Edit
+      const mergeBtn = el("button", { type: "button", text: "🔗 Merge clips", title: "Join clips into longer ones: pick which clips go together", style: {
+        cursor: "pointer", fontFamily: "inherit", fontSize: "10px",
+        padding: "3px 9px", borderRadius: "5px", background: C.bg2, color: C.text, border: `1px solid ${C.border}`,
+      }});
+      mergeBtn.addEventListener("click", () => { promptEditOv?.openMerge(); });
+      promptHdr.append(splitBtn, mergeBtn, addBtn, resetTAHBtn);
 
       const promptList = el("div", { style: { flex: "1", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px" } });
       promptList.className = "mmh3-lp";
@@ -1408,6 +1414,7 @@ app.registerExtension({
         commonBtn.style.display  = hideShotControls ? "none" : "";
         autoPromptLbl.style.display = hideShotControls ? "none" : "flex";
         splitBtn.style.display   = hideShotControls ? "none" : "";
+        mergeBtn.style.display   = hideShotControls ? "none" : "";
         addBtn.style.display     = hideShotControls ? "none" : "";
         resetTAHBtn.style.display = hideShotControls ? "none" : "";
         // Picture/Subject/Shot tag-inserters and Refine/Prompt Write/Prompt Edit all act
