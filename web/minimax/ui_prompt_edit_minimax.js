@@ -293,6 +293,8 @@ export function createPromptEditOverlay(state, ctx, onApply) {
         clipFrames: state.clipFrames,
         promptHeader: state.promptHeader || "",
         promptFooter: state.promptFooter || "",
+        promptHeaderKo: state.promptHeaderKo || "",   // the Korean view of the common pair
+        promptFooterKo: state.promptFooterKo || "",
         prompts: (state.prompts || []).map(p => (typeof p === "string" ? { text: p, firstFrame: "", enabled: true } : p)),
         generationMode:  state.generationMode || "",
         refTypes:        { ...(state.refTypes || {}) },

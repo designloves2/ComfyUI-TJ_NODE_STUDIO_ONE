@@ -2923,6 +2923,9 @@ async def mmh3_save_prompt_set(request):
             "clipFrames": data.get("clipFrames"),
             "promptHeader": data.get("promptHeader", ""),
             "promptFooter": data.get("promptFooter", ""),
+            # the Korean view of the common pair (the KO / EN button)
+            "promptHeaderKo": data.get("promptHeaderKo", ""),
+            "promptFooterKo": data.get("promptFooterKo", ""),
             "prompts": data.get("prompts") or [],
             "generationMode": data.get("generationMode", ""),
             "refTypes": data.get("refTypes") or {},
