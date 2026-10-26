@@ -59,7 +59,7 @@ export function translateLlm() {
       if (!c.native_clip) throw new Error("No translate CLIP set - pick one in Settings -> Translate.");
       return writeBriefNative(c.native_clip, system, user);
     }
-    const r = await api.fetchApi("/tj_shared/translate_llm", {
+    const r = await api.fetchApi("/tj_shared/translate_llm", { timeoutMs: null,
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ system, user }),
     });
     const d = await r.json();

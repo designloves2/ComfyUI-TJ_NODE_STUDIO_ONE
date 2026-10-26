@@ -713,7 +713,7 @@ export async function writeBriefNative(clipName, systemPrompt, userPrompt, clipT
  * shared with the music + image nodes); the model id is passed through.
  */
 export async function analyzeImagesOpenRouter(images, promptText, orModel) {
-  const r = await api.fetchApi("/ltx25_one/llm/analyze", {
+  const r = await api.fetchApi("/ltx25_one/llm/analyze", { timeoutMs: null,
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ images, prompt: promptText, or_model: orModel || "" }),
   });
@@ -723,7 +723,7 @@ export async function analyzeImagesOpenRouter(images, promptText, orModel) {
 }
 
 export async function writeBriefOpenRouter(systemPrompt, userPrompt, orModel, maxTokens = 2000) {
-  const r = await api.fetchApi("/ltx25_one/llm/write_brief", {
+  const r = await api.fetchApi("/ltx25_one/llm/write_brief", { timeoutMs: null,
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ system: systemPrompt, user: userPrompt, or_model: orModel || "", max_tokens: maxTokens }),
   });
@@ -737,7 +737,7 @@ export async function writeBriefOpenRouter(systemPrompt, userPrompt, orModel, ma
 // ("vision" / "brief" by default, "ltx" for LTX Upscale). The key itself is only ever sent
 // by customLLMControls' Connect & test (shared/custom_llm_controls.js).
 export async function analyzeImagesCustom(images, promptText, ep) {
-  const r = await api.fetchApi("/ltx25_one/llm/custom_analyze", {
+  const r = await api.fetchApi("/ltx25_one/llm/custom_analyze", { timeoutMs: null,
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ images, prompt: promptText, base_url: ep.baseUrl, model: ep.model, context: ep.context || 0, role: ep.role }),
   });
@@ -747,7 +747,7 @@ export async function analyzeImagesCustom(images, promptText, ep) {
 }
 
 export async function writeBriefCustom(systemPrompt, userPrompt, ep) {
-  const r = await api.fetchApi("/ltx25_one/llm/custom_write_brief", {
+  const r = await api.fetchApi("/ltx25_one/llm/custom_write_brief", { timeoutMs: null,
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ system: systemPrompt, user: userPrompt, base_url: ep.baseUrl, model: ep.model, context: ep.context || 0, role: ep.role }),
   });
@@ -765,7 +765,7 @@ export async function writeBriefCustom(systemPrompt, userPrompt, ep) {
  * the caller (ui_prompt_edit_ltx25.js) loops this once per reference image.
  */
 export async function analyzeImageLlama(imageB64, ggufModel, mmprojFile, customInstruction, nCtx, maxTokens) {
-  const r = await api.fetchApi("/tj_studio_one/llm/image_to_prompt", {
+  const r = await api.fetchApi("/tj_studio_one/llm/image_to_prompt", { timeoutMs: null,
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       image_b64: imageB64, backend: "local",
@@ -794,7 +794,7 @@ export async function analyzeImageLlama(imageB64, ggufModel, mmprojFile, customI
  *  brief is exactly as unusable as an empty one, so this needs real headroom, not just
  *  enough to avoid an error. */
 export async function writeBriefLlama(systemPrompt, userPrompt, ggufModel, nCtx, maxTokens) {
-  const r = await api.fetchApi("/tj_studio_one/llm/enhance", {
+  const r = await api.fetchApi("/tj_studio_one/llm/enhance", { timeoutMs: null,
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       prompt: userPrompt, system_override: systemPrompt, backend: "local",
