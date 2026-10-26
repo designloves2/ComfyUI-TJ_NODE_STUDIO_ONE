@@ -1183,8 +1183,7 @@ app.registerExtension({
         if (state.generationMode === "ltxupscale") { openLtxPromptEdit(); return; }
         if (state.generationMode === "facerefine") { openFaceRefinePromptEdit(); return; }
         if (state.generationMode === "imagegen" && state.imageGenMode !== "charsheet") {
-          imgPxTA.value = state.imgPrompt || "";
-          imgPromptExpandOv.show();
+          imgPromptExpandOv.show();   // the popup box is filled from the field's slots when it opens
           return;
         }
         promptEditOv?.show();
@@ -1737,12 +1736,18 @@ app.registerExtension({
         });
         ta.addEventListener("focus", () => ta.style.borderColor = BRAND);
         ta.addEventListener("blur", () => ta.style.borderColor = C.border);
+        // KO / EN button: the English text is what the model gets, the Korean one is its view
+        const bil = attachBilingual(ta, {
+          target: () => state, key: isCharSheet ? "charSheetPrompt" : "imgPrompt",
+          persist, protect: () => h3ProtectWords(state), onError: (m) => showPopup(m, true),
+        });
         promptList.style.gap = "6px";
-        promptList.append(ta);
+        promptList.append(bil.el);
         // t2i/ref2i's "🔍 Prompt Edit" (editBtn, in promptHdr) needs a live handle on
         // whichever textarea is currently on screen — rebuilt every render, unlike
         // Krea2's own mount-once box.
         imgInlineTA = isCharSheet ? null : ta;
+        imgInlineBil = isCharSheet ? null : bil;
         // Save/Reset for Character Sheet live in promptHdr (sysPromptSaveBtn/
         // sysPromptResetBtn) — same slot writeBtn/editBtn use for every other mode —
         // their visibility is synced from renderPrompts() alongside those.
@@ -4238,6 +4243,7 @@ app.registerExtension({
       // <textarea> renderImageGenPrompt() most recently built, since (unlike Krea2's
       // mount-once box) it's rebuilt on every renderPrompts() call.
       let imgInlineTA = null;
+      let imgInlineBil = null;   // the KO / EN handle of that box
       const imgPromptExpandEl = el("div", { style: {
         position: "absolute", inset: "0", zIndex: "9997", background: "rgba(11,11,11,0.97)",
         borderRadius: "inherit", display: "none", flexDirection: "column", padding: "14px", gap: "8px", boxSizing: "border-box",
@@ -4247,8 +4253,8 @@ app.registerExtension({
       const imgPxTA = el("textarea", { style: { flex: "1", background: C.bg2, color: C.text, border: `1px solid ${BRAND}`,
         borderRadius: "6px", padding: "10px", fontSize: "13px", fontFamily: "inherit", resize: "none", outline: "none" } });
       const imgPxApply = button("✓ Apply", () => {
-        state.imgPrompt = imgPxTA.value;
-        if (imgInlineTA) imgInlineTA.value = imgPxTA.value;
+        // the popup box edits the field's slots directly: only the main box has to follow
+        imgInlineBil?.refresh();
         persist();
         imgPromptExpandEl.style.display = "none";
       }, "primary");
@@ -4264,6 +4270,7 @@ app.registerExtension({
         getModePrompt: () => state.imgPrompt || "", setModePrompt: (_mode, val) => { state.imgPrompt = val; },
         state, persist, updateCount: () => {}, getPromptTA: () => imgInlineTA,
         openSettings: () => ctx.openImageLlmSettings?.() ?? settingsOv?.show(),
+        bilingual: { target: () => state, key: "imgPrompt", protect: () => h3ProtectWords(state), onError: (m) => showPopup(m, true), getMainBil: () => imgInlineBil },
       });
 
       // ── Image Generator mode left panel ──────────────────────────────────────
@@ -7461,8 +7468,8 @@ app.registerExtension({
       root.appendChild(imgPromptExpandEl);
       // Templates read only `state.mode`; T2I and Ref2I each keep their own tag presets.
       imgTemplateOv = createTemplateOverlay({ get mode() { return state.imageGenMode === "ref2i" ? "ref2i" : "t2i"; } }, ctx, txt => {
-        state.imgPrompt = txt;
-        if (imgInlineTA) imgInlineTA.value = txt;
+        fieldSetBoth(state, "imgPrompt", txt, "");   // new English text: the Korean view is written when the KO / EN button is used
+        imgInlineBil?.refresh();
         persist();
       }, "minimax_h3");
       root.appendChild(imgTemplateOv.el);

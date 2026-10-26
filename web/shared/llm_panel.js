@@ -15,6 +15,9 @@
 import { t } from "./i18n.js";
 import { openImageGalleryPicker } from "./ui_image_gallery_picker.js";
 import { customLLMControls } from "./custom_llm_controls.js";
+import { attachBilingual } from "./bilingual_ui.js";
+import { fieldSetBoth, fieldSetView, fieldFill, fieldText } from "./bilingual.js";
+import { translateLlm } from "./translate_config.js";
 
 const LS_KEY = "tj_studio_one_llm_settings";
 
@@ -677,7 +680,11 @@ async function runRefine({ getText, onApply, setBusy }) {
 // ══════════════════════════════════════════════════════════════════════════
 // systemPrompt (optional): a node's own system prompt for Prompt Enhance (a string, or a function of the current mode), sent as system_override in place of the generic
 // Model Format one. Refine keeps its own instruction.
-export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA, openSettings, defaultModelFormat, systemPrompt }) {
+// bilingual (optional): { target: () => object holding the prompt, key: slot name (or a function), protect: () => words to keep,
+// onError: (msg) => void, getMainBil: () => the KO / EN handle of the main prompt box }. With it the popup text box gets the
+// KO / EN button, edits live in the field's slots, and Write / Enhance / Refine results are English with the Korean view
+// written after. Nodes that do not pass it behave as before.
+export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA, openSettings, defaultModelFormat, systemPrompt, bilingual = null }) {
   // Grab existing children (header row + textarea) — restructure the interior.
   const [, existingTA] = Array.from(promptExpandEl.children);
   promptExpandEl.removeChild(existingTA);
@@ -972,8 +979,29 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   existingTA.style.borderRadius = "6px";
   existingTA.style.flex = "1";
   const busyOv = _makeBusyOverlay("");
-  taWrap.appendChild(existingTA);
+  // KO / EN button on the popup's text box (the box then edits the field's slots directly)
+  const bilKey = () => (typeof bilingual?.key === "function" ? bilingual.key() : bilingual?.key);
+  const bil = bilingual ? attachBilingual(existingTA, { ...bilingual, persist: () => persist?.(), onInput: () => syncButtons() }) : null;
+  taWrap.appendChild(bil ? bil.el : existingTA);
   taWrap.appendChild(busyOv);
+
+  // What the main prompt box shows after the popup changed the prompt.
+  function syncMain(text) {
+    if (bil) { bilingual.getMainBil?.()?.refresh(); return; }
+    const pta = getPromptTA?.(); if (pta) pta.value = text;
+  }
+  // A Write / Enhance / Refine result is English; its Korean view is written right after (not waited for).
+  function setResult(text) {
+    if (!bil) { existingTA.value = text; return; }
+    const o = bilingual.target(), k = bilKey();
+    fieldSetBoth(o, k, text, "");
+    fieldSetView(o, k, "en");
+    bil.refresh(); syncMain(text); persist?.();
+    if (!String(text || "").trim()) return;
+    fieldFill(o, k, "ko", translateLlm(), { protect: bilingual.protect?.() || [] })
+      .then(() => { persist?.(); bil.refresh(); syncMain(text); })
+      .catch(() => { /* the KO / EN button writes it later */ });
+  }
   function setBusy(on, label) {
     if (label) busyOv._setLabel(label);
     busyOv.style.display = on ? "flex" : "none";
@@ -1011,6 +1039,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   // header's own ✓ (defined by the caller) applies AND closes together.
   function applyNow() {
     const text = existingTA.value;
+    if (bil) { persist?.(); syncMain(text); updateCount?.(); return; }   // the popup box already edits the field's slots
     setModePrompt(state.mode, text);
     const pta = getPromptTA?.(); if (pta) pta.value = text;
     pxTA.value = text;
@@ -1116,7 +1145,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
       });
       const d = await r.json();
       if (!d.ok) throw new Error(d.error || "error");
-      existingTA.value = d.result;
+      setResult(d.result);
       setLastDebug(d.debug_thought);
       syncButtons();
     } catch (e) { alert(t("llm_err_prefix") + e.message); }
@@ -1158,7 +1187,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
       });
       const d = await r.json();
       if (!d.ok) throw new Error(d.error || "error");
-      existingTA.value = d.result;
+      setResult(d.result);
       setLastDebug(d.debug_thought);
       syncButtons();
     } catch (e) { alert(t("llm_err_prefix") + e.message); }
@@ -1169,7 +1198,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   // Refine inside Prompt Edit works on the popup's own text; the accepted result lands back in it.
   btnRefine.addEventListener("click", () => runRefine({
     getText: () => existingTA.value,
-    onApply: (text) => { existingTA.value = text; syncButtons(); },
+    onApply: (text) => { setResult(text); syncButtons(); },
     setBusy: (on) => { btnRefine.disabled = on; setBusy(on, t("llm_busy_refine")); if (!on) syncButtons(); },
   }));
 
@@ -1189,8 +1218,9 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   function refineMain() {
     return runRefine({
       setBusy: setMainBusy,
-      getText: () => getModePrompt(state.mode),
+      getText: () => (bil ? fieldText(bilingual.target(), bilKey()) : getModePrompt(state.mode)),   // what the box shows: Korean or English
       onApply: (text) => {
+        if (bil) { setResult(text); syncButtons(); if (updateCount) updateCount(); return; }
         setModePrompt(state.mode, text);
         const pta = getPromptTA?.(); if (pta) pta.value = text;
         pxTA.value = text; existingTA.value = text;
@@ -1203,7 +1233,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
 
   // ── Show hook ─────────────────────────────────────────────────────────────
   promptExpandEl._tj_llm_onshow = () => {
-    existingTA.value = getModePrompt(state.mode);
+    if (bil) bil.refresh(); else existingTA.value = getModePrompt(state.mode);
     refreshFooter();
     syncButtons();
     const l = loadLLMSettings();

@@ -21,8 +21,9 @@ const BTN = {
  * @param protect  () => extra words a translation must keep (LoRA triggers)
  * @param onView   (view) => called after the view changed (a field that shows two things can redraw)
  * @param onError  (message) => show a failed translation
+ * @param onInput  () => called after text was typed in the Korean view (the field's own input handler does not run there)
  */
-export function attachBilingual(ta, { target, key: keyOrFn, persist = () => {}, protect = () => [], onView = null, onError = null }) {
+export function attachBilingual(ta, { target, key: keyOrFn, persist = () => {}, protect = () => [], onView = null, onError = null, onInput = null }) {
   const wrap = document.createElement("div");
   Object.assign(wrap.style, { position: "relative", display: "flex", flexDirection: "column", minWidth: "0", minHeight: "0" });
   if (ta.style.flex) wrap.style.flex = ta.style.flex;
@@ -68,6 +69,7 @@ export function attachBilingual(ta, { target, key: keyOrFn, persist = () => {}, 
       e.stopImmediatePropagation();
       fieldEdit(o, K(), ta.value);
       persist();
+      onInput?.();
     } else if (e.type === "input") {
       o[newestKey(K())] = "en";
       persist();
