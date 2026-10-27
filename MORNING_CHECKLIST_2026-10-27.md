@@ -53,7 +53,7 @@
 - Long Shot 30초(4클립 x 8초, 832x1216): `MMH3-4_clip001_00168` ~ `clip004_00003`. 사람이 느리게 걷다 빨라지는 흐름.
 - One-Take 30초(4클립): 연속성을 None으로 두면 클립마다 기준 이미지 자세로 다시 시작해 이음새가 끊깁니다(`clip001_00169`~`clip004_00004`). 연속성을 **One-Take (latent)**로 바꿔 다시 렌더하니 이음새가 이어지고 걷기→조깅→달리기로 속도가 올라갑니다(`clip001_00170`~`clip004_00005`, 이어 붙인 `MMH3-4_full_20261027-095809.mp4`, 27.1초).
 - 결정이 필요한 것: Prompt Write에서 One-Take를 고를 때 연속성이 None이면 이음새가 끊깁니다. 자동으로 One-Take(latent)로 바꿔 줄지, 안내만 할지 정해 주세요.
-- 중간 사고: 06:27~06:31에 H3 렌더가 VRAM 할당 실패(`VRAM grow failed: 2.8GB`)로 멈추고 서버가 내려갔습니다. 로컬 llama Write 시도에서 남은 생성이 GPU를 잡고 있던 것이 유력합니다. 30초 Long Shot Write를 로컬 llama(16GB)로 돌리면 20분 이상 걸려 실용적이지 않았고, 시험은 OpenRouter(Brief+Vision, 화면 메모리 설정만)로 했습니다. 새로고침하면 llamagguf로 돌아옵니다.
+- 중간 사고: 06:27~06:31에 H3 렌더가 VRAM 할당 실패(`VRAM grow failed: 2.8GB`)로 멈추고 서버가 내려갔습니다. 로컬 llama Write 시도에서 남은 생성이 GPU를 잡고 있던 것이 유력합니다. (정정) 밤에는 로컬 llama Write가 20분 넘게 끝나지 않아 "실용적이지 않다"고 적었지만 이는 확인한 결론이 아니었습니다. 당시는 60초 프런트 타임아웃 오류와 남은 생성이 GPU를 잡고 있던 상태였고, 그 상태에서 로컬을 다시 재 보지 않았습니다. 밤의 Long Shot/One-Take 영상 시험용 프롬프트는 OpenRouter(Brief+Vision, 화면 메모리 설정만)로 썼으므로 로컬 시험이 아닙니다. 아침에 GPU가 빈 상태에서 다시 쟀더니 30초 Long Shot Write는 네이티브 약 56초(3샷, 요청 4샷), GGUF(Gemma4-12B) 약 148초(4샷)였습니다. 결과는 프롬프트 세트 `LongShot 30s - native text encoder (LLM test)`, `LongShot 30s - GGUF llama (LLM test)`에 저장했습니다. 밤의 20분 초과 원인은 확정하지 못했습니다.
 - 이번에 고친 것: LLM 요청의 60초 프런트 타임아웃 제거(`timeoutMs: null`), 번역 시 모델이 지어낸 마커 제거, 이미지 노드 한글 보기 저장.
 - Write 뒤 한글 보기(`textKo`)는 비어 있고 EN/한 버튼을 눌러야 채워집니다.
 - 환경 점검 요청: `config_minimax_h3.json`의 `h3_llama_brief_model`과 `config_ltx25.json`의 `ltx_llama_model`이 `LLM\Gamma\…`로 되어 있는데 PC에는 `LLM\Gemma4-12B-QAT\…`만 있습니다. 로컬 llama로 Prompt Write를 쓰면 "Model not found"가 날 수 있습니다(제가 임의로 바꾸지 않았습니다).
