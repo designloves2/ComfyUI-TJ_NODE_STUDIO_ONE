@@ -726,7 +726,7 @@ app.registerExtension({
       };
       // Default Model Format for THIS node's Prompt Edit — ported from Qwen Image 2.1's
       // pilot. Applied inside attachLLMPanel once its model list actually loads.
-      const llmApi = attachLLMPanel({bilingual:imgBil.panel,promptExpandEl,pxTA,getModePrompt,setModePrompt,state,persist,updateCount,getPromptTA:()=>promptTA,openSettings:()=>settingsOv?.show(),defaultModelFormat:"Z-Image & Lumina-2 (LLM text encoder)"});
+      const llmApi = attachLLMPanel({bilingual:imgBil.panel,promptExpandEl,pxTA,getModePrompt,setModePrompt,state,persist,updateCount,getPromptTA:()=>promptTA,openSettings:()=>settingsOv?.showTab("LLM"),defaultModelFormat:"Z-Image & Lumina-2 (LLM text encoder)"});
 
       // ── Help overlay ─────────────────────────────────────────────────────
       const HELP_SECTIONS = [

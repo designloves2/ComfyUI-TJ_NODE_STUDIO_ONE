@@ -33,6 +33,7 @@ import { imageSlot }                                                      from "
 // "Qwen Image Edit 2511 ONE STUDIO (TJ)"'s own.
 import { createImageUpload }                                              from "./qwen2511/ui_image_upload.js";
 import { attachLLMPanel, mountLLMSettingsSection }                        from "./shared/llm_panel.js";
+import { tabSettings }                                                     from "./shared/settings_tabs.js";
 import { attachNodeState, restoreNodeState }                              from "./shared/node_state.js";
 import { t, getLang, setLang }                                            from "./shared/i18n.js";
 import { SAMPLERS, SCHEDULERS } from "./shared/sampler_lists.js";
@@ -409,7 +410,7 @@ app.registerExtension({
       // 실행하면 자동으로 Model Format의 기본값은 Qwen 2.1관련 항목이 기본값으로
       // 되어있어야되고." Applied inside attachLLMPanel once its model list actually
       // loads (never overwrites a value the user deliberately picked).
-      const llmApi = attachLLMPanel({bilingual:imgBil.panel, promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA: () => promptTA, openSettings: () => settingsOv?.show(), defaultModelFormat: "Qwen Image 2.1 (T2I)" });
+      const llmApi = attachLLMPanel({bilingual:imgBil.panel, promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA: () => promptTA, openSettings: () => settingsOv?.showTab("LLM"), defaultModelFormat: "Qwen Image 2.1 (T2I)" });
 
       promptWrap.appendChild(promptHdr); promptWrap.appendChild(imgBil.attach(promptTA).el);
       rightPanel.appendChild(previewBox); rightPanel.appendChild(sendToWrap); rightPanel.appendChild(promptWrap);
@@ -1378,6 +1379,7 @@ function createSettingsOverlay(state, ctx, showPopup) {
     });
   }).catch(() => {});
 
-  return { el: wrap, show: () => wrap.style.display = "flex", hide: () => wrap.style.display = "none", setModelLists };
+  const tabs = tabSettings(wrap, llmPanel, { brand: C.lime, bg: C.bg2, border: C.border });
+  return { el: wrap, show: () => wrap.style.display = "flex", showTab: (name) => { tabs.show(name); wrap.style.display = "flex"; }, hide: () => wrap.style.display = "none", setModelLists };
 }
 

@@ -467,7 +467,7 @@ app.registerExtension({
       ctx.updatePromptTA = () => { imgBil.refresh(); updateCount(); };
       // Default Model Format for THIS node's Prompt Edit — ported from Qwen Image 2.1's
       // pilot. Applied inside attachLLMPanel once its model list actually loads.
-      const llmApi = attachLLMPanel({bilingual:imgBil.panel, promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA: () => promptTA, openSettings: () => settingsOv?.show(), defaultModelFormat: "SDXL (tags + weights)" });
+      const llmApi = attachLLMPanel({bilingual:imgBil.panel, promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA: () => promptTA, openSettings: () => settingsOv?.showTab("LLM"), defaultModelFormat: "SDXL (tags + weights)" });
 
       promptWrap.appendChild(promptHdr); promptWrap.appendChild(imgBil.attach(promptTA).el);
       rightPanel.appendChild(previewBox); rightPanel.appendChild(sendToWrap); rightPanel.appendChild(promptWrap);

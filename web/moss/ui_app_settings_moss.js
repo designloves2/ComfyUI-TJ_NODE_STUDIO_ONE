@@ -3,6 +3,7 @@ import { C, el, SUBFOLDER, MANUAL_TEXT } from "./core_moss.js";
 import { panel, label, button, col } from "../klein/ui_common.js";
 import { getModels, getConfig, saveConfig } from "./api_moss.js";
 import { mountLLMSettingsSection } from "../shared/llm_panel.js";
+import { tabSettings } from "../shared/settings_tabs.js";
 
 function searchableSelect(options, value, onChange) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } });
@@ -156,9 +157,11 @@ export function createSettingsOverlay(state, ctx) {
     return getModels().then(d => { rebuildModels(d); applyConfigModels(cfg, d); });
   }).catch(() => {});
 
+  const tabs = tabSettings(ov, llmPanel, { brand: C.lime, bg: C.bg2, border: C.border });
   return {
     el: ov,
     show() { ov.style.display = "flex"; },
+    showTab(name) { tabs.show(name); ov.style.display = "flex"; },
     hide() { ov.style.display = "none"; },
   };
 }

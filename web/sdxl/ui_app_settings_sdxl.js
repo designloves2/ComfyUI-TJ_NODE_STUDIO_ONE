@@ -4,6 +4,7 @@ import { panel, label, button, row, col } from "../klein/ui_common.js";
 import { getModels, getConfig, saveConfig } from "./api_sdxl.js";
 import { t, getLang, setLang } from "../shared/i18n.js";
 import { mountLLMSettingsSection } from "../shared/llm_panel.js";
+import { tabSettings } from "../shared/settings_tabs.js";
 
 function searchableSelect(options, value, onChange) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } });
@@ -281,9 +282,11 @@ export function createSettingsOverlay(state, ctx) {
   ov.appendChild(llmPanel);
   mountLLMSettingsSection(llmPanel, ctx);
 
+  const tabs = tabSettings(ov, llmPanel, { brand: C.lime, bg: C.bg2, border: C.border });
   return {
     el: ov,
     show() { ov.style.display = "flex"; },
+    showTab(name) { tabs.show(name); ov.style.display = "flex"; },
     hide() { ov.style.display = "none"; },
   };
 }

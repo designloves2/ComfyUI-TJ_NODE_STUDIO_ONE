@@ -4,6 +4,7 @@
 
 ## v1.49.1
 
+- **Image nodes: Settings now has Model / LLM tabs** (Krea2, Z-Image, Klein, SDXL, Qwen Image Edit 2511 / 2.1, Anima, Moss), like the video nodes. The model pickers and every other option are in "Model", the Prompt Write / Enhance backend block is in "LLM". The Settings button inside the Prompt Edit popup opens the LLM tab.
 - **Qwen Image 2.1: Settings opened from the Prompt Edit popup no longer appears behind it.** Its settings screen sat one layer below the popup (the other image nodes were already above it).
 
 ---
