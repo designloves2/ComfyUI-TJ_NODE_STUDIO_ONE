@@ -1,6 +1,6 @@
-# SPEC (DRAFT, not sent) — node commits a48d15a … beaa291 (translation toggle, Merge clips, Prompt Write menu)
+# SPEC — node v1.49.0 (translation toggle, Merge clips, Prompt Write menu, Long Shot / One-Take rules, image-node + LTX 2.5 wiring)
 
-Status: written by the control tower while the user slept. **Nothing here has been relayed to the web twin or Canvers**; the user decides in the morning (relay needs the user's "사용자가 승인했습니다."). The node repo is not released yet (no version bump / tag).
+Status: released as node v1.49.0. Relayed to the web twin and Canvers with the user's approval ("사용자가 승인했습니다.").
 
 Read the node code named below; grep it, do not guess. Port exactly (labels, keys, order, texts).
 
@@ -39,10 +39,20 @@ Model: a field keeps `obj[key]` (English = what the model gets), `obj[key+"Ko"]`
 - One-Take Write: with Continuity = None each clip restarts from the reference image and the seams break; Continuity = One-Take (latent) gives a continuous take. `autoOneTake(text, viaMenu)` in `ui_prompt_edit_minimax.js` now also fires when the Write menu's One-Take item is used (sets `continuityMode = "onetake"`, `oneTakeLlm = true`).
 - Long Shot Write sets `generationMode = "reference"` before writing (popup, `ctx.refreshModes()`; if Reference is not available it stops with a message) and the request carries two more paragraphs: references are the original image only in the first window / later windows only keep the look consistent, and shot times stay below the total ("00:11.500, never 01:11.500").
 - Long Shot Write request (`ui_prompt_edit_minimax.js`, next to the "Keep the same people, place, light and style" line): added the paragraph "The long shot is ONE event moving forward in time, not the same moment filmed again. Every window picks up exactly where the previous window ended ... the action itself keeps going." Port the same text. Note: a Long Shot still renders each clip from the reference image unless Continuity chains them, so the wording only fixes the prompts.
-- Long Shot / One-Take were checked with a faked LLM reply; real model quality is not judged. The split-time example from the user ([Shot 2] At 00:03 after split) is still open: the node's `rebaseShots` already restarts at `[Shot 1]` with no time.
+- Long Shot / One-Take were checked with real runs (native text encoder 56 s, local GGUF Gemma4-12B 148-247 s for a 30 s Long Shot Write, 4 clips rendered). A `[Shot 1] At 00:00` in an LLM answer is accepted as is: no change needed (the node's `rebaseShots` keeps restarting later clips at `[Shot 1]` with no time).
+- A local GGUF step that runs past 5 minutes is hung, not slow (user rule): check GPU / queue / log, interrupt it, and if needed kill the old 8188 process and relaunch from the Desktop ComfyUI launcher.
+- The KO / EN button (`attachBilingual` in `web/shared/bilingual_ui.js`) moves left of the textarea's scrollbar while the text overflows (`place()`: `right = 3 + border + (offsetWidth - clientWidth - borders)`, re-run on ResizeObserver, input, mouseenter and every `paint()`), instead of sitting under it.
 
 ## 6. Canvers
 Card/graph based: translation (a KO/EN switch on prompt fields) and Merge/Write menu have no direct card. Propose the closest mapping to the control tower (e.g. only the prompt field toggle + the shared Translation LLM setting) before building; do not skip silently.
+
+## 7. Web only: Grid / Masonry switch for the galleries
+The node has had it since v1.37.0 (commit `53286f5`); the web gallery does not. Read `web/shared/gallery_layout.js` (75 lines) and port it exactly: `mountGalleryLayout(grid, topRow, { colMin = 120, before = null, like = null })`.
+- A toggle button in the gallery's top row, label `▤ Masonry` in Grid mode and `▦ Grid` in Masonry mode (titles `Switch to masonry (original ratios, no gaps)` / `Switch to the regular grid`), styled like a sibling button (`like`).
+- The choice is one setting for every gallery: `localStorage["tj_gallery_layout"]` = `"masonry"` | `"grid"` (default grid), broadcast with the window event `tj-gallery-layout` so open galleries switch together.
+- Grid keeps the gallery's own CSS grid untouched. Masonry turns the same element into a 1 px-row grid: `gridTemplateColumns = repeat(auto-fill, minmax(colMin px, 1fr))`, `gridAutoRows = 1px`, `columnGap = gap`, `rowGap = 0`; every tile gets `alignSelf: start` and `gridRowEnd = span <its offsetHeight + gap>` (measured after resetting to `span 1`), so each tile lands in the shortest column and keeps its original aspect ratio and caption. Switching back restores the saved original inline styles.
+- Re-measure on the next animation frame when the width changes (ResizeObserver), tiles are added or removed (MutationObserver, childList) or an image finishes loading (`load` captured on the grid).
+- Mount it on every image gallery and on the image gallery picker (node: the eight `ui_gallery_*.js` files, `minimax/ui_gallery_minimax_images.js`, `shared/ui_image_gallery_picker.js`). Verify in a real browser with galleries of mixed aspect ratios, switch back and forth, reload (the choice is remembered), and resize the window.
 
 ## Rules
 Do NOT edit the node repo. Test in a real browser run; GPU is shared 16 GB. One report per session: ported / not applicable / not verified, files changed, anything to look at.

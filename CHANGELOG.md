@@ -2,7 +2,7 @@
 
 ---
 
-## Unreleased (not tagged yet; the version number is for the owner to pick)
+## v1.49.0
 
 - **Korean ↔ English button on every H3 prompt field** (clip prompts, Prompt Edit, the common header / tail, the image prompt, the character sheet prompt, the Face Refine prompt). The English text is what the model gets; the Korean text is its view. Typing in either view is kept; before a run, a field that was last edited in Korean (or has Korean typed into the English box) is translated to English first. Dialogue in `<d>…</d>`, `<Picture N>`, `[Shot N] At MM:SS`, `@tokens`, quoted text and LoRA trigger words are never translated. Prompt Write / Refine / Split / Merge write the English and fill the Korean view right after.
 - **Settings → new tab "Translation LLM"**: the translation model (Native CLIP / OpenRouter / Llama GGUF / Connect Custom) is one setting for every node, stored on the server and pushed to every open page at once.
@@ -17,6 +17,7 @@
 - The KO / EN button no longer sits on top of a prompt field's scrollbar: it moves left of the scrollbar while the text overflows and back to the corner when it does not.
 - Translation no longer inserts made-up `⟦n⟧` markers when nothing is protected.
 - LLM requests (Prompt Write, Refine, translation) no longer time out after 60 s in the frontend.
+- Spec for the web twin and Canvers: `SPEC_RELAY_V1_49_0.md`.
 
 ---
 
