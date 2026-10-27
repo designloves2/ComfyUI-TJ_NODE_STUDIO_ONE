@@ -14,6 +14,7 @@
 - **Long Shot Write keeps the action moving**: the request now says the piece is one event moving forward in time, every window picks up exactly where the previous one ended (pose, position, direction, speed) and never restarts from the opening pose; only the camera angle / framing / lens may change.
 - **Long Shot Write switches to Reference mode by itself** (a long shot is separate clips rendered from the references, never chained). The reference pictures count as the original image only in the first window; later windows only keep the people, outfits, style and place consistent. The request also tells the model that times stay below the total length ("00:11.500, never 01:11.500").
 - **One-Take Write switches One-Take on by itself**: choosing One-Take in the Write menu sets Continuity to One-Take (latent) and ticks the One-Take prompt rules, no keyword needed in the prompt.
+- The KO / EN button no longer sits on top of a prompt field's scrollbar: it moves left of the scrollbar while the text overflows and back to the corner when it does not.
 - Translation no longer inserts made-up `⟦n⟧` markers when nothing is protected.
 - LLM requests (Prompt Write, Refine, translation) no longer time out after 60 s in the frontend.
 

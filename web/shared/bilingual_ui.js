@@ -45,6 +45,17 @@ export function attachBilingual(ta, { target, key: keyOrFn, persist = () => {}, 
   bar.append(refresh, toggle);
   wrap.appendChild(bar);
 
+  // the buttons sit left of the textarea's scrollbar, which only exists while the text overflows
+  const place = () => {
+    const cs = getComputedStyle(ta);
+    const border = parseFloat(cs.borderRightWidth) || 0;
+    const scrollbar = Math.max(0, ta.offsetWidth - ta.clientWidth - border - (parseFloat(cs.borderLeftWidth) || 0));
+    bar.style.right = `${3 + border + scrollbar}px`;
+  };
+  new ResizeObserver(place).observe(ta);
+  ta.addEventListener("input", place);
+  wrap.addEventListener("mouseenter", place);
+
   const K = () => (typeof keyOrFn === "function" ? keyOrFn() : keyOrFn);   // a field whose slot name changes (own / common header)
   const obj = () => target();
   const fail = (e) => (onError || ((m) => console.warn("[bilingual]", m)))(String(e?.message || e));
@@ -59,6 +70,7 @@ export function attachBilingual(ta, { target, key: keyOrFn, persist = () => {}, 
     const stale = fieldStale(o, K(), view);
     refresh.style.display = stale ? "" : "none";
     refresh.title = `This ${view === "ko" ? "Korean" : "English"} text is older than the ${view === "ko" ? "English" : "Korean"} one — click to translate it again`;
+    place();
   }
 
   // Korean view: the field's own handler must not see this input (it would write the Korean into the English slot).
