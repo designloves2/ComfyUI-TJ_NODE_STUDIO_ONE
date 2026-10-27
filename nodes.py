@@ -1916,6 +1916,21 @@ def _dedupe_near_repeat(text):
     return "\n\n".join(blocks[:-2] + [blocks[-1]]) if len(blocks) > 2 else blocks[-1]
 
 
+_REASONING_RE = re.compile(
+    r"(?:^|\n)\s*(?:Task:|Thinking Process|Analysis:|Step \d+:)"
+    r"|\b(?:Wait,|Hmm\b|Let me (?:think|commit|check|try|see|pick)|Let's (?:go with|pick|see|think)|I need to|I should|I'll (?:pick|go with|choose)|Need to (?:expand|rewrite|preserve))",
+    re.I)
+
+
+def _reject_reasoning(text):
+    """The model wrote its thinking where the prompt should be (it ignored 'do not include thinking' and /no_think).
+    That text must not land in the prompt box: fail with a clear message instead."""
+    if len(_REASONING_RE.findall(text)) >= 2:
+        raise RuntimeError("The model wrote its thinking instead of the prompt (it ignored the 'output only the prompt' instruction). "
+                           "Try again, or pick another model in Settings > LLM.")
+    return text
+
+
 def _clean_llm_output(text):
     """Runs every local-model-degeneration cleanup, in the order that matters:
     pick the first real '***' candidate before anything else (later candidates
@@ -2077,7 +2092,7 @@ async def _studio_enhance(data):
             return result
         out = await loop.run_in_executor(None, _run)
         result_text = out[0] if isinstance(out, (list, tuple)) else str(out)
-        resp = {"ok": True, "result": _clean_llm_output(result_text)}
+        resp = {"ok": True, "result": _reject_reasoning(_clean_llm_output(result_text))}
         # TJ_PromptEnhancer's own out[1] ("thought") already carries a "=== Raw Output ==="
         # section with the pre-cleanup completion — surfaced here as a temporary debug aid
         # (this session has no access to the ComfyUI console the backend logs to). Remove
@@ -2257,7 +2272,7 @@ async def studio_llm_image_to_prompt(request):
             )
         out = await loop.run_in_executor(None, _run)
         result_text = out[0] if isinstance(out, (list, tuple)) else str(out)
-        resp = {"ok": True, "result": _clean_llm_output(result_text)}
+        resp = {"ok": True, "result": _reject_reasoning(_clean_llm_output(result_text))}
         if isinstance(out, (list, tuple)) and len(out) > 1:
             resp["debug_thought"] = out[1]
         return web.json_response(resp)
