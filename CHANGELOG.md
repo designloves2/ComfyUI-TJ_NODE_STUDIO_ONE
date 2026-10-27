@@ -2,6 +2,12 @@
 
 ---
 
+## v1.49.2
+
+- **Image nodes, Prompt Refine result: English on the left, Korean on the right.** The "original vs refined" comparison with red highlighted words is gone (it compared the Korean text with the English result, and the changed words were not reliable). The Korean side is translated while the window is open ("⏳ 번역중 (한국어로)…"); Apply puts both into the field, so no second translation runs unless the English was edited.
+
+---
+
 ## v1.49.1
 
 - **Image nodes: Settings now has Model / LLM tabs** (Krea2, Z-Image, Klein, SDXL, Qwen Image Edit 2511 / 2.1, Anima, Moss), like the video nodes. The model pickers and every other option are in "Model", the Prompt Write / Enhance backend block is in "LLM". The Settings button inside the Prompt Edit popup opens the LLM tab.
