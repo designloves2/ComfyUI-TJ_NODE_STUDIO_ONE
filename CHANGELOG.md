@@ -4,6 +4,7 @@
 
 ## v1.49.2
 
+- **A long text that fails translation no longer floods the queue.** When the whole-text translation lost a protected part twice, the text was translated one line at a time, one queue job per line (a 50-line text = 50 jobs). That fallback now runs only for texts of up to 12 lines; longer ones fail with "Translate failed".
 - **Image nodes, Prompt Refine result: English on the left, Korean on the right.** The "original vs refined" comparison with red highlighted words is gone (it compared the Korean text with the English result, and the changed words were not reliable). The Korean side is translated while the window is open ("⏳ 번역중 (한국어로)…"); Apply puts both into the field, so no second translation runs unless the English was edited.
 
 ---

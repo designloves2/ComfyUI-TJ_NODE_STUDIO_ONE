@@ -124,8 +124,10 @@ const HAS_LETTERS = /[A-Za-zㄱ-ㆎ가-힣]/;
 /**
  * Translate `text` into `to` ("en" | "ko") with `llm(system, user)`.
  * `opts.protect`: extra words to keep (LoRA triggers). The whole text goes in one call; when the model changes the
- * number of lines or loses a protected part it is asked again, then line by line.
+ * number of lines or loses a protected part it is asked again, then line by line (up to MAX_LINES_ONE_BY_ONE lines).
  */
+const MAX_LINES_ONE_BY_ONE = 12;
+
 export async function translateText(text, to, llm, opts = {}) {
   const src = String(text || "");
   if (!src.trim()) return "";
@@ -151,7 +153,9 @@ export async function translateText(text, to, llm, opts = {}) {
     if (done != null) return done;
     last = aligned ? "the translation lost or repeated a protected part" : "the translation changed the number of lines";
   }
-  // line by line: slower, but a line cannot be merged or moved
+  // line by line: slower, but a line cannot be merged or moved. A long text would need one model call per line (minutes of
+  // queue jobs), so it fails here instead.
+  if (lines.length > MAX_LINES_ONE_BY_ONE) throw new Error(`Translate failed: ${last}.`);
   const out = [];
   for (const line of lines) {
     if (!HAS_LETTERS.test(line.replace(MARK_RE, ""))) { out.push(line); continue; }
