@@ -4,7 +4,7 @@
 // (use it where the textarea was). Typing in the Korean view writes the Korean slot only — the field's own input
 // handler is kept from running, so it can never overwrite the English text with Korean. Typing in the English view
 // goes through the field's own handler as before; this file only marks the English slot as the newest one.
-import { fieldView, fieldText, fieldEdit, fieldSetView, fieldStale, fieldFill, koKey, newestKey } from "./bilingual.js";
+import { fieldView, fieldText, fieldEdit, fieldSetView, fieldStale, fieldFill, koKey, newestKey, translatingTo, onTranslating } from "./bilingual.js";
 import { translateLlm } from "./translate_config.js";
 
 const BTN = {
@@ -55,6 +55,26 @@ export function attachBilingual(ta, { target, key: keyOrFn, persist = () => {}, 
   new ResizeObserver(place).observe(ta);
   ta.addEventListener("input", place);
   wrap.addEventListener("mouseenter", place);
+
+  // dark layer over the field while it is being translated (any translation: the buttons, the Generate step, Write / Refine)
+  const veil = document.createElement("div");
+  Object.assign(veil.style, {
+    position: "absolute", inset: "0", display: "none", alignItems: "center", justifyContent: "center", zIndex: "4",
+    background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: "12px", fontWeight: "600", pointerEvents: "all", cursor: "progress",
+  });
+  wrap.appendChild(veil);
+  let wasConnected = false;
+  const unsubscribe = onTranslating(() => {
+    if (wrap.isConnected) wasConnected = true;
+    else if (wasConnected) { unsubscribe(); return; }
+    const o = obj();
+    const to = o ? translatingTo(o, K()) : "";
+    veil.style.display = to ? "flex" : "none";
+    if (to) {
+      veil.style.borderRadius = getComputedStyle(ta).borderRadius;
+      veil.textContent = `⏳ 번역중 (${to === "ko" ? "한국어로" : "영어로"})…`;
+    }
+  });
 
   const K = () => (typeof keyOrFn === "function" ? keyOrFn() : keyOrFn);   // a field whose slot name changes (own / common header)
   const obj = () => target();

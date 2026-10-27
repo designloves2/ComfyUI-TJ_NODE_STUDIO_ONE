@@ -215,11 +215,27 @@ export function fieldStale(obj, key, view) {
   return !String(mine || "").trim() || obj?.[newestKey(key)] === other;
 }
 
+// Which fields are being translated right now ("ko" | "en" = the language it is translated to), so the field can show it.
+const translating = new Map();
+const translatingListeners = new Set();
+export function translatingTo(obj, key) { return translating.get(obj)?.get(key) || ""; }
+export function onTranslating(fn) { translatingListeners.add(fn); return () => translatingListeners.delete(fn); }
+async function whileTranslating(obj, key, to, run) {
+  if (!translating.has(obj)) translating.set(obj, new Map());
+  translating.get(obj).set(key, to);
+  translatingListeners.forEach(fn => fn());
+  try { return await run(); }
+  finally {
+    translating.get(obj).delete(key);
+    translatingListeners.forEach(fn => fn());
+  }
+}
+
 /** Bring the slot of `view` up to date from the other one (an LLM call). */
 export async function fieldFill(obj, key, view, llm, opts = {}) {
   const other = view === "ko" ? "en" : "ko";
   const from = other === "ko" ? obj[koKey(key)] : obj[key];
-  const out = await translateText(from, view, llm, opts);
+  const out = await whileTranslating(obj, key, view, () => translateText(from, view, llm, opts));
   if (view === "ko") obj[koKey(key)] = out; else obj[key] = out;
   obj[newestKey(key)] = "";
   return out;
@@ -242,7 +258,7 @@ export async function ensureEnglish(obj, key, llm, opts = {}) {
   const en = String(obj[key] || "");
   const koIsSource = obj[newestKey(key)] === "ko" && ko.trim();
   const source = koIsSource ? ko : en;
-  const english = await translateText(source, "en", llm, opts);
+  const english = await whileTranslating(obj, key, "en", () => translateText(source, "en", llm, opts));
   if (!koIsSource) obj[koKey(key)] = en;   // the Korean the user typed becomes the Korean view
   obj[key] = english;
   obj[newestKey(key)] = "";

@@ -8,14 +8,17 @@ import { translateLlm } from "./translate_config.js";
 const KEY = "prompt";
 
 export function createImagePromptBilingual({ state, getModePrompt, setModePrompt, persist, onError }) {
+  // one Proxy per mode's slots, so the same field is always the same object (the "being translated" mark is looked up by it)
+  const proxies = new WeakMap();
   const target = () => {
     const mode = state.mode;
     if (!state.promptSlots) state.promptSlots = {};
     const slots = state.promptSlots[mode] || (state.promptSlots[mode] = {});
-    return new Proxy(slots, {
+    if (!proxies.has(slots)) proxies.set(slots, new Proxy(slots, {
       get: (t, k) => (k === KEY ? getModePrompt(mode) : t[k]),
       set: (t, k, v) => { if (k === KEY) setModePrompt(mode, v); else t[k] = v; return true; },
-    });
+    }));
+    return proxies.get(slots);
   };
   const protect = () => [];
   let main = null;
