@@ -609,7 +609,7 @@ export function createSettingsOverlay(state, ctx) {
     const fn = {
       "LTX Model": ltxModelTab,
       "LLM Setting": samplingTab, Preview: previewTab, Output: outputTab,
-      "Translation LLM": () => translationSettingsPanel({ bg: C.bg2, text: C.text, border: C.border, muted: C.muted, warn: C.warn, ok: C.ok, err: C.err, brand: BRAND }),
+      "Translation LLM": () => translationSettingsPanel({ bg: C.bg2, text: C.text, border: C.border, muted: C.muted, warn: C.warn, ok: C.ok, err: C.err, brand: BRAND }, "ltx25"),
     }[activeTab];
     bodyWrap.appendChild(fn());
   }

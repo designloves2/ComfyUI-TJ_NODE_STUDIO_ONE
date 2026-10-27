@@ -798,6 +798,7 @@ app.registerExtension({
       helpOv={el:helpEl, show(){helpEl.style.display="flex";}};
 
       root.appendChild(settingsOv.el);
+      root.dataset.tjNode = "zimage";
       root.appendChild(galleryOv.el);
       root.appendChild(templateOv.el);
       root.appendChild(promptExpandEl);

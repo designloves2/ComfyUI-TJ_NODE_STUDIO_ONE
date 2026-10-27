@@ -415,6 +415,7 @@ app.registerExtension({
       // ── Overlays mounting ──────────────────────────────────────────────────
       settingsOv = createSettingsOverlay(state, ctx);
       root.appendChild(settingsOv.el);
+      root.dataset.tjNode = "moss";
 
       galleryOv = createGalleryOverlay(
         state, ctx,

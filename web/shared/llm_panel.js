@@ -18,6 +18,7 @@ import { customLLMControls } from "./custom_llm_controls.js";
 import { attachBilingual } from "./bilingual_ui.js";
 import { fieldSetBoth, fieldSetView, fieldFill, fieldText, translateText } from "./bilingual.js";
 import { translateLlm } from "./translate_config.js";
+import { useKoFor } from "./ko_setting.js";
 
 const LS_KEY = "tj_studio_one_llm_settings";
 
@@ -591,7 +592,7 @@ async function _callRefine(prompt, instruction) {
  * written while the window is open). Resolves { action: "apply" | "again" | "close", text, ko }; `ko` is "" when the
  * English was edited after the translation (the caller then translates it again).
  */
-function _showRefineResult(refined, protect) {
+function _showRefineResult(refined, protect, withKo = true) {
   return new Promise(resolve => {
     const { ov, box } = _refineOverlay();
     box.style.width = "min(1100px, 96vw)"; box.style.height = "min(680px, 90vh)";
@@ -614,6 +615,7 @@ function _showRefineResult(refined, protect) {
     };
     const en = mk("English (you can edit it before applying)", refined, true);
     const ko = mk("한국어 (번역)", "", false);
+    if (!withKo) ko.col.style.display = "none";
     const veil = document.createElement("div");
     Object.assign(veil.style, {
       position: "absolute", left: "0", right: "0", bottom: "0", top: "18px", display: "flex", alignItems: "center", justifyContent: "center",
@@ -623,8 +625,8 @@ function _showRefineResult(refined, protect) {
     ko.col.appendChild(veil);
 
     let translated = "", koOk = false;
-    translateText(refined, "ko", translateLlm(), { protect })
-      .then(out => { translated = out; koOk = true; ko.ta.value = out; })
+    (withKo ? translateText(refined, "ko", translateLlm(), { protect }) : Promise.resolve(""))
+      .then(out => { translated = out; koOk = withKo; ko.ta.value = out; })
       .catch(e => { ko.ta.value = "Translation failed: " + (e?.message || e); })
       .finally(() => { veil.style.display = "none"; });
     let editedAfter = false;
@@ -648,7 +650,7 @@ function _showRefineResult(refined, protect) {
  * Whole Refine flow on `getText()`'s prompt. `setBusy(on)` lets the caller show its own busy state;
  * `onApply(text)` receives the accepted prompt. Returns once the user applies or closes.
  */
-async function runRefine({ getText, onApply, setBusy, protect }) {
+async function runRefine({ getText, onApply, setBusy, protect, withKo }) {
   const current = (getText() || "").trim();
   if (!current) { alert("Nothing to refine yet — write a prompt first."); return; }
   let instruction = await _askRefineInstruction();
@@ -659,7 +661,7 @@ async function runRefine({ getText, onApply, setBusy, protect }) {
     try { refined = await _callRefine(current, instruction); }
     catch (e) { alert(t("llm_err_prefix") + e.message); return; }
     finally { setBusy?.(false); }
-    const res = await _showRefineResult(refined, protect?.() || []);
+    const res = await _showRefineResult(refined, protect?.() || [], withKo ? withKo() : true);
     if (res.action === "apply") { onApply(res.text, res.ko); return; }
     if (res.action === "close") return;
     instruction = await _askRefineInstruction();
@@ -988,7 +990,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     fieldSetBoth(o, k, text, ko);
     fieldSetView(o, k, "en");
     bil.refresh(); syncMain(text); persist?.();
-    if (!String(text || "").trim() || String(ko || "").trim()) return;
+    if (!String(text || "").trim() || String(ko || "").trim() || !useKoFor(promptExpandEl)) return;
     fieldFill(o, k, "ko", translateLlm(), { protect: bilingual.protect?.() || [] })
       .then(() => { persist?.(); bil.refresh(); syncMain(text); })
       .catch(() => { /* the KO / EN button writes it later */ });
@@ -1203,6 +1205,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     getText: () => existingTA.value,
     onApply: (text, ko) => { setResult(text, ko); syncButtons(); },
     protect: () => bilingual?.protect?.() || [],
+    withKo: () => useKoFor(promptExpandEl),
     setBusy: (on) => { btnRefine.disabled = on; setBusy(on, t("llm_busy_refine")); if (!on) syncButtons(); },
   }));
 
@@ -1223,6 +1226,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     return runRefine({
       setBusy: setMainBusy,
       protect: () => bilingual?.protect?.() || [],
+      withKo: () => useKoFor(promptExpandEl),
       getText: () => (bil ? fieldText(bilingual.target(), bilKey()) : getModePrompt(state.mode)),   // what the box shows: Korean or English
       onApply: (text, ko) => {
         if (bil) { setResult(text, ko); syncButtons(); if (updateCount) updateCount(); return; }

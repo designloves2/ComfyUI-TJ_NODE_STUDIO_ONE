@@ -6,6 +6,7 @@
 // goes through the field's own handler as before; this file only marks the English slot as the newest one.
 import { fieldView, fieldText, fieldEdit, fieldSetView, fieldStale, fieldFill, koKey, newestKey, translatingTo, onTranslating } from "./bilingual.js";
 import { translateLlm } from "./translate_config.js";
+import { useKoFor } from "./ko_setting.js";
 
 const BTN = {
   cursor: "pointer", fontFamily: "inherit", fontSize: "10px", fontWeight: "700", lineHeight: "1",
@@ -76,6 +77,18 @@ export function attachBilingual(ta, { target, key: keyOrFn, persist = () => {}, 
     }
   });
 
+  // "Use Korean translation" is off for this node: no button, always the English text
+  let koWasOn = true;
+  function syncKo() {
+    const on = useKoFor(wrap);
+    bar.style.display = on ? "flex" : "none";
+    const o = obj();
+    if (!on && o && fieldView(o, K()) === "ko") { fieldSetView(o, K(), "en"); paint(); }
+    if (on !== koWasOn) { koWasOn = on; paint(); }
+  }
+  window.addEventListener("tj-use-ko", () => { if (wrap.isConnected) syncKo(); });
+  wrap.addEventListener("mouseenter", syncKo);
+
   const K = () => (typeof keyOrFn === "function" ? keyOrFn() : keyOrFn);   // a field whose slot name changes (own / common header)
   const obj = () => target();
   const fail = (e) => (onError || ((m) => console.warn("[bilingual]", m)))(String(e?.message || e));
@@ -91,6 +104,7 @@ export function attachBilingual(ta, { target, key: keyOrFn, persist = () => {}, 
     refresh.style.display = stale ? "" : "none";
     refresh.title = `This ${view === "ko" ? "Korean" : "English"} text is older than the ${view === "ko" ? "English" : "Korean"} one — click to translate it again`;
     place();
+    if (!useKoFor(wrap)) syncKo();
   }
 
   // Korean view: the field's own handler must not see this input (it would write the Korean into the English slot).

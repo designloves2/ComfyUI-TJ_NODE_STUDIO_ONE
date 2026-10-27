@@ -3,6 +3,7 @@
 // shows in every node and page at once (the panel re-draws when the server pushes it).
 import { getTranslateConfig, loadTranslateConfig, onTranslateConfig, setTranslateConfig } from "./translate_config.js";
 import { customLLMControls } from "./custom_llm_controls.js";
+import { useKoCheckbox } from "./ko_setting.js";
 
 let _models = null;
 async function localModels() {
@@ -21,7 +22,7 @@ async function orModels() {
   return _orModels;
 }
 
-export function translationSettingsPanel(theme = {}) {
+export function translationSettingsPanel(theme = {}, nodeKey = "") {
   const T = { bg: "#181818", text: "#dedede", border: "#2a2a2a", muted: "#8a8a8a", warn: "#ffb347", ok: "#7eff7e", err: "#ff6767", brand: "#c8ff3d", ...theme };
   const css = (el, s) => Object.assign(el.style, s);
   const div = (text, s = {}) => { const d = document.createElement("div"); if (text) d.textContent = text; css(d, s); return d; };
@@ -59,6 +60,7 @@ export function translationSettingsPanel(theme = {}) {
   const save = (patch) => setTranslateConfig(patch);
   const holder = div("", { display: "flex", flexDirection: "column", gap: "8px" });
   const box = div("", { background: "rgba(255,255,255,0.03)", border: `1px solid ${T.border}`, borderRadius: "8px", padding: "10px" });
+  if (nodeKey) box.appendChild(useKoCheckbox(nodeKey, { text: T.text, muted: T.muted }));
   box.appendChild(holder);
 
   function render() {

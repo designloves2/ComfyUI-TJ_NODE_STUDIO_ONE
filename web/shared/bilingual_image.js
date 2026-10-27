@@ -4,6 +4,7 @@
 import { attachBilingual } from "./bilingual_ui.js";
 import { ensureEnglish, fieldSetBoth, fieldSetView } from "./bilingual.js";
 import { translateLlm } from "./translate_config.js";
+import { useKoFor } from "./ko_setting.js";
 
 const KEY = "prompt";
 
@@ -40,6 +41,7 @@ export function createImagePromptBilingual({ state, getModePrompt, setModePrompt
     },
     // Generate guard: a Korean-only edit becomes English before the graph is built
     async ensure() {
+      if (main && !useKoFor(main.el)) return;
       if (await ensureEnglish(target(), KEY, translateLlm(), { protect: protect() })) { persist(); main?.refresh(); }
     },
   };

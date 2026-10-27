@@ -282,7 +282,7 @@ export function createSettingsOverlay(state, ctx) {
   ov.appendChild(llmPanel);
   mountLLMSettingsSection(llmPanel, ctx);
 
-  const tabs = tabSettings(ov, llmPanel, { brand: C.lime, bg: C.bg2, border: C.border });
+  const tabs = tabSettings(ov, llmPanel, { brand: C.lime, bg: C.bg2, border: C.border, nodeKey: "sdxl" });
   return {
     el: ov,
     show() { ov.style.display = "flex"; },

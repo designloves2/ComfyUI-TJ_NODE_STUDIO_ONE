@@ -616,6 +616,7 @@ app.registerExtension({
       // ── Overlays ───────────────────────────────────────────────────────────────
       settingsOv = createSettingsOverlay(state, ctx);
       root.appendChild(settingsOv.el);
+      root.dataset.tjNode = "sdxl";
 
       galleryOv = createGalleryOverlay(
         state, ctx,

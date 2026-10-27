@@ -15,6 +15,7 @@ import { openAudioGalleryPicker } from "../shared/ui_audio_gallery_picker.js";
 import { ask } from "../shared/ui_ask.js";
 import { attachBilingual } from "../shared/bilingual_ui.js";
 import { fieldEdit, fieldSetBoth, fieldFill, ensureEnglish, koKey } from "../shared/bilingual.js";
+import { getUseKo } from "../shared/ko_setting.js";
 import { translateLlm } from "../shared/translate_config.js";
 import { h3ProtectWords } from "./translate_minimax.js";
 import { mountLibraryRefs, emptyAssetRef, sourceToggle } from "../shared/reflib_refpanel.js";
@@ -2221,7 +2222,7 @@ ${name}`, style: {
   }
   async function fillKoLater() {
     const todo = koTodo.splice(0);
-    if (!todo.length) return;
+    if (!todo.length || !getUseKo("minimax_h3")) return;
     const llm = translateLlm(), protect = h3ProtectWords(state);
     for (let n = 0; n < todo.length; n++) {
       const [obj, key] = todo[n];
@@ -2428,7 +2429,7 @@ ${name}`, style: {
     // the split reads the English text (a Korean-only edit is translated first); the Korean view is written again after
     try {
       state.prompts[selected] = normPrompt(state.prompts[selected]);
-      if (await ensureEnglish(state.prompts[selected], "text", translateLlm(), { protect: h3ProtectWords(state) })) { ctx.persist(); editorBil.refresh(); }
+      if (getUseKo("minimax_h3") && await ensureEnglish(state.prompts[selected], "text", translateLlm(), { protect: h3ProtectWords(state) })) { ctx.persist(); editorBil.refresh(); }
     } catch (e) { ctx.showPopup?.(e.message, true); return; }
     const parsed = parseBrief(promptText(normPrompt(state.prompts[selected])));
     if (!parsed.shots.length) { ctx.showPopup?.("Nothing to split.", true); return; }
@@ -2572,7 +2573,7 @@ ${name}`, style: {
       const llm = translateLlm(), protect = h3ProtectWords(state);
       for (let i = 0; i < state.prompts.length; i++) {
         state.prompts[i] = normPrompt(state.prompts[i]);
-        if (await ensureEnglish(state.prompts[i], "text", llm, { protect })) ctx.persist();
+        if (getUseKo("minimax_h3") && await ensureEnglish(state.prompts[i], "text", llm, { protect })) ctx.persist();
       }
       editorBil.refresh();
     } catch (e) { ctx.showPopup?.(e.message, true); closeMerge(); return; }

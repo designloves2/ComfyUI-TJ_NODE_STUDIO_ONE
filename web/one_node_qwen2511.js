@@ -524,6 +524,7 @@ app.registerExtension({
       // Re-render current mode panel when Lightning LoRA is toggled (so Steps/CFG fields update)
       ctx._onLightningChange = () => { persist(); renderMode(); };
       root.appendChild(settingsOv.el);
+      root.dataset.tjNode = "qwen2511";
 
       galleryOv=createGalleryOverlay(
         state, ctx,

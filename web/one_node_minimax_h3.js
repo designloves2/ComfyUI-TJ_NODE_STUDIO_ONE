@@ -62,6 +62,7 @@ import { resolvePipeOverrides, applyOverridesTemp } from "./shared/promptdb_pipe
 import { attachNodeState, restoreNodeState } from "./shared/node_state.js";
 import { attachBilingual } from "./shared/bilingual_ui.js";
 import { ensureEnglish, fieldNeedsEnglish, fieldSetBoth } from "./shared/bilingual.js";
+import { getUseKo } from "./shared/ko_setting.js";
 import { translateLlm } from "./shared/translate_config.js";
 import { h3ProtectWords } from "./minimax/translate_minimax.js";
 import { createNodeFullscreen } from "./shared/node_fullscreen.js";
@@ -162,6 +163,7 @@ app.registerExtension({
         color: C.text, fontFamily: "'Segoe UI',sans-serif",
       }});
       ctx.rootEl = root;
+      root.dataset.tjNode = "minimax_h3";
 
       let popTimer;
       function showPopup(msg, isError = true) {
@@ -6156,7 +6158,7 @@ app.registerExtension({
           const key = { image: "imgPrompt", charsheet: "charSheetPrompt", ltx: "ltxPrompt", face: "frPrompt" }[scope];
           if (key) jobs.push([state, key]);
         }
-        const need = jobs.filter(([obj, key]) => fieldNeedsEnglish(obj, key));
+        const need = getUseKo("minimax_h3") ? jobs.filter(([obj, key]) => fieldNeedsEnglish(obj, key)) : [];
         if (!need.length) return;
         const llm = translateLlm(), protect = h3ProtectWords(state);
         for (let n = 0; n < need.length; n++) {

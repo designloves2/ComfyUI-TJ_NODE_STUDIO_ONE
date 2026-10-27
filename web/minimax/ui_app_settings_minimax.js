@@ -7,6 +7,7 @@ import { getModels, getConfig, saveConfig, getNodeAvailability, listVideos, getT
 import { customLLMControls } from "../shared/custom_llm_controls.js";
 import { getTranslateConfig, loadTranslateConfig, onTranslateConfig, setTranslateConfig } from "../shared/translate_config.js";
 import { mountLLMSettingsSection } from "../shared/llm_panel.js";
+import { useKoCheckbox } from "../shared/ko_setting.js";
 
 function searchableSelect(options, value, onChange) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } });
@@ -839,6 +840,7 @@ export function createSettingsOverlay(state, ctx) {
           searchableSelect(clipList, t.native_clip || "none", v => save({ native_clip: v === "none" ? "" : v })).el]);
       }
       holder.append(
+        useKoCheckbox("minimax_h3", { text: C.text, muted: C.muted }),
         el("div", { text: "Translate — Korean ↔ English (the same for every node)", style: { fontSize: "11px", fontWeight: "700", color: BRAND } }),
         col([label("Backend"), beSel]),
         control,

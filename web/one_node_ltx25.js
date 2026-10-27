@@ -42,6 +42,7 @@ import { resolvePipeOverrides, applyOverridesTemp } from "./shared/promptdb_pipe
 import { attachNodeState, restoreNodeState } from "./shared/node_state.js";
 import { attachBilingual } from "./shared/bilingual_ui.js";
 import { ensureEnglish, fieldNeedsEnglish } from "./shared/bilingual.js";
+import { getUseKo } from "./shared/ko_setting.js";
 import { translateLlm } from "./shared/translate_config.js";
 import { createNodeFullscreen } from "./shared/node_fullscreen.js";
 
@@ -133,6 +134,7 @@ app.registerExtension({
         color: C.text, fontFamily: "'Segoe UI',sans-serif",
       }});
       ctx.rootEl = root;
+      root.dataset.tjNode = "ltx25";
 
       let popTimer;
       // The Last frame is cut to the First frame's shape: scaled until it covers it, then centre-cropped, so neither
@@ -2799,7 +2801,7 @@ app.registerExtension({
               const p = (state.prompts[i] = normPrompt(raw));
               if (promptEnabled(p)) jobs.push([p, "text"], [p, "header"], [p, "footer"]);
             });
-            const need = jobs.filter(([obj, key]) => fieldNeedsEnglish(obj, key));
+            const need = getUseKo("ltx25") ? jobs.filter(([obj, key]) => fieldNeedsEnglish(obj, key)) : [];
             for (let n = 0; n < need.length; n++) {
               genBtn.textContent = "⏳ Translating…";
               setStatus(`Translating Korean prompt ${n + 1}/${need.length} to English…`);

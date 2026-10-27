@@ -887,6 +887,7 @@ app.registerExtension({
       // ── Overlays ───────────────────────────────────────────────────────────
       settingsOv = createSettingsOverlay(state, ctx);
       root.appendChild(settingsOv.el);
+      root.dataset.tjNode = "klein";
 
       galleryOv = createGalleryOverlay(
         state, ctx,

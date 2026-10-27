@@ -1118,6 +1118,7 @@ app.registerExtension({
       // ── Settings overlay (model/clip/vae, cache/sage toggles, output subfolder) ──
       settingsOv = createSettingsOverlay(state, ctx, showPopup);
       root.appendChild(settingsOv.el);
+      root.dataset.tjNode = "qwen21";
 
       // ── Gallery overlay (full 2511-parity: pagination, lightbox, favorite/delete) ──
       galleryOv = createGalleryOverlay(
@@ -1379,7 +1380,7 @@ function createSettingsOverlay(state, ctx, showPopup) {
     });
   }).catch(() => {});
 
-  const tabs = tabSettings(wrap, llmPanel, { brand: C.lime, bg: C.bg2, border: C.border });
+  const tabs = tabSettings(wrap, llmPanel, { brand: C.lime, bg: C.bg2, border: C.border, nodeKey: "qwen21" });
   return { el: wrap, show: () => wrap.style.display = "flex", showTab: (name) => { tabs.show(name); wrap.style.display = "flex"; }, hide: () => wrap.style.display = "none", setModelLists };
 }
 

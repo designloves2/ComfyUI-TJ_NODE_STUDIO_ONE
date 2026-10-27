@@ -507,6 +507,7 @@ app.registerExtension({
       // ── Overlays mounting ──────────────────────────────────────────────────
       settingsOv = createSettingsOverlay(state, ctx);
       root.appendChild(settingsOv.el);
+      root.dataset.tjNode = "krea2";
 
       galleryOv = createGalleryOverlay(
         state, ctx,

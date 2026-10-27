@@ -169,7 +169,7 @@ export function createSettingsOverlay(state, ctx) {
     return getModels().then(d => { rebuildModels(d); applyConfigModels(cfg, d); });
   }).catch(() => {});
 
-  const tabs = tabSettings(ov, llmPanel, { brand: C.lime, bg: C.bg2, border: C.border });
+  const tabs = tabSettings(ov, llmPanel, { brand: C.lime, bg: C.bg2, border: C.border, nodeKey: "anima" });
   return {
     el: ov,
     show() { ov.style.display = "flex"; },

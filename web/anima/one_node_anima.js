@@ -425,6 +425,7 @@ app.registerExtension({
       // ── Overlays mounting ──────────────────────────────────────────────────
       settingsOv = createSettingsOverlay(state, ctx);
       root.appendChild(settingsOv.el);
+      root.dataset.tjNode = "anima";
 
       galleryOv = createGalleryOverlay(
         state, ctx,

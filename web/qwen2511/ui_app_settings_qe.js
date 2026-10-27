@@ -259,7 +259,7 @@ export function createSettingsOverlay(state, ctx) {
   ]);
   ov.appendChild(panel([label("Model Override"), overrideLbl]));
 
-  const tabs = tabSettings(ov, llmPanel, { brand: C.lime, bg: C.bg2, border: C.border });
+  const tabs = tabSettings(ov, llmPanel, { brand: C.lime, bg: C.bg2, border: C.border, nodeKey: "qwen2511" });
   return {
     el: ov,
     show() { ov.style.display = "flex"; },
