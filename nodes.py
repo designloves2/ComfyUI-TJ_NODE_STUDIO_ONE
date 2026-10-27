@@ -1958,6 +1958,10 @@ def _clean_llm_output(text):
     cut off runaway token repetition, drop a stray "Prompt:"-style label, then
     collapse a trailing near-duplicate paragraph.
     """
+    # Gemma 4 writes its thinking, then "<channel|>", then the answer: keep only the answer
+    if "<channel|>" in text:
+        text = text.split("<channel|>")[-1]
+    text = text.replace("<|channel>", "")
     text = _first_good_block(text)
     text = _strip_rubric_preamble(text)
     text = _truncate_runaway_repetition(text)
