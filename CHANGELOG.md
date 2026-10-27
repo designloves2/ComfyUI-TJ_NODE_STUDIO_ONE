@@ -12,6 +12,7 @@
 - **A model's thinking text no longer lands in the prompt box.** When a local / native model writes its reasoning instead of the prompt (it ignored "do not include thinking" and /no_think), Prompt Enhance and Image -> Prompt Write fail with "The model wrote its thinking instead of the prompt..." and the box is left as it was. Needs a ComfyUI restart.
 - **A long text that fails translation no longer floods the queue.** When the whole-text translation lost a protected part twice, the text was translated one line at a time, one queue job per line (a 50-line text = 50 jobs). That fallback now runs only for texts of up to 12 lines; longer ones fail with "Translate failed".
 - **Image nodes, Prompt Refine result: English on the left, Korean on the right.** The "original vs refined" comparison with red highlighted words is gone (it compared the Korean text with the English result, and the changed words were not reliable). The Korean side is translated while the window is open ("⏳ 번역중 (한국어로)…"); Apply puts both into the field, so no second translation runs unless the English was edited.
+- Spec for the web twin and Canvers: `SPEC_RELAY_V1_49_2.md`.
 
 ---
 
