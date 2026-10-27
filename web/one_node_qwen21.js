@@ -1192,7 +1192,7 @@ function searchableSelect(options, value, onChange){
 // ── Settings overlay ───────────────────────────────────────────────────────────
 function createSettingsOverlay(state, ctx, showPopup) {
   const el_ = el;
-  const wrap = el_("div",{style:{position:"absolute",inset:"0",zIndex:"9996",background:"rgba(11,11,11,0.97)",borderRadius:"inherit",display:"none",flexDirection:"column",padding:"14px",gap:"10px",boxSizing:"border-box",overflowY:"auto"}});
+  const wrap = el_("div",{style:{position:"absolute",inset:"0",zIndex:"9998",background:"rgba(11,11,11,0.97)",borderRadius:"inherit",display:"none",flexDirection:"column",padding:"14px",gap:"10px",boxSizing:"border-box",overflowY:"auto"}});
   const hdr = el_("div",{style:{display:"flex",alignItems:"center",gap:"8px"}});
   hdr.appendChild(el_("div",{text:"⚙ Settings — QWEN IMAGE 2.1 ONE STUDIO (TJ)",style:{color:"#fff",fontSize:"14px",fontWeight:"700",flex:"1"}}));
   const saveAllBtn = el_("button",{type:"button",text:"💾 Save All",style:{cursor:"pointer",background:BRAND,color:"#fff",border:"none",borderRadius:"6px",padding:"6px 12px",fontSize:"12px",fontWeight:"700"},onclick:()=>saveAll()});

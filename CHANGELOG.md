@@ -2,6 +2,12 @@
 
 ---
 
+## v1.49.1
+
+- **Qwen Image 2.1: Settings opened from the Prompt Edit popup no longer appears behind it.** Its settings screen sat one layer below the popup (the other image nodes were already above it).
+
+---
+
 ## v1.49.0
 
 - **Korean ↔ English button on every H3 prompt field** (clip prompts, Prompt Edit, the common header / tail, the image prompt, the character sheet prompt, the Face Refine prompt). The English text is what the model gets; the Korean text is its view. Typing in either view is kept; before a run, a field that was last edited in Korean (or has Korean typed into the English box) is translated to English first. Dialogue in `<d>…</d>`, `<Picture N>`, `[Shot N] At MM:SS`, `@tokens`, quoted text and LoRA trigger words are never translated. Prompt Write / Refine / Split / Merge write the English and fill the Korean view right after.
