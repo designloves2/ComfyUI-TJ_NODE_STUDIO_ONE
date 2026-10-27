@@ -1382,7 +1382,7 @@ ${name}`, style: {
       lines.push(
         `LONG SHOT. Write ONE brief for the whole piece, ${t.seconds.toFixed(1)} seconds in total, as one continuous long shot. `
         + `Shot times run over the WHOLE piece: "At MM:SS.mmm" is counted from the start of the piece (from 00:00.000 up to ${fmtClock(t.seconds)}), `
-        + "never restarted for a clip.",
+        + `never restarted for a clip. Every time stays below ${fmtClock(t.seconds)}: 11.5 seconds is written 00:11.500, never 01:11.500.`,
         `The piece will afterwards be cut into ${t.shots} consecutive clips (${edges.map((e, k) => `${fmtClock(e)}-${fmtClock(e + lens[k])}`).join(", ")}). `
         + "Start a new [Shot N] inside every one of those windows, at about the time the window opens, so every clip gets its own opening "
         + "and the shots cover the whole length without gaps. Keep the same people, place, light and style from one window to the next.",
@@ -1390,6 +1390,8 @@ ${name}`, style: {
         + "ended (the same pose, position, direction and speed it ended on), and its first [Shot N] opens from that state: never restart from the "
         + "piece's opening pose, and never repeat an earlier window's action (a person already walking does not stand still again). "
         + "The camera angle, framing and lens may change from one window to the next, and the place may move on with the action, but the action itself keeps going.",
+        "The reference pictures are used as the original image only in the FIRST window (its opening matches them). In every later window they only "
+        + "keep the people, outfits, style and place consistent: those windows are not tied to the pictures' composition or pose and do not start from it.",
         "Write the shared header sections (subject_definitions, summary, retention_analysis, SCENARIO, technical_settings) once, then the "
         + "[Shot N] blocks in order (the first [Shot 1] has no timestamp), then overall_soundscape and non_diegetic_music once. "
         + "Do not separate clips with --- : this is a single brief.",
@@ -1681,6 +1683,14 @@ ${name}`, style: {
     const stop = (msg) => { if (auto) throw new Error(msg); ctx.showPopup?.(msg, true); };
     if (busy) return false;
     writeKind = !auto && (opts?.kind === "longshot" || opts?.kind === "onetake") ? opts.kind : "single";
+    // A long shot is made of separate clips (no chaining), each rendered from the references, so it only works in Reference mode.
+    if (writeKind === "longshot" && state.generationMode !== "reference") {
+      state.generationMode = "reference";
+      ctx.persist();
+      ctx.refreshModes?.();
+      if (state.generationMode === "reference") ctx.showPopup?.("Long Shot Write: switched to Reference mode (a long shot is rendered from the reference images).", false);
+      else { stop("Long Shot Write needs Reference mode - the Reference UNET is not set (Settings > Models)."); return false; }
+    }
     deriveModes(); renderImageRow(); renderModelSel();
     // Same resolver the render loop uses, so Prompt Write always looks at the pictures
     // this clip will actually be made from.
