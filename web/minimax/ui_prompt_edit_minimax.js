@@ -1330,16 +1330,17 @@ ${name}`, style: {
   // "원테이크 / 원 테이크 / onetake / one take / one-take" in the prompt switches on the One-Take mode and its prompt
   // rules by itself (Continuity = One-Take (latent), "Write prompts with the One-Take rules" ticked).
   const ONE_TAKE_WORD = /원\s*테이크|one[\s-]*take/i;
-  function autoOneTake(text) {
-    if (oneTakeLlmOn(state) || !ONE_TAKE_WORD.test(text || "")) return;
+  // `viaMenu`: the One-Take item of the Write menu asks for it too, no keyword needed.
+  function autoOneTake(text, viaMenu) {
+    if (oneTakeLlmOn(state) || !(viaMenu || ONE_TAKE_WORD.test(text || ""))) return;
     state.continuityMode = "onetake";
     state.oneTakeLlm = true;
     ctx.persist();
     ctx.refreshModes?.();   // redraws the Continuity panel; it falls back to None when One-Take cannot run here
     if (state.continuityMode === "onetake") {
-      ctx.showPopup?.("One-Take found in the prompt: Continuity is now One-Take (latent) and the One-Take prompt rules are on.", false);
+      ctx.showPopup?.(`${viaMenu ? "One-Take Write" : "One-Take found in the prompt"}: Continuity is now One-Take (latent) and the One-Take prompt rules are on.`, false);
     } else {
-      ctx.showPopup?.("One-Take found in the prompt, but One-Take (latent) is not available here (update the TJ_NODE pack) - writing without it.", true);
+      ctx.showPopup?.(`${viaMenu ? "One-Take Write" : "One-Take found in the prompt"}, but One-Take (latent) is not available here (update the TJ_NODE pack) - writing without it.`, true);
     }
   }
 
@@ -1385,6 +1386,10 @@ ${name}`, style: {
         `The piece will afterwards be cut into ${t.shots} consecutive clips (${edges.map((e, k) => `${fmtClock(e)}-${fmtClock(e + lens[k])}`).join(", ")}). `
         + "Start a new [Shot N] inside every one of those windows, at about the time the window opens, so every clip gets its own opening "
         + "and the shots cover the whole length without gaps. Keep the same people, place, light and style from one window to the next.",
+        "The long shot is ONE event moving forward in time, not the same moment filmed again. Every window picks up exactly where the previous window "
+        + "ended (the same pose, position, direction and speed it ended on), and its first [Shot N] opens from that state: never restart from the "
+        + "piece's opening pose, and never repeat an earlier window's action (a person already walking does not stand still again). "
+        + "The camera angle, framing and lens may change from one window to the next, and the place may move on with the action, but the action itself keeps going.",
         "Write the shared header sections (subject_definitions, summary, retention_analysis, SCENARIO, technical_settings) once, then the "
         + "[Shot N] blocks in order (the first [Shot 1] has no timestamp), then overall_soundscape and non_diegetic_music once. "
         + "Do not separate clips with --- : this is a single brief.",
@@ -1707,7 +1712,7 @@ ${name}`, style: {
       if (auto) return false;
       stop("Write something first (or add an image)."); return false;
     }
-    autoOneTake(base);
+    autoOneTake(base, writeKind === "onetake");
     // The model gets the guide for the mode being rendered: Reference (Ref2VA) has its own, the rest share one.
     const sys = auto ? (state.generationMode === "reference" ? H3_SYSTEM_PROMPT_REF : H3_SYSTEM_PROMPT_BASE) : systemPrompt;
     busy = true;

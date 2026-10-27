@@ -36,7 +36,8 @@ Model: a field keeps `obj[key]` (English = what the model gets), `obj[key+"Ko"]`
 - Postprocess prompts have no field.
 - Now wired (node repo): the eight image nodes through `web/shared/bilingual_image.js` (per-mode `state.promptSlots[mode]`, whitelisted in each core's defaultState) and the LTX 2.5 clip prompts (`bilingualSlots` for text/header/footer, Generate guard). Web must not port the `director/` folders.
 - `translateText` drops line-leading markers it did not send and the unmask drops markers the model made up; LLM requests use `api.fetchApi(..., { timeoutMs: null })` (the frontend default is 60 s).
-- One-Take Write: with Continuity = None each clip restarts from the reference image and the seams break; Continuity = One-Take (latent) gives a continuous take. Open: switch it automatically when One-Take Write is applied?
+- One-Take Write: with Continuity = None each clip restarts from the reference image and the seams break; Continuity = One-Take (latent) gives a continuous take. `autoOneTake(text, viaMenu)` in `ui_prompt_edit_minimax.js` now also fires when the Write menu's One-Take item is used (sets `continuityMode = "onetake"`, `oneTakeLlm = true`).
+- Long Shot Write request (`ui_prompt_edit_minimax.js`, next to the "Keep the same people, place, light and style" line): added the paragraph "The long shot is ONE event moving forward in time, not the same moment filmed again. Every window picks up exactly where the previous window ended ... the action itself keeps going." Port the same text. Note: a Long Shot still renders each clip from the reference image unless Continuity chains them, so the wording only fixes the prompts.
 - Long Shot / One-Take were checked with a faked LLM reply; real model quality is not judged. The split-time example from the user ([Shot 2] At 00:03 after split) is still open: the node's `rebaseShots` already restarts at `[Shot 1]` with no time.
 
 ## 6. Canvers
