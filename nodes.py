@@ -5437,7 +5437,7 @@ def _openrouter_vision(system_prompt, user_text, image_b64, model, temperature=0
         content = "".join(p.get("text", "") for p in content if isinstance(p, dict))
     content = (content or msg.get("reasoning") or "").strip()
     if not content:
-        raise RuntimeError("OpenRouter returned no text — try a vision model like google/gemini-2.5-flash.")
+        raise RuntimeError(f"OpenRouter model {d.get('model') or payload.get('model') or payload.get('models')} returned no text (finish_reason: {ch0.get('finish_reason')}) — try a vision model like google/gemini-2.5-flash.")
     return _strip_thinking(content)
 
 
@@ -5500,7 +5500,7 @@ def _openrouter_vision_multi(system_prompt, user_text, image_paths, model, tempe
         content = "".join(p.get("text", "") for p in content if isinstance(p, dict))
     content = (content or msg.get("reasoning") or "").strip()
     if not content:
-        raise RuntimeError("OpenRouter returned no text — try google/gemini-2.5-flash.")
+        raise RuntimeError(f"OpenRouter model {d.get('model') or payload.get('model') or payload.get('models')} returned no text (finish_reason: {ch0.get('finish_reason')}) — try google/gemini-2.5-flash.")
     return _strip_thinking(content)
 
 

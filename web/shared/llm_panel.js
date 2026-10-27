@@ -200,8 +200,9 @@ function basename(p) { return String(p || "").split(/[\\/]/).pop(); }
 // ══════════════════════════════════════════════════════════════════════════
 export function mountLLMSettingsSection(ov, ctx) {
   const cfg = loadLLMSettings();
-  const llm = {
-    backend_text:       cfg.backend_text        || cfg.backend || "local",
+  const dirty = new Set();
+  const llm = new Proxy({
+    backend_text:      cfg.backend_text        || cfg.backend || "local",
     backend_vision:     cfg.backend_vision      || cfg.backend || "local",
     or_model_text:      cfg.or_model_text       || cfg.or_model || "",
     or_model_vision:    cfg.or_model_vision     || cfg.or_model || "",
@@ -229,8 +230,15 @@ export function mountLLMSettingsSection(ov, ctx) {
     max_tokens:         cfg.max_tokens          ?? 1000,
     temperature:        cfg.temperature         ?? 0.7,
     seed:               cfg.seed                ?? 0,
-  };
-  function saveLLM() { saveLLMSettings(llm); }
+  }, { set(t, k, v) { t[k] = v; dirty.add(k); return true; } });
+  // Only the keys this panel changed are saved: the panel's copy was taken when it was built, and writing all of it back
+  // would put old values over what another node, page or tab saved since (a model or backend that was just changed).
+  function saveLLM() {
+    const patch = {};
+    for (const k of dirty) patch[k] = llm[k];
+    dirty.clear();
+    saveLLMSettings(patch);
+  }
 
   const wrap = document.createElement("div");
   Object.assign(wrap.style, { display: "flex", flexDirection: "column", gap: "10px" });
