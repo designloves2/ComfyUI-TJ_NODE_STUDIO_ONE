@@ -828,7 +828,7 @@ export function createSettingsOverlay(state, ctx) {
         orModels().then(ms => {
           if (!ms.length) return;
           clear(box);
-          box.appendChild(searchableSelect(ms, t.or_model || (ms.find(m => /gemini-2\.5-flash/.test(m)) || ms[0]), v => save({ or_model: v })).el);
+          box.appendChild(searchableSelect(["", ...ms], t.or_model || "", v => save({ or_model: v })).el);
         });
         control = col([label("OpenRouter model (translate)"), box]);
       } else if (nativeMissing.length) {
