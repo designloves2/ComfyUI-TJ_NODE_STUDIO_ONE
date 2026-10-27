@@ -636,7 +636,7 @@ function _showRefineResult(refined, protect, withKo = true) {
     else {
       // automatic translation is off for this node: a one-time translation on request
       veil.style.display = "none";
-      const once = _refineBtn("한국어로 번역 (1회)", "#7612DA");
+      const once = _refineBtn("EN → KO", "#7612DA");
       Object.assign(once.style, { position: "absolute", top: "40px", right: "8px", padding: "4px 10px", fontSize: "11px" });
       once.addEventListener("click", () => { once.remove(); translateKo(); });
       ko.col.appendChild(once);
