@@ -369,15 +369,16 @@ export function mountLLMSettingsSection(ov, ctx) {
     box._fill = (orModels, keyHint) => {
       if (orModels && orModels.length) {
         orSel.innerHTML = "";
+        if (!llm[mkey]) {
+          const none = document.createElement("option");
+          none.value = ""; none.textContent = "— choose a model —"; none.selected = true;
+          orSel.appendChild(none);
+        }
         for (const m of orModels) {
           const o = document.createElement("option");
           o.value = m; o.textContent = m;
           if (m === llm[mkey]) o.selected = true;
           orSel.appendChild(o);
-        }
-        if (!llm[mkey]) {
-          llm[mkey] = orModels.find((m) => /gemini-2\.5-flash/.test(m)) || orModels[0];
-          saveLLM(); orSel.value = llm[mkey];
         }
       }
       if (keyHint) keyInp.placeholder = keyHint + "  — click to replace";

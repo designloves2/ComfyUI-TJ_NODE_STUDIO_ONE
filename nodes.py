@@ -5290,7 +5290,8 @@ def _or_model_list(model):
     """A `:free` model → [free, paid] so OpenRouter falls through to the paid variant
     server-side when the free tier is rate-limited (429) or down. One request, no
     extra latency. `a|b|c` is also accepted as an explicit fallback chain."""
-    model = model or "google/gemini-2.5-flash"
+    if not model:
+        raise RuntimeError("No OpenRouter model is set - choose one in Settings.")
     if "|" in model:
         return [m.strip() for m in model.split("|") if m.strip()]
     if model.endswith(":free"):
@@ -5344,7 +5345,7 @@ def _openrouter_once(key, system_prompt, user_text, model, temperature, max_toke
         raise RuntimeError(
             f"OpenRouter timed out after {timeout}s ({getattr(te, 'reason', te)}). "
             f"'{model}' is likely a reasoning model — switch to a non-reasoning one in "
-            f"Settings (e.g. google/gemini-2.5-flash, anthropic/claude-3.5-haiku).")
+            f"Settings.")
     if isinstance(d, dict) and d.get("error"):
         err = d["error"]
         raise RuntimeError(err.get("message") if isinstance(err, dict) else str(err))
@@ -5385,7 +5386,7 @@ def _openrouter_chat(system_prompt, user_text, model, temperature=0.7, max_token
     raise RuntimeError(
         f"OpenRouter returned no text (finish_reason={fr or 'unknown'}) — the model "
         f"spent its whole budget on reasoning. Pick a non-reasoning model "
-        f"(e.g. google/gemini-2.5-flash, anthropic/claude-3.5-haiku).")
+        f"(a non-reasoning model).")
 
 
 def _openrouter_vision(system_prompt, user_text, image_b64, model, temperature=0.7, max_tokens=1200):
@@ -5688,16 +5689,13 @@ def _studio_llm_load():
         return {}
 
 
-_OR_DEFAULT_VISION = "google/gemini-2.5-flash"
-
-
 def _studio_or_models():
     """(text, vision) OpenRouter model ids for the image-node LLM panel. Text is used
     for Enhance, vision for Image → Prompt. Migrates the old single `or_model`."""
     d = _studio_llm_load()
     legacy = (d.get("or_model") or "").strip()
-    text = (d.get("or_model_text") or "").strip() or legacy or _OR_DEFAULT_VISION
-    vision = (d.get("or_model_vision") or "").strip() or legacy or _OR_DEFAULT_VISION
+    text = (d.get("or_model_text") or "").strip() or legacy
+    vision = (d.get("or_model_vision") or "").strip() or legacy
     return text, vision
 
 
@@ -5902,7 +5900,7 @@ async def music_llm_run(request):
         _cfg = _load_config(MUSIC_CONFIG_PATH)
         backend = data.get("backend") or _cfg.get("llm_backend", "local")
         if backend == "openrouter":
-            model = data.get("model") or _cfg.get("llm_or_model", "") or "google/gemini-2.5-flash"
+            model = data.get("model") or _cfg.get("llm_or_model", "")
         elif backend == "custom":
             model = data.get("model") or _cfg.get("llm_custom_model", "")
         else:

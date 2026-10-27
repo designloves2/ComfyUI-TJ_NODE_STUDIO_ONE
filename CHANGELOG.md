@@ -5,6 +5,7 @@
 ## v1.49.1
 
 - **Image nodes: Settings now has Model / LLM tabs** (Krea2, Z-Image, Klein, SDXL, Qwen Image Edit 2511 / 2.1, Anima, Moss), like the video nodes. The model pickers and every other option are in "Model", the Prompt Write / Enhance backend block is in "LLM". The Settings button inside the Prompt Edit popup opens the LLM tab.
+- **No hidden OpenRouter model.** An empty OpenRouter model used to be replaced by `google/gemini-2.5-flash` (server defaults, the Settings list that picked it and saved it, music node). Now an empty model stays empty: the Settings list shows "— choose a model —" and a request without a model fails with "No OpenRouter model is set - choose one in Settings." Server part needs a ComfyUI restart.
 - **LLM settings no longer put old values back.** Each image node's LLM settings block saved a whole copy taken when the node was built, so saving one field could overwrite a model or backend that was changed meanwhile in another node, page or tab. It now saves only the fields that were changed.
 - **OpenRouter "returned no text" errors name the model and the finish reason** (the hint to try `google/gemini-2.5-flash` is only a suggestion, not the model that was used). Takes effect after a ComfyUI restart.
 - **Qwen Image 2.1: Settings opened from the Prompt Edit popup no longer appears behind it.** Its settings screen sat one layer below the popup (the other image nodes were already above it).
