@@ -19,6 +19,7 @@ import { openAssetPicker } from "../shared/reflib_picker.js";
 import { openVideoGalleryPicker } from "./ui_video_picker_ltx25.js";
 import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
 import { ask } from "../shared/ui_ask.js";
+import { orModelMessage } from "../shared/or_model_guard.js";
 import { reflib } from "../shared/reflib_api.js";
 import {
   analyzeImagesNative, writeBriefNative, analyzeImagesOpenRouter, writeBriefOpenRouter, analyzeImageLlama, writeBriefLlama,
@@ -992,6 +993,7 @@ This cannot be undone.`,
   }
   async function callBrief(system, user, maxTokens = 2000) {
     const b = briefBackend();
+    if (b === "openrouter" && !(state.h3OrModelBrief || state.h3OrModel)) throw new Error(orModelMessage());
     const text = b === "custom"
       ? await writeBriefCustom(system, user, { baseUrl: state.h3CustomBriefBase, model: state.h3CustomBriefModel, context: state.h3CustomBriefCtx })
       : b === "llamagguf"
@@ -1067,6 +1069,7 @@ This cannot be undone.`,
       }
       summary = lines.join("\n");
     } else {
+      if (b === "openrouter" && !(state.h3OrModelVision || state.h3OrModel)) throw new Error(orModelMessage());
       const prompt = `${LTX_VISION_SYSTEM} There are ${files.length} images, in order. Describe each one separately, each on its own line starting with "Image N: ".`;
       summary = (b === "custom"
         ? await analyzeImagesCustom(files, prompt, { baseUrl: state.h3CustomVisionBase, model: state.h3CustomVisionModel, context: state.h3CustomVisionCtx })

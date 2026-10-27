@@ -16,6 +16,7 @@ import { ask } from "../shared/ui_ask.js";
 import { attachBilingual } from "../shared/bilingual_ui.js";
 import { fieldEdit, fieldSetBoth, fieldFill, ensureEnglish, koKey } from "../shared/bilingual.js";
 import { getUseKo } from "../shared/ko_setting.js";
+import { orModelMessage } from "../shared/or_model_guard.js";
 import { translateLlm } from "../shared/translate_config.js";
 import { h3ProtectWords } from "./translate_minimax.js";
 import { mountLibraryRefs, emptyAssetRef, sourceToggle } from "../shared/reflib_refpanel.js";
@@ -1708,6 +1709,8 @@ ${name}`, style: {
     const visionCustom = (state.h3VisionBackend || state.h3LlmBackend) === "custom";
     if (!briefOR && !briefLlama && !briefCustom && !state.nativeBriefClip) { stop("No brief CLIP set - pick one in Settings, or switch the Brief backend to OpenRouter/Llama GGUF."); return false; }
     if (images.length && !visionOR && !visionLlama && !visionCustom && !state.nativeVisionClip) { stop("No vision CLIP set - pick one in Settings, or switch the Vision backend to OpenRouter/Llama GGUF."); return false; }
+    if (briefOR && !(state.h3OrModelBrief || state.h3OrModel)) { stop(orModelMessage()); return false; }
+    if (images.length && visionOR && !(state.h3OrModelVision || state.h3OrModel)) { stop(orModelMessage()); return false; }
     if (briefLlama && !state.h3LlamaBriefModel) { stop("No Llama GGUF brief model set - pick one in Settings."); return false; }
     if (images.length && visionLlama && !state.h3LlamaVisionModel) { stop("No Llama GGUF vision model set - pick one in Settings."); return false; }
     if (briefCustom && !(state.h3CustomBriefBase && state.h3CustomBriefModel)) { stop("Connect Custom (Brief) needs an API base URL and a model ID - set them in Settings."); return false; }
@@ -1881,6 +1884,7 @@ ${name}`, style: {
     const briefLlama = (state.h3BriefBackend || state.h3LlmBackend) === "llamagguf";
     const briefCustom = (state.h3BriefBackend || state.h3LlmBackend) === "custom";
     if (!briefOR && !briefLlama && !briefCustom && !state.nativeBriefClip) { ctx.showPopup?.("No brief CLIP set - pick one in Settings, or switch the Brief backend to OpenRouter/Llama GGUF.", true); return; }
+    if (briefOR && !(state.h3OrModelBrief || state.h3OrModel)) { ctx.showPopup?.(orModelMessage(), true); return; }
     if (briefLlama && !state.h3LlamaBriefModel) { ctx.showPopup?.("No Llama GGUF brief model set - pick one in Settings.", true); return; }
     if (briefCustom && !(state.h3CustomBriefBase && state.h3CustomBriefModel)) { ctx.showPopup?.("Connect Custom (Brief) needs an API base URL and a model ID - set them in Settings.", true); return; }
 

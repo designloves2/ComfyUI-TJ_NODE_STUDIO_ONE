@@ -19,6 +19,7 @@ import { attachBilingual } from "./bilingual_ui.js";
 import { fieldSetBoth, fieldSetView, fieldFill, fieldText, translateText } from "./bilingual.js";
 import { translateLlm } from "./translate_config.js";
 import { useKoFor } from "./ko_setting.js";
+import { orModelMessage, orModelPopup } from "./or_model_guard.js";
 
 const LS_KEY = "tj_studio_one_llm_settings";
 
@@ -664,6 +665,8 @@ function _showRefineResult(refined, protect, withKo = true) {
 async function runRefine({ getText, onApply, setBusy, protect, withKo }) {
   const current = (getText() || "").trim();
   if (!current) { alert("Nothing to refine yet — write a prompt first."); return; }
+  const refineCfg = loadLLMSettings();
+  if ((refineCfg.backend_text || refineCfg.backend || "local") === "openrouter" && !(refineCfg.or_model_text || refineCfg.or_model)) { orModelPopup(orModelMessage("LLM")); return; }
   let instruction = await _askRefineInstruction();
   while (instruction) {
     _lastRefineInstruction = instruction;
@@ -1128,6 +1131,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     if (!_imageB64) return;
     applySeedControl();
     const llm = loadLLMSettings();
+    if ((llm.backend_vision || llm.backend || "local") === "openrouter" && !(llm.or_model_vision || llm.or_model)) { orModelPopup(orModelMessage("LLM")); return; }
     const existingText = useExistingChk.checked ? existingTA.value.trim() : "";
     let contextInstruction = existingText
       ? `The user has already written this description — use it as context and produce ONE integrated, polished prompt that incorporates it with what you see in the image. Rewrite it as a single cohesive prompt; do not simply append your description after it.\n\nExisting text:\n${existingText}`
@@ -1176,6 +1180,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     if (!prompt) return;
     applySeedControl();
     const llm = loadLLMSettings();
+    if ((llm.backend_text || llm.backend || "local") === "openrouter" && !(llm.or_model_text || llm.or_model)) { orModelPopup(orModelMessage("LLM")); return; }
     btnEnhance.disabled = true; setBusy(true, t("llm_busy_enhance"));
     try {
       const r = await fetch("/tj_studio_one/llm/enhance", {

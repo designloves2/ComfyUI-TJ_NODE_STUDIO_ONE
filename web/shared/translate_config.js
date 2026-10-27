@@ -6,6 +6,7 @@
 // bilingual.js needs.
 import { api } from "../../../scripts/api.js";
 import { writeBriefNative } from "../minimax/api_minimax.js";
+import { orModelMessage } from "./or_model_guard.js";
 
 const DEFAULTS = {
   backend: "native", native_clip: "", or_model: "", llama_model: "",
@@ -59,6 +60,7 @@ export function translateLlm() {
       if (!c.native_clip) throw new Error("No translate CLIP set - pick one in Settings -> Translate.");
       return writeBriefNative(c.native_clip, system, user);
     }
+    if (c.backend === "openrouter" && !c.or_model) throw new Error(orModelMessage("Translation LLM"));
     const r = await api.fetchApi("/tj_shared/translate_llm", { timeoutMs: null,
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ system, user }),
     });

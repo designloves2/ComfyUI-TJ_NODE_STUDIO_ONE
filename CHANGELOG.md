@@ -2,6 +2,12 @@
 
 ---
 
+## Unreleased
+
+- **OpenRouter selected but no model set: a popup tells you to pick one, and nothing is sent.** "OpenRouter 모델이 선택되지 않았습니다. 설정 > LLM 에서 모델을 선택하세요." (Translation: "설정 > Translation LLM"). Image nodes: Image -> Prompt Write (vision model), Prompt Enhance and Refine (text model); the translation function; H3 Prompt Write and Refine; LTX 2.5 Brief and image-vision steps. There is no default model.
+
+---
+
 ## v1.49.2
 
 - **Local GGUF (image nodes): too long an input is refused up front.** Prompt Enhance / Refine / Image -> Prompt Write now estimate the input size before the model is loaded: if it cannot fit the context (n_ctx) it fails at once with "The input is too long for the local model: about N tokens, context is M" instead of failing minutes later with "decode: failed to find a memory slot"; otherwise Max tokens is cut to what still fits, so the answer cannot fill the context. Needs a ComfyUI restart.
