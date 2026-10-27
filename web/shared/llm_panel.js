@@ -1013,7 +1013,19 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   applyBtn.style.flex = "1";
 
   // Four equal buttons: Image → Prompt Write / Prompt Enhance / Refine / APPLY.
-  actionRow.appendChild(btnWrite); actionRow.appendChild(btnEnhance); actionRow.appendChild(btnRefine); actionRow.appendChild(applyBtn);
+  // Image -> Prompt Write works from the image alone, unless this box is ticked: then the text already in the prompt box is merged in.
+  const writeCol = document.createElement("div");
+  Object.assign(writeCol.style, { flex: "1", display: "flex", flexDirection: "column", gap: "4px", minWidth: "0" });
+  btnWrite.style.flex = "1";
+  const useExistingLabel = document.createElement("label");
+  Object.assign(useExistingLabel.style, { display: "flex", alignItems: "center", gap: "5px", color: "#aaa", fontSize: "11px", cursor: "pointer" });
+  const useExistingChk = document.createElement("input");
+  useExistingChk.type = "checkbox";
+  useExistingChk.checked = loadLLMSettings().write_use_existing === true;
+  useExistingChk.addEventListener("change", () => saveLLMSettings({ write_use_existing: useExistingChk.checked }));
+  useExistingLabel.append(useExistingChk, document.createTextNode(t("llm_chk_use_existing")));
+  writeCol.append(btnWrite, useExistingLabel);
+  actionRow.appendChild(writeCol); actionRow.appendChild(btnEnhance); actionRow.appendChild(btnRefine); actionRow.appendChild(applyBtn);
 
   function syncButtons() {
     btnWrite.disabled = !_imageB64;
@@ -1103,7 +1115,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     if (!_imageB64) return;
     applySeedControl();
     const llm = loadLLMSettings();
-    const existingText = existingTA.value.trim();
+    const existingText = useExistingChk.checked ? existingTA.value.trim() : "";
     let contextInstruction = existingText
       ? `The user has already written this description — use it as context and produce ONE integrated, polished prompt that incorporates it with what you see in the image. Rewrite it as a single cohesive prompt; do not simply append your description after it.\n\nExisting text:\n${existingText}`
       : "";
