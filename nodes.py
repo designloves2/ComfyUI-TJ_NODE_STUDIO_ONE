@@ -1931,6 +1931,26 @@ def _reject_reasoning(text):
     return text
 
 
+def _est_tokens(text):
+    """A cheap, slightly high token estimate (no tokenizer needed): ~3.5 chars per token for Latin text, ~1.2 for Hangul / CJK."""
+    text = str(text or "")
+    wide = sum(1 for c in text if ord(c) > 0x2E80)
+    return int((len(text) - wide) / 3.5 + wide / 1.2) + 1
+
+
+def _llama_budget(data, system_text, user_text, image_tokens=0):
+    """Local llama.cpp: before anything is loaded, check the input fits the context and cut max_tokens so the answer cannot run
+    the context full. Without this a too long input fails minutes later with 'decode: failed to find a memory slot'."""
+    n_ctx = int(data.get("n_ctx") or 4096)
+    max_tokens = int(data.get("max_tokens") or 1000)
+    used = _est_tokens(system_text) + _est_tokens(user_text) + int(image_tokens) + 64
+    room = n_ctx - used
+    if room < 256:
+        raise RuntimeError(f"The input is too long for the local model: about {used} tokens, context (n_ctx) is {n_ctx}. "
+                           "Shorten the text, or raise n_ctx in Settings > LLM.")
+    return min(max_tokens, room)
+
+
 def _clean_llm_output(text):
     """Runs every local-model-degeneration cleanup, in the order that matters:
     pick the first real '***' candidate before anything else (later candidates
@@ -2055,6 +2075,8 @@ async def _studio_enhance(data):
     try:
         loop = asyncio.get_event_loop()
         model_backend = "ComfyUI TextGenerate" if (data.get("backend") or "").lower() == "comfy" else "GGUF / llama.cpp"
+        if model_backend == "GGUF / llama.cpp":
+            data = {**data, "max_tokens": _llama_budget(data, sys_text, user_text)}
         def _run():
             if model_backend == "GGUF / llama.cpp":
                 _wait_prompt_worker_idle()
@@ -2235,6 +2257,8 @@ async def studio_llm_image_to_prompt(request):
 
         loop = asyncio.get_event_loop()
         model_backend = "ComfyUI TextGenerate" if (data.get("backend") or "").lower() == "comfy" else "GGUF / llama.cpp"
+        if model_backend == "GGUF / llama.cpp":
+            data = {**data, "max_tokens": _llama_budget(data, "", str(data.get("custom_instruction", "")), image_tokens=1700)}
         def _run():
             if model_backend == "GGUF / llama.cpp":
                 _wait_prompt_worker_idle()
