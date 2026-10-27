@@ -1,6 +1,7 @@
-// "Use Korean translation" - one on / off choice per node type, kept in this browser. Off = English only: no EN / 한 button,
-// no Korean views, no translation before Generate. The nodes mark their root element with data-tj-node="<key>" so shared
-// code (the KO / EN button, the Prompt Edit panel) can find which node it is in.
+// "Use Korean translation" - one on / off choice per node type, kept in this browser. Off = no AUTOMATIC translation (before
+// Generate, the Korean view after Write / Refine, the Korean side of the Refine result); the EN / 한 button still translates
+// when it is pressed. The nodes mark their root element with data-tj-node="<key>" so shared code (the Prompt Edit panel)
+// can find which node it is in.
 const KEY = (node) => `tj_use_ko_${node}`;
 
 export function getUseKo(node) {
@@ -30,7 +31,7 @@ export function useKoCheckbox(node, { text = "#dedede", muted = "#8a8a8a" } = {}
   const note = document.createElement("span");
   note.textContent = "한글 번역 사용";
   const hint = document.createElement("span");
-  hint.textContent = "— 끄면 영어만 사용합니다 (EN/한 버튼, 한국어 보기, 생성 전 번역이 모두 꺼집니다). 이 노드에만 적용됩니다.";
+  hint.textContent = "— 끄면 자동 번역(생성 전 번역, Write/Refine 뒤 한국어 채우기, Refine 결과 번역)이 꺼지고 EN/한 버튼을 직접 누를 때만 한 번 번역합니다. 이 노드에만 적용됩니다.";
   Object.assign(hint.style, { color: muted, fontSize: "10px" });
   label.append(chk, note, hint);
   return label;

@@ -615,7 +615,6 @@ function _showRefineResult(refined, protect, withKo = true) {
     };
     const en = mk("English (you can edit it before applying)", refined, true);
     const ko = mk("한국어 (번역)", "", false);
-    if (!withKo) ko.col.style.display = "none";
     const veil = document.createElement("div");
     Object.assign(veil.style, {
       position: "absolute", left: "0", right: "0", bottom: "0", top: "18px", display: "flex", alignItems: "center", justifyContent: "center",
@@ -625,11 +624,23 @@ function _showRefineResult(refined, protect, withKo = true) {
     ko.col.appendChild(veil);
 
     let translated = "", koOk = false;
-    (withKo ? translateText(refined, "ko", translateLlm(), { protect }) : Promise.resolve(""))
-      .then(out => { translated = out; koOk = withKo; ko.ta.value = out; })
-      .catch(e => { ko.ta.value = "Translation failed: " + (e?.message || e); })
-      .finally(() => { veil.style.display = "none"; });
+    function translateKo() {
+      veil.style.display = "flex";
+      return translateText(en.ta.value, "ko", translateLlm(), { protect })
+        .then(out => { translated = out; koOk = true; editedAfter = false; ko.ta.value = out; })
+        .catch(e => { ko.ta.value = "Translation failed: " + (e?.message || e); })
+        .finally(() => { veil.style.display = "none"; });
+    }
     let editedAfter = false;
+    if (withKo) translateKo();
+    else {
+      // automatic translation is off for this node: a one-time translation on request
+      veil.style.display = "none";
+      const once = _refineBtn("한국어로 번역 (1회)", "#7612DA");
+      Object.assign(once.style, { position: "absolute", top: "40px", right: "8px", padding: "4px 10px", fontSize: "11px" });
+      once.addEventListener("click", () => { once.remove(); translateKo(); });
+      ko.col.appendChild(once);
+    }
     en.ta.addEventListener("input", () => { editedAfter = true; });
 
     const btnRow = document.createElement("div");
