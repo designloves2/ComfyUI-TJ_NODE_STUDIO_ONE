@@ -1256,11 +1256,13 @@ app.registerExtension({
       mergeBtn.addEventListener("click", () => { promptEditOv?.openMerge(); });
       promptHdr.append(splitBtn, mergeBtn, addBtn, resetTAHBtn);
 
-      const promptList = el("div", { style: { flex: "1", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px" } });
+      const promptList = el("div", { style: { flex: "1", minHeight: "0", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px" } });
       promptList.className = "mmh3-lp";
       // Sibling wrapper, not a child of promptList itself — promptList gets clear()'d and
       // fully rebuilt by renderPrompts(), which would wipe an overlay appended inside it.
-      const promptListWrap = el("div", { style: { flex: "1", position: "relative", minHeight: "0" } });
+      // display:flex (column) so promptList's flex:1 is bounded by this box: as a block parent the list grew to its content, so
+      // 6 clips were cut off with no scrollbar.
+      const promptListWrap = el("div", { style: { flex: "1", position: "relative", minHeight: "0", display: "flex", flexDirection: "column" } });
       // Same visual language as the live-preview's own "busy, no per-step feedback"
       // banners (frDetectBanner/fvsrBanner above) — dim cover + centered glowing text —
       // so a Refine/Prompt Write run reads as "busy" the same way a render does, instead

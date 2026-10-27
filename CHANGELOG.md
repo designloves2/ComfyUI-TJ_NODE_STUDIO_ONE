@@ -2,6 +2,12 @@
 
 ---
 
+## Unreleased
+
+- **H3 main prompt list scrolls again with many clips.** The list sat in a block box, so it grew to the height of all its clips and the extra clips were cut off with no scrollbar (6 clips showed only the first). The box is now a column flex box, so the list is as tall as the space and scrolls.
+
+---
+
 ## v1.49.3
 
 - **OpenRouter selected but no model set: a popup tells you to pick one, and nothing is sent.** "OpenRouter 모델이 선택되지 않았습니다. 설정 > LLM 에서 모델을 선택하세요." (Translation: "설정 > Translation LLM"). Image nodes: Image -> Prompt Write (vision model), Prompt Enhance and Refine (text model); the translation function; H3 Prompt Write and Refine; LTX 2.5 Brief and image-vision steps. There is no default model.
