@@ -10,6 +10,9 @@
 - **Prompt Write asks which kind**: Single Shot (as before), Long Shot (one prompt over a total length, cut into clips in the result window) or One-Take (total length, One-Take rules, cut into clips).
 - **Refine now reads the Common header / tail** too (as read-only context).
 - Prompt sets keep the Korean view of the common header / tail (takes effect after a ComfyUI restart).
+- **Korean ↔ English button on the eight image nodes** (Krea2, Z-Image, Klein, SDXL, Qwen Image Edit 2511 / 2.1, Anima, Moss) and on the **LTX 2.5 clip prompts**, with the same "Translating…" guard before Generate.
+- Translation no longer inserts made-up `⟦n⟧` markers when nothing is protected.
+- LLM requests (Prompt Write, Refine, translation) no longer time out after 60 s in the frontend.
 
 ---
 

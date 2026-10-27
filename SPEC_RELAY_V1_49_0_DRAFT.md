@@ -33,8 +33,10 @@ Model: a field keeps `obj[key]` (English = what the model gets), `obj[key+"Ko"]`
 - "Write again" keeps the kind. The instructions live in the user prompt (the Llama backend ignores a system prompt).
 
 ## 5. Not done / limits
-- LTX inline prompt box: not wired (its mode tab was removed in v1.47.0, the box is unreachable). Postprocess prompts have no field.
-- Other image nodes (Krea2, Z-Image, Klein, SDXL, Qwen, Anima, Moss): `llm_panel.js` already takes the `bilingual` option, only the node wiring is missing.
+- Postprocess prompts have no field.
+- Now wired (node repo): the eight image nodes through `web/shared/bilingual_image.js` (per-mode `state.promptSlots[mode]`, whitelisted in each core's defaultState) and the LTX 2.5 clip prompts (`bilingualSlots` for text/header/footer, Generate guard). Web must not port the `director/` folders.
+- `translateText` drops line-leading markers it did not send and the unmask drops markers the model made up; LLM requests use `api.fetchApi(..., { timeoutMs: null })` (the frontend default is 60 s).
+- One-Take Write: with Continuity = None each clip restarts from the reference image and the seams break; Continuity = One-Take (latent) gives a continuous take. Open: switch it automatically when One-Take Write is applied?
 - Long Shot / One-Take were checked with a faked LLM reply; real model quality is not judged. The split-time example from the user ([Shot 2] At 00:03 after split) is still open: the node's `rebaseShots` already restarts at `[Shot 1]` with no time.
 
 ## 6. Canvers
