@@ -17,7 +17,7 @@ ComfyUI 서버는 이 PC 하나를 공유한다(`127.0.0.1:8188`, GPU 16GB 공�
 1. 이 파일 → 2. `CHANGELOG.md` 맨 위 (최신 변경) → 3. `MORNING_CHECKLIST_2026-10-27.md` (최근 작업 결과·남은 질문)
 4. `SPEC_RELAY_V1_49_2.md`, `SPEC_RELAY_V1_49_0.md` (웹/Canvers에 전달하는 최신 명세, 코드 위치가 정확히 적혀 있음)
 5. 작업 대상 노드의 `SPEC_*.md` (예: H3 `SPEC_MINIMAX_H3_*.md`, LTX `SPEC_LTX25_ONE_STUDIO_WEB.md`, `SPEC_MUSICMAKER.md`, `SPEC_ANIMA_ONE_STUDIO.md`)
-6. `HANDOFF_REGISTRY.md` (Comfy Registry 등록 인계, 내용 일부 낡음 — 11절), `README.md` (사용자용, 1800줄, 업데이트 히스토리 포함), `THIRD_PARTY_NOTICES.md`
+6. `docs/handoff/HANDOFF_REGISTRY.md` (Comfy Registry 등록 인계, 내용 일부 낡음 — 10절), `README.md` (사용자용, 1800줄, 업데이트 히스토리 포함), `THIRD_PARTY_NOTICES.md`
 
 ## 3. 디렉터리 구조
 - `nodes.py` (약 6400줄): 노드 클래스 + 서버 라우트(`/tj_studio_one/*`, `/tj_shared/*` 등 약 226개). LLM 호출(OpenRouter / 로컬 llama.cpp / 네이티브 TextGenerate / Custom), 설정 저장 라우트가 모두 여기에 있음.
@@ -26,7 +26,7 @@ ComfyUI 서버는 이 PC 하나를 공유한다(`127.0.0.1:8188`, GPU 16GB 공�
 - `ltx25_studio_backend/director/`, `web/ltx25/director/`: 복사해 온 GPL-3.0 코드 (6절 주의).
 - `itda_studio_backend/`: ITDA 노드 서버 코드. `web/vendor/`: 외부 라이브러리.
 - 루트 데이터 파일: `config_<노드>.json`, `config_translate.json`, `favorites_*.json`, `templates_prompt_*.json`, `studio_llm*.json`, `prompt_sets/`, `music_*_sets/` — **런타임/사용자 데이터**(6절).
-- `SPEC_*.md`, `SPEC_RELAY_V*.md`, `ORDER_*.md`: 명세·전달 문서. `docs/`: README용 이미지, `workflows/`: 샘플 워크플로.
+- `SPEC_*.md`, 최신 `SPEC_RELAY_V*.md`: 명세·전달 문서. `docs/`: README용 이미지, `docs/handoff/`: 지난 인수인계·전달 문서(`HANDOFF_REGISTRY.md`, `ORDER_CANVERS_V1_47_0.md`, `SPEC_RELAY_V1_47_0.md`, `SPEC_RELAY_V1_48_0.md`), `workflows/`: 샘플 워크플로.
 - `.claude/skills/`: 프롬프트 작성 가이드 4종(`hermes-job-json`, `ltx25prompt`, `minimax-h3-prompt`, `studio-image-prompt`). `SKILL.md`와 `references/`는 일반 마크다운이라 다른 모델도 읽어 쓸 수 있음.
 
 ## 4. 실행·설치·확인 명령 (실제 확인된 것)
@@ -77,6 +77,6 @@ ComfyUI 서버는 이 PC 하나를 공유한다(`127.0.0.1:8188`, GPU 16GB 공�
 4. 이 파일의 8절(현재 진행 상황)을 최신으로 고친다.
 
 ## 10. 알려진 낡은/주의 문서
-- `HANDOFF_REGISTRY.md`(2026-07-14): 버전 1.5.0, `config_krea2.json` 미커밋 등 당시 상태 — 현재와 다름. 레지스트리 등록 방식 참고용.
-- `SPEC_MINIMAX_H3_NEXT_ROUND.md`("한도 리셋 후 이 문서 하나로 시작"): 과거 라운드 계획서, 현재 상태와 맞는지 확인 필요. `ORDER_CANVERS_V1_47_0.md`, `MORNING_CHECKLIST_2026-10-27.md`는 특정 시점 기록.
+- `docs/handoff/HANDOFF_REGISTRY.md`(2026-07-14): 버전 1.5.0, `config_krea2.json` 미커밋 등 당시 상태 — 현재와 다름. 레지스트리 등록 방식 참고용.
+- `SPEC_MINIMAX_H3_NEXT_ROUND.md`("한도 리셋 후 이 문서 하나로 시작"): 과거 라운드 계획서, 현재 상태와 맞는지 확인 필요. `docs/handoff/ORDER_CANVERS_V1_47_0.md`, `MORNING_CHECKLIST_2026-10-27.md`는 특정 시점 기록.
 - `README.md`의 노드 개수·이미지 노드 수 표기(예: "7종", "11 nodes")는 현재 이미지 노드 8종·노드 12종과 다를 수 있음(확인 필요).

@@ -63,7 +63,7 @@
 - **Postprocess -> Latent Upscale (Use H3): Split mode (long clips).** Tick it, then give the seconds per piece (or a piece count): the clip is cut into pieces, each piece is upscaled on its own queue turn (VRAM is freed between turns), and the pieces are joined into one clip. Works with both upscalers. The pieces overlap by a few frames (an H3 piece is 17k+5 frames) and the join trims the overlap, so no frame is lost; the joined clip carries the source's own sound unchanged. Recoverable after a reload like the other split runs.
 - **Joined clips play on an iPhone.** The re-encoding joins (One-Take overlap, sound replacement, Split mode) wrote H.264 level 6.2 at an odd 24.08 fps, which iOS refuses to play. They now write constant frame rate, yuv420p, High profile, level 5.1.
 - **Postprocess -> Latent Upscale (Use H3):** typing a Final MP no longer puts the panel's scroll back to the top.
-- Spec for the web twin and Canvers: `SPEC_RELAY_V1_48_0.md`.
+- Spec for the web twin and Canvers: `docs/handoff/SPEC_RELAY_V1_48_0.md`.
 
 ---
 
