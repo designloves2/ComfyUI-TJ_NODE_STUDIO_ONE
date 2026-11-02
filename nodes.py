@@ -2133,6 +2133,44 @@ class _LlmProgress:
                 "answer_chars": len(text) if text else len(self.text) - (thinking_chars or 0), "estimated": not self.streamed}
 
 
+import threading as _threading
+_LLM_TLS = _threading.local()      # .progress: the _LlmProgress of the route running in this worker thread, or None
+
+
+def _install_llama_stream_patch():
+    """Makes Llama.create_chat_completion stream while a studio route has set _LLM_TLS.progress, and feed each token to it.
+    The caller still gets the normal non-stream answer dict, so TJ_PromptEnhancer / TJ_ImageToPrompt (text and vision,
+    their sampling settings, stop strings, clean-up) run exactly as before. Outside such a route nothing changes."""
+    try:
+        import llama_cpp
+    except Exception:
+        return
+    cls = llama_cpp.Llama
+    if getattr(cls, "_tj_stream_patched", False):
+        return
+    original = cls.create_chat_completion
+
+    def create_chat_completion(self, *args, **kwargs):
+        prog = getattr(_LLM_TLS, "progress", None)
+        if prog is None or kwargs.get("stream"):
+            return original(self, *args, **kwargs)
+        kwargs["stream"] = True
+        pieces, finish = [], "stop"
+        for chunk in original(self, *args, **kwargs):
+            choice = chunk["choices"][0]
+            piece = (choice.get("delta") or {}).get("content") or ""
+            if piece:
+                pieces.append(piece)
+                prog.add(piece)
+            finish = choice.get("finish_reason") or finish
+        prog.in_tokens = max(0, self.n_tokens - len(pieces))      # n_tokens: prompt + generated tokens held in the context
+        prog.finish_reason = finish
+        return {"choices": [{"index": 0, "message": {"role": "assistant", "content": "".join(pieces)}, "finish_reason": finish}]}
+
+    cls.create_chat_completion = create_chat_completion
+    cls._tj_stream_patched = True
+
+
 async def _llm_with_events(data, handler, system_text="", user_text=""):
     """Runs a studio LLM route and reports it the way the core LLM (TJ) node does: tj_llm_progress events, a [TJ_LLM]
     console line, and `usage` plus `call_id` in the JSON answer. The handler gets `_progress` in its data and may stream
@@ -2169,63 +2207,6 @@ def _studio_enhance_texts(data):
     return _studio_enhance_system(data), str(data.get("prompt", ""))
 
 
-def _enhance_gguf_stream(data, utils, sys_text, user_text, progress):
-    """TJ_PromptEnhancer's llama.cpp path (same Llama load, sampling settings, stop strings, reasoning_budget and clean-up),
-    but with stream=True so tj_llm_progress carries the live token count. Returns (final_prompt, debug_text)."""
-    import os as _os
-    from llama_cpp import Llama
-    override = bool(data.get("refine_instruction") or data.get("system_override"))
-    append_no_think = True
-    if override:
-        sys_prompt = sys_text.strip()
-        sys_prompt = sys_prompt.rstrip() + " /no_think" if append_no_think else sys_prompt
-    else:
-        sys_prompt = utils.build_layered_system_prompt(
-            data.get("purpose", "Image"), data.get("model_format", "Universal Natural Language"),
-            data.get("aesthetic", "None (no aesthetic injection)"), data.get("extra_instructions", ""), append_no_think)
-    prompt_in = str(user_text if override else data.get("prompt", ""))
-    gguf_model = data.get("gguf_model", "")
-    if utils._is_bad_choice(gguf_model):
-        raise FileNotFoundError("No .gguf model found in models/text_encoders.")
-    model_path = utils._resolve_text_encoder_path(gguf_model)
-    if not model_path or not _os.path.isfile(model_path):
-        raise FileNotFoundError(f"Selected GGUF not found: {model_path}")
-    utils._free_comfy_vram()
-    llm = Llama(model_path=model_path, n_gpu_layers=int(data.get("n_gpu_layers", -1)), verbose=False,
-                n_ctx=int(data.get("n_ctx", 4096)), seed=int(data.get("seed", 0)))
-    try:
-        chat_kwargs = dict(
-            messages=[{"role": "system", "content": sys_prompt}, {"role": "user", "content": prompt_in}],
-            max_tokens=int(data.get("max_tokens", 1000)), temperature=float(data.get("temperature", 0.7)),
-            top_p=0.9, repeat_penalty=1.15, stop=["\n\nUser:", "\n\nAssistant:", "Human:"], stream=True,
-            reasoning_budget=0)
-        try:
-            stream = llm.create_chat_completion(**chat_kwargs)
-        except TypeError:       # an older llama-cpp-python does not know reasoning_budget
-            chat_kwargs.pop("reasoning_budget", None)
-            stream = llm.create_chat_completion(**chat_kwargs)
-        pieces, finish = [], "stop"
-        for chunk in stream:
-            choice = chunk["choices"][0]
-            piece = (choice.get("delta") or {}).get("content") or ""
-            if piece:
-                pieces.append(piece)
-                progress.add(piece)
-            finish = choice.get("finish_reason") or finish
-        progress.in_tokens = max(0, llm.n_tokens - len(pieces))
-        progress.finish_reason = finish
-    finally:
-        utils._free_llm(llm)
-    raw_output = "".join(pieces).strip()
-    print(f"[TJ_PromptEnhancer] finish_reason={finish} max_tokens={chat_kwargs['max_tokens']} raw_chars={len(raw_output)}")
-    final_prompt = utils._clean_output(raw_output, prompt_in, preserve_paragraphs=(data.get("model_format") == "Minimax H3 (Video)"))
-    if not final_prompt.strip() or len(final_prompt) < 20:
-        final_prompt = utils._strip_thinking_process_block(utils._strip_thinking_tags(raw_output)).strip()
-        if not final_prompt:
-            final_prompt = raw_output
-    return (final_prompt, f"=== Raw Output ===\n{raw_output}")
-
-
 async def _studio_enhance_run(data):
     import asyncio
     # "refine_instruction" turns this into a revision of data["prompt"] instead of an enhance;
@@ -2259,7 +2240,7 @@ async def _studio_enhance_run(data):
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)})
 
-    TJ_PromptEnhancer, _, _tj_utils = _try_import_tj_llm()
+    TJ_PromptEnhancer, _, _ = _try_import_tj_llm()
     if TJ_PromptEnhancer is None:
         return web.json_response({"ok": False, "error": "TJ_NODE2 not installed"})
     try:
@@ -2270,14 +2251,15 @@ async def _studio_enhance_run(data):
         def _run():
             if model_backend == "GGUF / llama.cpp":
                 _wait_prompt_worker_idle()
+                _install_llama_stream_patch()
+                _LLM_TLS.progress = data.get("_progress")
             try:
                 return _enhance_once()
             finally:
+                _LLM_TLS.progress = None
                 if model_backend == "GGUF / llama.cpp":
                     _release_llama()
         def _enhance_once():
-            if model_backend == "GGUF / llama.cpp" and data.get("_progress") is not None:
-                return _enhance_gguf_stream(data, _tj_utils, sys_text, user_text, data["_progress"])
             result = TJ_PromptEnhancer().enhance(
                 get_name="(none)", set_name="studio_one_enhance",
                 raw_prompt=user_text if (data.get("refine_instruction") or data.get("system_override")) else data.get("prompt", ""),
@@ -2457,9 +2439,12 @@ async def _studio_image_to_prompt(data):
         def _run():
             if model_backend == "GGUF / llama.cpp":
                 _wait_prompt_worker_idle()
+                _install_llama_stream_patch()
+                _LLM_TLS.progress = data.get("_progress")
             try:
                 return _describe_once()
             finally:
+                _LLM_TLS.progress = None
                 if model_backend == "GGUF / llama.cpp":
                     _release_llama()
         def _describe_once():

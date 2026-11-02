@@ -2,7 +2,7 @@
  * LLM live monitor — a small line at the bottom-left of the ComfyUI page for every running LLM call, fed by the
  * `tj_llm_progress` websocket event (core LLM (TJ) node and the studio /tj_studio_one/llm/* routes).
  *
- *   <backend> · <model> — thinking · 210 tok · 17.0 tok/s · 12 s
+ *   thinking · 210 tok · 17 tok/s · 12 s      (with the backend and model in front when several calls run at once)
  *
  * The local GGUF enhance route streams (real counts, the line moves every ~0.7 s); the other routes send only a start and an
  * end event, so for them the line shows the elapsed seconds (ticking here) and `~` counts at the end. If nothing arrives for
@@ -31,16 +31,16 @@ function shortModel(m) {
   return s.length > 42 ? s.slice(0, 40) + "…" : s;
 }
 
-function lineText(c, now) {
+function lineText(c, now, withName) {
   const ev = c.ev;
   const approx = ev.estimated ? "~" : "";
   const secs = Math.max(Math.round((ev.elapsed_ms || 0) / 1000), Math.round((now - c.start) / 1000));
   const phase = { prompt: t("llm_live_prompt"), thinking: t("llm_live_thinking"), answer: t("llm_live_answer"),
     done: t("llm_live_done"), error: t("llm_live_error") }[ev.phase] || ev.phase;
-  const parts = [`${ev.backend}${ev.model ? " · " + shortModel(ev.model) : ""}`, phase];
+  const parts = withName ? [`${ev.backend}${ev.model ? " · " + shortModel(ev.model) : ""}`, phase] : [phase];
   if (ev.output_tokens) parts.push(`${approx}${ev.output_tokens} tok`);
-  if (ev.tok_per_sec) parts.push(`${approx}${ev.tok_per_sec} tok/s`);
-  parts.push(`${secs} s`);
+  if (ev.tok_per_sec) parts.push(`${approx}${ev.tok_per_sec >= 10 ? Math.round(ev.tok_per_sec) : ev.tok_per_sec} tok/s`);
+  parts.push(`${secs}${t("llm_live_sec")}`);
   if (ev.finish_reason === "length") parts.push(t("llm_live_cut"));
   if (ev.phase !== "done" && ev.phase !== "error" && now - c.seen > 30000 && ev.estimated === false) parts.push(t("llm_live_quiet"));
   return parts.join(" · ");
@@ -52,7 +52,8 @@ function render() {
   const b = ensureBox();
   if (!calls.size) { b.style.display = "none"; return; }
   b.style.display = "flex";
-  b.replaceChildren(...[...calls.values()].slice(-3).map(c => {
+  const shown = [...calls.values()].slice(-3);
+  b.replaceChildren(...shown.map(c => {
     const row = document.createElement("div");
     const bad = c.ev.phase === "error" || c.ev.finish_reason === "length";
     Object.assign(row.style, {
@@ -60,7 +61,7 @@ function render() {
       border: "1px solid " + (bad ? "#8a3a3a" : "#3a3a55"), borderRadius: "6px", padding: "4px 9px", whiteSpace: "nowrap",
       overflow: "hidden", textOverflow: "ellipsis",
     });
-    row.textContent = "🧠 " + lineText(c, now);
+    row.textContent = "🧠 " + lineText(c, now, shown.length > 1);
     return row;
   }));
 }
