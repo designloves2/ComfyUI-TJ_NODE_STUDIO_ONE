@@ -12,6 +12,9 @@ Status: node repo `nodes.py` done (needs a ComfyUI restart). Relay with the user
 - Console: `[TJ_LLM] backend=… model=… in~Ntok out~Ntok time=…s speed~…tok/s finish=…`.
 - `</think>` rule: if the reply has `</think>` or `</thinking>` and no opening tag, only the text after the last closing tag is the answer (if nothing follows, the text is left as it was and the old reject rules apply). Applied in `_clean_llm_output` and `_strip_thinking` (`nodes.py`, helper `_after_closing_think`).
 
+## Studio node UI (node repo only, web may mirror)
+- `web/shared/llm_live.js`: a fixed line at the bottom-left of the page for every `tj_llm_progress` call (any `call_id`): `<backend> · <model> · <phase> · N tok · X tok/s · S s`; phases reading input / thinking / writing / done / error; `~` before estimated numbers; seconds keep ticking locally; `cut off (max tokens)` when `finish_reason` is `length`; `no change for 30 s` for a streaming call that went quiet; done stays 5 s, error 8 s; at most 3 lines. Mirror it in the web if wanted (the web has no such UI).
+
 ## Web / Canvers
 - Send `call_id` in the request body; listen for `tj_llm_progress` (match on `call_id`); read `usage` from the answer. Treat `estimated: true` counts as approximate and show them that way (e.g. `~`). No streaming means no `delta`, no live token count between `prompt` and `done`: show "running" and elapsed time.
 - Fields are all additions; old clients keep working.

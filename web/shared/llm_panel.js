@@ -13,6 +13,7 @@
  * summary of what's currently selected.
  */
 import { t } from "./i18n.js";
+import "./llm_live.js";
 import { openImageGalleryPicker } from "./ui_image_gallery_picker.js";
 import { customLLMControls } from "./custom_llm_controls.js";
 import { attachBilingual } from "./bilingual_ui.js";

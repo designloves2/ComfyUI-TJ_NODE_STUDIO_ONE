@@ -14,6 +14,7 @@
 // the preview box below, so the user watches the video form instead of a spinner.
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
+import "./shared/llm_live.js";
 import {
   C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, SUBFOLDER, TEMP_PREVIEW_SUBFOLDER,
   el, clear, loadState, saveState, lastUsedAt, defaultState, randomSeed,
