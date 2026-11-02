@@ -5125,7 +5125,7 @@ app.registerExtension({
                   ]);
                 })(),
                 ...(state.hiresUpscaler === "kimchy" ? [] : [
-                  col([label("Split Sigma step (1–7, 7 recommended)"), numberField(hiresSplitStep(state),
+                  col([label("Split Sigma step (7–1, 7 recommended)"), numberField(hiresSplitStep(state),
                     v => { state.hiresSplitStep = Math.min(7, Math.max(1, Math.round(v))); persist(); hiresLine.textContent = hiresText(); refreshPlan(); }, 1)]),
                 ]),
                 checkboxRow("Bypass H3 Memory Optimization on the last step", !!state.hiresNoOpt, v => {
