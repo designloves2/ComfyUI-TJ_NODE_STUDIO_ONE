@@ -21,3 +21,7 @@ LTX 2.5 Director 코드가 들어간 릴리즈부터 이 패키지 전체는 **G
   display names; the guide script reads `app` from `window.comfyAPI`. Unused files of the original (`ltx_keyframer.py`, `ltx_sequencer.py`,
   `load_audio_ui.*`, the example workflow) were not copied.
 - Do not copy the Director-derived folders into any non-GPL project (the web project AI-ONE-STUDIO included).
+
+## H3 Latent Upscale Tiled (TJ) (separate pack, not bundled)
+- Repository: https://github.com/designloves2/H3-Latent-Upscale-Tiled-TJ- , a modified copy of ComfyUI-Kimchy-Minimax-H3-Suite (Copyright 2026 Kimchy, Apache License 2.0).
+- This pack only calls its node `TJLatentUpscaleTiledMP`; no code of it is copied here. Its modifications (renames, large-target device fix) are listed in its NOTICE file.

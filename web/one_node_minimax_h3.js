@@ -3585,9 +3585,9 @@ app.registerExtension({
               kids.push(col([label("Upscaler"),
                 el("div", { style: { display: "flex", border: `1px solid ${C.border}`, borderRadius: "6px", overflow: "hidden" } },
                   [half("H3 Latent Upscaler", !kim, "A : 기존 방식 : H3 Latent Up Scaler", "h3"),
-                   half("H3 Kimchy Up Scaler", kim, "B : 신규 추가 : H3 Kimchy Up Scaler", "kimchy")])]));
+                   half("H3 Latent Upscale Tiled (TJ)", kim, "B : 신규 추가 : H3 Latent Upscale Tiled (TJ)", "kimchy")])]));
               if (kim) kids.push(col([label("Latent upscale"), select([
-                { value: "neural", label: "Neural (Kimchy's trained upscaler)" },
+                { value: "neural", label: "Neural (trained upscaler)" },
                 { value: "bicubic", label: "Bicubic (plain interpolation)" },
                 { value: "trilinear", label: "Trilinear (plain interpolation)" }],
                 state.ppH3UpModel, v => { state.ppH3UpModel = v; persist(); })]));
@@ -3604,10 +3604,10 @@ app.registerExtension({
                 const ratio = sm.w && sm.h ? Math.sqrt(mpNow * 1e6 / (sm.w * sm.h)) : 0;
                 if (ratio && ratio < 1.3 && !(kim && state.ppH3UpModel !== "neural")) ppWarn.append(el("div", {
                   text: `⚠ This is a ×${ratio.toFixed(2)} upscale. The neural upscaler is made for about ×2 and leaves a diagonal grid on fine textures (hair, fabric) near ×1. `
-                    + (kim ? "Raise Final MP, or switch Latent upscale to Bicubic for a small ratio." : "Raise Final MP, or use the Kimchy upscaler with Bicubic for a small ratio."),
+                    + (kim ? "Raise Final MP, or switch Latent upscale to Bicubic for a small ratio." : "Raise Final MP, or use H3 Latent Upscale Tiled (TJ) with Bicubic for a small ratio."),
                   style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
-                // the Kimchy node samples in tiles, so it can go past what fits in VRAM; the whole-picture step cannot
-                if (!kim && (state.ppH3FinalMp ?? 1.6) > 1.6) ppWarn.append(el("div", { text: "⚠ On a 16 GB VRAM card, above 1.6 MP the H3 Latent Upscaler can run out of VRAM and spill to the CPU (an hour or more). 1.6 is its sweet spot; the Kimchy upscaler handles 2.0.",
+                // the Tiled node samples in tiles, so it can go past what fits in VRAM; the whole-picture step cannot
+                if (!kim && (state.ppH3FinalMp ?? 1.6) > 1.6) ppWarn.append(el("div", { text: "⚠ On a 16 GB VRAM card, above 1.6 MP the H3 Latent Upscaler can run out of VRAM and spill to the CPU (an hour or more). 1.6 is its sweet spot; H3 Latent Upscale Tiled (TJ) handles 2.0 and above.",
                   style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }));
               };
               kids.push(col([label("Final MP"), numberField(kim ? state.ppH3KimFinalMp : state.ppH3FinalMp,
@@ -3623,7 +3623,7 @@ app.registerExtension({
                 { title: "Cut a long clip into pieces of the length you set, upscale each piece on its own queue turn, then join them with ffmpeg into one clip." }));
               kids.push(ppH3SplitWrap);
               kids.push(el("div", { text: (kim
-                  ? `Kimchy: encodes the clip, runs one step at its own size${kind === "fl" ? " (first and last frame as keyframes)" : ""}, then the Kimchy node upscales to Final MP and runs its tile step on the prompt alone. `
+                  ? `H3 Latent Upscale Tiled (TJ): encodes the clip, runs one step at its own size${kind === "fl" ? " (first and last frame as keyframes)" : ""}, then the Tiled node upscales to Final MP and runs its tile step on the prompt alone. `
                   : `Re-runs only the last step of an 8-step H3 clip: upscales the latent to Final MP, then runs that step${kind === "fl" ? " with the first and last frame as keyframes" : ""}. `)
                 + `This clip runs as ${kind === "ref" ? "Reference (REF2VA)" : "First/Last (FL2VA)"} (● marks the LoRA it uses). `
                 + "These settings are separate from the main H3 modes. A ONE STUDIO clip's own prompt is used; any other clip is read from its frames and written as an H3 brief.",
@@ -3858,7 +3858,7 @@ app.registerExtension({
         // tile 1 also covers the Kimchy node's load and latent upscale, so the estimate leans on the tiles after it
         const kimLine = () => {
           const cur = Math.min(kimDone + 1, info.kimTiles);
-          const parts = [`Postprocess: Kimchy tile ${cur}/${info.kimTiles}`];
+          const parts = [`Postprocess: Tiled upscale tile ${cur}/${info.kimTiles}`];
           if (kimDone < info.kimTiles) parts.push(`running ${fmtDur(Date.now() - kimMark)}`);
           if (kimDurs.length) parts.push(`tile ${kimDurs.length} took ${fmtDur(kimDurs[kimDurs.length - 1])} (${fmtIt(kimDurs[kimDurs.length - 1])}${kimDurs.length === 1 ? ", incl. load" : ""})`);
           const base = kimDurs.length > 1 ? kimDurs.slice(1) : kimDurs;
@@ -5117,7 +5117,7 @@ app.registerExtension({
                   ]);
                 })(),
                 (() => {
-                  // capsule switch: A = H3 Latent Up Scaler (default), B = H3 Kimchy Up Scaler
+                  // capsule switch: A = H3 Latent Up Scaler (default), B = H3 Latent Upscale Tiled (TJ)
                   const kim = state.hiresUpscaler === "kimchy";
                   const half = (text, on, tip, v) => el("div", { text, title: tip, style: {
                     flex: "1", textAlign: "center", padding: "4px 6px", fontSize: "11px", cursor: "pointer",
@@ -5126,9 +5126,9 @@ app.registerExtension({
                   return col([label("Upscaler"),
                     el("div", { style: { display: "flex", border: `1px solid ${C.border}`, borderRadius: "6px", overflow: "hidden" } },
                       [half("H3 Latent Upscaler", !kim, "A : 기존 방식 : H3 Latent Up Scaler", "h3"),
-                       half("H3 Kimchy Up Scaler", kim, "B : 신규 추가 : H3 Kimchy Up Scaler", "kimchy")]),
-                    ...(kim ? [warn("KimchyH3ZeroSplitMP"),
-                      hint("Kimchy runs the upscale and the last step in one node (Sol-Attn is not used). Final MP must be 1.0 – 8.5.")] : []),
+                       half("H3 Latent Upscale Tiled (TJ)", kim, "B : 신규 추가 : H3 Latent Upscale Tiled (TJ)", "kimchy")]),
+                    ...(kim ? [warn("TJLatentUpscaleTiledMP"),
+                      hint("The Tiled node runs the upscale and the last step in one node (Sol-Attn is not used). Final MP must be 1.0 – 8.5.")] : []),
                   ]);
                 })(),
                 ...(state.hiresUpscaler === "kimchy" ? [] : [
