@@ -390,9 +390,9 @@ export function hiresActive(state, avail) {
 
 /**
  * How many tiles the TJ Tiled upscaler samples for a source of srcW x srcH at `mp` megapixels: it cuts the upscaled
- * latent into 44 x 56 windows (kimchy_upscaler_mp.py: compute_target_hw_by_mode / compute_window_coords).
+ * latent into 44 x 56 windows (tj_latent_upscale_tiled_mp.py: compute_target_hw_by_mode / compute_window_coords).
  */
-export function kimchyTileCount(srcW, srcH, mp) {
+export function tiledTileCount(srcW, srcH, mp) {
   const curW = Math.floor(srcW / 16) * 16, curH = Math.floor(srcH / 16) * 16;
   const aspect = curW / curH;
   const rawH = Math.sqrt(Math.max(1, Math.min(8.5, mp)) * 1_000_000 / aspect), rawW = rawH * aspect;
@@ -422,7 +422,7 @@ export function ppH3State(s, kind = "fl") {
     clipName: s.clipName, vaeVideo: s.vaeVideo, vaeAudio: s.vaeAudio,
     // the LoRAs are Postprocess's own
     turboMode: s.ppH3TurboMode, pddFile: s.ppH3PddFile, pddFileReference: s.ppH3PddFileReference, pddLoraStrength: s.ppH3PddStrength,
-    hiresUpscaler: s.ppH3Upscaler, hiresFinalMp: s.ppH3FinalMp, hiresKimFinalMp: s.ppH3KimFinalMp,
+    hiresUpscaler: s.ppH3Upscaler, hiresFinalMp: s.ppH3FinalMp, hiresTiledFinalMp: s.ppH3TiledFinalMp,
     hiresChunkRows: s.ppH3ChunkRows, hiresNoOpt: s.ppH3NoOpt,
     loras: [], sampler: "euler", scheduler: "simple", shiftVideo: 12, shiftAudio: 3,
   };
@@ -446,8 +446,8 @@ export function sizeForMp(srcW, srcH, mp) {
 
 /** Start / Final MP of the selected 7+1 upscaler — A and B keep separate values. */
 export function hiresMp(state) {
-  return state.hiresUpscaler === "kimchy"
-    ? { start: state.hiresKimStartMp ?? 0.5, final: state.hiresKimFinalMp ?? 2.0 }
+  return state.hiresUpscaler === "tiled"
+    ? { start: state.hiresTiledStartMp ?? 0.5, final: state.hiresTiledFinalMp ?? 2.0 }
     : { start: state.hiresStartMp ?? 0.7, final: state.hiresFinalMp ?? 1.6 };
 }
 
@@ -461,7 +461,7 @@ export function hiresSizes(state) {
 
 /** Split Sigma step: the first N of the 8 steps run at Start MP, the rest at Final MP. Only the H3 Latent Upscaler lets it change; TJ Tiled stays at 7. */
 export function hiresSplitStep(state) {
-  if (state.hiresUpscaler === "kimchy") return 7;
+  if (state.hiresUpscaler === "tiled") return 7;
   const n = Math.round(Number(state.hiresSplitStep ?? 7));
   return Number.isFinite(n) ? Math.min(7, Math.max(1, n)) : 7;
 }
@@ -1397,12 +1397,12 @@ export function defaultState(saved) {
     autoPrompt:   !!saved.autoPrompt,   // write every clip's prompt with the LLM right before Generate
     hiresLastFixed: !!saved.hiresLastFixed,   // last step on the fixed model below instead of the generation model
     hiresLastModel: saved.hiresLastModel || "",
-    hiresUpscaler: saved.hiresUpscaler === "kimchy" ? "kimchy" : "h3",   // 7+1 stage 2: h3 = H3 Latent Up Scaler, kimchy = H3 TJ Tiled Up Scaler
+    hiresUpscaler: (saved.hiresUpscaler === "tiled" || saved.hiresUpscaler === "kimchy") ? "tiled" : "h3",   // 7+1 stage 2: h3 = H3 Latent Up Scaler, tiled = H3 TJ Tiled Up Scaler
     hiresNoOpt:   !!saved.hiresNoOpt,   // last step runs without H3 Memory Optimization / Sol-Attn
     hiresStartMp: saved.hiresStartMp ?? 0.7,
     hiresFinalMp: saved.hiresFinalMp ?? 1.6,
-    hiresKimStartMp: saved.hiresKimStartMp ?? 0.5,   // each 7+1 upscaler remembers its own Start / Final MP
-    hiresKimFinalMp: saved.hiresKimFinalMp ?? 2.0,
+    hiresTiledStartMp: saved.hiresTiledStartMp ?? saved.hiresKimStartMp ?? 0.5,   // each 7+1 upscaler remembers its own Start / Final MP
+    hiresTiledFinalMp: saved.hiresTiledFinalMp ?? saved.hiresKimFinalMp ?? 2.0,
     hiresChunkRows: saved.hiresChunkRows ?? 2048,   // H3 Memory Optimization "Activation chunk rows" of the Split Sigma last step
     hiresSplitStep: saved.hiresSplitStep ?? 7,   // Split Sigma: how many of the 8 turbo steps run small before the latent upscale (H3 Latent Upscaler only; 7 is recommended)
     clipFrames:  saved.clipFrames  ?? DEFAULT_FRAMES,
@@ -1762,11 +1762,11 @@ export function defaultState(saved) {
     ppH3PddFileReference: saved.ppH3PddFileReference ?? saved.pddFileReference ?? "",
     ppH3LastFixed: !!saved.ppH3LastFixed,
     ppH3PddStrength: saved.ppH3PddStrength ?? saved.pddLoraStrength ?? 1.0,
-    ppH3Upscaler: saved.ppH3Upscaler === "kimchy" ? "kimchy" : "h3",
+    ppH3Upscaler: (saved.ppH3Upscaler === "tiled" || saved.ppH3Upscaler === "kimchy") ? "tiled" : "h3",
     // what the TJ Tiled node upscales the latent with: its trained network, or plain interpolation
     ppH3UpModel: ["bicubic", "trilinear"].includes(saved.ppH3UpModel) ? saved.ppH3UpModel : "neural",
     ppH3FinalMp: saved.ppH3FinalMp ?? 1.6,
-    ppH3KimFinalMp: saved.ppH3KimFinalMp ?? 2.0,
+    ppH3TiledFinalMp: saved.ppH3TiledFinalMp ?? saved.ppH3KimFinalMp ?? 2.0,
     ppH3ChunkRows: saved.ppH3ChunkRows ?? 2048,
     ppH3NoOpt: !!saved.ppH3NoOpt,
     // long clips: the Latent Upscale runs in pieces of ppH3SegSeconds (or ppH3SegCount pieces), then they are joined

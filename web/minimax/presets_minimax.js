@@ -102,7 +102,7 @@ const RECIPE_KEYS = [
   "fp16Accum",
   // 7+1 hi-res finish: the checkbox and its two sizes travel with a saved recipe, but it is
   // not a matching axis — a built-in preset never turns it on or off.
-  "hiresFinish", "hiresUpscaler", "hiresNoOpt", "hiresLastFixed", "hiresStartMp", "hiresFinalMp", "hiresKimStartMp", "hiresKimFinalMp", "hiresChunkRows", "hiresSplitStep",
+  "hiresFinish", "hiresUpscaler", "hiresNoOpt", "hiresLastFixed", "hiresStartMp", "hiresFinalMp", "hiresTiledStartMp", "hiresTiledFinalMp", "hiresChunkRows", "hiresSplitStep",
 ];
 
 // Shallow-clones an array of plain objects (loras); anything else passes through as-is.
@@ -198,4 +198,8 @@ export function applyPreset(state, preset) {
   // A preset applying overwrites outright (state.loras = ...), same as Reuse Setting's
   // own loras restore — it replaces the panel's current LoRA list, not merges into it.
   for (const k of RECIPE_KEYS) if (preset[k] !== undefined) state[k] = cloneVal(preset[k]);
+  // presets saved before the Kimchy -> Tiled rename carry the old value and key names
+  if (state.hiresUpscaler === "kimchy") state.hiresUpscaler = "tiled";
+  if (preset.hiresTiledStartMp === undefined && preset.hiresKimStartMp !== undefined) state.hiresTiledStartMp = preset.hiresKimStartMp;
+  if (preset.hiresTiledFinalMp === undefined && preset.hiresKimFinalMp !== undefined) state.hiresTiledFinalMp = preset.hiresKimFinalMp;
 }

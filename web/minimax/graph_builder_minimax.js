@@ -101,8 +101,8 @@ const N = {
   hrSplit:    "MM:hr_split_sigmas",
   hrSep:      "MM:hr_separate",
   hrUp:       "MM:hr_latent_upscale",
-  hrKim:      "MM:hr_kimchy_upscale",
-  hrNeg:      "MM:hr_kimchy_negative",
+  hrTiled:      "MM:hr_tiled_upscale",
+  hrNeg:      "MM:hr_tiled_negative",
   hrCat:      "MM:hr_concat",
   hrLock:     "MM:hr_audio_lock",
   hrShift:    "MM:hr_sigma_shift",
@@ -308,17 +308,17 @@ function saveOneTakeCheckpoint(g, state, avail, checkpointName, latent = [N.samp
  * interval refines it on a model chain rebuilt for that one step: same UNET, user LoRAs and
  * turbo LoRA, then H3 Memory Optimization and Sol-Attn block-sparse attention with fixed
  * values (the bigger latent is what makes them necessary). The conditioning is stage 1's.
- * With state.hiresUpscaler === "kimchy" the upscale and the last step are one TJLatentUpscaleTiledMP
+ * With state.hiresUpscaler === "tiled" the upscale and the last step are one TJLatentUpscaleTiledMP
  * node instead (it upscales the video latent and refines it itself, audio passes through).
  * Returns the final latent link.
  * `avLatent` is the stage-1 AV latent (default: the clip sampler's x0). `schedule` builds the last
  * sigma interval here from the stage's own shifted model when there is no stage 1 to take it from.
  */
 function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio, avLatent = [N.sampler, 1], schedule = null, noUpscale = false) {
-  const kimchy = state.hiresUpscaler === "kimchy" && !noUpscale;
-  if (kimchy && !has(avail, "TJLatentUpscaleTiledMP"))
+  const tiled = state.hiresUpscaler === "tiled" && !noUpscale;
+  if (tiled && !has(avail, "TJLatentUpscaleTiledMP"))
     throw new Error("Split Sigma H3 Latent Upscale Tiled (TJ) needs the H3-Latent-Upscale-Tiled-TJ- pack — install it (github.com/designloves2/H3-Latent-Upscale-Tiled-TJ-), or pick H3 Latent Upscaler.");
-  const needed = kimchy ? [] : noUpscale ? ["BlockSparseAttention"] : ["MinimaxH3LatentUpscaler3D", "BlockSparseAttention"];
+  const needed = tiled ? [] : noUpscale ? ["BlockSparseAttention"] : ["MinimaxH3LatentUpscaler3D", "BlockSparseAttention"];
   if (!state.hiresNoOpt) needed.push("H3MemoryOptimization");
   for (const n of needed)
     if (!has(avail, n)) throw new Error(`Split Sigma needs ${n} — install it, or switch Split Sigma off.`);
@@ -331,7 +331,7 @@ function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio,
       g[N.hrLock] = { class_type: "TJ_H3_AudioLock", inputs: { ...g[N.audioLock].inputs, av_latent: latent } };
       latent = [N.hrLock, 0];
     }
-  } else if (!kimchy) {
+  } else if (!tiled) {
     g[N.hrSep] = { class_type: "LTXVSeparateAVLatent", inputs: { av_latent: avLatent } };
     g[N.hrUp] = { class_type: "MinimaxH3LatentUpscaler3D", inputs: {
       latent: [N.hrSep, 0],
@@ -390,18 +390,18 @@ function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio,
     }};
     stageModel = [N.hrMem, 0];
   }
-  if (kimchy) {
+  if (tiled) {
     // The TJ Tiled node takes the memory-optimised model without Sol-Attn and the whole stage-1 AV latent.
     const mp = hiresMp(state).final;
     if (!(mp >= 1 && mp <= 8.5)) throw new Error("H3 Latent Upscale Tiled (TJ) supports Final MP 1.0 – 8.5.");
     g[N.hrNeg] = { class_type: "ConditioningZeroOut", inputs: { conditioning: condLink } };
-    g[N.hrKim] = { class_type: "TJLatentUpscaleTiledMP", inputs: {
+    g[N.hrTiled] = { class_type: "TJLatentUpscaleTiledMP", inputs: {
       model: stageModel, conditioning: condLink, latent: avLatent,
       noise: [N.noise, 0], sampler: [N.sampSel, 0], sigmas: lowSigmas, negative: [N.hrNeg, 0],
       model_name: "minimax_h3_latent_upscaler_3d_bf16.safetensors",
       upscale_by: "megapixels", target_megapixels: mp, scale: 2, align: 32, precision: "fp16", cfg: 1, color_match: true,
     }};
-    return [N.hrKim, 0];
+    return [N.hrTiled, 0];
   }
   g[N.hrSparse] = { class_type: "BlockSparseAttention", inputs: {
     model: stageModel,
@@ -433,13 +433,13 @@ function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio,
 export function addH3LastStep(g, state0, avail, o) {
   const state = { ...state0, hiresFinish: true };
   const ref = state.generationMode === "reference";
-  const kimchy = state.hiresUpscaler === "kimchy";
+  const tiled = state.hiresUpscaler === "tiled";
   if (!hiresActive(state, avail))
     throw new Error("Latent Upscale (Use H3) needs an 8-step model: Turbo = PDD, or Turbo None with an 8-step checkpoint.");
   if (!String(o.promptText || "").trim()) throw new Error("Latent Upscale (Use H3): the prompt is empty.");
-  if (kimchy && !has(avail, "TJLatentUpscaleTiledMP"))
+  if (tiled && !has(avail, "TJLatentUpscaleTiledMP"))
     throw new Error("H3 Latent Upscale Tiled (TJ) needs the H3-Latent-Upscale-Tiled-TJ- pack — install it (github.com/designloves2/H3-Latent-Upscale-Tiled-TJ-), or pick H3 Latent Upscaler.");
-  if (!kimchy && !has(avail, "MinimaxH3LatentUpscaler3D")) throw new Error("Latent Upscale (Use H3) needs MinimaxH3LatentUpscaler3D — install it.");
+  if (!tiled && !has(avail, "MinimaxH3LatentUpscaler3D")) throw new Error("Latent Upscale (Use H3) needs MinimaxH3LatentUpscaler3D — install it.");
   const unet = requireModels(state);
   g[N.unet] = unetNode(unet);
   g[N.clip] = { class_type: "CLIPLoader", inputs: { clip_name: state.clipName, type: "minimax", device: "default" } };
@@ -465,7 +465,7 @@ export function addH3LastStep(g, state0, avail, o) {
   // ImageFromBatch clamps the index to the last frame.
   g[N.hrLast] = { class_type: "ImageFromBatch", inputs: { image: o.images, batch_index: 4095, length: 1 } };
   // A samples once at the final size; TJ Tiled samples first at the clip's own size
-  const cond1 = condAt(N.hrCond, kimchy ? o.srcSize : o.finalSize, true);
+  const cond1 = condAt(N.hrCond, tiled ? o.srcSize : o.finalSize, true);
 
   g[N.hrEnc] = { class_type: "VAEEncode", inputs: { pixels: o.images, vae: [N.vaeV, 0] } };
   let lockAudio = false;
@@ -488,7 +488,7 @@ export function addH3LastStep(g, state0, avail, o) {
   g[N.sampSel] = { class_type: "KSamplerSelect", inputs: { sampler_name: pdd ? "euler" : (state.sampler || "er_sde") } };
 
   let latent;
-  if (!kimchy) {
+  if (!tiled) {
     latent = buildHiresStage(g, state, avail, { final: o.finalSize }, cond1, null, lockAudio,
       [N.hrAv0, 0], { scheduler: state.scheduler });
     g[N.hrDecode] = { class_type: "VAEDecode", inputs: { samples: latent, vae: [N.vaeV, 0] } };
@@ -507,13 +507,13 @@ export function addH3LastStep(g, state0, avail, o) {
   g[N.hrNeg] = { class_type: "ConditioningZeroOut", inputs: { conditioning: cond2 } };
   const mp = hiresMp(state).final;
   if (!(mp >= 1 && mp <= 8.5)) throw new Error("H3 Latent Upscale Tiled (TJ) supports Final MP 1.0 – 8.5.");
-  g[N.hrKim] = { class_type: "TJLatentUpscaleTiledMP", inputs: {
+  g[N.hrTiled] = { class_type: "TJLatentUpscaleTiledMP", inputs: {
     model: memModel, conditioning: cond2, latent: step1,
     noise: [N.noise, 0], sampler: [N.sampSel, 0], sigmas: lowSigmas, negative: [N.hrNeg, 0],
     model_name: o.upscalerModel || "minimax_h3_latent_upscaler_3d_bf16.safetensors",
     upscale_by: "megapixels", target_megapixels: mp, scale: 2, align: 32, precision: "fp16", cfg: 1, color_match: true,
   }};
-  latent = [N.hrKim, 0];
+  latent = [N.hrTiled, 0];
   g[N.hrDecode] = { class_type: "VAEDecode", inputs: { samples: latent, vae: [N.vaeV, 0] } };
   return { images: [N.hrDecode, 0], audio: o.audio };
 }
@@ -1010,11 +1010,11 @@ export function buildClipGraph(state, avail, opts = {}) {
   const mode = state.generationMode || "t2v";
   // The TJ Tiled upscaler samples the picture in tiles, and a First/Last keyframe is a full-picture token block
   // that cannot be cut into tiles, so for it stage 2 gets the prompt alone.
-  const kimFl = hires && state.hiresUpscaler === "kimchy" && mode === "firstlast";
-  const hrCond = hires && (mode === "reference" || kimFl
+  const tiledFl = hires && state.hiresUpscaler === "tiled" && mode === "firstlast";
+  const hrCond = hires && (mode === "reference" || tiledFl
     || (mode === "firstlast" && (firstFrame || lastFrame || state.assetRef?.first || state.assetRef?.last)));
   if (hrCond) {
-    if (kimFl) buildConditioning(g, { ...state, assetRef: null }, fullPrompt, outW, outH, frames, { ...condOpts, firstFrame: null, lastFrame: null }, avail, N.hrCond);
+    if (tiledFl) buildConditioning(g, { ...state, assetRef: null }, fullPrompt, outW, outH, frames, { ...condOpts, firstFrame: null, lastFrame: null }, avail, N.hrCond);
     else buildConditioning(g, state, fullPrompt, outW, outH, frames, condOpts, avail, N.hrCond);
   }
 
@@ -2060,7 +2060,7 @@ export function buildPostprocessGraph(opts, avail) {
     } else if (upscale.method === "h3lat") {
       const r = addH3LastStep(g, upscale.h3State, avail, { images, audio, ...upscale.h3 });
       images = r.images;
-      upscaleUsedInfo = { method: "h3lat", upscaler: upscale.h3State.hiresUpscaler === "kimchy" ? "kimchy" : "h3",
+      upscaleUsedInfo = { method: "h3lat", upscaler: upscale.h3State.hiresUpscaler === "tiled" ? "tiled" : "h3",
         width: upscale.h3.finalSize.width, height: upscale.h3.finalSize.height };
     } else if (upscale.method === "ltx") {
       // LTX 2.5 latent upscale + refine on the frames so far; the clip's audio goes through LTX's audio VAE.
