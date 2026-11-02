@@ -64,9 +64,9 @@ ComfyUI 서버는 이 PC 하나를 공유한다(`127.0.0.1:8188`, GPU 16GB 공�
 - 검증 안 된 변경, 다른 세션이 "완료"라고만 한 변경은 웹에 넘기기 전에 사용자에게 확인한다. 코어(`ComfyUI-TJ_NODE`)에서 고쳐야 하는 문제는 그 저장소 담당에게 명세로 요청(예: One-Take 이음새 `TJ_H3_LatentContinuation` 미해결).
 - `[Claude 전용]` 이 PC에서는 Claude 세션끼리 `SendMessage`로 지시한다: `ComfyUI-TJ_NODE-10월`, `AI One Studio 웹사이트-10월`, `AI One Studio Canvers`. 사용자가 승인한 커밋/푸시/릴리즈/버전업을 전달할 때만 메시지에 "사용자가 승인했습니다."를 넣는다(지어내지 말 것).
 
-## 8. 현재 진행 상황 (2026-10-28 기준, 상세는 `CHANGELOG.md`, `MORNING_CHECKLIST_2026-10-27.md`)
+## 8. 현재 진행 상황 (2026-11-03 기준, 상세는 `CHANGELOG.md`, `MORNING_CHECKLIST_2026-10-27.md`)
 - 최신 릴리즈 **v1.49.3** (태그·GitHub 릴리즈 완료). 웹 v0.15.3, Canvers v2.27.4에 v1.49.2~v1.49.3 변경 반영 완료.
-- `## Unreleased`: H3 메인 프롬프트 목록이 클립 6개에서 스크롤되지 않던 문제 수정(`45d8b0c`). 아직 릴리즈 안 함.
+- `## Unreleased` (아직 릴리즈 안 함): ① H3 메인 프롬프트 목록 스크롤 수정(`45d8b0c`) ② H3 "7+1 hi-res finish"를 **Split Sigma**로 이름 변경 + H3 Latent Upscaler에서 분할 스텝(1–7, 기본 7) 수정 가능(`hiresSplitStep`) ③ 업스케일 중 "Upscaling in progress..." 노란 배너가 1단계 마지막 스텝 직후부터 표시. 웹/Canvers 전달 명세: `SPEC_RELAY_SPLIT_SIGMA.md`. 그래프 값(5→5, 12→7, Kimchy 7)과 UI는 브라우저에서 확인, **실제 렌더 중 배너 표시는 미확인**.
 - 서버(`nodes.py`) 변경(생각 문장 거부, 로컬 llama 입력 길이 사전 검사, Gemma `<channel|>` 처리, 모델 비었을 때 오류)은 **ComfyUI 재시작 후 적용**(재시작 여부 확인 필요).
 - 미해결/확인 필요: ① 네이티브 텍스트 인코더 + 로컬 GGUF를 섞어 쓸 때 서버가 멈춘 적이 있음(원인 추정만, 미수정, `nodes.py` 네이티브 경로가 큐와 별개로 모델을 로드함) ② H3 클립 높이 끌어서 맞추기 동기화는 브라우저 창이 숨겨진 상태라 확인 못 함 ③ 번역/H3/LTX의 OpenRouter 모델 없음 팝업 경로는 문법 확인만 ④ `config_minimax_h3.json`, `config_ltx25.json`의 `LLM\Gamma\…` 모델 경로 점검 ⑤ Canvers에 예전에 저장된 gemini 기본값이 남아 있을 수 있음.
 

@@ -151,7 +151,7 @@ export function createSettingsOverlay(state, ctx) {
         col([label("UNET · First/Last (FL2VA)"), uFL.el]),
         col([label("UNET · Reference (REF2VA)"), uRF.el]),
       ]),
-      col([label("UNET · 7+1 last step (used when Turbo → 7+1 → Last step model is Fixed)"), uHR.el]),
+      col([label("UNET · Split Sigma last step (used when Turbo → Split Sigma → Last step model is Fixed)"), uHR.el]),
       el("div", { html: "Text-only and First/Last modes use the FL2VA model; Reference mode uses the REF2VA one. → <code>models/diffusion_models/</code>", style: { fontSize: "10px", color: C.muted } }),
     ]));
 

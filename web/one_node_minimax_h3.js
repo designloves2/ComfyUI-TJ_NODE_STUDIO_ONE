@@ -21,7 +21,7 @@ import {
   TURBO_MODES, ATTN_BACKENDS, ATTN_FORWARDS, BLOCK_CACHES, H3_OPTIMIZERS, FBC_MODES,
   attnBlockedReason, attnForwardBlockedReason, attnForwardOverlapNote, blockCacheBlockedReason,
   h3OptimizerBlockedReason, h3OptimizerOverlapNote,
-  effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, hiresMp, sizeForMp, ppH3State, ppH3Kind, PP_H3_UP_MODELS, kimchyTileCount, migrateLegacyAccel,
+  effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, hiresMp, hiresSplitStep, sizeForMp, ppH3State, ppH3Kind, PP_H3_UP_MODELS, kimchyTileCount, migrateLegacyAccel,
   continuityModesFor, generationModesFor, configIssues, ltxUpscaleReady, ltxUpscaleMissing,
   faceRefineReady, faceRefineMissing, postprocessReady, IMAGE_GEN_MODES, imageGenSubModeReady,
   CHARSHEET_PROMPT_TEMPLATE,
@@ -398,12 +398,12 @@ app.registerExtension({
       }});
       // 7+1: the last step runs on a second sampler with no live preview of its own, so the
       // preview freezes on the 7th step's frame — this says why, same layer as the banners above.
-      const hiresBanner = el("div", { text: "Upscaling & refining detail…", style: {
+      const hiresBanner = el("div", { text: "Upscaling in progress...", style: {
         display: "none", position: "absolute", inset: "0", zIndex: "5",
         alignItems: "center", justifyContent: "center", textAlign: "center",
         background: "rgba(0,0,0,0.6)", padding: "0 16px",
-        color: "#ff9ec7", fontSize: "18px", fontWeight: "700",
-        textShadow: "0 0 12px rgba(255,158,199,0.5)",
+        color: "#ffd84a", fontSize: "24px", fontWeight: "700",
+        textShadow: "0 0 12px rgba(255,216,74,0.5)",
       }});
       // Postprocess and Image Generator have no live per-step sampling preview of their
       // own either (Postprocess is a fixed video-effects chain; Image Generator's H3
@@ -3574,7 +3574,7 @@ app.registerExtension({
                 kids.push(col([label("Model"),
                   el("div", { style: { display: "flex", border: `1px solid ${C.border}`, borderRadius: "6px", overflow: "hidden" } },
                     [slot("Same as generation", !fixed), slot("Fixed model", fixed)]),
-                  el("div", { text: fixed ? (fixedModel || "⚠ none set — Settings → Models → 7+1 last step")
+                  el("div", { text: fixed ? (fixedModel || "⚠ none set — Settings → Models → Split Sigma last step")
                                           : (mainModel || `⚠ none set — Settings → Models (${kind === "ref" ? "Reference" : "First/Last"})`),
                     style: { fontSize: "10px", color: (fixed ? fixedModel : mainModel) ? C.muted : C.warn, wordBreak: "break-all" } })]));
               }
@@ -4895,7 +4895,7 @@ app.registerExtension({
                 v => { state.megapixels = Math.max(0.1, v); persist(); refreshPlan(); }, 0.1);
               if (hiresActive(state, ctx.availability)) {
                 f.disabled = true; f.style.opacity = "0.4";
-                f.title = "7+1 hi-res finish is on — set Start / Final MP in the Turbo section.";
+                f.title = "Split Sigma is on — set Start / Final MP in the Turbo section.";
               }
               return f;
             })()]),
@@ -5082,15 +5082,16 @@ app.registerExtension({
             // (a rebuild put the column back at the top while you were typing).
             const hiresText = () => {
               const hs = hiresSizes(state);
-              return `${hs.start.width}×${hs.start.height} → ${hs.final.width}×${hs.final.height} (×${hs.scale})`;
+              const k = hiresSplitStep(state);
+              return `${hs.start.width}×${hs.start.height} → ${hs.final.width}×${hs.final.height} (×${hs.scale}) · ${k} small + ${8 - k} full step${8 - k > 1 ? "s" : ""}`;
             };
             const hiresLine = el("div", { text: hiresText(), style: { fontSize: "10px", color: C.muted } });
             const hiresRows = () => [
-              checkboxRow("7+1 hi-res finish", !!state.hiresFinish, v => {
+              checkboxRow("Split Sigma", !!state.hiresFinish, v => {
                 state.hiresFinish = v;
                 persist(); renderLeft(); refreshPlan();
-              }, { title: "Run 7 of the 8 steps small, scale the latent up, then run the last step at full size." }),
-              el("div", { text: "Needs an 8-step turbo: the Turbo LoRA above, or Turbo None with an 8-step checkpoint. Steps are fixed at 8 (7 small + 1 large).",
+              }, { title: "Run the first steps small, scale the latent up, then run the remaining steps at full size." }),
+              el("div", { text: "Needs an 8-step turbo: the Turbo LoRA above, or Turbo None with an 8-step checkpoint. Steps are fixed at 8: the Split Sigma step runs small, the rest at full size (7 is recommended).",
                 style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
               ...(hiresOn ? [
                 (() => {
@@ -5104,7 +5105,7 @@ app.registerExtension({
                   return col([label("Last step model"),
                     el("div", { style: { display: "flex", border: `1px solid ${C.border}`, borderRadius: "6px", overflow: "hidden" } },
                       [slot("Same as generation", !fixed), slot("Fixed model", fixed)]),
-                    ...(fixed ? [el("div", { text: name || "⚠ none set — Settings → Models → 7+1 last step",
+                    ...(fixed ? [el("div", { text: name || "⚠ none set — Settings → Models → Split Sigma last step",
                       style: { fontSize: "10px", color: name ? C.muted : C.warn, wordBreak: "break-all" } })] : []),
                   ]);
                 })(),
@@ -5123,6 +5124,10 @@ app.registerExtension({
                       hint("Kimchy runs the upscale and the last step in one node (Sol-Attn is not used). Final MP must be 1.0 – 8.5.")] : []),
                   ]);
                 })(),
+                ...(state.hiresUpscaler === "kimchy" ? [] : [
+                  col([label("Split Sigma step (1–7, 7 recommended)"), numberField(hiresSplitStep(state),
+                    v => { state.hiresSplitStep = Math.min(7, Math.max(1, Math.round(v))); persist(); hiresLine.textContent = hiresText(); refreshPlan(); }, 1)]),
+                ]),
                 checkboxRow("Bypass H3 Memory Optimization on the last step", !!state.hiresNoOpt, v => {
                   state.hiresNoOpt = v; persist(); renderLeft();
                 }, { title: "Skip only the H3 Memory Optimization node on the last (large) step. Sol-Attn stays on. Use it if the last step fails with a shape error." }),
@@ -6191,7 +6196,7 @@ app.registerExtension({
           aspect: st.aspect,
           megapixels: st.megapixels,
           hiresFinish: hiresActive(st, ctx.availability),
-          hiresStartMp: st.hiresStartMp, hiresFinalMp: st.hiresFinalMp, hiresKimStartMp: st.hiresKimStartMp, hiresKimFinalMp: st.hiresKimFinalMp, hiresChunkRows: st.hiresChunkRows, hiresUpscaler: st.hiresUpscaler,
+          hiresStartMp: st.hiresStartMp, hiresFinalMp: st.hiresFinalMp, hiresKimStartMp: st.hiresKimStartMp, hiresKimFinalMp: st.hiresKimFinalMp, hiresChunkRows: st.hiresChunkRows, hiresSplitStep: st.hiresSplitStep, hiresUpscaler: st.hiresUpscaler,
           frames: st.clipFrames,
           steps: st.steps,
           sampler: st.sampler,
@@ -6895,7 +6900,13 @@ app.registerExtension({
             const onClipProgress = (v, m, nodeId) => {
               if (nodeId === NODE_IDS.hrSampler) hiresBanner.style.display = "flex";
               else if (nodeId === NODE_IDS.fvsr) setFlashVSRProgress(v, m);
-              else { fvsrBanner.style.display = "none"; hiresBanner.style.display = "none"; setStepProgress(v, m); }
+              else {
+                fvsrBanner.style.display = "none";
+                // Split Sigma: stage 1 is finished and the latent upscale that follows reports no progress, so the banner
+                // starts here instead of waiting for the last-step sampler
+                hiresBanner.style.display = hiresOn && m > 0 && v >= m ? "flex" : "none";
+                setStepProgress(v, m);
+              }
             };
             let res;
             let mem = null;   // memory watcher for this clip; see watchMemory()
@@ -7315,6 +7326,7 @@ app.registerExtension({
         if (meta.hiresKimStartMp != null) state.hiresKimStartMp = meta.hiresKimStartMp;
         if (meta.hiresKimFinalMp != null) state.hiresKimFinalMp = meta.hiresKimFinalMp;
         if (meta.hiresChunkRows != null) state.hiresChunkRows = meta.hiresChunkRows;
+        if (meta.hiresSplitStep != null) state.hiresSplitStep = meta.hiresSplitStep;
         state.hiresUpscaler = meta.hiresUpscaler === "kimchy" ? "kimchy" : "h3";
         if (meta.frames) { state.clipFrames = meta.frames; state.clipLengthCustom = false; }
         if (meta.steps != null) state.steps = meta.steps;

@@ -459,6 +459,13 @@ export function hiresSizes(state) {
   return { start, final, scale: Math.round(final.width / start.width * 1000) / 1000 };
 }
 
+/** Split Sigma step: the first N of the 8 steps run at Start MP, the rest at Final MP. Only the H3 Latent Upscaler lets it change; Kimchy stays at 7. */
+export function hiresSplitStep(state) {
+  if (state.hiresUpscaler === "kimchy") return 7;
+  const n = Math.round(Number(state.hiresSplitStep ?? 7));
+  return Number.isFinite(n) ? Math.min(7, Math.max(1, n)) : 7;
+}
+
 /** Steps this run will actually sample at, given the turbo selection. */
 export function effectiveSteps(state, avail) {
   const t = effectiveTurbo(state, avail).mode;
@@ -837,9 +844,9 @@ export function explainGenerationError(message) {
          + "Switch Acceleration to SolAttn, Spectrum or None.";
   }
   if (/doesn't match the broadcast shape/.test(m)) {
-    return "The model returned a wrong-sized result. If this happened on the last step of 7+1 hi-res finish, "
+    return "The model returned a wrong-sized result. If this happened on the last step of Split Sigma, "
          + "H3 Memory Optimization doesn't work with this model — tick "
-         + "\"Bypass H3 Memory Optimization on the last step\" under Turbo → 7+1 and run again.";
+         + "\"Bypass H3 Memory Optimization on the last step\" under Turbo → Split Sigma and run again.";
   }
   if (/failed to extract audio/i.test(m)) {
     return "A reference video has no audio track but its soundtrack was requested — untick "
@@ -1396,7 +1403,8 @@ export function defaultState(saved) {
     hiresFinalMp: saved.hiresFinalMp ?? 1.6,
     hiresKimStartMp: saved.hiresKimStartMp ?? 0.5,   // each 7+1 upscaler remembers its own Start / Final MP
     hiresKimFinalMp: saved.hiresKimFinalMp ?? 2.0,
-    hiresChunkRows: saved.hiresChunkRows ?? 2048,   // H3 Memory Optimization "Activation chunk rows" of the 7+1 last step
+    hiresChunkRows: saved.hiresChunkRows ?? 2048,   // H3 Memory Optimization "Activation chunk rows" of the Split Sigma last step
+    hiresSplitStep: saved.hiresSplitStep ?? 7,   // Split Sigma: how many of the 8 turbo steps run small before the latent upscale (H3 Latent Upscaler only; 7 is recommended)
     clipFrames:  saved.clipFrames  ?? DEFAULT_FRAMES,
     clipLengthCustom:    !!saved.clipLengthCustom,
     clipLengthCustomSec: saved.clipLengthCustomSec ?? framesToSeconds(DEFAULT_FRAMES),
