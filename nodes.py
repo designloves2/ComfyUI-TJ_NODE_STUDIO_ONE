@@ -1951,6 +1951,17 @@ def _llama_budget(data, system_text, user_text, image_tokens=0):
     return min(max_tokens, room)
 
 
+def _after_closing_think(text):
+    """A reply that has a closing </think> (or </thinking>) but no opening tag: the model thought out loud first.
+    Keep only what follows the last closing tag; if nothing follows, leave the text as it is."""
+    low = text.lower()
+    cut = max(low.rfind("</think>"), low.rfind("</thinking>"))
+    if cut < 0:
+        return text
+    tail = text[text.index(">", cut) + 1:].strip()
+    return tail or text
+
+
 def _clean_llm_output(text):
     """Runs every local-model-degeneration cleanup, in the order that matters:
     pick the first real '***' candidate before anything else (later candidates
@@ -1958,6 +1969,7 @@ def _clean_llm_output(text):
     cut off runaway token repetition, drop a stray "Prompt:"-style label, then
     collapse a trailing near-duplicate paragraph.
     """
+    text = _after_closing_think(text)
     # Gemma 4 writes its thinking, then "<channel|>", then the answer: keep only the answer
     if "<channel|>" in text:
         text = text.split("<channel|>")[-1]
@@ -2040,7 +2052,76 @@ async def studio_llm_enhance(request):
     return await _studio_enhance(await request.json())
 
 
+def _llm_event_info(data):
+    """The backend / model names as the core LLM (TJ) node reports them in tj_llm_progress."""
+    b = (data.get("backend") or "").lower()
+    if b == "openrouter":
+        return "Open Router", str(data.get("or_model") or "").strip()
+    if b == "custom":
+        return "Connect Custom", str(data.get("custom_model") or "").strip()
+    if b == "comfy":
+        return "ComfyUI TextGenerate", str(data.get("text_encoder_name") or "").strip()
+    return "GGUF / llama.cpp", str(data.get("gguf_model") or "").strip()
+
+
+async def _llm_with_events(data, handler, system_text="", user_text=""):
+    """Runs a studio LLM route and reports it the way the core LLM (TJ) node does: a tj_llm_progress websocket event
+    when the call starts and when it ends (these routes do not stream), a [TJ_LLM] console line, and `usage` plus
+    `call_id` in the JSON answer. Token counts are estimates (`estimated: true`); the real counts stay inside the backends."""
+    import time
+    call_id = str(data.get("call_id") or "") or f"llm-{int(time.time() * 1000)}"
+    backend, model = _llm_event_info(data)
+    started = time.time()
+    in_tok = (_est_tokens(system_text) + _est_tokens(user_text)) if (system_text or user_text) else None
+
+    def send(phase, chars=0, out_tok=0, finish=None):
+        elapsed = time.time() - started
+        event = {"call_id": call_id, "backend": backend, "model": model, "phase": phase, "input_tokens": in_tok,
+                 "output_tokens": out_tok, "chars": chars,
+                 "tok_per_sec": round(out_tok / elapsed, 1) if elapsed > 0 and out_tok else 0,
+                 "elapsed_ms": int(elapsed * 1000), "delta": "", "estimated": True}
+        if finish:
+            event["finish_reason"] = finish
+        try:
+            PromptServer.instance.send_sync("tj_llm_progress", event)
+        except Exception:
+            pass
+        return event
+
+    send("prompt")
+    try:
+        resp = await handler(data)
+        body = json.loads(resp.body)
+    except Exception:
+        send("error", finish="error")
+        raise
+    text = str(body.get("result") or body.get("text") or "") if body.get("ok") else ""
+    out_tok = _est_tokens(text) if text else 0
+    finish = "stop" if body.get("ok") else "error"
+    event = send("done" if body.get("ok") else "error", len(text), out_tok, finish)
+    elapsed = time.time() - started
+    speed = event["tok_per_sec"]
+    print(f"[TJ_LLM] backend={backend} model={model} in~{in_tok}tok out~{out_tok}tok time={elapsed:.1f}s speed~{speed}tok/s finish={finish}")
+    body["call_id"] = call_id
+    body["usage"] = {"input_tokens": in_tok, "output_tokens": out_tok, "tok_per_sec": speed, "elapsed_ms": event["elapsed_ms"],
+                     "finish_reason": finish, "thinking_chars": None, "answer_chars": len(text), "estimated": True}
+    return web.json_response(body)
+
+
 async def _studio_enhance(data):
+    sys_text, user_text = _studio_enhance_texts(data)
+    return await _llm_with_events(data, _studio_enhance_run, sys_text, user_text)
+
+
+def _studio_enhance_texts(data):
+    if data.get("system_override"):
+        return str(data["system_override"]), str(data.get("prompt", ""))
+    if data.get("refine_instruction"):
+        return _studio_refine_parts(data)
+    return _studio_enhance_system(data), str(data.get("prompt", ""))
+
+
+async def _studio_enhance_run(data):
     import asyncio
     # "refine_instruction" turns this into a revision of data["prompt"] instead of an enhance;
     # "system_override" replaces the system prompt outright (the LTX studio writes its own).
@@ -2204,9 +2285,12 @@ async def translate_llm(request):
 
 @PromptServer.instance.routes.post("/tj_studio_one/llm/image_to_prompt")
 async def studio_llm_image_to_prompt(request):
+    return await _llm_with_events(await request.json(), _studio_image_to_prompt)
+
+
+async def _studio_image_to_prompt(data):
     import asyncio, base64
     from io import BytesIO
-    data = await request.json()
 
     if (data.get("backend") or "").lower() == "openrouter":
         img_b64 = data.get("image_b64", "")
@@ -5306,7 +5390,7 @@ def _strip_thinking(text):
     dump their chain-of-thought as the answer. Remove <think> blocks; if the reply is
     a reasoning monologue that ends with a quoted final draft, keep the draft."""
     import re as _re
-    t = str(text or "")
+    t = _after_closing_think(str(text or ""))
     # 1) always drop explicit <think> blocks
     t = _re.sub(r"<think(ing)?>.*?</think(ing)?>", "", t, flags=_re.I | _re.S)
     t = _re.sub(r"^\s*<think(ing)?>.*?(?=\n\S|$)", "", t, flags=_re.I | _re.S)
