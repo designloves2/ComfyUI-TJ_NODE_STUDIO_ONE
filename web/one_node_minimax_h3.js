@@ -5092,12 +5092,14 @@ app.registerExtension({
             };
             const highLine = el("div", { text: highText(), style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } });
             const hiresRows = () => [
-              checkboxRow("Split Sigma", !!state.hiresFinish, v => {
-                state.hiresFinish = v;
-                persist(); renderLeft(); refreshPlan();
-              }, { title: "Run the first steps small, scale the latent up, then run the remaining steps at full size." }),
-              el("div", { text: "Needs an 8-step turbo: the Turbo LoRA above, or Turbo None with an 8-step checkpoint. Steps are fixed at 8: LOW Sigma steps run small, the HIGH Sigma steps (8 − LOW) run after the latent upscale (7 LOW is recommended).",
-                style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+              // the explanation is a tooltip on a "?" next to the checkbox, not a text block under it
+              el("div", { style: { display: "flex", alignItems: "center" } }, [
+                checkboxRow("Split Sigma", !!state.hiresFinish, v => {
+                  state.hiresFinish = v;
+                  persist(); renderLeft(); refreshPlan();
+                }),
+                helpDot("Needs an 8-step turbo: the Turbo LoRA above, or Turbo None with an 8-step checkpoint. Steps are fixed at 8: LOW Sigma steps run small, the HIGH Sigma steps (8 − LOW) run after the latent upscale (7 LOW is recommended)."),
+              ]),
               ...(hiresOn ? [
                 (() => {
                   // slot-style switch: left = the generation model, right = the fixed model from Settings
