@@ -2064,47 +2064,95 @@ def _llm_event_info(data):
     return "GGUF / llama.cpp", str(data.get("gguf_model") or "").strip()
 
 
-async def _llm_with_events(data, handler, system_text="", user_text=""):
-    """Runs a studio LLM route and reports it the way the core LLM (TJ) node does: a tj_llm_progress websocket event
-    when the call starts and when it ends (these routes do not stream), a [TJ_LLM] console line, and `usage` plus
-    `call_id` in the JSON answer. Token counts are estimates (`estimated: true`); the real counts stay inside the backends."""
-    import time
-    call_id = str(data.get("call_id") or "") or f"llm-{int(time.time() * 1000)}"
-    backend, model = _llm_event_info(data)
-    started = time.time()
-    in_tok = (_est_tokens(system_text) + _est_tokens(user_text)) if (system_text or user_text) else None
+class _LlmProgress:
+    """Sends the tj_llm_progress websocket events of one studio LLM call, the same fields the core LLM (TJ) node sends.
+    The local llama.cpp enhance path streams (add() about every 0.7 s, real token counts); the other routes only call
+    start() and finish(), and their token counts are estimates (`estimated`)."""
 
-    def send(phase, chars=0, out_tok=0, finish=None):
-        elapsed = time.time() - started
-        event = {"call_id": call_id, "backend": backend, "model": model, "phase": phase, "input_tokens": in_tok,
-                 "output_tokens": out_tok, "chars": chars,
-                 "tok_per_sec": round(out_tok / elapsed, 1) if elapsed > 0 and out_tok else 0,
-                 "elapsed_ms": int(elapsed * 1000), "delta": "", "estimated": True}
+    def __init__(self, backend, model, call_id, in_tokens=None):
+        import time
+        self.backend, self.model, self.call_id = backend, model, call_id
+        self.started = self.last_sent = self.last_log = time.time()
+        self.text, self.pending, self.out_tokens, self.in_tokens = "", "", 0, in_tokens
+        self.streamed = False
+        self.finish_reason = "stop"
+
+    def _phase(self):
+        low = self.text.lower()
+        return "thinking" if "<think" in low and "</think" not in low else "answer"
+
+    def send(self, phase, delta="", finish=None):
+        import time
+        elapsed = time.time() - self.started
+        event = {"call_id": self.call_id, "backend": self.backend, "model": self.model, "phase": phase,
+                 "input_tokens": self.in_tokens, "output_tokens": self.out_tokens, "chars": len(self.text),
+                 "tok_per_sec": round(self.out_tokens / elapsed, 1) if elapsed > 0 and self.out_tokens else 0,
+                 "elapsed_ms": int(elapsed * 1000), "delta": delta, "estimated": not self.streamed}
         if finish:
             event["finish_reason"] = finish
         try:
             PromptServer.instance.send_sync("tj_llm_progress", event)
         except Exception:
             pass
+        self.last_sent = time.time()
         return event
 
-    send("prompt")
+    def start(self):
+        self.send("prompt")
+
+    def add(self, piece):
+        import time
+        self.streamed = True
+        self.text += piece
+        self.out_tokens += 1          # llama.cpp streams one chunk per token
+        self.pending += piece
+        now = time.time()
+        if now - self.last_sent >= 0.7:
+            self.send(self._phase(), self.pending)
+            self.pending = ""
+        if now - self.last_log >= 10:
+            self.last_log = now
+            print(f"[TJ_LLM] ... {now - self.started:.1f}s out={self.out_tokens}tok {self.out_tokens / (now - self.started):.1f}tok/s")
+
+    def finish(self, text, finish, ok=True):
+        """Sends the end event, prints the console line and returns the `usage` dict for the JSON answer."""
+        import time
+        if not self.streamed:
+            self.out_tokens = _est_tokens(text) if text else 0
+        if not self.streamed:
+            self.text = text or self.text
+        thinking = max(self.text.lower().rfind("</think>"), self.text.lower().rfind("</thinking>"))
+        thinking_chars = (self.text.index(">", thinking) + 1) if (self.streamed and thinking >= 0) else (0 if self.streamed else None)
+        event = self.send("done" if ok else "error", self.pending, finish)
+        elapsed = time.time() - self.started
+        mark = "" if self.streamed else "~"
+        print(f"[TJ_LLM] backend={self.backend} model={self.model} in={mark}{self.in_tokens}tok out={mark}{self.out_tokens}tok "
+              f"time={elapsed:.1f}s speed={mark}{event['tok_per_sec']}tok/s finish={finish}")
+        return {"input_tokens": self.in_tokens, "output_tokens": self.out_tokens, "tok_per_sec": event["tok_per_sec"],
+                "elapsed_ms": event["elapsed_ms"], "finish_reason": finish, "thinking_chars": thinking_chars,
+                "answer_chars": len(text) if text else len(self.text) - (thinking_chars or 0), "estimated": not self.streamed}
+
+
+async def _llm_with_events(data, handler, system_text="", user_text=""):
+    """Runs a studio LLM route and reports it the way the core LLM (TJ) node does: tj_llm_progress events, a [TJ_LLM]
+    console line, and `usage` plus `call_id` in the JSON answer. The handler gets `_progress` in its data and may stream
+    into it (local llama.cpp enhance); otherwise only the start and end events are sent, with estimated token counts."""
+    import time
+    call_id = str(data.get("call_id") or "") or f"llm-{int(time.time() * 1000)}"
+    backend, model = _llm_event_info(data)
+    in_tok = (_est_tokens(system_text) + _est_tokens(user_text)) if (system_text or user_text) else None
+    progress = _LlmProgress(backend, model, call_id, in_tok)
+    progress.start()
     try:
-        resp = await handler(data)
+        resp = await handler({**data, "_progress": progress})
         body = json.loads(resp.body)
     except Exception:
-        send("error", finish="error")
+        progress.finish("", "error", ok=False)
         raise
-    text = str(body.get("result") or body.get("text") or "") if body.get("ok") else ""
-    out_tok = _est_tokens(text) if text else 0
-    finish = "stop" if body.get("ok") else "error"
-    event = send("done" if body.get("ok") else "error", len(text), out_tok, finish)
-    elapsed = time.time() - started
-    speed = event["tok_per_sec"]
-    print(f"[TJ_LLM] backend={backend} model={model} in~{in_tok}tok out~{out_tok}tok time={elapsed:.1f}s speed~{speed}tok/s finish={finish}")
+    ok = bool(body.get("ok"))
+    text = str(body.get("result") or body.get("text") or "") if ok else ""
     body["call_id"] = call_id
-    body["usage"] = {"input_tokens": in_tok, "output_tokens": out_tok, "tok_per_sec": speed, "elapsed_ms": event["elapsed_ms"],
-                     "finish_reason": finish, "thinking_chars": None, "answer_chars": len(text), "estimated": True}
+    body["usage"] = progress.finish(text, progress.finish_reason if ok and progress.streamed else ("stop" if ok else "error"), ok)
     return web.json_response(body)
 
 
@@ -2119,6 +2167,63 @@ def _studio_enhance_texts(data):
     if data.get("refine_instruction"):
         return _studio_refine_parts(data)
     return _studio_enhance_system(data), str(data.get("prompt", ""))
+
+
+def _enhance_gguf_stream(data, utils, sys_text, user_text, progress):
+    """TJ_PromptEnhancer's llama.cpp path (same Llama load, sampling settings, stop strings, reasoning_budget and clean-up),
+    but with stream=True so tj_llm_progress carries the live token count. Returns (final_prompt, debug_text)."""
+    import os as _os
+    from llama_cpp import Llama
+    override = bool(data.get("refine_instruction") or data.get("system_override"))
+    append_no_think = True
+    if override:
+        sys_prompt = sys_text.strip()
+        sys_prompt = sys_prompt.rstrip() + " /no_think" if append_no_think else sys_prompt
+    else:
+        sys_prompt = utils.build_layered_system_prompt(
+            data.get("purpose", "Image"), data.get("model_format", "Universal Natural Language"),
+            data.get("aesthetic", "None (no aesthetic injection)"), data.get("extra_instructions", ""), append_no_think)
+    prompt_in = str(user_text if override else data.get("prompt", ""))
+    gguf_model = data.get("gguf_model", "")
+    if utils._is_bad_choice(gguf_model):
+        raise FileNotFoundError("No .gguf model found in models/text_encoders.")
+    model_path = utils._resolve_text_encoder_path(gguf_model)
+    if not model_path or not _os.path.isfile(model_path):
+        raise FileNotFoundError(f"Selected GGUF not found: {model_path}")
+    utils._free_comfy_vram()
+    llm = Llama(model_path=model_path, n_gpu_layers=int(data.get("n_gpu_layers", -1)), verbose=False,
+                n_ctx=int(data.get("n_ctx", 4096)), seed=int(data.get("seed", 0)))
+    try:
+        chat_kwargs = dict(
+            messages=[{"role": "system", "content": sys_prompt}, {"role": "user", "content": prompt_in}],
+            max_tokens=int(data.get("max_tokens", 1000)), temperature=float(data.get("temperature", 0.7)),
+            top_p=0.9, repeat_penalty=1.15, stop=["\n\nUser:", "\n\nAssistant:", "Human:"], stream=True,
+            reasoning_budget=0)
+        try:
+            stream = llm.create_chat_completion(**chat_kwargs)
+        except TypeError:       # an older llama-cpp-python does not know reasoning_budget
+            chat_kwargs.pop("reasoning_budget", None)
+            stream = llm.create_chat_completion(**chat_kwargs)
+        pieces, finish = [], "stop"
+        for chunk in stream:
+            choice = chunk["choices"][0]
+            piece = (choice.get("delta") or {}).get("content") or ""
+            if piece:
+                pieces.append(piece)
+                progress.add(piece)
+            finish = choice.get("finish_reason") or finish
+        progress.in_tokens = max(0, llm.n_tokens - len(pieces))
+        progress.finish_reason = finish
+    finally:
+        utils._free_llm(llm)
+    raw_output = "".join(pieces).strip()
+    print(f"[TJ_PromptEnhancer] finish_reason={finish} max_tokens={chat_kwargs['max_tokens']} raw_chars={len(raw_output)}")
+    final_prompt = utils._clean_output(raw_output, prompt_in, preserve_paragraphs=(data.get("model_format") == "Minimax H3 (Video)"))
+    if not final_prompt.strip() or len(final_prompt) < 20:
+        final_prompt = utils._strip_thinking_process_block(utils._strip_thinking_tags(raw_output)).strip()
+        if not final_prompt:
+            final_prompt = raw_output
+    return (final_prompt, f"=== Raw Output ===\n{raw_output}")
 
 
 async def _studio_enhance_run(data):
@@ -2154,7 +2259,7 @@ async def _studio_enhance_run(data):
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)})
 
-    TJ_PromptEnhancer, _, _ = _try_import_tj_llm()
+    TJ_PromptEnhancer, _, _tj_utils = _try_import_tj_llm()
     if TJ_PromptEnhancer is None:
         return web.json_response({"ok": False, "error": "TJ_NODE2 not installed"})
     try:
@@ -2171,6 +2276,8 @@ async def _studio_enhance_run(data):
                 if model_backend == "GGUF / llama.cpp":
                     _release_llama()
         def _enhance_once():
+            if model_backend == "GGUF / llama.cpp" and data.get("_progress") is not None:
+                return _enhance_gguf_stream(data, _tj_utils, sys_text, user_text, data["_progress"])
             result = TJ_PromptEnhancer().enhance(
                 get_name="(none)", set_name="studio_one_enhance",
                 raw_prompt=user_text if (data.get("refine_instruction") or data.get("system_override")) else data.get("prompt", ""),
