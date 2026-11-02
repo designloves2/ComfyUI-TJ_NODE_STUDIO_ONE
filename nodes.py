@@ -2114,6 +2114,19 @@ class _LlmProgress:
             self.last_log = now
             print(f"[TJ_LLM] ... {now - self.started:.1f}s out={self.out_tokens}tok {self.out_tokens / (now - self.started):.1f}tok/s")
 
+    def tick(self, count, total):
+        """A token count without text (ComfyUI's native TextGenerate reports its steps through comfy.utils.ProgressBar)."""
+        import time
+        self.streamed = True
+        self.out_tokens = int(count)
+        self.finish_reason = "length" if total and count >= total else "stop"
+        now = time.time()
+        if now - self.last_sent >= 0.7:
+            self.send("answer")
+        if now - self.last_log >= 10:
+            self.last_log = now
+            print(f"[TJ_LLM] ... {now - self.started:.1f}s out={self.out_tokens}tok {self.out_tokens / (now - self.started):.1f}tok/s")
+
     def finish(self, text, finish, ok=True):
         """Sends the end event, prints the console line and returns the `usage` dict for the JSON answer."""
         import time
@@ -2126,7 +2139,7 @@ class _LlmProgress:
         event = self.send("done" if ok else "error", self.pending, finish)
         elapsed = time.time() - self.started
         mark = "" if self.streamed else "~"
-        print(f"[TJ_LLM] backend={self.backend} model={self.model} in={mark}{self.in_tokens}tok out={mark}{self.out_tokens}tok "
+        print(f"[TJ_LLM] backend={self.backend} model={self.model} in={mark}{'?' if self.in_tokens is None else self.in_tokens}tok out={mark}{self.out_tokens}tok "
               f"time={elapsed:.1f}s speed={mark}{event['tok_per_sec']}tok/s finish={finish}")
         return {"input_tokens": self.in_tokens, "output_tokens": self.out_tokens, "tok_per_sec": event["tok_per_sec"],
                 "elapsed_ms": event["elapsed_ms"], "finish_reason": finish, "thinking_chars": thinking_chars,
@@ -2169,6 +2182,32 @@ def _install_llama_stream_patch():
 
     cls.create_chat_completion = create_chat_completion
     cls._tj_stream_patched = True
+
+
+def _hook_textgenerate_progress(progress):
+    """ComfyUI's TextGenerate (backend `comfy`) reports each generated token through a comfy.utils.ProgressBar. While the
+    route runs, listen to that bar (this worker thread only) and pass the count on. Returns the function that undoes it."""
+    if progress is None:
+        return lambda: None
+    try:
+        import comfy.utils as _cu
+    except Exception:
+        return lambda: None
+    previous = getattr(_cu, "PROGRESS_BAR_HOOK", None)
+    thread = _threading.get_ident()
+
+    def hook(value, total, preview_image=None, node_id=None):
+        if _threading.get_ident() == thread:
+            progress.tick(value, total)
+        if previous is not None:
+            previous(value, total, preview_image, node_id=node_id)
+
+    _cu.set_progress_bar_global_hook(hook)
+
+    def undo():
+        if getattr(_cu, "PROGRESS_BAR_HOOK", None) is hook:     # a queued prompt may have installed its own meanwhile
+            _cu.set_progress_bar_global_hook(previous)
+    return undo
 
 
 async def _llm_with_events(data, handler, system_text="", user_text=""):
@@ -2253,10 +2292,14 @@ async def _studio_enhance_run(data):
                 _wait_prompt_worker_idle()
                 _install_llama_stream_patch()
                 _LLM_TLS.progress = data.get("_progress")
+                undo_hook = lambda: None
+            else:
+                undo_hook = _hook_textgenerate_progress(data.get("_progress"))
             try:
                 return _enhance_once()
             finally:
                 _LLM_TLS.progress = None
+                undo_hook()
                 if model_backend == "GGUF / llama.cpp":
                     _release_llama()
         def _enhance_once():
@@ -2441,10 +2484,14 @@ async def _studio_image_to_prompt(data):
                 _wait_prompt_worker_idle()
                 _install_llama_stream_patch()
                 _LLM_TLS.progress = data.get("_progress")
+                undo_hook = lambda: None
+            else:
+                undo_hook = _hook_textgenerate_progress(data.get("_progress"))
             try:
                 return _describe_once()
             finally:
                 _LLM_TLS.progress = None
+                undo_hook()
                 if model_backend == "GGUF / llama.cpp":
                     _release_llama()
         def _describe_once():
