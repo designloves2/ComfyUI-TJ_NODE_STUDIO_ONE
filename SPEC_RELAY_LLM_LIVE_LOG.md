@@ -16,6 +16,11 @@ Status: node repo `nodes.py` done (needs a ComfyUI restart). Relay with the user
 ## Studio node UI (node repo only, web may mirror)
 - `web/shared/llm_live.js`: a fixed line at the bottom-left of the page for every `tj_llm_progress` call (any `call_id`): `<phase> · N tok · X tok/s · S초` (backend and model in front only when several calls run at once); phases reading input / thinking / writing / done / error; `~` before estimated numbers; seconds keep ticking locally; `cut off (max tokens)` when `finish_reason` is `length`; `no change for 30 s` for a streaming call that went quiet; done stays 5 s, error 8 s; at most 3 lines. Mirror it in the web if wanted (the web has no such UI).
 
+## Native (ComfyUI TextGenerate) graphs queued by the page — same live line
+- These do not use the studio routes: the page posts a graph (CLIPLoader -> TextGenerate -> ...) to `/prompt` (native translate, native brief / image analysis, MusicMaker). ComfyUI sends the standard `progress` event ({value, max, prompt_id, node}) once per generated token.
+- `web/shared/llm_live.js` (`wireNative`): wraps `api.fetchApi`; on a POST to `/prompt` whose graph has a `TextGenerate` node it reads the answer's `prompt_id`, remembers `{ TextGenerate node id -> max_length, model = the CLIPLoader's clip_name }`, shows a line `reading input` at once, then on each `progress` event with that prompt_id and node shows `writing · N tok · X tok/s · S초` (X = N / elapsed, computed in the page). `execution_success` -> `done`, `execution_error` / `execution_interrupted` -> `error`. `finish_reason: length` (shown as cut off) when value reached max_length. Backend label `ComfyUI TextGenerate`; call id `native-<prompt_id>`.
+- A web app that queues its own TextGenerate graphs does the same on its own `/prompt` calls and its websocket `progress` events.
+
 ## Web / Canvers
 - Send `call_id` in the request body; listen for `tj_llm_progress` (match on `call_id`); read `usage` from the answer. Treat `estimated: true` counts as approximate and show them that way (e.g. `~`). No streaming means no `delta`, no live token count between `prompt` and `done`: show "running" and elapsed time.
 - Fields are all additions; old clients keep working.

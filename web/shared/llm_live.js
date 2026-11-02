@@ -77,8 +77,71 @@ function onEvent(e) {
   render();
 }
 
+// ── ComfyUI TextGenerate run through the queue (native translate, native brief / image analysis, MusicMaker) ──────────────
+// Those graphs are posted to /prompt from the page. Watch the post, remember the prompt id and its TextGenerate nodes, and
+// turn ComfyUI's own `progress` events (one step per generated token) into the same live line.
+const natives = new Map();   // prompt_id -> { nodes: { nodeId: max_length }, model, start }
+
+function noteQueuedGraph(graph, promptId) {
+  if (!graph || typeof graph !== "object" || !promptId) return;
+  const nodes = {};
+  let model = "";
+  for (const [id, n] of Object.entries(graph)) {
+    if (n?.class_type !== "TextGenerate") continue;
+    nodes[id] = Number(n.inputs?.max_length) || 0;
+    const link = n.inputs?.clip;
+    const loader = Array.isArray(link) ? graph[String(link[0])] : null;
+    model = model || String(loader?.inputs?.clip_name || "");
+  }
+  if (Object.keys(nodes).length) natives.set(String(promptId), { nodes, model, start: Date.now() });
+}
+
+function nativeEvent(promptId, phase, value, max, extra = {}) {
+  const info = natives.get(String(promptId));
+  if (!info) return;
+  const elapsed = Date.now() - info.start;
+  onEvent({ detail: { call_id: "native-" + promptId, backend: "ComfyUI TextGenerate", model: info.model, phase,
+    input_tokens: null, output_tokens: value, chars: 0, estimated: false, delta: "",
+    tok_per_sec: elapsed > 0 && value ? Math.round(value / (elapsed / 1000) * 10) / 10 : 0, elapsed_ms: elapsed,
+    ...(max && value >= max ? { finish_reason: "length" } : {}), ...extra } });
+}
+
+function wireNative() {
+  const original = api.fetchApi?.bind(api);
+  if (original) {
+    api.fetchApi = async function (route, options) {
+      const resp = await original(route, options);
+      try {
+        if (route === "/prompt" && options?.method === "POST" && typeof options.body === "string") {
+          const graph = JSON.parse(options.body)?.prompt;
+          if (graph && Object.values(graph).some(n => n?.class_type === "TextGenerate")) {
+            resp.clone().json().then(d => { if (d?.prompt_id) { noteQueuedGraph(graph, d.prompt_id); nativeEvent(d.prompt_id, "prompt", 0, 0); } }).catch(() => {});
+          }
+        }
+      } catch (_) { /* never break a queue request */ }
+      return resp;
+    };
+  }
+  api.addEventListener("progress", e => {
+    const d = e?.detail || {};
+    const info = natives.get(String(d.prompt_id));
+    if (info && info.nodes[String(d.node)] !== undefined) nativeEvent(d.prompt_id, "answer", d.value, d.max);
+  });
+  const end = (phase, e) => {
+    const pid = String(e?.detail?.prompt_id || "");
+    const info = natives.get(pid);
+    if (!info) return;
+    const prev = calls.get("native-" + pid);
+    nativeEvent(pid, phase, prev?.ev?.output_tokens || 0, Math.max(...Object.values(info.nodes)), { finish_reason: prev?.ev?.finish_reason || (phase === "error" ? "error" : "stop") });
+    natives.delete(pid);
+  };
+  api.addEventListener("execution_success", e => end("done", e));
+  api.addEventListener("execution_error", e => end("error", e));
+  api.addEventListener("execution_interrupted", e => end("error", e));
+}
+
 if (!window.__tjLlmLive) {
   window.__tjLlmLive = true;
-  try { api.addEventListener("tj_llm_progress", onEvent); } catch (_) { /* old frontend without addEventListener */ }
+  try { api.addEventListener("tj_llm_progress", onEvent); wireNative(); } catch (_) { /* old frontend without addEventListener */ }
   setInterval(() => { if (calls.size) render(); }, 1000);
 }
