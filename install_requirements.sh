@@ -190,6 +190,7 @@ alt_folder_for() {
         ComfyUI-SeedVR2_VideoUpscaler)     printf 'seedvr2_videoupscaler' ;;
         ComfyUI-VOSR2)                     printf 'comfyui-vosr2' ;;
         ComfyUI-H3-FaceRefine)             printf 'comfyui-h3-facerefine' ;;
+        H3-Latent-Upscale-Tiled-TJ-)       printf 'comfyui-tj_latent_upscale_tiled' ;;
         Nvidia_RTX_Nodes_ComfyUI)          printf 'comfyui_nvidia_rtx_nodes' ;;
         ComfyUI-MiniMaxH3-FirstBlockCache) printf 'minimax-h3-firstblockcache' ;;
         ComfyUI-VFI)                       printf 'rife_comfyui_wrapper' ;;

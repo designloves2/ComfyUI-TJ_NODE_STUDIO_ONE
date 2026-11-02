@@ -187,6 +187,7 @@ set "ALT[21]=h3-optimizations"
 set "ALT[23]=comfyui-ace-step-ksampler"
 set "ALT[26]=comfyui-vosr2"
 set "ALT[27]=comfyui-h3-facerefine"
+set "ALT[29]=comfyui-tj_latent_upscale_tiled"
 
 set /a N_NEW=0, N_UPD=0, N_CUR=0, N_FAIL=0
 
