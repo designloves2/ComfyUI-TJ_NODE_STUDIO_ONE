@@ -3855,7 +3855,7 @@ app.registerExtension({
         const fmtDur = (ms) => { const t = Math.round(ms / 1000); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`; };
         // one tile = one single-step sample, shown like the console bar: "1/1 [00:45<00:00, 45.12s/it]"
         const fmtIt = (ms) => `${(ms / 1000).toFixed(2)}s/it`;
-        // tile 1 also covers the Kimchy node's load and latent upscale, so the estimate leans on the tiles after it
+        // tile 1 also covers the TJ Tiled node's load and latent upscale, so the estimate leans on the tiles after it
         const kimLine = () => {
           const cur = Math.min(kimDone + 1, info.kimTiles);
           const parts = [`Postprocess: Tiled upscale tile ${cur}/${info.kimTiles}`];
@@ -3882,7 +3882,7 @@ app.registerExtension({
           start() {
             if (!info.kimTiles) return;
             kimMark = Date.now();
-            // the clock for tile 1 starts when the Kimchy node starts, not when the queue was submitted
+            // the clock for tile 1 starts when the TJ Tiled node starts, not when the queue was submitted
             kimExec = (ev) => { const d = ev.detail; if ((d && d.node != null ? d.node : d) === "MM:hr_kimchy_upscale") kimMark = Date.now(); };
             api.addEventListener("executing", kimExec);
             kimTimer = setInterval(() => { if (kimDone < info.kimTiles) { setStatus(kimLine()); kimBar(); } }, 1000);
@@ -3892,13 +3892,13 @@ app.registerExtension({
             if (kimExec) api.removeEventListener("executing", kimExec);
           },
           onProgress: (v, m, nodeId) => {
-            // the Kimchy upscaler runs one single-step sampler per tile, so each tile is one tick of 1/1
+            // the TJ Tiled upscaler runs one single-step sampler per tile, so each tile is one tick of 1/1
             if (info.kimTiles && nodeId === "MM:hr_kimchy_upscale" && m === 1) {
               if (v >= 1) { kimDurs.push(Date.now() - kimMark); kimMark = Date.now(); kimDone++; }
               setStatus(kimLine()); kimBar();
               return;
             }
-            // Latent Upscale (Use H3): the sampler is the step at the clip's own size (Kimchy) or the last step (H3 Latent Upscaler)
+            // Latent Upscale (Use H3): the sampler is the step at the clip's own size (TJ Tiled) or the last step (H3 Latent Upscaler)
             if (info.h3 && nodeId === "MM:hr_sampler") {
               const hi = info.kimTiles ? info.kimLo : 95;
               barInner.style.width = `${(info.barBase + (hi - info.barBase) * (v / (m || 1))).toFixed(1)}%`;
@@ -4069,7 +4069,7 @@ app.registerExtension({
           const ppMethod = (state.upscaleMode && state.upscaleMode !== "none") ? state.upscaleMode : "flashvsr";
           let ltxState = null, h3State = null, h3Opts = null, usedPrompt = "";
           let h3Cap = 0, kimTiles = 0, barBase = 0;   // barBase: share of the bar the prompt stages already used
-          let kimLo = 0;   // where the Kimchy tile step starts on the bar (after the first step)
+          let kimLo = 0;   // where the TJ Tiled tile step starts on the bar (after the first step)
           let h3Total = 0, h3Fps = FPS;   // the source's frame count and rate, for Split mode
           if (state.ppUpscaleOn && ppMethod === "h3lat") {
             const info = _ppSrcInfo || {};

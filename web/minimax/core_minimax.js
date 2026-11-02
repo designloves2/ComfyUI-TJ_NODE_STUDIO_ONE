@@ -389,7 +389,7 @@ export function hiresActive(state, avail) {
 }
 
 /**
- * How many tiles the Kimchy upscaler samples for a source of srcW x srcH at `mp` megapixels: it cuts the upscaled
+ * How many tiles the TJ Tiled upscaler samples for a source of srcW x srcH at `mp` megapixels: it cuts the upscaled
  * latent into 44 x 56 windows (kimchy_upscaler_mp.py: compute_target_hw_by_mode / compute_window_coords).
  */
 export function kimchyTileCount(srcW, srcH, mp) {
@@ -428,7 +428,7 @@ export function ppH3State(s, kind = "fl") {
   };
 }
 
-/** The Kimchy node's `model_name` for each upscale choice (undefined = its trained network, the graph default). */
+/** The TJ Tiled node's `model_name` for each upscale choice (undefined = its trained network, the graph default). */
 export const PP_H3_UP_MODELS = { neural: undefined, bicubic: "None (Bicubic)", trilinear: "None (Trilinear)" };
 
 /** Which model family Postprocess → Latent Upscale (Use H3) runs a clip on: "ref" for a Reference-mode H3 clip, else "fl". */
@@ -459,7 +459,7 @@ export function hiresSizes(state) {
   return { start, final, scale: Math.round(final.width / start.width * 1000) / 1000 };
 }
 
-/** Split Sigma step: the first N of the 8 steps run at Start MP, the rest at Final MP. Only the H3 Latent Upscaler lets it change; Kimchy stays at 7. */
+/** Split Sigma step: the first N of the 8 steps run at Start MP, the rest at Final MP. Only the H3 Latent Upscaler lets it change; TJ Tiled stays at 7. */
 export function hiresSplitStep(state) {
   if (state.hiresUpscaler === "kimchy") return 7;
   const n = Math.round(Number(state.hiresSplitStep ?? 7));
@@ -1397,7 +1397,7 @@ export function defaultState(saved) {
     autoPrompt:   !!saved.autoPrompt,   // write every clip's prompt with the LLM right before Generate
     hiresLastFixed: !!saved.hiresLastFixed,   // last step on the fixed model below instead of the generation model
     hiresLastModel: saved.hiresLastModel || "",
-    hiresUpscaler: saved.hiresUpscaler === "kimchy" ? "kimchy" : "h3",   // 7+1 stage 2: h3 = H3 Latent Up Scaler, kimchy = H3 Kimchy Up Scaler
+    hiresUpscaler: saved.hiresUpscaler === "kimchy" ? "kimchy" : "h3",   // 7+1 stage 2: h3 = H3 Latent Up Scaler, kimchy = H3 TJ Tiled Up Scaler
     hiresNoOpt:   !!saved.hiresNoOpt,   // last step runs without H3 Memory Optimization / Sol-Attn
     hiresStartMp: saved.hiresStartMp ?? 0.7,
     hiresFinalMp: saved.hiresFinalMp ?? 1.6,
@@ -1763,7 +1763,7 @@ export function defaultState(saved) {
     ppH3LastFixed: !!saved.ppH3LastFixed,
     ppH3PddStrength: saved.ppH3PddStrength ?? saved.pddLoraStrength ?? 1.0,
     ppH3Upscaler: saved.ppH3Upscaler === "kimchy" ? "kimchy" : "h3",
-    // what the Kimchy node upscales the latent with: its trained network, or plain interpolation
+    // what the TJ Tiled node upscales the latent with: its trained network, or plain interpolation
     ppH3UpModel: ["bicubic", "trilinear"].includes(saved.ppH3UpModel) ? saved.ppH3UpModel : "neural",
     ppH3FinalMp: saved.ppH3FinalMp ?? 1.6,
     ppH3KimFinalMp: saved.ppH3KimFinalMp ?? 2.0,

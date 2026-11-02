@@ -391,7 +391,7 @@ function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio,
     stageModel = [N.hrMem, 0];
   }
   if (kimchy) {
-    // The Kimchy node takes the memory-optimised model without Sol-Attn and the whole stage-1 AV latent.
+    // The TJ Tiled node takes the memory-optimised model without Sol-Attn and the whole stage-1 AV latent.
     const mp = hiresMp(state).final;
     if (!(mp >= 1 && mp <= 8.5)) throw new Error("H3 Latent Upscale Tiled (TJ) supports Final MP 1.0 – 8.5.");
     g[N.hrNeg] = { class_type: "ConditioningZeroOut", inputs: { conditioning: condLink } };
@@ -423,8 +423,8 @@ function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio,
  * Postprocess → Latent Upscale (Use H3): a finished 8-step clip goes back through the last sigma interval.
  * H3 Latent Upscaler: video → VAE encode → latent upscale → the last step at the final size (the 7+1 stage 2, whole
  * picture, first and last frame as keyframes) → decode.
- * H3 Latent Upscale Tiled (TJ): video → VAE encode → one step at the clip's own size (whole picture, keyframes) → Kimchy
- * (upscale, then its tile step) → decode. The Kimchy node cuts the picture into tiles and a keyframe block cannot be
+ * H3 Latent Upscale Tiled (TJ): video → VAE encode → one step at the clip's own size (whole picture, keyframes) → TJ Tiled
+ * (upscale, then its tile step) → decode. The TJ Tiled node cuts the picture into tiles and a keyframe block cannot be
  * cut with it, so its tile step runs on the prompt alone; the step before it is what carries the images.
  * Clip audio is locked into the latent and the clip's own soundtrack passes through unchanged.
  * o = { images, audio, hasAudio, promptText, frames, srcSize: {width, height}, finalSize: {width, height}, seed }
@@ -464,7 +464,7 @@ export function addH3LastStep(g, state0, avail, o) {
   g[N.hrFirst] = { class_type: "ImageFromBatch", inputs: { image: o.images, batch_index: 0, length: 1 } };
   // ImageFromBatch clamps the index to the last frame.
   g[N.hrLast] = { class_type: "ImageFromBatch", inputs: { image: o.images, batch_index: 4095, length: 1 } };
-  // A samples once at the final size; Kimchy samples first at the clip's own size
+  // A samples once at the final size; TJ Tiled samples first at the clip's own size
   const cond1 = condAt(N.hrCond, kimchy ? o.srcSize : o.finalSize, true);
 
   g[N.hrEnc] = { class_type: "VAEEncode", inputs: { pixels: o.images, vae: [N.vaeV, 0] } };
@@ -495,14 +495,14 @@ export function addH3LastStep(g, state0, avail, o) {
     return { images: [N.hrDecode, 0], audio: o.audio };
   }
 
-  // Kimchy, step 1: the clip's own size
+  // TJ Tiled, step 1: the clip's own size
   const step1 = buildHiresStage(g, state, avail, { final: o.srcSize }, cond1, null, lockAudio,
     [N.hrAv0, 0], { scheduler: state.scheduler }, true);
   const lowSigmas = [N.hrSplit, 1];
-  // the stage model after Memory Optimization (no Sol-Attn), as the Kimchy node takes it
+  // the stage model after Memory Optimization (no Sol-Attn), as the TJ Tiled node takes it
   const memModel = state.hiresNoOpt ? [N.hrShift, 0] : [N.hrMem, 0];
 
-  // Kimchy, step 2: it upscales and samples tile by tile, so its prompt stands alone
+  // TJ Tiled, step 2: it upscales and samples tile by tile, so its prompt stands alone
   const cond2 = condAt(N.hrCond2, o.finalSize, false);
   g[N.hrNeg] = { class_type: "ConditioningZeroOut", inputs: { conditioning: cond2 } };
   const mp = hiresMp(state).final;
@@ -1008,7 +1008,7 @@ export function buildClipGraph(state, avail, opts = {}) {
   // so stage 2 (a bigger latent) needs its own copy built at the final size. Plain text
   // conditioning carries no image tokens and is shared.
   const mode = state.generationMode || "t2v";
-  // The Kimchy upscaler samples the picture in tiles, and a First/Last keyframe is a full-picture token block
+  // The TJ Tiled upscaler samples the picture in tiles, and a First/Last keyframe is a full-picture token block
   // that cannot be cut into tiles, so for it stage 2 gets the prompt alone.
   const kimFl = hires && state.hiresUpscaler === "kimchy" && mode === "firstlast";
   const hrCond = hires && (mode === "reference" || kimFl
