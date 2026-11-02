@@ -5082,16 +5082,21 @@ app.registerExtension({
             // (a rebuild put the column back at the top while you were typing).
             const hiresText = () => {
               const hs = hiresSizes(state);
-              const k = hiresSplitStep(state);
-              return `${hs.start.width}×${hs.start.height} → ${hs.final.width}×${hs.final.height} (×${hs.scale}) · ${k} small + ${8 - k} full step${8 - k > 1 ? "s" : ""}`;
+              return `${hs.start.width}×${hs.start.height} → ${hs.final.width}×${hs.final.height} (×${hs.scale})`;
             };
             const hiresLine = el("div", { text: hiresText(), style: { fontSize: "10px", color: C.muted } });
+            // the 8 turbo steps are split in two: the LOW Sigma steps are typed in, the HIGH Sigma steps are 8 minus that
+            const highText = () => {
+              const high = 8 - hiresSplitStep(state);
+              return `HIGH Sigma: ${high} step${high > 1 ? "s" : ""} (8 − LOW) — the latent upscale runs here, then these steps at Final MP`;
+            };
+            const highLine = el("div", { text: highText(), style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } });
             const hiresRows = () => [
               checkboxRow("Split Sigma", !!state.hiresFinish, v => {
                 state.hiresFinish = v;
                 persist(); renderLeft(); refreshPlan();
               }, { title: "Run the first steps small, scale the latent up, then run the remaining steps at full size." }),
-              el("div", { text: "Needs an 8-step turbo: the Turbo LoRA above, or Turbo None with an 8-step checkpoint. Steps are fixed at 8: the Split Sigma step runs small, the rest at full size (7 is recommended).",
+              el("div", { text: "Needs an 8-step turbo: the Turbo LoRA above, or Turbo None with an 8-step checkpoint. Steps are fixed at 8: LOW Sigma steps run small, the HIGH Sigma steps (8 − LOW) run after the latent upscale (7 LOW is recommended).",
                 style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
               ...(hiresOn ? [
                 (() => {
@@ -5125,9 +5130,10 @@ app.registerExtension({
                   ]);
                 })(),
                 ...(state.hiresUpscaler === "kimchy" ? [] : [
-                  col([label("Split Sigma step (1~7, 7 recommended)"), numberField(hiresSplitStep(state),
-                    v => { state.hiresSplitStep = Math.min(7, Math.max(1, Math.round(v))); persist(); hiresLine.textContent = hiresText(); refreshPlan(); }, 1)]),
+                  col([label("LOW Sigma step (1~7, 7 recommended)"), numberField(hiresSplitStep(state),
+                    v => { state.hiresSplitStep = Math.min(7, Math.max(1, Math.round(v))); persist(); highLine.textContent = highText(); refreshPlan(); }, 1)]),
                 ]),
+                highLine,
                 checkboxRow("Bypass H3 Memory Optimization on the last step", !!state.hiresNoOpt, v => {
                   state.hiresNoOpt = v; persist(); renderLeft();
                 }, { title: "Skip only the H3 Memory Optimization node on the last (large) step. Sol-Attn stays on. Use it if the last step fails with a shape error." }),
