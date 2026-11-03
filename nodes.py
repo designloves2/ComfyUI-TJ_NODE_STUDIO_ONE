@@ -2198,8 +2198,8 @@ def _hook_textgenerate_progress(progress):
 
     def hook(value, total, preview_image=None, node_id=None):
         if _threading.get_ident() == thread:
-            progress.tick(value, total)
-        if previous is not None:
+            progress.tick(value, total)        # our own route call: not a queued node, ComfyUI's hook (needs a running prompt id) is skipped
+        elif previous is not None:
             previous(value, total, preview_image, node_id=node_id)
 
     _cu.set_progress_bar_global_hook(hook)
