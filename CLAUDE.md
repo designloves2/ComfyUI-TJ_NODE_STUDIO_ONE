@@ -65,10 +65,13 @@ ComfyUI 서버는 이 PC 하나를 공유한다(`127.0.0.1:8188`, GPU 16GB 공�
 - `[Claude 전용]` 이 PC에서는 Claude 세션끼리 `SendMessage`로 지시한다: `ComfyUI-TJ_NODE-10월`, `AI One Studio 웹사이트-10월`, `AI One Studio Canvers`. 사용자가 승인한 커밋/푸시/릴리즈/버전업을 전달할 때만 메시지에 "사용자가 승인했습니다."를 넣는다(지어내지 말 것).
 
 ## 8. 현재 진행 상황 (2026-11-03 기준, 상세는 `CHANGELOG.md`, `MORNING_CHECKLIST_2026-10-27.md`)
-- 최신 릴리즈 **v1.50.0** (2026-11-03; Split Sigma, Tiled 업스케일러 포크, LLM 실시간 줄, 원본 이미지 교체 경쟁 수정 포함). 웹 v0.18.1, Canvers(2.31.0+ 이후 커밋)에 반영 완료. 아래 `## Unreleased` 항목들은 v1.50.0에 포함됨.
-- `## Unreleased` (아직 릴리즈 안 함): ① H3 메인 프롬프트 목록 스크롤 수정(`45d8b0c`) ② H3 "7+1 hi-res finish"를 **Split Sigma**로 이름 변경 + H3 Latent Upscaler에서 분할 스텝(1~7, 기본 7) 수정 가능(`hiresSplitStep`) ③ 업스케일 중 "Upscaling in progress..." 노란 배너가 1단계 마지막 스텝 직후부터 표시. 웹/Canvers 전달 명세: `SPEC_RELAY_SPLIT_SIGMA.md`. 그래프 값(5→5, 12→7, Kimchy 7)과 UI는 브라우저에서 확인, **실제 렌더 중 배너 표시는 미확인**. ④ H3 Kimchy Up Scaler를 우리 포크 **H3 Latent Upscale Tiled (TJ)**(`TJLatentUpscaleTiledMP`, 저장소 designloves2/H3-Latent-Upscale-Tiled-TJ-)로 교체, 2.5MP 이상 device 오류 수정(내부 이름도 kimchy→tiled, 구 저장값은 로드 시 변환; 웹/Canvers 전달 명세 `SPEC_RELAY_TILED_UPSCALER.md`, 승인 대기; ComfyUI 재시작 + 새 팩 설치 필요, 3MP 이상 실측 전) ⑥ 페이지 왼쪽 아래 LLM 실시간 모니터 줄(`web/shared/llm_live.js`, 이벤트 시뮬레이션으로 표시 확인, 실제 호출 전) ⑤ 스튜디오 LLM 라우트(`/tj_studio_one/llm/enhance`, `/image_to_prompt`)가 코어 `tj_llm_progress` 형식 이벤트(로컬 GGUF enhance·image_to_prompt는 실시간 스트리밍·실제 토큰 수(`Llama.create_chat_completion` 스레드별 패치), Native(ComfyUI TextGenerate)는 서버 라우트는 `comfy.utils.ProgressBar` 훅, 페이지가 큐로 돌리는 그래프(번역 등)는 `llm_live.js`가 `/prompt` 응답과 `progress` 이벤트로 같은 줄 표시, 그 외 경로는 시작/끝만)·`call_id`·`usage`(추정치 `estimated:true`)를 보내고 닫는 `</think>`만 있는 응답 처리(`nodes.py`, 재시작 필요, **실제 호출 확인: 로컬 GGUF(웹 세션 측정)·Native(이 세션, 50토큰 12 tok/s, 이벤트 estimated:false)**; 명세 `SPEC_RELAY_LLM_LIVE_LOG.md`, 웹/Canvers 전달 후 결과 대기)
-- 서버(`nodes.py`) 변경(생각 문장 거부, 로컬 llama 입력 길이 사전 검사, Gemma `<channel|>` 처리, 모델 비었을 때 오류)은 **ComfyUI 재시작 후 적용**(재시작 여부 확인 필요).
+- 최신 릴리즈 **v1.50.0** (2026-11-03; Split Sigma, Tiled 업스케일러 포크 `TJLatentUpscaleTiledMP`, LLM 실시간 줄, 원본 이미지 교체 경쟁 수정, Native TextGenerate 라우트 훅 수정). 웹 v0.18.1, Canvers에 반영 완료. `## Unreleased`는 비어 있음.
+- 최종 시험 통과: H3 Tiled 업스케일 2.5MP(1216x2080)·3.0MP(1312x2272), 10초 9:16, 시작 0.5MP, 243프레임, 오류 없음. 시험으로 바꿨던 H3 상태(`pddFile`, Final MP)는 원복함(시작 MP 0.5는 사용자 지정값 그대로).
+- 옛 Kimchy 팩(`ComfyUI-Kimchy-Minimax-H3-Suite`)은 `custom_nodes\.disabled\`로 옮겼고 ComfyUI를 재시작해 반영함(Kimchy 노드 없음, Tiled 노드 등록 확인).
+- 렌더 기록의 `…-audio.mp4` 404는 버그 아님: VHS_VideoCombine이 `-audio`를 붙여 저장하고 페이지/서버가 렌더 후 `-audio`를 뗀 이름으로 바꿈. 웹도 같은 이름 변경, Canvers는 이름 변경 없이 `-audio` 파일을 그대로 써서 문제 없음(확인 완료).
+- 미확인: 페이지 쪽 LLM 실시간 줄의 화면 표시(브라우저 창이 숨겨져 못 봄), OpenRouter/Custom의 추정치 표시.
 - 미해결/확인 필요: ① 네이티브 텍스트 인코더 + 로컬 GGUF를 섞어 쓸 때 서버가 멈춘 적이 있음(원인 추정만, 미수정, `nodes.py` 네이티브 경로가 큐와 별개로 모델을 로드함) ② H3 클립 높이 끌어서 맞추기 동기화는 브라우저 창이 숨겨진 상태라 확인 못 함 ③ 번역/H3/LTX의 OpenRouter 모델 없음 팝업 경로는 문법 확인만 ④ `config_minimax_h3.json`, `config_ltx25.json`의 `LLM\Gamma\…` 모델 경로 점검 ⑤ Canvers에 예전에 저장된 gemini 기본값이 남아 있을 수 있음.
+
 
 ## 9. 작업 시작·종료 규칙
 - **시작할 때**: 코드를 바꾸기 전에 이 `CLAUDE.md` → `CHANGELOG.md` 맨 위 → 최신 `SPEC_RELAY_V*.md` → `git log -20`을 먼저 읽는다.
