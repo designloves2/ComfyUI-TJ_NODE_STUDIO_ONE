@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+---
+
+## v1.50.0
+
 - **LLM live monitor on the page.** A small line at the bottom-left shows every running LLM call from the `tj_llm_progress` events: backend, model, phase (reading input / thinking / writing / done / error), token count, tok/s and seconds, `~` for estimated counts, a note when the answer was cut off (max tokens) and when a streaming call is quiet for 30 s. Loaded by the shared LLM panel and the H3 and LTX nodes (`web/shared/llm_live.js`). Page refresh only; the local GGUF numbers need the server restart above.
 - **Fix: replacing an image while its missing-file check was pending no longer clears the new image.** The 404 check on a saved source image (Z-Image, Klein, Qwen Image Edit 2511, Krea2, SDXL, Anima) now ignores its result if the slot was replaced meanwhile, so I2I no longer fails with 'No source image uploaded.' Reload the page.
 - **Fix: Native (ComfyUI TextGenerate) studio route no longer errors with `'PromptServer' object has no attribute 'last_prompt_id'`.** The progress hook called ComfyUI's own hook for the route's own thread, which needs a running queued prompt; now it is skipped there. Needs a ComfyUI restart.
