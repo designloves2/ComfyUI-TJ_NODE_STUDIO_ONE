@@ -37,7 +37,7 @@ ComfyUI 서버는 이 PC 하나를 공유한다(`127.0.0.1:8188`, GPU 16GB 공�
   - Python 문법: `python -c "import ast;ast.parse(open('nodes.py',encoding='utf-8').read())"`.
   - 동작: ComfyUI 프런트엔드(브라우저)에서 실제 노드를 만들어 확인. `web/` 변경은 새로고침, `nodes.py` 변경은 서버 재시작 필요.
 - ComfyUI 재시작(기본): `POST /api/manager/reboot` (브라우저 fetch는 "Failed to fetch"가 정상 신호). 재시작 전 `GET /queue`가 비어 있는지 확인(렌더 중 금지).
-- 서버가 죽었다고 의심되면(8188 무응답): 8188 프로세스를 종료하고 `ComfyUI.bat`으로 다시 실행. 로컬 GGUF(llama) 호출이 **5분을 넘기면 멈춘 것**으로 보고 중단/재실행.
+- 서버가 죽었다고 의심되면(8188 무응답): 8188 프로세스를 종료하고 `ComfyUI.bat`으로 다시 실행. (옛 "로컬 LLM 5분 넘으면 멈춤" 규칙은 폐기 — 시간이 아니라 왼쪽 아래 LLM 실시간 줄의 토큰 수 증가로 판단.)
 
 ## 5. 코딩 규칙 (이 저장소에서 지켜 온 것)
 - 작게, 필요한 곳만 고친다. 기존 노드 이름·상태 키·워크플로 호환을 유지한다.
