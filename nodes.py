@@ -854,7 +854,7 @@ def _make_discard_input_handler(prefix):
     async def handler(request):
         data = await request.json()
         filename = os.path.basename(data.get("filename", "") or "")
-        if not filename.startswith(f"{prefix}_"):
+        if not re.match(rf"^{re.escape(prefix)}_(?:seed_)?[0-9a-f]{{8}}[_.]", filename):   # the names copy_to_input / clip_last_frame mint
             return web.json_response({"ok": False, "error": "not a copied file"}, status=400)
         try:
             path = _safe_resolve_path(folder_paths.get_input_directory(), "", filename)
@@ -6547,6 +6547,10 @@ LTX25_OPTIONAL_NODES = [
     "VHS_VideoCombine", "CreateVideo", "SaveVideo", "UnetLoaderGGUF", "TJ_LTX25ClipLoaderGGUF", "LTXVChunkFeedForward",
     "LTX2MemoryEfficientSageAttentionPatch", "PathchSageAttentionKJ", "ModelPreviewOverrideKJ", "ModelAttentionBackend",
     "SolAttnPatch", "TJ_FreeTextEncoderVRAM", "TJ_RTXDeblur",
+    # gallery upscale / interpolate / resize and the Postprocess mode check these by name (graph_builder_ltx25.js,
+    # ui_gallery_ltx25.js); with them missing here every one of those threw "... is not installed" on a machine that had them
+    "RTXVideoSuperResolution", "FlashVSRInitPipe", "FlashVSRNodeAdv", "RIFEInterpolation", "TJ_VideoResize",
+    "TJ_NODE_RTXVSR", "TJ_NODE_RTXDenoise", "TJ_SkinRetouch", "GLSLShader", "SplitImageWithAlpha",
 ]
 
 

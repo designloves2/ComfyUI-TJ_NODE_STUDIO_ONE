@@ -7,7 +7,7 @@
 //
 // Optional third-party nodes are gated on `avail` (from /minimax_h3_one/node_availability):
 // a missing pack disables that one feature rather than failing the whole prompt.
-import { SUBFOLDER, FPS, resolveResolution, computeRtxTarget, effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, hiresMp, hiresSplitStep, turboLoraForMode, pddFileForMode, blockCacheBlockedReason, h3OptimizerBlockedReason, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES } from "./core_minimax.js";
+import { SUBFOLDER, FPS, resolveResolution, computeRtxTarget, effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, hiresMp, hiresSplitStep, turboLoraForMode, pddFileForMode, blockCacheBlockedReason, h3OptimizerBlockedReason, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES, randomSeed} from "./core_minimax.js";
 
 // Builds the RTXVideoSuperResolution node (+ an optional ImageCrop node ahead of it for
 // the "wh" size mode's forced crop, per computeRtxTarget) and returns the final image
@@ -157,6 +157,8 @@ function saveVideoNode(g, ids, images, audio, fps, filenamePrefix, avail, previe
 // overlap/seed/seed control); everything else below is fixed at the values from the
 // shipped API workflow ([TJ]FlashVSR-Upscale.json) and never surfaced.
 function buildFlashVSR(g, pipeId, nodeId, p, images) {
+  // Seed 0 means random: draw it here and write it back, so flashvsrUsed() records the seed that actually ran.
+  if (p.seed === 0 || p.seed === "0") p.seed = randomSeed();
   g[pipeId] = { class_type: "FlashVSRInitPipe", inputs: {
     model: p.model || "FlashVSR-v1.1",
     mode: p.mode || "tiny",

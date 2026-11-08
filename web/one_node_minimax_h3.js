@@ -22,7 +22,7 @@ import {
   TURBO_MODES, ATTN_BACKENDS, ATTN_FORWARDS, BLOCK_CACHES, H3_OPTIMIZERS, FBC_MODES,
   attnBlockedReason, attnForwardBlockedReason, attnForwardOverlapNote, blockCacheBlockedReason,
   h3OptimizerBlockedReason, h3OptimizerOverlapNote,
-  effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, hiresMp, hiresSplitStep, sizeForMp, ppH3State, ppH3Kind, PP_H3_UP_MODELS, tiledTileCount, migrateLegacyAccel,
+  effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, hiresMp, hiresMpTyped, hiresSplitStep, sizeForMp, ppH3State, ppH3Kind, PP_H3_UP_MODELS, tiledTileCount, migrateLegacyAccel,
   continuityModesFor, generationModesFor, configIssues, ltxUpscaleReady, ltxUpscaleMissing,
   faceRefineReady, faceRefineMissing, postprocessReady, IMAGE_GEN_MODES, imageGenSubModeReady,
   CHARSHEET_PROMPT_TEMPLATE,
@@ -5083,7 +5083,9 @@ app.registerExtension({
             // (a rebuild put the column back at the top while you were typing).
             const hiresText = () => {
               const hs = hiresSizes(state);
-              return `${hs.start.width}×${hs.start.height} → ${hs.final.width}×${hs.final.height} (×${hs.scale})`;
+              const typed = hiresMpTyped(state);
+              return `${hs.start.width}×${hs.start.height} → ${hs.final.width}×${hs.final.height} (×${hs.scale})`
+                + (typed.final < typed.start ? " — Final MP is below Start MP, so it is raised to Start MP" : "");
             };
             const hiresLine = el("div", { text: hiresText(), style: { fontSize: "10px", color: C.muted } });
             // the 8 turbo steps are split in two: the LOW Sigma steps are typed in, the HIGH Sigma steps are 8 minus that
@@ -5141,9 +5143,9 @@ app.registerExtension({
                   state.hiresNoOpt = v; persist(); renderLeft();
                 }, { title: "Skip only the H3 Memory Optimization node on the last (large) step. Sol-Attn stays on. Use it if the last step fails with a shape error." }),
                 row([
-                  col([label("Start MP"), numberField(hiresMp(state).start,
+                  col([label("Start MP"), numberField(hiresMpTyped(state).start,
                     v => { state[state.hiresUpscaler === "tiled" ? "hiresTiledStartMp" : "hiresStartMp"] = Math.max(0.1, v); persist(); hiresLine.textContent = hiresText(); refreshPlan(); }, 0.1)]),
-                  col([label("Final MP"), numberField(hiresMp(state).final,
+                  col([label("Final MP"), numberField(hiresMpTyped(state).final,
                     v => { state[state.hiresUpscaler === "tiled" ? "hiresTiledFinalMp" : "hiresFinalMp"] = Math.max(0.1, v); persist(); hiresLine.textContent = hiresText(); refreshPlan(); }, 0.1)]),
                 ]),
                 col([label("Activation chunk rows"), numberField(state.hiresChunkRows ?? 2048,

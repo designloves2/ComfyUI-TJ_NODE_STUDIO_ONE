@@ -550,7 +550,7 @@ export function createGalleryOverlay(state, ctx) {
   fvsrTileIn.value = String(state.flashvsrTileSize ?? 384);
   const fvsrOverlapIn = el("input", { type: "number", min: "8", max: "512", step: "8", style: smallInput("48px") });
   fvsrOverlapIn.value = String(state.flashvsrTileOverlap ?? 32);
-  const fvsrSeedIn = el("input", { type: "number", step: "1", style: smallInput("84px") });
+  const fvsrSeedIn = el("input", { type: "number", step: "1", title: "0 = random seed", style: smallInput("84px") });
   fvsrSeedIn.value = String(state.flashvsrSeed ?? 42);
   const fvsrSeedModeSel = el("select", { style: smallSelect("62px") },
     [{ v: "randomize", t: "Random" }, { v: "fixed", t: "Fixed" }, { v: "increment", t: "+1" }, { v: "decrement", t: "-1" }]
@@ -1101,7 +1101,7 @@ export function createGalleryOverlay(state, ctx) {
       colorFix: fvsrColorFixCb.checked,
       tileSize: Math.min(1024, Math.max(32, parseInt(fvsrTileIn.value, 10) || 384)),
       tileOverlap: Math.min(512, Math.max(8, parseInt(fvsrOverlapIn.value, 10) || 32)),
-      seed: parseInt(fvsrSeedIn.value, 10) || 42,
+      seed: (n => Number.isFinite(n) ? n : 42)(parseInt(fvsrSeedIn.value, 10)),   // 0 is kept: it means random
     } : null;
     const rtxSizeMode = rtxSizeModeSel.value;
     // This file's own probed resolution — Short/Long/W×H each compute against it, not a

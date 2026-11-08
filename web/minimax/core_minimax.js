@@ -446,6 +446,13 @@ export function sizeForMp(srcW, srcH, mp) {
 
 /** Start / Final MP of the selected 7+1 upscaler — A and B keep separate values. */
 export function hiresMp(state) {
+  const typed = hiresMpTyped(state);
+  // A Final MP under Start MP would make the "upscale" shrink the picture: use Start MP instead (the typed value stays in state).
+  return { start: typed.start, final: Math.max(typed.final, typed.start) };
+}
+
+/** Start / Final MP exactly as typed, for the input fields and the "raised to Start MP" note. */
+export function hiresMpTyped(state) {
   return state.hiresUpscaler === "tiled"
     ? { start: state.hiresTiledStartMp ?? 0.5, final: state.hiresTiledFinalMp ?? 2.0 }
     : { start: state.hiresStartMp ?? 0.7, final: state.hiresFinalMp ?? 1.6 };

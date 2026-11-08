@@ -65,12 +65,12 @@ ComfyUI 서버는 이 PC 하나를 공유한다(`127.0.0.1:8188`, GPU 16GB 공�
 - `[Claude 전용]` 이 PC에서는 Claude 세션끼리 `SendMessage`로 지시한다: `ComfyUI-TJ_NODE-10월`, `AI One Studio 웹사이트-10월`, `AI One Studio Canvers`. 사용자가 승인한 커밋/푸시/릴리즈/버전업을 전달할 때만 메시지에 "사용자가 승인했습니다."를 넣는다(지어내지 말 것).
 
 ## 8. 현재 진행 상황 (2026-11-03 기준, 상세는 `CHANGELOG.md`, `MORNING_CHECKLIST_2026-10-27.md`)
-- 최신 릴리즈 **v1.50.0** (2026-11-03; Split Sigma, Tiled 업스케일러 포크 `TJLatentUpscaleTiledMP`, LLM 실시간 줄, 원본 이미지 교체 경쟁 수정, Native TextGenerate 라우트 훅 수정). 웹 v0.18.1, Canvers에 반영 완료. `## Unreleased`는 비어 있음.
+- 최신 릴리즈 **v1.50.1** (2026-11-08; 전체 점검 수정 모음: 설정 파일 원자적 쓰기, ffmpeg 호출 executor화, 리사이즈·원본저장 설정 유지, 따옴표 안 @토큰 번역, LTX25 가용성 목록 누락 9개, Split Sigma Final<Start 보정, FlashVSR 시드 0=무작위, `discard_input` 강화). 직전 v1.50.0은 Split Sigma, Tiled 업스케일러 포크 `TJLatentUpscaleTiledMP`, LLM 실시간 줄, 원본 이미지 교체 경쟁 수정. 웹 v0.18.5 이후, Canvers는 위 변경 중 서버 쪽(LTX25 가용성 등)만 공유됨. `## Unreleased`는 비어 있음.
 - 최종 시험 통과: H3 Tiled 업스케일 2.5MP(1216x2080)·3.0MP(1312x2272), 10초 9:16, 시작 0.5MP, 243프레임, 오류 없음. 시험으로 바꿨던 H3 상태(`pddFile`, Final MP)는 원복함(시작 MP 0.5는 사용자 지정값 그대로).
 - 옛 Kimchy 팩(`ComfyUI-Kimchy-Minimax-H3-Suite`)은 `custom_nodes\.disabled\`로 옮겼고 ComfyUI를 재시작해 반영함(Kimchy 노드 없음, Tiled 노드 등록 확인).
 - 렌더 기록의 `…-audio.mp4` 404는 버그 아님: VHS_VideoCombine이 `-audio`를 붙여 저장하고 페이지/서버가 렌더 후 `-audio`를 뗀 이름으로 바꿈. 웹도 같은 이름 변경, Canvers는 이름 변경 없이 `-audio` 파일을 그대로 써서 문제 없음(확인 완료).
 - 미확인: 페이지 쪽 LLM 실시간 줄의 화면 표시(브라우저 창이 숨겨져 못 봄), OpenRouter/Custom의 추정치 표시.
-- 전체 점검(2026-11-08): 문법·가져오기·서버 경로·GET 120개·그래프 구조(H3 144조합, 후처리 129, 이미지 8노드 전 모드, LTX25, Music)·12노드 렌더 모두 이상 없음. 고친 것(`Unreleased`, 서버 재시작 필요): 따옴표 안 @토큰 번역 거부(`shared/bilingual.js`), 설정 파일 원자적 쓰기+깨진 파일 사본 보존(`_atomic_write_json`/`_load_config`), async 핸들러의 ffmpeg/ffprobe 호출을 executor로(`_subprocess_run`), H3·LTX25 `resize*`·`saveUnprocessed`·H3 `imageGenMode`를 `defaultState`에 추가. 남은 것: `discard_input`이 접두사만 검사(낮음), `sla_turbo_lora` 설정 파일명이 이 PC에 없음(데이터), 추적 중인 `config_*.json` 7개가 사용자 데이터로 수정된 채 `git status`에 보임, 웹에만 들어간 변경(Split Sigma Final MP<Start MP 보정, FlashVSR 시드 0=무작위)은 노드에 미반영(사용자 결정 대기).
+- 전체 점검(2026-11-08): 문법·가져오기·서버 경로·GET 120개·그래프 구조(H3 144조합, 후처리 129, 이미지 8노드 전 모드, LTX25, Music)·12노드 렌더 점검 후 v1.50.1로 수정 완료. 남은 것: `sla_turbo_lora` 설정 파일명이 이 PC에 없음(데이터), 추적 중인 `config_*.json` 7개가 사용자 데이터로 수정된 채 `git status`에 보임(커밋 금지, `git add <파일>`만).
 - 미해결/확인 필요: ① 네이티브 텍스트 인코더 + 로컬 GGUF를 섞어 쓸 때 서버가 멈춘 적이 있음(원인 추정만, 미수정, `nodes.py` 네이티브 경로가 큐와 별개로 모델을 로드함) ② H3 클립 높이 끌어서 맞추기 동기화는 브라우저 창이 숨겨진 상태라 확인 못 함 ③ 번역/H3/LTX의 OpenRouter 모델 없음 팝업 경로는 문법 확인만 ④ `config_minimax_h3.json`, `config_ltx25.json`의 `LLM\Gamma\…` 모델 경로 점검 ⑤ Canvers에 예전에 저장된 gemini 기본값이 남아 있을 수 있음.
 
 
