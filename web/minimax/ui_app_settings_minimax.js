@@ -8,6 +8,7 @@ import { customLLMControls } from "../shared/custom_llm_controls.js";
 import { getTranslateConfig, loadTranslateConfig, onTranslateConfig, setTranslateConfig } from "../shared/translate_config.js";
 import { mountLLMSettingsSection } from "../shared/llm_panel.js";
 import { useKoCheckbox } from "../shared/ko_setting.js";
+import { mountColorsPanel } from "../shared/ui_theme_dialog.js";
 
 function searchableSelect(options, value, onChange) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } });
@@ -78,7 +79,7 @@ export function createSettingsOverlay(state, ctx) {
   ov.appendChild(topRow);
 
   // ── tab bar ────────────────────────────────────────────────────────────────
-  const TABS = ["H3 Model", "UpScale Model", "FaceRefine Model", "LLM Setting", "Image LLM", "Translation LLM", "Preview", "Output"];
+  const TABS = ["H3 Model", "UpScale Model", "FaceRefine Model", "LLM Setting", "Image LLM", "Translation LLM", "Preview", "Output", "Node Skin"];
   let activeTab = "H3 Model";
   const tabBar = el("div", { style: { display: "flex", gap: "6px", flexShrink: "0" } });
   const bodyWrap = el("div", { style: { flex: "1", overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px", paddingRight: "4px" } });
@@ -854,9 +855,13 @@ export function createSettingsOverlay(state, ctx) {
     return el("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } }, [panel([holder])]);
   }
 
+  // the node's own skin (title bar, body, key color), saved for this node only
+  function colorsTab() { const box = el("div"); mountColorsPanel(box, "minimax_h3"); return box; }
+
   function renderBody() {
     clear(bodyWrap);
     const fn = {
+      "Node Skin": colorsTab,
       "H3 Model": h3ModelTab, "UpScale Model": upscaleModelTab, "FaceRefine Model": faceRefineModelTab,
       "LLM Setting": samplingTab, "Image LLM": imageLlmTab, "Translation LLM": translationTab, Preview: previewTab, Output: outputTab,
     }[activeTab];

@@ -6,6 +6,7 @@ import { panel, label, button, numberField, row, col } from "../klein/ui_common.
 import { getModels, getConfig, saveConfig, getNodeAvailability, listVideos, getTempSize, clearTempFiles } from "./api_ltx25.js";
 import { customLLMControls } from "../shared/custom_llm_controls.js";
 import { translationSettingsPanel } from "../shared/translation_settings.js";
+import { mountColorsPanel } from "../shared/ui_theme_dialog.js";
 
 function searchableSelect(options, value, onChange) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } });
@@ -76,7 +77,7 @@ export function createSettingsOverlay(state, ctx) {
   ov.appendChild(topRow);
 
   // ── tab bar ────────────────────────────────────────────────────────────────
-  const TABS = ["LTX Model", "LLM Setting", "Translation LLM", "Preview", "Output"];
+  const TABS = ["LTX Model", "LLM Setting", "Translation LLM", "Preview", "Output", "Node Skin"];
   let activeTab = "LTX Model";
   const tabBar = el("div", { style: { display: "flex", gap: "6px", flexShrink: "0" } });
   const bodyWrap = el("div", { style: { flex: "1", overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px", paddingRight: "4px" } });
@@ -607,6 +608,8 @@ export function createSettingsOverlay(state, ctx) {
   function renderBody() {
     clear(bodyWrap);
     const fn = {
+      // the node's own skin (title bar, body, key color), saved for this node only
+      "Node Skin": () => { const box = el("div"); mountColorsPanel(box, "ltx25"); return box; },
       "LTX Model": ltxModelTab,
       "LLM Setting": samplingTab, Preview: previewTab, Output: outputTab,
       "Translation LLM": () => translationSettingsPanel({ bg: C.bg2, text: C.text, border: C.border, muted: C.muted, warn: C.warn, ok: C.ok, err: C.err, brand: BRAND }, "ltx25"),

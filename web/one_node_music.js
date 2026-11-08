@@ -16,6 +16,7 @@ import { fetchAllPages } from "./shared/fetch_all_pages.js";
 import { customLLMControls } from "./shared/custom_llm_controls.js";
 import { buildMusicGraph, effectiveDuration } from "./music/graph_builder_music.js";
 import { openPianoRoll } from "./music/ui_piano_roll.js";
+import { mountColorsPanel } from "./shared/ui_theme_dialog.js";
 import { melodySeconds } from "./music/melody_core.js";
 import { openImageGalleryPicker } from "./shared/ui_image_gallery_picker.js";
 import { attachSensitiveToggle, mediaKey } from "./shared/ui_sensitive_media.js";
@@ -1996,8 +1997,8 @@ app.registerExtension({
         settingsEl.appendChild(hd);
 
         const tabs = el("div", { className: "mmm-tabs" });
-        [["minimax", "MiniMax Music 3"], ["acestep", "Ace-Step 1.5"], ["yue2", "YuE2"], ["llm", "LLM"]].forEach(([k, lbl]) => {
-          tabs.appendChild(el("button", { text: lbl, className: setTab === k ? "on" : "", onclick: () => { setTab = k; renderTab(cfg, m); [...tabs.children].forEach((c, i) => c.classList.toggle("on", ["minimax", "acestep", "yue2", "llm"][i] === k)); }}));
+        [["minimax", "MiniMax Music 3"], ["acestep", "Ace-Step 1.5"], ["yue2", "YuE2"], ["llm", "LLM"], ["colors", "Node Skin"]].forEach(([k, lbl]) => {
+          tabs.appendChild(el("button", { text: lbl, className: setTab === k ? "on" : "", onclick: () => { setTab = k; renderTab(cfg, m); [...tabs.children].forEach((c, i) => c.classList.toggle("on", ["minimax", "acestep", "yue2", "llm", "colors"][i] === k)); }}));
         });
         settingsEl.appendChild(tabs);
 
@@ -2028,7 +2029,9 @@ app.registerExtension({
 
       async function renderTab(cfg, m) {
         const b = settingsEl._body; clear(b);
-        if (setTab === "minimax") {
+        if (setTab === "colors") {
+          mountColorsPanel(b, "music");     // the node's own skin (title bar, body, key color), saved for this node only
+        } else if (setTab === "minimax") {
           b.appendChild(setNote("MiniMax Music 3 — ComfyUI native. Pick the 3 models."));
           b.appendChild(setSelectRow("DiT (diffusion model)", "dit", m.diffusion_models, cfg.dit));
           b.appendChild(setSelectRow("Text encoder", "clip", m.text_encoders, cfg.clip));

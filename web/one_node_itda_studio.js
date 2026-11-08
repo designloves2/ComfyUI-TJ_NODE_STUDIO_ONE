@@ -415,10 +415,14 @@ app.registerExtension({
           `<div class="modal-grid">
             <label>Gallery Path</label>
             <input id="appSettingsGalleryDir" type="text" placeholder="output/[Enter folder name]" value="${(settings.gallery_dir || "").replace(/"/g, "&quot;")}">
+            <label>Node Skin</label>
+            <button id="appSettingsColors" type="button">🎨 Customize Node Skin…</button>
           </div>
           <p class="muted">Where "⏺ Render" and "🖼 Gallery" store/read rendered timelines. Leave blank for the default location.</p>`,
           `<button id="appSettingsApply">Apply</button><button id="modalOk">Close</button>`
         );
+        const colorsBtn = root.querySelector("#appSettingsColors");
+        if (colorsBtn) colorsBtn.onclick = () => import("./shared/ui_theme_dialog.js").then(m => m.openThemeDialog("itda"));
         const applyBtn = root.querySelector("#appSettingsApply");
         if (applyBtn) applyBtn.onclick = async () => {
           const v = root.querySelector("#appSettingsGalleryDir")?.value?.trim() || "";

@@ -6449,6 +6449,109 @@ class ItdaStudioOneTJNode:
         return float("nan")
 
 
+# ── ONE STUDIO Node Skin: colors per node kind, and a skin library shared by every node ─────────────────────────────────
+# What the user set in each node's Settings > Node Skin, kept here so every browser shows the same look. The page does the work
+# (web/studio_theme.js); this only stores and returns it:
+#   {"nodes": {<node kind>: {title, node, highlight, roles, saved, updated}}, "skins": [{name, title, node, highlight, roles, updated}]}
+# `roles` are the colors set one by one: the real (canvas) node - frame, title text, title dot - and what is inside it - text, text field, panel,
+# border ...; a skin is a named copy of the colors that any node can load.
+THEME_CONFIG_PATH = os.path.join(NODE_DIR, "config_theme.json")
+THEME_NODE_KEYS = ("klein", "zimage", "krea2", "qwen2511", "qwen21", "sdxl", "minimax_h3", "music", "anima", "moss", "itda", "ltx25")
+THEME_ROLE_KEYS = ("frame", "titleText", "titleDot", "text", "tWhite", "tLight", "tGray1", "tGray2", "muted", "tBrand", "bg1", "bg2", "bg3", "border", "borderH", "ok", "warn", "err")
+THEME_MAX_SKINS = 40
+_THEME_HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+def _theme_hex(v, default=None):
+    v = str(v or "")
+    return v.upper() if _THEME_HEX.match(v) else default
+
+
+def _clean_roles(data):
+    data = data if isinstance(data, dict) else {}
+    return {k: _theme_hex(data.get(k)) for k in THEME_ROLE_KEYS if _theme_hex(data.get(k))}
+
+
+def _clean_updated(v):
+    try:
+        return int(v or 0) or int(time.time() * 1000)
+    except (TypeError, ValueError):
+        return int(time.time() * 1000)
+
+
+def _clean_theme(data):
+    data = data if isinstance(data, dict) else {}
+    out = {"title": _theme_hex(data.get("title"), "#7612DA"), "node": _theme_hex(data.get("node"), "#0B0B0B"),
+           "highlight": _theme_hex(data.get("highlight"), "#7612DA"), "roles": _clean_roles(data.get("roles"))}
+    saved = data.get("saved") if isinstance(data.get("saved"), dict) else {}
+    out["saved"] = {}
+    for key in ("colors", "title", "node", "highlight"):
+        seen, keep = set(), []
+        for v in (saved.get(key) if isinstance(saved.get(key), list) else []):
+            v = _theme_hex(v)
+            if v and v not in seen:
+                seen.add(v)
+                keep.append(v)
+        out["saved"][key] = keep[:24]
+    out["updated"] = _clean_updated(data.get("updated"))
+    return out
+
+
+def _clean_skin(data):
+    data = data if isinstance(data, dict) else {}
+    name = str(data.get("name") or "").strip()[:40]
+    if not name:
+        return None
+    return {"name": name, "title": _theme_hex(data.get("title"), "#7612DA"), "node": _theme_hex(data.get("node"), "#0B0B0B"),
+            "highlight": _theme_hex(data.get("highlight"), "#7612DA"), "roles": _clean_roles(data.get("roles")),
+            "updated": _clean_updated(data.get("updated"))}
+
+
+def _theme_state():
+    cfg = _load_config(THEME_CONFIG_PATH)
+    cfg = cfg if isinstance(cfg, dict) else {}
+    nodes = cfg.get("nodes") if isinstance(cfg.get("nodes"), dict) else {}
+    skins = []
+    for raw in (cfg.get("skins") if isinstance(cfg.get("skins"), list) else []):
+        skin = _clean_skin(raw)
+        if skin:
+            skins.append(skin)
+    return {"nodes": {k: _clean_theme(v) for k, v in nodes.items() if k in THEME_NODE_KEYS}, "skins": skins}
+
+
+@PromptServer.instance.routes.get("/tj_studio_one/theme")
+async def studio_theme_get(request):
+    return web.json_response({"ok": True, **_theme_state()})
+
+
+@PromptServer.instance.routes.post("/tj_studio_one/theme")
+async def studio_theme_post(request):
+    """One of: {key, theme} (a node kind's colors), {skin} (save or replace a skin by name), {delete_skin: name}."""
+    try:
+        data = await request.json()
+        data = data if isinstance(data, dict) else {}
+        state = _theme_state()
+        if "skin" in data:
+            skin = _clean_skin(data.get("skin"))
+            if not skin:
+                return web.json_response({"ok": False, "error": "a skin needs a name"}, status=400)
+            state["skins"] = [x for x in state["skins"] if x["name"].lower() != skin["name"].lower()]
+            state["skins"].insert(0, skin)
+            state["skins"] = state["skins"][:THEME_MAX_SKINS]
+        elif "delete_skin" in data:
+            name = str(data.get("delete_skin") or "").strip().lower()
+            state["skins"] = [x for x in state["skins"] if x["name"].lower() != name]
+        else:
+            key = str(data.get("key") or "")
+            if key not in THEME_NODE_KEYS:
+                return web.json_response({"ok": False, "error": "unknown node kind"}, status=400)
+            state["nodes"][key] = _clean_theme(data.get("theme"))
+        _save_config(THEME_CONFIG_PATH, state)
+        return web.json_response({"ok": True, **state})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=400)
+
+
 NODE_CLASS_MAPPINGS = {
     "TJ_RTXDeblur":                TJ_RTXDeblur,
     "Flux2KleinOneTJNode":         Flux2KleinOneTJNode,
