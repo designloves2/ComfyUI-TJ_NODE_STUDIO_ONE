@@ -1813,6 +1813,19 @@ export function defaultState(saved) {
     ppInterpolateTargetFps: saved.ppInterpolateTargetFps ?? null,
     ppInterpolateScale: saved.ppInterpolateScale ?? 1.0,
     ppResizeOn: saved.ppResizeOn ?? false,
+    // The Postprocess resize panel's own settings and the "keep the un-processed clip" switch were written and persisted,
+    // but missing here, so they went back to their defaults on every reload.
+    resizeMode: saved.resizeMode || "Long side",
+    resizeUpscaleMethod: saved.resizeUpscaleMethod || "lanczos",
+    resizeTargetPx: saved.resizeTargetPx ?? 1920,
+    resizeRatioW: saved.resizeRatioW ?? 16,
+    resizeRatioH: saved.resizeRatioH ?? 9,
+    resizeMegapixels: saved.resizeMegapixels ?? 1.0,
+    resizeTargetWidth: saved.resizeTargetWidth ?? 1920,
+    resizeTargetHeight: saved.resizeTargetHeight ?? 1080,
+    resizeCropMode: saved.resizeCropMode || "crop",
+    saveUnprocessed: saved.saveUnprocessed ?? false,
+    imageGenMode: saved.imageGenMode || "t2i",
   };
 }
 

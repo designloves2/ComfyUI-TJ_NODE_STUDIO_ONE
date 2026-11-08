@@ -95,6 +95,13 @@ def _safe_resolve_output_path(output_dir, subfolder="", filename=""):
     return _safe_resolve_path(output_dir, subfolder, filename)
 
 
+async def _subprocess_run(*args, **kwargs):
+    """subprocess.run off the event loop. A probe that hangs (broken file, slow drive) used to freeze every ComfyUI
+    request until its timeout ran out."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: subprocess.run(*args, **kwargs))
+
+
 def _open_in_file_manager(args):
     """Launch a fixed, allow-listed OS file-manager command with a resolved
     absolute executable path. Never takes shell input or user-controlled
@@ -423,17 +430,61 @@ def _extract_trigger_words(header):
 # Per-node config helpers
 # ════════════════════════════════════════════════════════════════════════════════
 
-def _load_config(path):
+def _atomic_write_json(path, obj, **dump_kw):
+    """Write the JSON beside the file first, then swap it in. A crash or kill in the middle of the write used to leave a
+    truncated settings file, which the next save then replaced with defaults plus the one changed value."""
+    tmp = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(obj, f, **dump_kw)
+            f.flush()
+            os.fsync(f.fileno())
+        for attempt in range(8):          # Windows refuses the swap for a moment while another thread has the file open
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                if attempt == 7:
+                    raise
+                time.sleep(0.03 * (attempt + 1))
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+
+def _keep_unreadable_json(path, err):
+    """A settings file that exists but does not parse: keep a copy before anything saves over it."""
+    try:
+        keep = f"{path}.unreadable-{time.strftime('%Y%m%d-%H%M%S')}"
+        shutil.copy2(path, keep)
+        print(f"[TJ_STUDIO_ONE] {os.path.basename(path)} could not be read ({err}); a copy was kept as {os.path.basename(keep)}")
     except Exception:
-        return {}
+        pass
+
+
+def _load_config(path):
+    last = None
+    for attempt in range(5):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return {}
+        except ValueError as e:           # the text is not JSON: keep a copy before a save replaces it
+            _keep_unreadable_json(path, e)
+            return {}
+        except OSError as e:              # locked for a moment by a writer swapping it in: try again
+            last = e
+            time.sleep(0.03 * (attempt + 1))
+    print(f"[TJ_STUDIO_ONE] {os.path.basename(path)} could not be opened: {last}")
+    return {}
 
 
 def _save_config(path, cfg):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    _atomic_write_json(path, cfg, ensure_ascii=False, indent=2)
 
 
 # ── Favorites (per node) ──────────────────────────────────────────────────────
@@ -455,9 +506,7 @@ def _load_favorites(node_key):
 
 
 def _save_favorites(node_key, favset):
-    path = _fav_path(node_key)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(sorted(favset), f, ensure_ascii=False, indent=2)
+    _atomic_write_json(_fav_path(node_key), sorted(favset), ensure_ascii=False, indent=2)
 
 
 def _favorites_add(node_key, filename):
@@ -1393,14 +1442,9 @@ async def qe_get_config(request):
 async def qe_post_config(request):
     data = await request.json()
     try:
-        try:
-            with open(QE_CONFIG_PATH, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-        except Exception:
-            cfg = {}
+        cfg = _load_config(QE_CONFIG_PATH)
         cfg.update(data)
-        with open(QE_CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2)
+        _atomic_write_json(QE_CONFIG_PATH, cfg, indent=2)
     except Exception as e:
         return web.json_response({"ok": False, "error": str(e)})
     return web.json_response({"ok": True})
@@ -1609,14 +1653,9 @@ async def q21_get_config(request):
 async def q21_post_config(request):
     data = await request.json()
     try:
-        try:
-            with open(Q21_CONFIG_PATH, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-        except Exception:
-            cfg = {}
+        cfg = _load_config(Q21_CONFIG_PATH)
         cfg.update(data)
-        with open(Q21_CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2)
+        _atomic_write_json(Q21_CONFIG_PATH, cfg, indent=2)
     except Exception as e:
         return web.json_response({"ok": False, "error": str(e)})
     return web.json_response({"ok": True})
@@ -2763,7 +2802,7 @@ async def mmh3_get_thumb(request):
         cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
                "-i", vpath, "-frames:v", "1", "-vf", "scale=320:-2", thumb_path]
         try:
-            proc = subprocess.run(cmd, capture_output=True, timeout=30)
+            proc = await _subprocess_run(cmd, capture_output=True, timeout=30)
         except Exception as e:
             return web.Response(status=500, text=str(e))
         if proc.returncode != 0 or not os.path.isfile(thumb_path):
@@ -2857,8 +2896,8 @@ async def mmh3_media_info(request):
         return web.json_response({"ok": False, "error": "ffmpeg not found"}, status=500)
     try:
         # `ffmpeg -i` with no output prints the stream table to stderr and exits non-zero.
-        proc = subprocess.run([ffmpeg, "-hide_banner", "-i", path],
-                              capture_output=True, text=True, timeout=60)
+        proc = await _subprocess_run([ffmpeg, "-hide_banner", "-i", path],
+                                     capture_output=True, text=True, timeout=60)
         info = proc.stderr or ""
     except subprocess.TimeoutExpired:
         return web.json_response({"ok": False, "error": "ffmpeg timed out"}, status=500)
@@ -3202,8 +3241,7 @@ async def mmh3_save_prompt_set(request):
             "refVideos": data.get("refVideos") or [],
             "refAudios": data.get("refAudios") or [],
         }
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
+        _atomic_write_json(path, payload, ensure_ascii=False, indent=2)
         return web.json_response({"ok": True})
     except ValueError:
         return web.json_response({"ok": False, "error": "invalid name"}, status=400)
@@ -3570,8 +3608,7 @@ def _sensitive_load():
 
 def _sensitive_save(keys):
     try:
-        with open(_SENSITIVE_PATH, "w", encoding="utf-8") as f:
-            json.dump(sorted(keys), f, ensure_ascii=False, indent=1)
+        _atomic_write_json(_SENSITIVE_PATH, sorted(keys), ensure_ascii=False, indent=1)
     except Exception as e:
         print(f"[TJ_NODE_ONE] sensitive_media save error: {e}")
 
@@ -3839,7 +3876,7 @@ async def mmh3_video_info(request):
         "-of", "json", path,
     ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        proc = await _subprocess_run(cmd, capture_output=True, text=True, timeout=30)
         info = json.loads(proc.stdout or "{}").get("streams", [{}])[0]
     except Exception as e:
         return web.json_response({"ok": False, "error": str(e)}, status=500)
@@ -3901,9 +3938,9 @@ async def mmh3_clip_last_frame(request):
     if not ffmpeg:
         return web.json_response({"ok": False, "error": "no saved last frame and ffmpeg not found"}, status=500)
     try:
-        proc = subprocess.run(
+        proc = await _subprocess_run(
             [ffmpeg, "-y", "-sseof", "-1", "-i", src, "-update", "1", "-q:v", "2", dst],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL,
         )
     except Exception as e:
         return web.json_response({"ok": False, "error": str(e)}, status=500)
@@ -4013,7 +4050,7 @@ async def mmh3_stitch(request):
             base_rate = "24"
             if ffprobe0:
                 try:
-                    pr = subprocess.run(
+                    pr = await _subprocess_run(
                         [ffprobe0, "-v", "error", "-select_streams", "v:0",
                          "-show_entries", "stream=width,height,r_frame_rate", "-of", "csv=p=0:s=x", paths[0]],
                         capture_output=True, text=True, timeout=30)
@@ -5464,8 +5501,7 @@ def _music_preset_routes(kind, base_dir):
             payload = dict(data)
             payload["name"] = name.strip()
             payload["saved"] = int(time.time() * 1000)
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=2)
+            _atomic_write_json(path, payload, ensure_ascii=False, indent=2)
             return web.json_response({"ok": True})
         except ValueError:
             return web.json_response({"ok": False, "error": "invalid name"}, status=400)
@@ -5980,8 +6016,7 @@ def _studio_llm_save(patch):
     d = _studio_llm_load()
     d.update({k: v for k, v in patch.items() if v is not None})
     try:
-        with open(_STUDIO_LLM_PATH, "w", encoding="utf-8") as f:
-            json.dump(d, f, ensure_ascii=False, indent=2)
+        _atomic_write_json(_STUDIO_LLM_PATH, d, ensure_ascii=False, indent=2)
     except Exception as e:
         print(f"[TJ_NODE_ONE] studio_llm save error: {e}")
 
@@ -6018,8 +6053,7 @@ async def studio_llm_settings_set(request):
             cur = {}
         cur = cur if isinstance(cur, dict) else {}
         cur.update(patch)
-        with open(_STUDIO_LLM_SETTINGS_PATH, "w", encoding="utf-8") as f:
-            json.dump(cur, f, ensure_ascii=False, indent=2)
+        _atomic_write_json(_STUDIO_LLM_SETTINGS_PATH, cur, ensure_ascii=False, indent=2)
         return web.json_response({"ok": True})
     except Exception as e:
         return web.json_response({"ok": False, "error": str(e)}, status=400)
