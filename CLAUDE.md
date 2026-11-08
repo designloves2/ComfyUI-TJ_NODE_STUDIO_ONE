@@ -70,6 +70,7 @@ ComfyUI 서버는 이 PC 하나를 공유한다(`127.0.0.1:8188`, GPU 16GB 공�
 - 옛 Kimchy 팩(`ComfyUI-Kimchy-Minimax-H3-Suite`)은 `custom_nodes\.disabled\`로 옮겼고 ComfyUI를 재시작해 반영함(Kimchy 노드 없음, Tiled 노드 등록 확인).
 - 렌더 기록의 `…-audio.mp4` 404는 버그 아님: VHS_VideoCombine이 `-audio`를 붙여 저장하고 페이지/서버가 렌더 후 `-audio`를 뗀 이름으로 바꿈. 웹도 같은 이름 변경, Canvers는 이름 변경 없이 `-audio` 파일을 그대로 써서 문제 없음(확인 완료).
 - 미확인: 페이지 쪽 LLM 실시간 줄의 화면 표시(브라우저 창이 숨겨져 못 봄), OpenRouter/Custom의 추정치 표시.
+- 전체 점검(2026-11-08): 문법·가져오기·서버 경로·GET 120개·그래프 구조(H3 144조합, 후처리 129, 이미지 8노드 전 모드, LTX25, Music)·12노드 렌더 모두 이상 없음. 고침: `shared/bilingual.js`의 따옴표 안 @토큰 번역 거부(`Unreleased`). **미수정 발견**: ① H3·LTX25의 `saveUnprocessed`·`resize*` 9개 키·H3 `imageGenMode`가 `defaultState` 허용 목록에 없어 새로고침 때 초기화됨 ② `config_*.json`을 `open(path,"w")`로 바로 덮어써서, 쓰는 중 서버가 죽으면 파일이 잘리고 `_load_config`가 `{}`로 읽어 다음 저장에 나머지 설정이 사라질 수 있음(원자적 쓰기 필요) ③ `mmh3_get_thumb`·`media_info`·`video_info`·`clip_last_frame`·stitch의 ffprobe가 async 핸들러 안에서 `subprocess.run`(ffmpeg 멈추면 최대 30~60초 서버 정지) ④ `discard_input`이 접두사만 검사 ⑤ `sla_turbo_lora` 설정 파일명이 이 PC에 없음(데이터) ⑥ 추적 중인 `config_*.json` 7개가 사용자 데이터로 수정된 채 `git status`에 보임.
 - 미해결/확인 필요: ① 네이티브 텍스트 인코더 + 로컬 GGUF를 섞어 쓸 때 서버가 멈춘 적이 있음(원인 추정만, 미수정, `nodes.py` 네이티브 경로가 큐와 별개로 모델을 로드함) ② H3 클립 높이 끌어서 맞추기 동기화는 브라우저 창이 숨겨진 상태라 확인 못 함 ③ 번역/H3/LTX의 OpenRouter 모델 없음 팝업 경로는 문법 확인만 ④ `config_minimax_h3.json`, `config_ltx25.json`의 `LLM\Gamma\…` 모델 경로 점검 ⑤ Canvers에 예전에 저장된 gemini 기본값이 남아 있을 수 있음.
 
 

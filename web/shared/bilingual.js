@@ -42,17 +42,20 @@ export function maskProtected(text, extra = []) {
   return { masked, tokens };
 }
 
-/** Put the protected parts back. Returns null when a marker is missing or appears more than once. */
+/** Put the protected parts back. Returns null when a marker is missing or appears more than once.
+ *  A protected part can hold another marker (an @token inside quoted speech is masked first, then the quote around it),
+ *  so the markers inside a restored part are expanded too and counted as used. */
 export function unmaskProtected(translated, tokens) {
   const seen = new Set();
   let ok = true;
-  const out = String(translated || "").replace(MARK_RE, (_, n) => {
+  const fill = (s, depth) => String(s).replace(MARK_RE, (_, n) => {
     const i = Number(n);
     if (!(i in tokens)) return "";   // a marker the model made up
     if (seen.has(i)) { ok = false; return ""; }
     seen.add(i);
-    return tokens[i];
+    return depth < 8 ? fill(tokens[i], depth + 1) : tokens[i];
   });
+  const out = fill(translated || "", 0);
   return ok && seen.size === tokens.length ? out : null;
 }
 

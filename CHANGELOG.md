@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- **Fix: a prompt with an @token inside quoted speech can be translated again.** `maskProtected` masks the `@token` first and the quote around it afterwards, so the quote's stored text held another `⟦n⟧` marker; `unmaskProtected` restored markers in one pass, counted one fewer than the tokens and rejected the translation every time (`She waves at @maya and says "Hello @maya, come here".`). Markers inside a restored part are now expanded too (depth limit 8) and counted as used; a lost or doubled marker is still rejected. Same for `[Shot N]`, `At MM:SS` and `<Picture N>` tags inside quotes. Found by the web twin's audit. Page reload only.
+
 ---
 
 ## v1.50.0
