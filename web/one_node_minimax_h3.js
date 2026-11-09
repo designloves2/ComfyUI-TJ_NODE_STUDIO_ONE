@@ -3568,7 +3568,7 @@ app.registerExtension({
                 const fixed = !!state.ppH3LastFixed;
                 const slot = (text, on) => el("div", { text, style: {
                   flex: "1", textAlign: "center", padding: "4px 6px", fontSize: "11px", cursor: "pointer",
-                  background: on ? "#7c3aed" : "transparent", color: on ? "#fff" : C.muted, fontWeight: on ? "700" : "400",
+                  background: on ? "#7612DA" : "transparent", color: on ? "#fff" : C.muted, fontWeight: on ? "700" : "400",
                 }, onclick: () => { state.ppH3LastFixed = !fixed; persist(); renderLeft(); } });
                 const mainModel = baseName(kind === "ref" ? state.unetReference : state.unetFirstLast);
                 const fixedModel = baseName(state.hiresLastModel);
@@ -3581,7 +3581,7 @@ app.registerExtension({
               }
               const half = (text, on, tip, v) => el("div", { text, title: tip, style: {
                 flex: "1", textAlign: "center", padding: "4px 6px", fontSize: "11px", cursor: "pointer",
-                background: on ? "#7c3aed" : "transparent", color: on ? "#fff" : C.muted, fontWeight: on ? "700" : "400",
+                background: on ? "#7612DA" : "transparent", color: on ? "#fff" : C.muted, fontWeight: on ? "700" : "400",
               }, onclick: () => { state.ppH3Upscaler = v; persist(); renderLeft(); } });
               kids.push(col([label("Upscaler"),
                 el("div", { style: { display: "flex", border: `1px solid ${C.border}`, borderRadius: "6px", overflow: "hidden" } },
@@ -5089,11 +5089,6 @@ app.registerExtension({
             };
             const hiresLine = el("div", { text: hiresText(), style: { fontSize: "10px", color: C.muted } });
             // the 8 turbo steps are split in two: the LOW Sigma steps are typed in, the HIGH Sigma steps are 8 minus that
-            const highText = () => {
-              const high = 8 - hiresSplitStep(state);
-              return `HIGH Sigma: ${high} step${high > 1 ? "s" : ""} (8 − LOW) — the latent upscale runs here, then these steps at Final MP`;
-            };
-            const highLine = el("div", { text: highText(), style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } });
             const hiresRows = () => [
               // the explanation is a tooltip on a "?" next to the checkbox, not a text block under it
               el("div", { style: { display: "flex", alignItems: "center" } }, [
@@ -5109,7 +5104,7 @@ app.registerExtension({
                   const fixed = !!state.hiresLastFixed;
                   const slot = (text, on) => el("div", { text, style: {
                     flex: "1", textAlign: "center", padding: "4px 6px", fontSize: "11px", cursor: "pointer",
-                    background: on ? "#7c3aed" : "transparent", color: on ? "#fff" : C.muted, fontWeight: on ? "700" : "400",
+                    background: on ? "#7612DA" : "transparent", color: on ? "#fff" : C.muted, fontWeight: on ? "700" : "400",
                   }, onclick: () => { state.hiresLastFixed = !fixed; persist(); renderLeft(); } });
                   const name = (state.hiresLastModel || "").split(/[\\/]/).pop();
                   return col([label("Last step model"),
@@ -5124,7 +5119,7 @@ app.registerExtension({
                   const tiled = state.hiresUpscaler === "tiled";
                   const half = (text, on, tip, v) => el("div", { text, title: tip, style: {
                     flex: "1", textAlign: "center", padding: "4px 6px", fontSize: "11px", cursor: "pointer",
-                    background: on ? "#7c3aed" : "transparent", color: on ? "#fff" : C.muted, fontWeight: on ? "700" : "400",
+                    background: on ? "#7612DA" : "transparent", color: on ? "#fff" : C.muted, fontWeight: on ? "700" : "400",
                   }, onclick: () => { state.hiresUpscaler = v; persist(); renderLeft(); } });
                   return col([label("Upscaler"),
                     el("div", { style: { display: "flex", border: `1px solid ${C.border}`, borderRadius: "6px", overflow: "hidden" } },
@@ -5135,10 +5130,26 @@ app.registerExtension({
                   ]);
                 })(),
                 ...(state.hiresUpscaler === "tiled" ? [] : [
-                  col([label("LOW Sigma step (1~7, 7 recommended)"), numberField(hiresSplitStep(state),
-                    v => { state.hiresSplitStep = Math.min(7, Math.max(1, Math.round(v))); persist(); highLine.textContent = highText(); refreshPlan(); }, 1)]),
+                  (() => {
+                    // LOW and HIGH always add up to 8: typing in either one sets the other
+                    const lowIn = numberField(hiresSplitStep(state), () => {}, 1);
+                    const highIn = numberField(8 - hiresSplitStep(state), () => {}, 1);
+                    const setLow = (low, from) => {
+                      state.hiresSplitStep = Math.min(7, Math.max(1, Math.round(low)));
+                      persist(); refreshPlan();
+                      if (from !== "low") lowIn.value = state.hiresSplitStep;
+                      if (from !== "high") highIn.value = 8 - state.hiresSplitStep;
+                    };
+                    lowIn.oninput = () => setLow(parseFloat(lowIn.value) || 0, "low");
+                    highIn.oninput = () => setLow(8 - (parseFloat(highIn.value) || 0), "high");
+                    for (const [inp, other] of [[lowIn, "low"], [highIn, "high"]]) inp.onblur = () => setLow(state.hiresSplitStep, null);
+                    return col([
+                      row([col([label("LOW Sigma step"), lowIn]), col([label("HIGH Sigma step"), highIn])]),
+                      el("div", { text: "(LOW Sigma 7 recommended - the latent upscale runs HIGH Sigma step, then these steps at Final MP)",
+                        style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+                    ]);
+                  })(),
                 ]),
-                highLine,
                 checkboxRow("Bypass H3 Memory Optimization on the last step", !!state.hiresNoOpt, v => {
                   state.hiresNoOpt = v; persist(); renderLeft();
                 }, { title: "Skip only the H3 Memory Optimization node on the last (large) step. Sol-Attn stays on. Use it if the last step fails with a shape error." }),

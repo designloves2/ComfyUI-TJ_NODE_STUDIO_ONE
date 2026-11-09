@@ -14,7 +14,7 @@ export function createOverrideToggle(state, persist) {
   wrap.append(label, track);
   const paint = () => {
     const on = state.promptOverride !== false;
-    track.style.background = on ? "#7c3aed" : "#4a4a4a";
+    track.style.background = on ? "#7612DA" : "#4a4a4a";
     knob.style.left = on ? "20px" : "2px";
   };
   wrap.addEventListener("click", () => { state.promptOverride = state.promptOverride === false; persist(); paint(); });

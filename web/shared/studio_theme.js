@@ -225,11 +225,30 @@ const TEXT_SOURCES = {
   tGray2: ["#888888", "#8a8a8a"], muted: ["#565656"], tBrand: ["#7612da"],
   ok: ["#5fd38d"], warn: ["#ffb347", "#ffb454"], err: ["#ff6767"],
 };
+
+// Grays that are not one of the standard steps are folded into the nearest step, so a skin changes every gray the nodes draw, not
+// only the six exact defaults. Surfaces (dark grays) join the Panel / Field / Raised / Border steps; light grays join the text
+// steps (as backgrounds too, e.g. a switch knob). Pure black and white are left alone (shadows, overlays).
+const EXTRA_SURFACE = {"bg0": ["#060606", "#080808", "#08090b", "#0a0a0a", "#0a0a0e", "#0b0c0e", "#0c0c0c", "#0d0d0d", "#0e0e0e"], "bg1": ["#0c0e14", "#0d0e10", "#0e0f13", "#0f1115", "#101010", "#101217", "#101218", "#111318", "#141414", "#160b0b", "#1a1206"], "bg2": ["#11141a", "#121418", "#12151a", "#141418", "#14141a", "#14141c", "#14161a", "#14161b", "#151515", "#15171b", "#15171c", "#15171d", "#15181d", "#15181e", "#161616", "#161a20", "#17191c", "#181a20", "#181a22", "#181b20", "#191b21", "#1a1722", "#1a1a1a", "#1b1b1b", "#1c1c1c", "#1d1d1d", "#241417", "#241e12", "#241f14", "#2a1418"], "bg3": ["#16281f", "#1b1f27", "#1b2028", "#1c1e24", "#1c1e25", "#1d2024", "#1d2025", "#20222a", "#20232a", "#20242b", "#22252a", "#232323"], "border": ["#22262c", "#22262e", "#242730", "#24282e", "#242936", "#252932", "#272a30", "#282828", "#282c34", "#2a2a3a", "#2a2e38", "#2b2b2b", "#2b2d31", "#2b2f38", "#2c2c2c", "#2d323a", "#2e2e2e", "#333333"], "borderH": ["#2e333b", "#2f3540", "#30343b", "#303744", "#34373d", "#343946", "#3a3a3a", "#3a3f49", "#3a3f4b", "#3c4250", "#3e4552", "#444444", "#444455", "#444a55", "#4a4a4a", "#4a4d54"]};
+const EXTRA_GENERAL_TEXT = {"muted": ["#4a5060", "#4a5062", "#555555", "#555b66", "#575b64", "#5f6672", "#6a6a6a"], "tGray2": ["#737986", "#7a7a7a", "#808080", "#818895", "#8c929f"], "tGray1": ["#9a9a9a", "#9aa0a9", "#a9adb7"], "tLight": ["#bbbbbb", "#c4c8d0", "#c5c9d3", "#ccd1dc", "#cfcfcf"], "text": ["#cdd1dc", "#cfd5df", "#d1d4da", "#d4d8e2", "#d6dae4", "#d9dce5", "#d9dde7", "#e4e4e4", "#e6e6e6", "#e6e6f0", "#eeeeee"], "tWhite": ["#f0f9ff", "#f2f3f6", "#f4f4f7", "#f5f5ff", "#fff5ee"]};
+const EXTRA_TEXT = {"muted": ["#5f6672", "#6a6a6a"], "tGray2": ["#737986", "#7a7a7a", "#808080", "#818895", "#8c929f"], "tGray1": ["#9a9a9a", "#9aa0a9", "#a9adb7"], "tLight": ["#bbbbbb", "#c4c8d0", "#c5c9d3", "#ccd1dc", "#cfcfcf"], "text": ["#cdd1dc", "#cfd5df", "#d1d4da", "#d4d8e2", "#d6dae4", "#d9dce5", "#d9dde7", "#e4e4e4", "#e6e6e6", "#e6e6f0", "#eeeeee"], "tWhite": ["#f0f9ff", "#f2f3f6", "#f4f4f7", "#f5f5ff", "#fff5ee"]};
+for (const [k, list] of Object.entries(EXTRA_SURFACE)) GENERAL_SOURCES[k] = [...new Set([...GENERAL_SOURCES[k], ...list])];
+for (const [k, list] of Object.entries(EXTRA_TEXT)) TEXT_SOURCES[k] = [...new Set([...TEXT_SOURCES[k], ...list])];
+const GENERAL_ALIAS = EXTRA_GENERAL_TEXT;       // text steps used as backgrounds / borders: only the extra grays, never the step's own color
+// Purples made from the key color (lighter, darker, bluer): they follow HighLight with the same hue shift / saturation / brightness
+// they have against the default key color.
+const AUX_TINTS = ["#2a2550", "#43206c", "#4d238d", "#5b3fd6", "#6a5cff", "#6b2ec9", "#6f44cf", "#7c3aed", "#7d40df", "#8f7bff", "#9b5cff", "#a78bfa", "#b57bff", "#b57cf5"];
 const GENERAL_KEYS = Object.keys(GENERAL_SOURCES), TEXT_KEYS = Object.keys(TEXT_SOURCES);
 const KEYS = [...new Set([...GENERAL_KEYS, ...TEXT_KEYS])];
 const lc = (h) => String(h).toLowerCase();
 const rgbKey = ({ r, g, b }) => `${r},${g},${b}`;
 const DEFAULT_REP = Object.freeze({ highlight: lc(DEFAULT_THEME.highlight), ...Object.fromEntries(Object.entries(DEFAULT_PALETTE).map(([k, v]) => [k, lc(v)])) });
+function deriveTint(tint, target) {
+  const d = rgbToHsv(parseHex(DEFAULT_THEME.highlight)), c = rgbToHsv(parseHex(tint)), t = rgbToHsv(parseHex(target) || parseHex(DEFAULT_THEME.highlight));
+  let dh = c.h - d.h; if (dh > 180) dh -= 360; if (dh < -180) dh += 360;
+  return toHex(hsvToRgb({ h: (t.h + dh + 360) % 360, s: Math.min(1, t.s * (c.s / d.s)), v: Math.min(1, t.v * (c.v / d.v)) })).toLowerCase();
+}
+const AUX_DOMAINS = [["general", "highlight", "g"], ["text", "tBrand", "t"]];
 const desiredFor = (theme) => ({ highlight: lc(theme.highlight), ...paletteFor(theme.node, theme.roles, theme.highlight) });
 
 function bump(hex) {
@@ -242,14 +261,22 @@ function bump(hex) {
 export function planRemap(painted, target) {
   const want = desiredFor(target);
   const pairs = [];                                       // { domain, key, from }
-  const add = (domain, sources, k) => {
+  const add = (domain, sources, k, withCur = true) => {
     const cur = lc(painted[k] ?? DEFAULT_REP[k]);
-    const froms = new Set([cur]);
+    const froms = new Set(withCur ? [cur] : []);
     if (want[k] !== DEFAULT_REP[k]) for (const f of sources[k]) froms.add(f);      // a role left at its default never touches the originals
     for (const f of froms) if (f !== want[k]) pairs.push({ domain, key: k, from: f });
   };
   for (const k of GENERAL_KEYS) add("general", GENERAL_SOURCES, k);
   for (const k of TEXT_KEYS) add("text", TEXT_SOURCES, k);
+  for (const k of Object.keys(GENERAL_ALIAS)) add("general", GENERAL_ALIAS, k, false);
+  const auxTo = {};
+  for (const [domain, base, tag] of AUX_DOMAINS) for (const a of AUX_TINTS) {
+    const id = `aux:${tag}:${a}`, to = deriveTint(a, want[base]), cur = lc(painted[id] ?? a);
+    const froms = new Set([cur]); if (to !== a) froms.add(a);
+    auxTo[id] = to;
+    for (const f of froms) if (f !== to) pairs.push({ domain, key: id, from: f });
+  }
   const sources = new Set(pairs.map(p => p.from));
   const finalTo = {};
   for (const k of KEYS) {
@@ -257,12 +284,14 @@ export function planRemap(painted, target) {
     while (sources.has(t) && guard++ < 6) t = bump(t);
     finalTo[k] = t;
   }
+  for (const [id, to0] of Object.entries(auxTo)) { let t = to0, guard = 0; while (sources.has(t) && guard++ < 6) t = bump(t); finalTo[id] = t; }
   const out = { global: new Map(), scoped: new Map(), text: new Map(), painted: {} };
   for (const k of KEYS) out.painted[k] = finalTo[k];
+  for (const id of Object.keys(auxTo)) out.painted[id] = finalTo[id];
   for (const p of pairs) {
     const to = finalTo[p.key];
     if (p.from === to) continue;
-    (p.domain === "text" ? out.text : p.key === "highlight" ? out.global : out.scoped).set(p.from, to);
+    (p.domain === "text" ? out.text : (p.key === "highlight" || p.key.startsWith("aux:")) ? out.global : out.scoped).set(p.from, to);
   }
   return out;
 }
@@ -405,6 +434,10 @@ export function steadyPlan(p) {
   const add = (sources, k, map) => { const to = lc(p[k] ?? DEFAULT_REP[k]); if (to === DEFAULT_REP[k]) return; for (const f of sources[k]) if (f !== to) map.set(f, to); };
   for (const k of GENERAL_KEYS) add(GENERAL_SOURCES, k, k === "highlight" ? out.global : out.scoped);
   for (const k of TEXT_KEYS) add(TEXT_SOURCES, k, out.text);
+  for (const k of Object.keys(GENERAL_ALIAS)) add(GENERAL_ALIAS, k, out.scoped);
+  for (const [domain, , tag] of AUX_DOMAINS) for (const a of AUX_TINTS) {
+    const to = p[`aux:${tag}:${a}`]; if (to && lc(to) !== a) (domain === "text" ? out.text : out.global).set(a, lc(to));
+  }
   return out;
 }
 
