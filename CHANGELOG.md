@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- **Added a Korean / English user manual (`manual/`).** Open `manual/index.html` in a browser (no server needed): a language button switches Korean / English, with search, a light / dark theme and previous / next links. 15 pages: Getting started, Common features, the 8 image nodes, MiniMax H3, LTX 2.5, MusicMaker and ITDA, each with screenshots of the real node. H3 covers the Asset tab, every left-panel section, Prompt Edit / Prompt Write, Face Refine, Postprocess, Image Generator and both galleries; LTX covers the Director timeline and Prompt Edit; ITDA covers the timeline tools, transitions, Auto Stitch, AI Detect and the shortcuts. Content is written from the code and the README tables; behaviour that could not be confirmed from the code is not stated. No code of the nodes changed. Page reload not needed.
 ---
 
 ## v1.51.1
