@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+---
+
+## v1.51.0
+
 - **Node Skin: every ONE STUDIO node can have its own colors, saved per node.** Each node's own ⚙ Settings has a new "Node Skin" tab (MiniMax H3, LTX 2.5, the eight image nodes, MusicMaker; ITDA through a button in its App Settings; the node's right-click menu has "🎨 ONE STUDIO Node Skin…" too). Every color is a small box: click it for a spectrum popup (HEX / RGB, eyedropper, before / after, the colors you saved). The main three are Title Color, Node Color and HighLight Color; fine tuning sets each part on its own: the real (canvas) node's frame, title text and title dot, every text color (text, white, light gray, gray, mid gray, dim, brand), panels, text fields, raised / hover surfaces, borders and the status colors. A sample node stays in view. Apply puts the colors on every node of that kind at once, live, with no reload. A part you did not set follows the main colors (↺ gives it back). Skins are named sets of colors shared by every node: save one from any node, then Use it on another or on All nodes. Colors are kept in the browser and in the new `config_theme.json` (`/tj_studio_one/theme`), so another browser shows the same look. Text colors are rewritten by CSS property, so the same purple can be a different color as text than as a background. With the default colors nothing is observed or rewritten. New: `web/studio_theme.js`, `web/shared/studio_theme.js`, `web/shared/ui_theme_dialog.js`; `nodes.py` route. Server restart required for the saving; the rest is a page reload.
 ---
 

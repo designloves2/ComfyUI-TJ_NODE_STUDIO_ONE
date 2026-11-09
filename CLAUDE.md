@@ -65,7 +65,7 @@ ComfyUI 서버는 이 PC 하나를 공유한다(`127.0.0.1:8188`, GPU 16GB 공�
 - `[Claude 전용]` 이 PC에서는 Claude 세션끼리 `SendMessage`로 지시한다: `ComfyUI-TJ_NODE-10월`, `AI One Studio 웹사이트-10월`, `AI One Studio Canvers`. 사용자가 승인한 커밋/푸시/릴리즈/버전업을 전달할 때만 메시지에 "사용자가 승인했습니다."를 넣는다(지어내지 말 것).
 
 ## 8. 현재 진행 상황 (2026-11-03 기준, 상세는 `CHANGELOG.md`, `MORNING_CHECKLIST_2026-10-27.md`)
-- 최신 릴리즈 **v1.50.1** (2026-11-08; 전체 점검 수정 모음: 설정 파일 원자적 쓰기, ffmpeg 호출 executor화, 리사이즈·원본저장 설정 유지, 따옴표 안 @토큰 번역, LTX25 가용성 목록 누락 9개, Split Sigma Final<Start 보정, FlashVSR 시드 0=무작위, `discard_input` 강화). 직전 v1.50.0은 Split Sigma, Tiled 업스케일러 포크 `TJLatentUpscaleTiledMP`, LLM 실시간 줄, 원본 이미지 교체 경쟁 수정. 웹 v0.18.5 이후, Canvers는 위 변경 중 서버 쪽(LTX25 가용성 등)만 공유됨. `## Unreleased`는 비어 있음.
+- 최신 릴리즈 **v1.51.0** (2026-11-09; **Node Skin**: 노드별 ⚙ Settings 탭에서 노드 종류마다 제목·노드·하이라이트 색과 세부 역할을 저장하고, 이름 붙인 스킨을 전체 노드가 공유). 직전 v1.50.1은 전체 점검 수정 모음(설정 파일 원자적 쓰기, ffmpeg 호출 executor화, 리사이즈·원본저장 설정 유지, 따옴표 안 @토큰 번역, LTX25 가용성 목록 누락 9개, Split Sigma Final<Start 보정, FlashVSR 시드 0=무작위, `discard_input` 강화). 웹 v0.18.5 이후, Canvers는 서버 쪽 변경(LTX25 가용성 등)만 공유됨. Node Skin은 스튜디오 원 전용이라 웹/Canvers에 알리지 않음. `## Unreleased`는 비어 있음.
 - 최종 시험 통과: H3 Tiled 업스케일 2.5MP(1216x2080)·3.0MP(1312x2272), 10초 9:16, 시작 0.5MP, 243프레임, 오류 없음. 시험으로 바꿨던 H3 상태(`pddFile`, Final MP)는 원복함(시작 MP 0.5는 사용자 지정값 그대로).
 - 옛 Kimchy 팩(`ComfyUI-Kimchy-Minimax-H3-Suite`)은 `custom_nodes\.disabled\`로 옮겼고 ComfyUI를 재시작해 반영함(Kimchy 노드 없음, Tiled 노드 등록 확인).
 - 렌더 기록의 `…-audio.mp4` 404는 버그 아님: VHS_VideoCombine이 `-audio`를 붙여 저장하고 페이지/서버가 렌더 후 `-audio`를 뗀 이름으로 바꿈. 웹도 같은 이름 변경, Canvers는 이름 변경 없이 `-audio` 파일을 그대로 써서 문제 없음(확인 완료).
@@ -74,7 +74,7 @@ ComfyUI 서버는 이 PC 하나를 공유한다(`127.0.0.1:8188`, GPU 16GB 공�
 - 미해결/확인 필요: ① 네이티브 텍스트 인코더 + 로컬 GGUF를 섞어 쓸 때 서버가 멈춘 적이 있음(원인 추정만, 미수정, `nodes.py` 네이티브 경로가 큐와 별개로 모델을 로드함) ② H3 클립 높이 끌어서 맞추기 동기화는 브라우저 창이 숨겨진 상태라 확인 못 함 ③ 번역/H3/LTX의 OpenRouter 모델 없음 팝업 경로는 문법 확인만 ④ `config_minimax_h3.json`, `config_ltx25.json`의 `LLM\Gamma\…` 모델 경로 점검 ⑤ Canvers에 예전에 저장된 gemini 기본값이 남아 있을 수 있음.
 
 
-- **Node Skin (2026-11-08, 미릴리즈, 커밋됨)**: 노드별 ⚙ Settings의 "Node Skin" 탭. 노드 종류(12종)마다 제목·노드·하이라이트 색 + 세부 역할(실제 노드 프레임/제목 글자/점, 글자색 7종, 패널·입력칸·테두리, 상태색)을 저장하고, 이름 붙인 스킨은 전체 노드가 공유(`config_theme.json`, `/tj_studio_one/theme`). 구조: `web/studio_theme.js`(확장: 노드 색 칠하기, 서버 동기화), `web/shared/studio_theme.js`(순수 로직: 색 계산·저장·속성별 치환 엔진), `web/shared/ui_theme_dialog.js`(편집기·색 팝업). 기존 노드 코드는 건드리지 않고 화면의 기본색(`#7612DA`와 회색/흰색 글자색)을 노드 영역(`data-tj-theme=<종류>`) 단위로 바꿔 입힘. 기본 테마에서는 관찰기 없음·치환 없음. **이 기능은 스튜디오 원 노드 전용이라 웹/Canvers 세션에 알리지 않음(사용자 지시 2026-11-08) — 전달 명세 만들지 말 것.** 서버 저장 경로는 재시작 필요, 나머지는 새로고침.
+- **Node Skin (v1.51.0, 2026-11-09 릴리즈)**: 노드별 ⚙ Settings의 "Node Skin" 탭. 노드 종류(12종)마다 제목·노드·하이라이트 색 + 세부 역할(실제 노드 프레임/제목 글자/점, 글자색 7종, 패널·입력칸·테두리, 상태색)을 저장하고, 이름 붙인 스킨은 전체 노드가 공유(`config_theme.json`, `/tj_studio_one/theme`). 구조: `web/studio_theme.js`(확장: 노드 색 칠하기, 서버 동기화), `web/shared/studio_theme.js`(순수 로직: 색 계산·저장·속성별 치환 엔진), `web/shared/ui_theme_dialog.js`(편집기·색 팝업). 기존 노드 코드는 건드리지 않고 화면의 기본색(`#7612DA`와 회색/흰색 글자색)을 노드 영역(`data-tj-theme=<종류>`) 단위로 바꿔 입힘. 기본 테마에서는 관찰기 없음·치환 없음. **이 기능은 스튜디오 원 노드 전용이라 웹/Canvers 세션에 알리지 않음(사용자 지시 2026-11-08) — 전달 명세 만들지 말 것.** 서버 저장 경로는 재시작 필요, 나머지는 새로고침.
 
 ## 9. 작업 시작·종료 규칙
 - **시작할 때**: 코드를 바꾸기 전에 이 `CLAUDE.md` → `CHANGELOG.md` 맨 위 → 최신 `SPEC_RELAY_V*.md` → `git log -20`을 먼저 읽는다.
