@@ -88,7 +88,7 @@ export function translationSettingsPanel(theme = {}, nodeKey = "") {
         if (!list.length) list.push("(none found)");
         control.append(
           col([label("GGUF model"), select(list, t.llama_model || list[0], v => save({ llama_model: v }))]),
-          col([label("Context length (n_ctx)"), number(t.llama_n_ctx ?? 16384, v => save({ llama_n_ctx: Math.max(512, Math.round(v)) }), 512)]),
+          col([label("Context length (n_ctx)"), number(t.llama_n_ctx ?? 16000, v => save({ llama_n_ctx: Math.max(512, Math.round(v)) }), 512)]),
           col([label("Max output tokens"), number(t.llama_max_tokens ?? 4096, v => save({ llama_max_tokens: Math.max(256, Math.round(v)) }), 256)]),
         );
         control.style.display = "flex"; control.style.flexDirection = "column"; control.style.gap = "8px";

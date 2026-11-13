@@ -512,7 +512,7 @@ export function createSettingsOverlay(state, ctx) {
           // already over 4096 before generation even starts (silent empty result, no
           // error — the request simply had no room left to answer in).
           {
-            const nCtxField = numberField(state.h3LlamaNCtx ?? 16384,
+            const nCtxField = numberField(state.h3LlamaNCtx ?? 16000,
               v => { state.h3LlamaNCtx = Math.max(512, Math.round(v)); changed(); }, 512);
             holder.appendChild(col([label("Context length (n_ctx)"), nCtxField]));
             // A truncated brief is exactly as unusable as an empty one — this needs real
@@ -866,7 +866,7 @@ export function createSettingsOverlay(state, ctx) {
           if (!list.length) list.push("(none found)");
           control.appendChild(col([label("GGUF model"), searchableSelect(list, t.llama_model || list[0], v => save({ llama_model: v })).el]));
           control.appendChild(col([label("Context length (n_ctx)"),
-            numberField(t.llama_n_ctx ?? 16384, v => save({ llama_n_ctx: Math.max(512, Math.round(v)) }), 512)]));
+            numberField(t.llama_n_ctx ?? 16000, v => save({ llama_n_ctx: Math.max(512, Math.round(v)) }), 512)]));
           control.appendChild(col([label("Max output tokens"),
             numberField(t.llama_max_tokens ?? 4096, v => save({ llama_max_tokens: Math.max(256, Math.round(v)) }), 256)]));
         });
@@ -1052,7 +1052,7 @@ export function createSettingsOverlay(state, ctx) {
       h3_llama_vision_model:  state.h3LlamaVisionModel  || "",
       h3_llama_vision_mmproj: state.h3LlamaVisionMmproj || "",
       h3_llama_brief_model:   state.h3LlamaBriefModel   || "",
-      h3_llama_n_ctx:         state.h3LlamaNCtx         ?? 16384,
+      h3_llama_n_ctx:         state.h3LlamaNCtx         ?? 16000,
       h3_llama_max_tokens:    state.h3LlamaMaxTokens    ?? 4096,
       ltx_llama_model:        state.ltxLlamaModel       || "",
       ltx_llama_mmproj:       state.ltxLlamaMmproj      || "",
@@ -1265,7 +1265,7 @@ export function createSettingsOverlay(state, ctx) {
       h3_llama_vision_model:  state.h3LlamaVisionModel  || "",
       h3_llama_vision_mmproj: state.h3LlamaVisionMmproj || "",
       h3_llama_brief_model:   state.h3LlamaBriefModel   || "",
-      h3_llama_n_ctx:         state.h3LlamaNCtx         ?? 16384,
+      h3_llama_n_ctx:         state.h3LlamaNCtx         ?? 16000,
       h3_llama_max_tokens:    state.h3LlamaMaxTokens    ?? 4096,
     }).catch(() => {});
   }

@@ -251,17 +251,17 @@ function buildRelayVSR(g, ids, p, images, avail) {
   g[ids.rlCond] = { class_type: "RelayVSRConditioning", inputs: { model: [ids.rlUnet, 0], images } };
   g[ids.rlSamp] = { class_type: "KSampler", inputs: {
     model: [ids.rlUnet, 0], positive: [ids.rlCond, 0], negative: [ids.rlCond, 0], latent_image: [ids.rlCond, 1],
-    seed: p.seed ?? randomSeed(), steps: 1, cfg: 1, sampler_name: "euler", scheduler: "simple", denoise: 1,
+    seed: p.seed ?? 42, steps: 1, cfg: 1, sampler_name: "euler", scheduler: "simple", denoise: 1,
   }};
   g[ids.rlVae] = { class_type: "VAELoader", inputs: { vae_name: p.vae } };
   g[ids.rlDec] = { class_type: "VSRDecode", inputs: { vae: [ids.rlVae, 0], samples: [ids.rlSamp, 0], images, detail: 1 } };
   return [ids.rlDec, 0];
 }
 export function relayvsrUsed(p) {
-  return { method: "relayvsr", model: p.unet || "", vae: p.vae || "" };
+  return { method: "relayvsr", model: p.unet || "", vae: p.vae || "", seed: p.seed ?? 42 };
 }
 function relayvsrParamsFromState(state) {
-  return { unet: state.relayvsrUnet, vae: state.relayvsrVae, seed: randomSeed() };
+  return { unet: state.relayvsrUnet, vae: state.relayvsrVae, seed: state.relayvsrSeed ?? 42 };
 }
 
 /** Normalizes a flashvsr params object (from state.* or an opts.flashvsr passthrough)

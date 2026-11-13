@@ -1980,7 +1980,7 @@ def _est_tokens(text):
 def _llama_budget(data, system_text, user_text, image_tokens=0):
     """Local llama.cpp: before anything is loaded, check the input fits the context and cut max_tokens so the answer cannot run
     the context full. Without this a too long input fails minutes later with 'decode: failed to find a memory slot'."""
-    n_ctx = int(data.get("n_ctx") or 4096)
+    n_ctx = int(data.get("n_ctx") or 16000)
     max_tokens = int(data.get("max_tokens") or 1000)
     used = _est_tokens(system_text) + _est_tokens(user_text) + int(image_tokens) + 64
     room = n_ctx - used
@@ -2402,7 +2402,7 @@ async def _studio_enhance_run(data):
                 system_prompt_override=sys_text if (data.get("refine_instruction") or data.get("system_override")) else "",
                 append_no_think=True,
                 n_gpu_layers=int(data.get("n_gpu_layers", -1)),
-                n_ctx=int(data.get("n_ctx", 4096)),
+                n_ctx=int(data.get("n_ctx", 16000)),
                 max_tokens=int(data.get("max_tokens", 1000)),
                 temperature=float(data.get("temperature", 0.7)),
                 top_p=0.9,
@@ -2434,7 +2434,7 @@ async def _studio_enhance_run(data):
 TRANSLATE_CONFIG_PATH = os.path.join(NODE_DIR, "config_translate.json")
 _TRANSLATE_DEFAULTS = {
     "backend": "native", "native_clip": "", "or_model": "", "llama_model": "",
-    "llama_n_ctx": 16384, "llama_max_tokens": 4096,
+    "llama_n_ctx": 16000, "llama_max_tokens": 4096,
     "custom_base": "", "custom_model": "", "custom_ctx": 0,
 }
 
@@ -2601,7 +2601,7 @@ async def _studio_image_to_prompt(data):
                 aesthetic=data.get("aesthetic", "None (no aesthetic injection)"),
                 custom_instruction=data.get("custom_instruction", ""),
                 n_gpu_layers=int(data.get("n_gpu_layers", -1)),
-                n_ctx=int(data.get("n_ctx", 4096)),
+                n_ctx=int(data.get("n_ctx", 16000)),
                 max_tokens=int(data.get("max_tokens", 1000)),
                 temperature=float(data.get("temperature", 0.7)),
                 seed=int(data.get("seed", 0)),
@@ -3142,7 +3142,7 @@ def _mmh3_config_response(cfg, subfolder, prefix):
         "h3_llama_vision_model":  cfg.get("h3_llama_vision_model",  ""),
         "h3_llama_vision_mmproj": cfg.get("h3_llama_vision_mmproj", ""),
         "h3_llama_brief_model":   cfg.get("h3_llama_brief_model",   ""),
-        "h3_llama_n_ctx":         cfg.get("h3_llama_n_ctx",         16384),
+        "h3_llama_n_ctx":         cfg.get("h3_llama_n_ctx",         16000),
         "h3_llama_max_tokens":    cfg.get("h3_llama_max_tokens",    4096),
         "ltx_llama_model":        cfg.get("ltx_llama_model",        ""),
         "ltx_llama_mmproj":       cfg.get("ltx_llama_mmproj",       ""),

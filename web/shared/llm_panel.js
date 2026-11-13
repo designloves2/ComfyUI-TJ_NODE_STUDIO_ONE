@@ -232,7 +232,7 @@ export function mountLLMSettingsSection(ov, ctx) {
     aesthetic:          cfg.aesthetic           || "None (no aesthetic injection)",
     extra_instructions: cfg.extra_instructions  || "",
     n_gpu_layers:       cfg.n_gpu_layers        ?? -1,
-    n_ctx:              cfg.n_ctx               ?? 4096,
+    n_ctx:              cfg.n_ctx               ?? 16000,
     max_tokens:         cfg.max_tokens          ?? 1000,
     temperature:        cfg.temperature         ?? 0.7,
     seed:               cfg.seed                ?? 0,

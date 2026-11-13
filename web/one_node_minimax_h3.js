@@ -1201,8 +1201,8 @@ app.registerExtension({
       autoEnhChk.checked = !!state.imgAutoEnhance;
       autoEnhChk.addEventListener("change", () => { state.imgAutoEnhance = autoEnhChk.checked; persist(); });
       const autoEnhLbl = el("label", { title: "Automatically run Prompt Enhance on the current prompt right before Generate, updating the prompt in place.", style: {
-        display: "none", alignItems: "center", gap: "4px", fontSize: "11px", color: C.muted, cursor: "pointer", marginLeft: "auto" } }, [autoEnhChk, el("span", { text: "Auto Enhance" })]);
-      promptHdr.appendChild(autoEnhLbl);
+        display: "none", alignItems: "center", gap: "4px", fontSize: "11px", color: C.muted, cursor: "pointer" } }, [autoEnhChk, el("span", { text: "Auto Enhance" })]);
+      promptHdr.insertBefore(autoEnhLbl, refineBtn);   // sits just left of 🔧 Refine
 
       // Image Generator's prompt templates (T2I / Ref2I) — the same 📋 panel the other
       // image nodes have, with this node's own pool; opened by templateOv (mounted below).
@@ -2561,6 +2561,8 @@ app.registerExtension({
         return [
           picked("UNET", state.relayvsrUnet),
           picked("VAE", state.relayvsrVae),
+          row([col([labelHelp("Seed", "Seed of the one-step sampler. Fixed at 42 by default, so the same clip gives the same result; change it to get another variation."),
+            numberField(state.relayvsrSeed ?? 42, v => { state.relayvsrSeed = Math.max(0, Math.round(v)); persist(); }, 1)])]),
           x4 ? el("div", { text: "⚠ The x4 model is hard to run on a 16GB card — use the x2 pair (relayvsr_x2_… with relayvsr_flash_vae_x2_…).", style: small(C.warn) }) : null,
           el("div", { text: "RelayVSR has no scale setting: the x2 file doubles and the x4 file quadruples the size. One sampling step; only every 15th frame goes through the model "
             + "and the VSR decoder restores all of them. The model files are picked in Settings → UpScale Model.", style: small(C.muted) }),
@@ -4220,7 +4222,7 @@ app.registerExtension({
                 seed: state.recavsrSeed, decoder: state.recavsrDecoder, kernels: state.recavsrKernels,
                 kvOffload: state.recavsrKvOffload, encoder: state.recavsrEncoder,
               },
-              relayvsr: { unet: state.relayvsrUnet, vae: state.relayvsrVae, seed: randomSeed() },
+              relayvsr: { unet: state.relayvsrUnet, vae: state.relayvsrVae, seed: state.relayvsrSeed ?? 42 },
             },
             skinRetouch: {
               enabled: state.ppSkinRetouchOn, evenness: state.ppSkinEvenness, smoothing: state.ppSkinSmoothing,
@@ -4687,6 +4689,7 @@ app.registerExtension({
             await imgLlmApi.enhance();
             try { imgInlineBil?.refresh?.(); } catch {}
             persist();
+            busyBtn.textContent = "⏳ Running…";
           }
           await ensureEnglishPrompts("image");
           const previewRes = resolveResolution(state.imgAspect || "2:3 Portrait", state.imgPreviewMp ?? 0.2);

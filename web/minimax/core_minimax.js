@@ -1670,6 +1670,7 @@ export function defaultState(saved) {
     recavsrVae:         saved.recavsrVae         || "",
     relayvsrUnet:       saved.relayvsrUnet       || "",
     relayvsrVae:        saved.relayvsrVae        || "",
+    relayvsrSeed:       saved.relayvsrSeed       ?? 42,   // fixed by default, editable (same idea as recavsrSeed)
 
     // preview (ModelPreviewOverrideKJ)
     previewEnabled:  saved.previewEnabled  ?? true,
@@ -1726,7 +1727,7 @@ export function defaultState(saved) {
     // few-shot examples) plus a real request measured 5436 tokens on its own in testing,
     // already over 4096 before generation even starts (observed failure: a silent empty
     // result, no error).
-    h3LlamaNCtx:         saved.h3LlamaNCtx         ?? 16384,
+    h3LlamaNCtx:         saved.h3LlamaNCtx         ?? 16000,
     // 4096 — a real full brief (opening style + multiple [Shot N] + Ambient sound +
     // Music) got cut off mid-sentence at 2000 in testing; a truncated brief is exactly
     // as unusable as an empty one.
