@@ -4,9 +4,12 @@
 
 ## Unreleased
 
+## v1.52.1 — fixed RelayVSR seed, n_ctx 16000, Image Generator prompt bar
+
 - **RelayVSR gets a fixed, editable Seed (default 42).** It used a new random seed on every run; now the Seed field in the RelayVSR options (left Upscale and Postprocess C. Upscale) defaults to 42 and can be changed, like ReCaVSR's. The same clip with the same seed gives a byte-identical result (checked twice at 1024x1536). The seed is saved in the upscale record. Reload the page.
 - **Default n_ctx is now 16000 everywhere.** The image nodes' LLM panel (was 4096), the server's LLM routes (was 4096) and the llama.cpp defaults of H3 / LTX / Translation (were 16384) all use 16000; values you already saved are not touched. The official MiniMax H3 Image R2I prompt is about 11,000 tokens, so a local GGUF needs at least that. Server restart required.
 - **Image Generator prompt bar.** Auto Enhance now sits just left of 🔧 Refine, and the Generate button shows "Running…" again after an Auto Enhance.
+
 ## v1.52.0 — ReCaVSR / RelayVSR upscalers, official H3 Image nodes, native Generate Text options
 
 - **H3 Image Generator uses the official MiniMax H3 Image nodes (Text to Image / Reference to Image only).** The graph is now UNETLoader → KSampler (cfg 1, euler/simple, default 6 steps) with `MiniMaxH3ImageConditioning`, `ConditioningZeroOut` and `ResizeImageMaskNode` (up to 9 references, each with its own MP); the old Latent / Turbo / 2nd-pass choices are hidden for these two modes. **Character Sheet is unchanged** (still the video-pipeline route). New ⚙ Settings → H3 Model panel **Image Generator models**: MODEL (T2I and R2I separately), CLIP and VAE for images only; empty = fall back to the video models. The T2I and R2I prompts from the ComfyUI templates are new Model Formats, **MiniMax H3 Image (T2I)** and **(R2I)**, picked automatically from the current mode in Prompt Write / Enhance (the JSON answer is reduced to `expanded_caption`). Server restart required (new config keys, `h3_image_formats.json`, availability list).
