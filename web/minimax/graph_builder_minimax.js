@@ -2540,7 +2540,7 @@ export function buildImageGenGraph(state, avail, opts) {
 // MiniMaxH3ImageConditioning (+ ConditioningZeroOut as the negative) → VAEDecode → Save.
 // Character Sheet does NOT use this: it keeps buildImageGenGraph's video-pipeline route.
 const IMGO = {
-  unet: "IMGO:unet", clip: "IMGO:clip", vae: "IMGO:vae", cond: "IMGO:cond", neg: "IMGO:neg",
+  unet: "IMGO:unet", shift: "IMGO:shift", black: "IMGO:black", clip: "IMGO:clip", vae: "IMGO:vae", cond: "IMGO:cond", neg: "IMGO:neg",
   sampler: "IMGO:sampler", decode: "IMGO:decode", save: "IMGO:save",
   ref: (i) => `IMGO:ref_${i}`, refMp: (i) => `IMGO:refmp_${i}`, refSnap: (i) => `IMGO:refsnap_${i}`,
 };
@@ -2554,7 +2554,7 @@ export function buildOfficialImageGraph(state, avail, opts) {
   for (const n of ["MiniMaxH3ImageConditioning", "ConditioningZeroOut"])
     if (!has(avail, n)) throw new Error(`${n} is not available — update ComfyUI to a version with the official MiniMax H3 Image nodes, then restart.`);
   const refList = (refImages || []).filter(Boolean).slice(0, 9);
-  if (subMode === "ref2i" && !refList.length) throw new Error("Reference to Image needs at least one reference image.");
+  if (subMode === "ref2i" && !refList.length && opts.warnNoRef !== false) throw new Error("Reference to Image needs at least one reference image.");
   if (refList.length && !has(avail, "ResizeImageMaskNode")) throw new Error("ResizeImageMaskNode is not available — update ComfyUI.");
   const pick = (own, fallback) => (own && own !== "none") ? own : fallback;
   const unetName = subMode === "ref2i" ? pick(state.imgUnetRef2i, state.unetReference) : pick(state.imgUnetT2i, state.unetFirstLast);
@@ -2566,10 +2566,23 @@ export function buildOfficialImageGraph(state, avail, opts) {
   const g = {};
   g[IMGO.unet] = { class_type: "UNETLoader", inputs: { unet_name: unetName, weight_dtype: "default" } };
   let model = buildImageLoraChain(g, state, [IMGO.unet, 0]);
+  // Optional Shift patch (off by default): MiniMaxH3SigmaShift (the H3 node, shift_video = Shift), else the generic AuraFlow shift
+  if (opts.shiftOn) {
+    const sh = Number(opts.shift ?? 3);
+    if (has(avail, "MiniMaxH3SigmaShift")) g[IMGO.shift] = { class_type: "MiniMaxH3SigmaShift", inputs: { model, shift_video: sh, shift_audio: 3 } };
+    else if (has(avail, "ModelSamplingAuraFlow")) g[IMGO.shift] = { class_type: "ModelSamplingAuraFlow", inputs: { model, shift: sh } };
+    else throw new Error("Shift needs MiniMaxH3SigmaShift or ModelSamplingAuraFlow — neither is available.");
+    model = [IMGO.shift, 0];
+  }
   g[IMGO.clip] = { class_type: "CLIPLoader", inputs: { clip_name: clipName, type: "minimax", device: "default" } };
   g[IMGO.vae] = { class_type: "VAELoader", inputs: { vae_name: vaeName } };
 
   const condInputs = { clip: [IMGO.clip, 0], vae: [IMGO.vae, 0], prompt, width: res.width, height: res.height };
+  // "H3 prompt weight" (Text to Image): a 1024x1024 pure-black EmptyImage as reference 0 — the model gives a better result with it
+  if (subMode === "t2i" && opts.promptWeight) {
+    g[IMGO.black] = { class_type: "EmptyImage", inputs: { width: 1024, height: 1024, batch_size: 1, color: 0 } };
+    condInputs["images.image_0"] = [IMGO.black, 0];
+  }
   refList.forEach((name, i) => {
     g[IMGO.ref(i)] = { class_type: "LoadImage", inputs: { image: name } };
     let link = [IMGO.ref(i), 0];
@@ -2587,7 +2600,7 @@ export function buildOfficialImageGraph(state, avail, opts) {
   g[IMGO.neg] = { class_type: "ConditioningZeroOut", inputs: { conditioning: [IMGO.cond, 0] } };
   g[IMGO.sampler] = { class_type: "KSampler", inputs: {
     model, positive: [IMGO.cond, 0], negative: [IMGO.neg, 0], latent_image: [IMGO.cond, 1],
-    seed: seed ?? 0, steps: Math.max(1, Math.round(steps ?? 6)), cfg: 1, sampler_name: "euler", scheduler: "simple", denoise: 1 } };
+    seed: seed ?? 0, steps: Math.max(1, Math.round(steps ?? 6)), cfg: opts.cfg ?? 1, sampler_name: opts.sampler || "euler", scheduler: opts.scheduler || "simple", denoise: 1 } };
   g[IMGO.decode] = { class_type: "VAEDecode", inputs: { samples: [IMGO.sampler, 0], vae: [IMGO.vae, 0] } };
   g[IMGO.save] = (final || savePreview)
     ? { class_type: "SaveImage", inputs: { filename_prefix: filenamePrefix, images: [IMGO.decode, 0] } }

@@ -4,6 +4,16 @@
 
 ## Unreleased
 
+## v1.53.0 — H3 Image Generator: Sampling panel, H3 prompt weight, Send to R2I, result mouse controls; online manual
+
+- **Sampler / Scheduler / CFG / Shift for the Image Generator (T2I and R2I).** A new Sampling panel: Sampler (euler), Scheduler (simple), Steps (6), CFG (1) and **Use Shift** (off by default; on shows a Shift value, default 3, and patches the model with `MiniMaxH3SigmaShift`, or `ModelSamplingAuraFlow` if that node is missing). Saved in the image record and restored by Reuse Setting. Character Sheet is unchanged.
+- **H3 prompt weight (Text to Image).** A toggle, on by default: adds a 1024x1024 pure-black `EmptyImage` as reference image 0 of the conditioning node, because Text to Image gives better results with it. Tooltip explains it.
+- **Warn if no reference image (Reference to Image).** Option, on by default: with no reference loaded, Generate shows a clearer notice popup instead of running; turn it off to run without a reference.
+- **Send to R2I.** A Text to Image result gets a ➡ Send to R2I button that adds the picture as a reference image (1.0 MP) in Reference to Image and switches the mode.
+- **Result images respond to the mouse.** On Image Generator results (and the live preview): wheel zoom around the cursor, drag to pan, double-click to fit; the ⛶ fullscreen button now works for images. Videos are unchanged.
+- **Manual online.** The README now opens with the manual, and the `manual/` pages are published with GitHub Pages so the English / Korean viewer can be read in the browser before installing: https://designloves2.github.io/ComfyUI-TJ_NODE_STUDIO_ONE/manual/
+- Reload the page; no server restart needed.
+
 ## v1.52.1 — fixed RelayVSR seed, n_ctx 16000, Image Generator prompt bar
 
 - **RelayVSR gets a fixed, editable Seed (default 42).** It used a new random seed on every run; now the Seed field in the RelayVSR options (left Upscale and Postprocess C. Upscale) defaults to 42 and can be changed, like ReCaVSR's. The same clip with the same seed gives a byte-identical result (checked twice at 1024x1536). The seed is saved in the upscale record. Reload the page.

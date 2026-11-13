@@ -1759,6 +1759,10 @@ export function defaultState(saved) {
     imgSteps: saved.imgSteps ?? 20,
     // official MiniMax H3 Image nodes (T2I / R2I): own steps + optional image-only models (empty = fall back to the video models)
     imgOfficialSteps: saved.imgOfficialSteps ?? 6,
+    // sampler / scheduler / CFG and an optional Shift patch for the official image nodes (Shift off by default)
+    imgSampler: saved.imgSampler || "euler", imgScheduler: saved.imgScheduler || "simple", imgCfg: saved.imgCfg ?? 1,
+    imgPromptWeight: saved.imgPromptWeight ?? true, imgWarnNoRef: saved.imgWarnNoRef ?? true,   // T2I black reference / R2I no-reference popup
+    imgShiftOn: saved.imgShiftOn === true, imgShift: saved.imgShift ?? 3,
     imgAutoEnhance: saved.imgAutoEnhance ?? false,
     imgUnetT2i: saved.imgUnetT2i || "", imgUnetRef2i: saved.imgUnetRef2i || "",
     imgClip: saved.imgClip || "", imgVae: saved.imgVae || "",

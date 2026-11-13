@@ -32,7 +32,8 @@ import {
   promptText, promptFirstFrame, promptEnabled, activePrompts, buildAgentJob,
 } from "./minimax/core_minimax.js";
 import { downloadAgentJob, agentStamp } from "./shared/agent_job.js";
-import { panel, label, button, select, loraSelect, numberField, slider, row, col, modeBar, iconBtn, openVideoFullscreen }
+import { attachPanZoom } from "./shared/pan_zoom.js";
+import { panel, label, button, select, loraSelect, numberField, slider, row, col, modeBar, iconBtn, openVideoFullscreen, openFullscreen }
   from "./klein/ui_common.js";
 import {
   queuePrompt, waitForHistory, historyEntry, fixAudioSuffixes, interrupt, freeMemory, setLastResult, stitchClips, getVideoInfo,
@@ -460,7 +461,30 @@ app.registerExtension({
         color: "#fff", border: "none", borderRadius: "4px", width: "22px", height: "22px",
         cursor: "pointer", fontSize: "12px", padding: "0", display: "none",
       }});
-      previewBox.append(placeholder, frDetectBanner, fvsrBanner, hiresBanner, busyBackdrop, busyBanner, previewImg, previewVid, resultVid, badge, fsBtn, compareBtn);
+      // Image Generator → Reference to Image: hand the finished T2I picture to R2I as a reference (shown only on a final T2I result)
+      const sendR2iBtn = el("button", { type: "button", text: "➡ Send to R2I", title: "Use this picture as a reference image in Reference to Image", style: {
+        position: "absolute", bottom: "8px", right: "8px", zIndex: "6", background: BRAND, color: "#fff", border: "none",
+        borderRadius: "5px", padding: "5px 10px", cursor: "pointer", fontSize: "11px", fontWeight: "700", display: "none",
+      }});
+      sendR2iBtn.setAttribute("data-pz-ignore", "");
+      let lastImgOut = null;   // { filename, subfolder, type } of the last final Image Generator result
+      sendR2iBtn.addEventListener("click", async () => {
+        if (!lastImgOut) return;
+        try {
+          const list = (state.imgRefImages || []).slice();
+          if (list.length >= 9) { showPopup("9 reference images max.", true); return; }
+          const name = await copyOutputToInput(lastImgOut.filename, lastImgOut.subfolder || "", lastImgOut.type || "output");
+          list.push(name);
+          state.imgRefImages = list;
+          state.imgRefImagesMp = (state.imgRefImagesMp || []).slice(0, list.length - 1).concat([1.0]);
+          state.imageGenMode = "ref2i";
+          persist(); renderLeft(); renderPrompts(); restoreModeResult();
+          showPopup("Added as a reference image in Reference to Image.", false);
+        } catch (e) { showPopup(e?.message || String(e), true); }
+      });
+      previewBox.append(placeholder, frDetectBanner, fvsrBanner, hiresBanner, busyBackdrop, busyBanner, previewImg, previewVid, resultVid, badge, fsBtn, compareBtn, sendR2iBtn);
+      // wheel = zoom · left-drag = pan · double-click = fit (shared/pan_zoom.js) — on still images (Image Generator results / live preview)
+      attachPanZoom(previewBox, () => [previewImg], { enabled: () => previewImg.style.display === "block" });
 
       let lastResultURL = null;
       // Captured in showResultVideo() at the moment a result becomes the shown preview —
@@ -486,7 +510,11 @@ app.registerExtension({
       // element) — using that same API here would make this button do nothing double-click
       // doesn't already do. openVideoFullscreen() is the in-page overlay instead: tab
       // chrome/address bar stay visible, closes with ✕/ESC/outside-click.
-      fsBtn.addEventListener("click", () => { if (lastResultURL) openVideoFullscreen(lastResultURL, { startAt: resultVid.currentTime || 0 }); });
+      fsBtn.addEventListener("click", () => {
+        if (!lastResultURL) return;
+        if (previewImg.style.display === "block") openFullscreen(lastResultURL);   // a still image
+        else openVideoFullscreen(lastResultURL, { startAt: resultVid.currentTime || 0 });
+      });
       compareBtn.addEventListener("click", () => {
         if (!lastResultURL || !lastCompareSource) return;
         openCompareViewer(`/view?filename=${encodeURIComponent(lastCompareSource)}&type=input`, lastResultURL, lastCompareRange);
@@ -933,7 +961,8 @@ app.registerExtension({
         try { resultVid.pause(); } catch {}
         resultVid.style.display = "none";
         previewImg.src = url; previewImg.style.display = "block";
-        badge.style.display = "block"; fsBtn.style.display = "none"; compareBtn.style.display = "none";
+        badge.style.display = "block"; fsBtn.style.display = "block"; compareBtn.style.display = "none";
+        sendR2iBtn.style.display = (final && lastImgOut && state.generationMode === "imagegen" && state.imageGenMode === "t2i") ? "block" : "none";
       }
       function showResultVideo(url, { final = false, compareRange = null } = {}) {
         lastResultURL = url;
@@ -943,7 +972,7 @@ app.registerExtension({
         frDetectBanner.style.display = "none";
         fvsrBanner.style.display = "none"; hiresBanner.style.display = "none";
         hideBusyBanner();
-        previewImg.style.display = "none";
+        previewImg.style.display = "none"; sendR2iBtn.style.display = "none";
         try { previewVid.pause(); } catch {}
         previewVid.style.display = "none";
         resultVid.src = url;
@@ -971,7 +1000,7 @@ app.registerExtension({
         placeholder.style.display = "block";
         frDetectBanner.style.display = "none";
         hideBusyBanner();
-        previewImg.style.display = "none";
+        previewImg.style.display = "none"; sendR2iBtn.style.display = "none";
         previewVid.style.display = "none";
         // Hiding a playing <video> does not stop it — previewVid has autoplay+loop for the
         // live KJ preview stream, so a run left mid-preview (or a stray click on it) kept
@@ -4536,11 +4565,27 @@ app.registerExtension({
         // turboLoraReference split.
         if (subMode === "t2i" || subMode === "ref2i") {
           leftPanel.appendChild(panel([
-            label("Steps"),
-            row([col([numberField(state.imgOfficialSteps ?? 6, v => { state.imgOfficialSteps = Math.max(1, Math.round(v)); persist(); }, 1)])]),
-            el("div", { text: "Official MiniMax H3 Image nodes — one sampling pass at the chosen resolution (cfg 1, euler, simple). 6 steps is the template's default.",
+            label("Sampling"),
+            row([
+              col([label("Sampler"), select(SAMPLERS.map(x => ({ value: x, label: x })),
+                state.imgSampler || "euler", v => { state.imgSampler = v; persist(); })]),
+              col([label("Scheduler"), select(SCHEDULERS.map(x => ({ value: x, label: x })),
+                state.imgScheduler || "simple", v => { state.imgScheduler = v; persist(); })]),
+            ]),
+            row([
+              col([label("Steps"), numberField(state.imgOfficialSteps ?? 6, v => { state.imgOfficialSteps = Math.max(1, Math.round(v)); persist(); }, 1)]),
+              col([label("CFG"), numberField(state.imgCfg ?? 1, v => { state.imgCfg = Math.max(0, v); persist(); }, 0.1)]),
+            ]),
+            subMode === "t2i" ? checkboxRow("H3 prompt weight", state.imgPromptWeight !== false, v => { state.imgPromptWeight = v; persist(); },
+              { title: "Text to Image works better with a reference: when on, a 1024x1024 pure-black image (#000000, an Empty Image node) is added as reference image 0. Leave it on for better results; turn it off to send the prompt alone." }) : null,
+            subMode === "ref2i" ? checkboxRow("Warn if no reference image", state.imgWarnNoRef !== false, v => { state.imgWarnNoRef = v; persist(); },
+              { title: "Reference to Image needs at least one picture. When on, Generate shows a notice popup instead of running if no reference image is loaded; turn it off to run without one." }) : null,
+            checkboxRow("Use Shift", !!state.imgShiftOn, v => { state.imgShiftOn = v; persist(); renderLeft(); }),
+            state.imgShiftOn ? row([col([label("Shift"), numberField(state.imgShift ?? 3, v => { state.imgShift = Math.max(0.01, v); persist(); }, 0.1)])]) : null,
+            el("div", { text: "Official MiniMax H3 Image nodes — one sampling pass at the chosen resolution. Template defaults: euler · simple · cfg 1 · 6 steps. "
+              + "Shift is off by default (the model's own shift is used); turn it on to patch the model with the H3 Sigma Shift node.",
               style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-          ]));
+          ].filter(Boolean)));
         }
         if (false) {   // legacy Turbo LoRA slots — not used by the official image nodes
           const turboKey = subMode === "ref2i" ? "imgTurboLoraRef2i" : "imgTurboLoraT2i";
@@ -4668,7 +4713,9 @@ app.registerExtension({
       async function runImageGen({ final = true } = {}) {
         if (running) return;
         const subMode = state.imageGenMode === "ref2i" ? "ref2i" : "t2i";
-        if (subMode === "ref2i" && !(state.imgRefImages || []).filter(Boolean).length) { showPopup("Pick at least one reference image first.", true); return; }
+        if (subMode === "ref2i" && state.imgWarnNoRef !== false && !(state.imgRefImages || []).filter(Boolean).length) {
+          showPopup("Reference to Image needs at least one reference image — add a picture in the Reference Images box first (or turn off \"Warn if no reference image\" to run without one).", true); return;
+        }
         running = true;
         const busyBtn = final ? genBtn : imgPreviewBtn;
         genBtn.disabled = true; imgPreviewBtn.disabled = true;
@@ -4705,6 +4752,9 @@ app.registerExtension({
             prompt: state.imgPrompt || "", seed, previewRes, finalRes,
             filenamePrefix: `${state.imgSaveSubfolder || state.saveSubfolder || SUBFOLDER}/${subMode}_${final ? "final" : "preview"}`,
             steps: state.imgOfficialSteps ?? 6, secondPassSteps: state.imgSecondPassSteps ?? 3,
+            sampler: state.imgSampler, scheduler: state.imgScheduler, cfg: state.imgCfg ?? 1,
+            shiftOn: !!state.imgShiftOn, shift: state.imgShift ?? 3,
+            promptWeight: state.imgPromptWeight !== false, warnNoRef: state.imgWarnNoRef !== false,
             turboOn: !!state.imgTurboOn, turboLora: state[turboKey], turboLoraStrength: state.imgTurboLoraStrength ?? 1.0,
             savePreview: !!state.imgPreviewSaveToGallery,
             latentMode: state.imgLatentMode,
@@ -4719,6 +4769,7 @@ app.registerExtension({
           // or it 404s. &t=Date.now() busts the browser cache too — PreviewImage's own
           // counter can repeat the same filename across separate runs.
           const url = `/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder || "")}&type=${encodeURIComponent(o.type || "output")}&t=${Date.now()}`;
+          if (final) lastImgOut = { filename: o.filename, subfolder: o.subfolder || "", type: o.type || "output" };
           showResultImage(url, { final });
           if (final) {
             // Everything the gallery's own "↩ Reuse Setting" needs to restore this exact
@@ -4732,7 +4783,7 @@ app.registerExtension({
               imgLoras: state.imgLoras || [], subMode,
               refImages: subMode === "ref2i" ? (state.imgRefImages || []) : [],
               refImageSize: state.imgRefImageSize || "max", seed,
-              imgOfficialSteps: state.imgOfficialSteps ?? 6, imgSteps: state.imgSteps ?? 20, imgSecondPassSteps: state.imgSecondPassSteps ?? 3,
+              imgOfficialSteps: state.imgOfficialSteps ?? 6, imgSampler: state.imgSampler, imgScheduler: state.imgScheduler, imgCfg: state.imgCfg ?? 1, imgShiftOn: !!state.imgShiftOn, imgShift: state.imgShift ?? 3, imgPromptWeight: state.imgPromptWeight !== false, imgSteps: state.imgSteps ?? 20, imgSecondPassSteps: state.imgSecondPassSteps ?? 3,
               imgLatentMode: state.imgLatentMode === "fizgig" ? "fizgig" : "basic",
               imgTurboOn: !!state.imgTurboOn,
               imgTurboLora: state.imgTurboOn ? (state[turboKey] || null) : null,
@@ -7547,6 +7598,12 @@ app.registerExtension({
         if (meta.imgSecondPassSteps != null) state.imgSecondPassSteps = meta.imgSecondPassSteps;
         state.imgLatentMode = meta.imgLatentMode === "fizgig" ? "fizgig" : "basic";
         if (meta.imgOfficialSteps != null) state.imgOfficialSteps = meta.imgOfficialSteps;
+        if (meta.imgSampler) state.imgSampler = meta.imgSampler;
+        if (meta.imgScheduler) state.imgScheduler = meta.imgScheduler;
+        if (meta.imgCfg != null) state.imgCfg = meta.imgCfg;
+        if (meta.imgShiftOn != null) state.imgShiftOn = !!meta.imgShiftOn;
+        if (meta.imgShift != null) state.imgShift = meta.imgShift;
+        if (meta.imgPromptWeight != null) state.imgPromptWeight = !!meta.imgPromptWeight;
         if (meta.imgTurboOn != null) state.imgTurboOn = !!meta.imgTurboOn;
         if (meta.imgTurboLora) {
           const turboKey = subMode === "ref2i" ? "imgTurboLoraRef2i" : "imgTurboLoraT2i";
