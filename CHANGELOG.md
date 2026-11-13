@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+## v1.53.1 — Image Generator: full sampler / scheduler lists
+
+- **The Image Generator's Sampler and Scheduler lists are now complete.** Both dropdowns (Text to Image / Reference to Image) show every sampler and scheduler of ComfyUI's own KSampler node (66 samplers and 11 schedulers on this PC), read from `/object_info/KSampler`, so new ones appear automatically; the short built-in list is only the fallback. A value saved earlier that is not in the list stays selectable. The video Sampling section is unchanged. Reload the page; no server restart needed.
+
 ## v1.53.0 — H3 Image Generator: Sampling panel, H3 prompt weight, Send to R2I, result mouse controls; online manual
 
 - **Sampler / Scheduler / CFG / Shift for the Image Generator (T2I and R2I).** A new Sampling panel: Sampler (euler), Scheduler (simple), Steps (6), CFG (1) and **Use Shift** (off by default; on shows a Shift value, default 3, and patches the model with `MiniMaxH3SigmaShift`, or `ModelSamplingAuraFlow` if that node is missing). Saved in the image record and restored by Reuse Setting. Character Sheet is unchanged.

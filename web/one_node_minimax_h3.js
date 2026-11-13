@@ -4406,6 +4406,21 @@ app.registerExtension({
       // still (see buildImageGenGraph's own comment). Keeps Seed/Mode + Generate/Stop
       // (unlike Postprocess) and adds a "👁 Preview" button next to Generate for a cheap
       // look at the preview resolution before spending the final-resolution run.
+      // The full sampler / scheduler lists of ComfyUI's own KSampler (read once from /object_info; the short built-in lists are the fallback)
+      let _ksLists = null;
+      function ksList(kind, fallback, current) {
+        if (!_ksLists) {
+          _ksLists = { samplers: null, schedulers: null };
+          api.fetchApi("/object_info/KSampler").then(r => r.json()).then(d => {
+            const req = d?.KSampler?.input?.required || {};
+            _ksLists.samplers = req.sampler_name?.[0] || null;
+            _ksLists.schedulers = req.scheduler?.[0] || null;
+            if (state.generationMode === "imagegen") renderLeft();
+          }).catch(() => {});
+        }
+        const list = (_ksLists[kind] && _ksLists[kind].length) ? _ksLists[kind] : fallback;
+        return current && !list.includes(current) ? [...list, current] : list;
+      }
       function renderImageGenLeft() {
         const prevScroll = leftPanel.scrollTop;
         clear(leftPanel);
@@ -4567,9 +4582,9 @@ app.registerExtension({
           leftPanel.appendChild(panel([
             label("Sampling"),
             row([
-              col([label("Sampler"), select(SAMPLERS.map(x => ({ value: x, label: x })),
+              col([label("Sampler"), select(ksList("samplers", SAMPLERS, state.imgSampler).map(x => ({ value: x, label: x })),
                 state.imgSampler || "euler", v => { state.imgSampler = v; persist(); })]),
-              col([label("Scheduler"), select(SCHEDULERS.map(x => ({ value: x, label: x })),
+              col([label("Scheduler"), select(ksList("schedulers", SCHEDULERS, state.imgScheduler).map(x => ({ value: x, label: x })),
                 state.imgScheduler || "simple", v => { state.imgScheduler = v; persist(); })]),
             ]),
             row([
