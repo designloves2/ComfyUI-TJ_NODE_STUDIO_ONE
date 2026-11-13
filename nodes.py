@@ -2049,7 +2049,8 @@ async def studio_llm_models(request):
             "Caption (plain description)", "Caption + Format (apply model_format below)",
             "SD/Booru Tags", "Pose & Anatomy Focus", "Custom Instruction",
         ]
-        model_formats = getattr(utils, "MODEL_FORMAT_OPTIONS", ["Universal Natural Language"])
+        model_formats = list(getattr(utils, "MODEL_FORMAT_OPTIONS", ["Universal Natural Language"]))
+        model_formats += [k for k in _local_model_formats() if k not in model_formats]
         aesthetics    = getattr(utils, "AESTHETIC_OPTIONS",    ["None (no aesthetic injection)"])
         purposes      = getattr(utils, "PURPOSE_OPTIONS",      ["Image", "Video", "Edit (Inpainting/I2V)"])
         return web.json_response({
@@ -2086,9 +2087,53 @@ def _release_llama():
     comfy.model_management.soft_empty_cache(force=True)
 
 
+# Model Format entries this pack adds itself (the official MiniMax H3 Image prompts, from the ComfyUI
+# image_minimax_h3_image_t2i / _r2i templates). They answer with JSON {expanded_caption, aspect_ratio};
+# only the caption is returned to the page.
+_LOCAL_FORMATS_CACHE = None
+
+
+def _local_model_formats():
+    global _LOCAL_FORMATS_CACHE
+    if _LOCAL_FORMATS_CACHE is None:
+        try:
+            with open(os.path.join(NODE_DIR, "h3_image_formats.json"), "r", encoding="utf-8") as fh:
+                _LOCAL_FORMATS_CACHE = json.load(fh)
+        except Exception as e:
+            print(f"[studio_enhance] h3_image_formats.json read failed: {e}")
+            _LOCAL_FORMATS_CACHE = {}
+    return _LOCAL_FORMATS_CACHE
+
+
+def _extract_expanded_caption(text):
+    s = str(text or "").strip()
+    a, b = s.find("{"), s.rfind("}")
+    if a >= 0 and b > a:
+        try:
+            o = json.loads(s[a:b + 1])
+            if isinstance(o, dict) and isinstance(o.get("expanded_caption"), str) and o["expanded_caption"].strip():
+                return o["expanded_caption"].strip()
+        except Exception:
+            pass
+    return s
+
+
 @PromptServer.instance.routes.post("/tj_studio_one/llm/enhance")
 async def studio_llm_enhance(request):
-    return await _studio_enhance(await request.json())
+    data = await request.json()
+    fmt = data.get("model_format", "")
+    local = _local_model_formats().get(fmt)
+    if local and not data.get("system_override") and not data.get("refine_instruction"):
+        resp = await _studio_enhance({**data, "system_override": local})
+        try:
+            body = json.loads(resp.body)
+            if body.get("ok") and body.get("result"):
+                body["result"] = _extract_expanded_caption(body["result"])
+                return web.json_response(body)
+        except Exception:
+            pass
+        return resp
+    return await _studio_enhance(data)
 
 
 def _llm_event_info(data):
@@ -2456,7 +2501,10 @@ async def translate_llm(request):
 
 @PromptServer.instance.routes.post("/tj_studio_one/llm/image_to_prompt")
 async def studio_llm_image_to_prompt(request):
-    return await _llm_with_events(await request.json(), _studio_image_to_prompt)
+    data = await request.json()
+    if data.get("model_format") in _local_model_formats():   # text-rewrite formats do not apply to image analysis
+        data["model_format"] = "Universal Natural Language"
+    return await _llm_with_events(data, _studio_image_to_prompt)
 
 
 async def _studio_image_to_prompt(data):
@@ -2978,9 +3026,18 @@ def _mmh3_config_response(cfg, subfolder, prefix):
         "clip_name":        cfg.get("clip_name",        ""),
         "vae_video":        cfg.get("vae_video",        ""),
         "vae_audio":        cfg.get("vae_audio",        ""),
+        "img_unet_t2i":     cfg.get("img_unet_t2i",     ""),
+        "img_unet_ref2i":   cfg.get("img_unet_ref2i",   ""),
+        "img_clip":         cfg.get("img_clip",         ""),
+        "img_vae":          cfg.get("img_vae",          ""),
         "turbo_lora":       cfg.get("turbo_lora",       ""),
         "turbo_lora_strength": cfg.get("turbo_lora_strength", 1.0),
         "upscale_model":    cfg.get("upscale_model",    ""),
+        # video super-resolution models (H3 Upscale / Postprocess): ReCaVSR transformer (+ optional Wan 2.2 VAE), RelayVSR UNET + VAE
+        "recavsr_transformer": cfg.get("recavsr_transformer", ""),
+        "recavsr_vae":         cfg.get("recavsr_vae",         ""),
+        "relayvsr_unet":       cfg.get("relayvsr_unet",       ""),
+        "relayvsr_vae":        cfg.get("relayvsr_vae",        ""),
         "save_subfolder":   cfg.get("save_subfolder")   or subfolder,
         "img_save_subfolder": cfg.get("img_save_subfolder", ""),
         "sheet_video_save_subfolder": cfg.get("sheet_video_save_subfolder", ""),
@@ -3646,6 +3703,14 @@ async def tj_shared_sensitive_set(request):
     return web.json_response({"ok": True, "items": sorted(keys)})
 
 
+def _scan_recavsr():
+    """ReCaVSR's model files: the folder the pack registered, else the plain models/recavsr folder."""
+    got = _scan("recavsr")
+    if got != ["none"]:
+        return got
+    return _scan_path(os.path.join(folder_paths.models_dir, "recavsr"))
+
+
 @PromptServer.instance.routes.get("/minimax_h3_one/models")
 async def mmh3_get_models(request):
     def scan(key, ext=None):
@@ -3673,6 +3738,8 @@ async def mmh3_get_models(request):
         "vaes":             scan("vae"),
         "loras":            scan("loras"),
         "upscale_models":   scan("upscale_models"),
+        # ReCaVSR keeps its files in models/recavsr (registered by ComfyUI-ReCaVSR; the plain folder is the fallback when the pack is missing)
+        "recavsr_models":   _scan_recavsr(),
         # ModelPreviewOverrideKJ's optional tiny_vae — a fast approx decoder for the live
         # preview only (not used for the real render). Folder is models/vae_approx/.
         "vae_approx":       scan("vae_approx", [".pth", ".safetensors"]),
@@ -3744,6 +3811,9 @@ MMH3_OPTIONAL_NODES = [
     # FlashVSR VSR (lihaoyun6/ComfyUI-FlashVSR-Ultra-Fast, GPL-3.0) — tiled diffusion
     # video super-resolution, offered as a 4th Upscale option alongside RTX VSR
     "FlashVSRInitPipe", "FlashVSRNodeAdv",
+    # ReCaVSR (PedroMarinhoDev/ComfyUI-ReCaVSR) and RelayVSR (ComfyUI core) — two more Upscale / Postprocess methods
+    "MiniMaxH3ImageConditioning", "ConditioningZeroOut", "ResizeImageMaskNode",
+    "ReCaVSRLoader", "ReCaVSRUpscale", "RelayVSRConditioning", "VSRDecode", "GetVideoComponents",
     # LTX 2.5 Upscale mode — GGUF text-encoder loader (ships with TJ_NODE); the LTXV*
     # nodes and LatentUpscaleModelLoader are ComfyUI core.
     "TJ_LTX25ClipLoaderGGUF",

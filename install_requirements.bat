@@ -171,8 +171,15 @@ rem H3 3D latent upscaler - MiniMax H3 7+1 hi-res finish and Image Generator.
 set REPOS[28]=https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler
 rem H3 Latent Upscale Tiled (TJ) - MiniMax H3 7+1 hi-res finish, Upscaler B (TJLatentUpscaleTiledMP). Apache-2.0, external pack.
 set REPOS[29]=https://github.com/designloves2/H3-Latent-Upscale-Tiled-TJ-
+rem ReCaVSR - MiniMax H3's Upscale / Postprocess "ReCaVSR" method (ReCaVSRLoader / ReCaVSRUpscale), one-step streaming
+rem video super-resolution on Wan2.2. Model weights are NOT installed by this script - put the transformer (int8 ConvRot
+rem from https://huggingface.co/PedroMarinhoDev/ReCaVSR-ComfyUI or bf16 from https://huggingface.co/kopper/ReCaVSR) plus
+rem prompt.safetensors and flashdecoder.safetensors (kopper/ReCaVSR) into ComfyUI/models/recavsr. Its requirements.txt
+rem (triton, opencv-python-headless) are installed with the pack. RelayVSR (the other new method) is ComfyUI core: its model
+rem (Comfy-Org/RelayVSR, diffusion_models + vae) needs no pack.
+set REPOS[30]=https://github.com/PedroMarinhoDev/ComfyUI-ReCaVSR
 
-set COUNT=30
+set COUNT=31
 set /a LAST=COUNT-1
 
 :: ComfyUI Manager names a folder after the pack's pyproject "name", not the repo name.
@@ -188,6 +195,7 @@ set "ALT[23]=comfyui-ace-step-ksampler"
 set "ALT[26]=comfyui-vosr2"
 set "ALT[27]=comfyui-h3-facerefine"
 set "ALT[29]=comfyui-tj_latent_upscale_tiled"
+set "ALT[30]=comfyui-recavsr"
 
 set /a N_NEW=0, N_UPD=0, N_CUR=0, N_FAIL=0
 

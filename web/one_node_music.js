@@ -2,6 +2,7 @@
 // 3rd family axis: music. One node, two engines (MiniMax Music 3 / Ace-Step 1.5).
 // SUNO layout + STUDIO_ONE identity. See SPEC_MUSICMAKER.md
 import { app } from "../../scripts/app.js";
+import { nativeGenNode, mountNativeLLMOptions } from "./shared/native_llm_opts.js";
 import { api } from "../../scripts/api.js";
 import {
   C, BRAND, LEFT_W, PLAYER_H, PAD, API, SUBFOLDER,
@@ -851,7 +852,7 @@ app.registerExtension({
           : { class_type: "CLIPLoader",     inputs: { clip_name: state.llmClip, type: state.llmClipType || "qwen_image" } };
         const graph = {
           "tg:c": loader,
-          "tg:t": { class_type: "TextGenerate", inputs: { clip: ["tg:c", 0], prompt: composed, max_length: 2048, sampling_mode: "off", thinking: false, use_default_template: true } },
+          "tg:t": await nativeGenNode(["tg:c", 0], composed, { maxLength: 2048 }),
           "tg:p": { class_type: "PreviewAny", inputs: { source: ["tg:t", 0] } },
         };
         const res = await submitPrompt(graph, `MusicMaker · LLM (${role})`);
@@ -2090,6 +2091,7 @@ app.registerExtension({
             b.appendChild(setNote("Runs ComfyUI's native TextGenerate node — a GGUF/safetensors LLM loaded through a CLIP loader. No extra packages."));
             const clipOpts = [...(m.text_encoders || []), ...(ctx.llmModels || [])];
             b.appendChild(fieldCol(`CLIP / GGUF model (${clipOpts.length})`, searchSel(clipOpts, pending.llm_clip ?? cfg.llm_clip, (v) => { pending.llm_clip = v; }, { placeholder: "search text encoders…" })));
+            b.appendChild(mountNativeLLMOptions(null));
             b.appendChild(fieldCol("CLIP loader type", sel(LLM_CLIP_TYPES, pending.llm_clip_type ?? cfg.llm_clip_type ?? "qwen_image", (v) => { pending.llm_clip_type = v; })));
           } else {
             if (!ctx.llmModels) { try { ctx.llmModels = (await api.fetchApi("/tj_studio_one/llm/models").then(r => r.json()).catch(() => ({}))).gguf || []; } catch { ctx.llmModels = []; } }

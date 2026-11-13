@@ -237,7 +237,7 @@ for (const [k, list] of Object.entries(EXTRA_TEXT)) TEXT_SOURCES[k] = [...new Se
 const GENERAL_ALIAS = EXTRA_GENERAL_TEXT;       // text steps used as backgrounds / borders: only the extra grays, never the step's own color
 // Purples made from the key color (lighter, darker, bluer): they follow HighLight with the same hue shift / saturation / brightness
 // they have against the default key color.
-const AUX_TINTS = ["#2a2550", "#43206c", "#4d238d", "#5b3fd6", "#6a5cff", "#6b2ec9", "#6f44cf", "#7c3aed", "#7d40df", "#8f7bff", "#9b5cff", "#a78bfa", "#b57bff", "#b57cf5"];
+const AUX_TINTS = ["#2a2550", "#43206c", "#4d238d", "#5b3fd6", "#6a5cff", "#6b2ec9", "#6f44cf", "#7c3aed", "#7d40df", "#8f7bff", "#9b5cff", "#a78bfa", "#b57bff", "#b57cf5", "#e4d4fb"];
 const GENERAL_KEYS = Object.keys(GENERAL_SOURCES), TEXT_KEYS = Object.keys(TEXT_SOURCES);
 const KEYS = [...new Set([...GENERAL_KEYS, ...TEXT_KEYS])];
 const lc = (h) => String(h).toLowerCase();

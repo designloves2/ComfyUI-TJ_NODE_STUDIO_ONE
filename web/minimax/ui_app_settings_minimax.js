@@ -9,6 +9,7 @@ import { getTranslateConfig, loadTranslateConfig, onTranslateConfig, setTranslat
 import { mountLLMSettingsSection } from "../shared/llm_panel.js";
 import { useKoCheckbox } from "../shared/ko_setting.js";
 import { mountColorsPanel } from "../shared/ui_theme_dialog.js";
+import { mountNativeLLMOptions } from "../shared/native_llm_opts.js";
 
 function searchableSelect(options, value, onChange) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } });
@@ -166,6 +167,18 @@ export function createSettingsOverlay(state, ctx) {
       el("div", { html: "→ <code>models/text_encoders/</code> · <code>models/vae/</code>", style: { fontSize: "10px", color: C.muted } }),
     ]));
 
+    // Image Generator (Text to Image / Reference to Image) — the official MiniMax H3 Image nodes; empty = use the video models above
+    const iT = searchableSelect(diff, state.imgUnetT2i || "none", v => { state.imgUnetT2i = v; ctx.persist(); ctx.refreshModes?.(); });
+    const iR = searchableSelect(diff, state.imgUnetRef2i || "none", v => { state.imgUnetRef2i = v; ctx.persist(); ctx.refreshModes?.(); });
+    const iC = searchableSelect(teAll, state.imgClip || "none", v => { state.imgClip = v; ctx.persist(); ctx.refreshModes?.(); });
+    const iV = searchableSelect(vae, state.imgVae || "none", v => { state.imgVae = v; ctx.persist(); ctx.refreshModes?.(); });
+    wrap.appendChild(panel([
+      label("Image Generator models — Text to Image / Reference to Image only"),
+      row([col([label("MODEL · Text to Image"), iT.el]), col([label("MODEL · Reference to Image"), iR.el])]),
+      row([col([label("CLIP (type=minimax)"), iC.el]), col([label("VAE"), iV.el])]),
+      el("div", { html: "Used only by the Image Generator's Text to Image and Reference to Image (the official MiniMax H3 Image nodes). Leave a field at <b>none</b> to use the video model set above. Character Sheet always uses the video models.", style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+    ]));
+
     const refreshBtn = button("↻ Refresh Models", async () => {
       refreshBtn.textContent = "Loading…";
       try { await refreshModels(); } finally { refreshBtn.textContent = "↻ Refresh Models"; }
@@ -190,6 +203,40 @@ export function createSettingsOverlay(state, ctx) {
     wrap.appendChild(panel([
       label("Upscale"),
       col([label("Upscale Model (used when Upscale = Upscale Model)"), um.el]),
+    ]));
+
+    // ── Video super-resolution — RelayVSR (ComfyUI core) and ReCaVSR (ComfyUI-ReCaVSR): the model files for the H3 Upscale
+    //    section and Postprocess → C. Upscale. Their options live in those panels.
+    const keepPicked = (list, cur) => (cur && !list.includes(cur)) ? [...list, cur] : list;
+    const rlUnetList = keepPicked(["none", ...(modelData.diffusion_models || []).filter(x => /relayvsr/i.test(x))], state.relayvsrUnet);
+    const rlVaeList  = keepPicked(["none", ...(modelData.vaes || []).filter(x => /relayvsr/i.test(x))], state.relayvsrVae);
+    const rcList     = keepPicked(["none", ...(modelData.recavsr_models || []).filter(x => /transformer/i.test(x))], state.recavsrTransformer);
+    const rlU = searchableSelect(rlUnetList, state.relayvsrUnet || "none", v => { state.relayvsrUnet = v === "none" ? "" : v; ctx.persist(); });
+    const rlV = searchableSelect(rlVaeList,  state.relayvsrVae  || "none", v => { state.relayvsrVae  = v === "none" ? "" : v; ctx.persist(); });
+    const rcT = searchableSelect(rcList,     state.recavsrTransformer || "none", v => { state.recavsrTransformer = v === "none" ? "" : v; ctx.persist(); });
+    const rcV = searchableSelect(vae,        state.recavsrVae || "none", v => { state.recavsrVae = v === "none" ? "" : v; ctx.persist(); });
+    const dim = { fontSize: "10px", color: C.muted, lineHeight: "1.6" };
+    wrap.appendChild(panel([
+      label("Video upscalers — RelayVSR"),
+      row([col([label("RelayVSR UNET"), rlU.el]), col([label("RelayVSR VAE"), rlV.el])]),
+      el("div", { text: "Used when Upscale (or Postprocess → C. Upscale) is RelayVSR. Pick the matching pair: x2 UNET with x2 VAE. On a 16GB VRAM card only the x2 model is practical — the x4 model is hard to run there.", style: dim }),
+      el("div", { html: "Download — <a href=\"https://huggingface.co/Comfy-Org/RelayVSR\" target=\"_blank\" rel=\"noopener\" style=\"color:" + BRAND + "\">Comfy-Org/RelayVSR</a>: "
+        + "<code>diffusion_models/relayvsr_x2_lightx2v_int8_convrot.safetensors</code> → <code>models/diffusion_models/</code> (a sub-folder such as <code>Upscale</code> is fine) · "
+        + "<code>vae/relayvsr_flash_vae_x2_fp32.safetensors</code> → <code>models/vae/</code>. "
+        + "The x4 pair (<code>relayvsr_x4_int8_convrot.safetensors</code> + <code>relayvsr_flash_vae_x4_fp32.safetensors</code>) goes in the same folders. "
+        + "The RelayVSR nodes are ComfyUI core — no extra pack.", style: dim }),
+    ]));
+    wrap.appendChild(panel([
+      label("Video upscalers — ReCaVSR"),
+      row([col([label("ReCaVSR transformer"), rcT.el]), col([label("Wan 2.2 VAE (only for Decoder = vae)"), rcV.el])]),
+      el("div", { text: "Used when Upscale (or Postprocess → C. Upscale) is ReCaVSR. Its options — scale, color fix, decoder, kernels, KV offload, encoder, seed — are in that panel.", style: dim }),
+      el("div", { html: "Download — put everything in <code>models/recavsr/</code> (or the <code>recavsr:</code> line of <code>extra_model_paths.yaml</code>): "
+        + "the transformer, either <code>transformer_int8_convrot.safetensors</code> (6.27 GB, from <a href=\"https://huggingface.co/PedroMarinhoDev/ReCaVSR-ComfyUI\" target=\"_blank\" rel=\"noopener\" style=\"color:" + BRAND + "\">PedroMarinhoDev/ReCaVSR-ComfyUI</a>, in its <code>recavsr/</code> folder) "
+        + "or the bf16 <code>transformer.safetensors</code> (10.6 GB, from <a href=\"https://huggingface.co/kopper/ReCaVSR\" target=\"_blank\" rel=\"noopener\" style=\"color:" + BRAND + "\">kopper/ReCaVSR</a>); "
+        + "plus <code>prompt.safetensors</code> and <code>flashdecoder.safetensors</code> from kopper/ReCaVSR. "
+        + "The <code>vae</code> decoder uses ComfyUI's own <code>wan2.2_vae.safetensors</code> in <code>models/vae/</code> "
+        + "(<a href=\"https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged\" target=\"_blank\" rel=\"noopener\" style=\"color:" + BRAND + "\">Comfy-Org/Wan_2.2_ComfyUI_Repackaged</a>). "
+        + "Needs the <code>ComfyUI-ReCaVSR</code> pack (<code>install_requirements</code> installs it).", style: dim }),
     ]));
 
     // ── LTX 2.5 Upscale mode — its own model set (generationMode "ltxupscale") ──
@@ -305,6 +352,9 @@ export function createSettingsOverlay(state, ctx) {
     ]));
 
     renderModelPickers();
+    nativeOptsBox = panel([mountNativeLLMOptions(null)]);   // Generate Text details, shared by every node
+    wrap.appendChild(nativeOptsBox);
+    refreshNativeOpts();
     return wrap;
   }
 
@@ -365,7 +415,15 @@ export function createSettingsOverlay(state, ctx) {
   }
 
   // h3Only renders just the Brief and Vision rows (what the Prompt Edit popup needs).
+  // Generate Text details are for the Native (ComfyUI CLIP) backend only — hide them when every role uses another backend
+  let nativeOptsBox = null;
+  function refreshNativeOpts() {
+    if (!nativeOptsBox) return;
+    const isNative = (k) => { const v = state[k] || state.h3LlmBackend || "native"; return v !== "openrouter" && v !== "llamagguf" && v !== "custom"; };
+    nativeOptsBox.style.display = ["h3BriefBackend", "h3VisionBackend", "ltxVisionBackend"].some(isNative) ? "" : "none";
+  }
   function renderModelPickers(target = renderModelPickersInto, h3Only = false) {
+    refreshNativeOpts();
     const wrap2 = target;
     if (!wrap2) return;
     clear(wrap2);
@@ -879,6 +937,10 @@ export function createSettingsOverlay(state, ctx) {
       clip_name:       state.clipName      || "",
       vae_video:       state.vaeVideo      || "",
       vae_audio:       state.vaeAudio      || "",
+      img_unet_t2i:    state.imgUnetT2i    || "",
+      img_unet_ref2i:  state.imgUnetRef2i  || "",
+      img_clip:        state.imgClip       || "",
+      img_vae:         state.imgVae        || "",
       // LTX 2.5 Upscale mode
       ltx_unet:            state.ltxUnet           || "",
       ltx_latent_upscaler: state.ltxLatentUpscaler || "",
@@ -907,6 +969,10 @@ export function createSettingsOverlay(state, ctx) {
       turbo_lora:      state.turboLora     || "",
       turbo_lora_strength: state.turboLoraStrength ?? 1.0,
       upscale_model:   state.upscaleModel  || "",
+      recavsr_transformer: state.recavsrTransformer || "",
+      recavsr_vae:         state.recavsrVae         || "",
+      relayvsr_unet:       state.relayvsrUnet       || "",
+      relayvsr_vae:        state.relayvsrVae        || "",
       save_subfolder:  state.saveSubfolder || "",
       img_save_subfolder: state.imgSaveSubfolder || "",
       sheet_video_save_subfolder: state.sheetVideoSaveSubfolder || "",
@@ -1022,6 +1088,10 @@ export function createSettingsOverlay(state, ctx) {
     take("clipName",      cfg.clip_name);
     take("vaeVideo",      cfg.vae_video);
     take("vaeAudio",      cfg.vae_audio);
+    take("imgUnetT2i",    cfg.img_unet_t2i);
+    take("imgUnetRef2i",  cfg.img_unet_ref2i);
+    take("imgClip",       cfg.img_clip);
+    take("imgVae",        cfg.img_vae);
     take("turboLora",     cfg.turbo_lora);
     // Image Generator's Turbo switch (T2I/Ref2I) — same "remember the last value used
     // anywhere" treatment as turboLora above, requested separately from per-image
@@ -1040,6 +1110,10 @@ export function createSettingsOverlay(state, ctx) {
     if (state.charSheetMaxSize == null && cfg.charsheet_max_size != null) state.charSheetMaxSize = cfg.charsheet_max_size;
     if (state.charSheetSecondPassSteps == null && cfg.charsheet_second_pass_steps != null) state.charSheetSecondPassSteps = cfg.charsheet_second_pass_steps;
     take("upscaleModel",  cfg.upscale_model);
+    take("recavsrTransformer", cfg.recavsr_transformer);
+    take("recavsrVae",         cfg.recavsr_vae);
+    take("relayvsrUnet",       cfg.relayvsr_unet);
+    take("relayvsrVae",        cfg.relayvsr_vae);
     take("previewTinyVae", cfg.preview_tiny_vae);
     take("ltxUnet",           cfg.ltx_unet);
     take("ltxLatentUpscaler", cfg.ltx_latent_upscaler);

@@ -1,6 +1,7 @@
 // api_ltx25.js — Backend communication for LTX 2.5 ONE STUDIO (TJ)
 import { api } from "../../../scripts/api.js";
 import { API, SUBFOLDER } from "./core_ltx25.js";
+import { nativeGenNode } from "../shared/native_llm_opts.js";
 
 export async function getModels() {
   const r = await api.fetchApi(`${API}/models`);
@@ -649,21 +650,7 @@ export async function analyzeImagesNative(clipName, images, promptText, clipType
       scale_method: "Center Crop",
       batch_select: "",
     }},
-    gen:    { class_type: "TextGenerate", inputs: {
-      clip: ["clip", 0],
-      prompt: promptText,
-      image: ["batch", 0],
-      max_length: 1024,
-      sampling_mode: "on",
-      "sampling_mode.temperature": 0.7,
-      "sampling_mode.top_k": 64,
-      "sampling_mode.top_p": 0.95,
-      "sampling_mode.min_p": 0.05,
-      "sampling_mode.repetition_penalty": 1.05,
-      "sampling_mode.seed": 0,
-      thinking: false,
-      use_default_template: true,
-    }},
+    gen:    await nativeGenNode(["clip", 0], promptText, { images: ["batch", 0], maxLength: 1024 }),
     out:    { class_type: "TJStudioOneTextOutput", inputs: { text: ["gen", 0] } },
   };
   const res = await queuePrompt(g);
@@ -684,20 +671,7 @@ export async function writeBriefNative(clipName, systemPrompt, userPrompt, clipT
     clip: isGguf
       ? { class_type: "TJ_LTX25ClipLoaderGGUF", inputs: { clip_name: clipName } }
       : { class_type: "CLIPLoader", inputs: { clip_name: clipName, type: clipType, device: "default" } },
-    gen:  { class_type: "TextGenerate", inputs: {
-      clip: ["clip", 0],
-      prompt: `${systemPrompt}\n\n${userPrompt}`,
-      max_length: 2048,
-      sampling_mode: "on",
-      "sampling_mode.temperature": 0.7,
-      "sampling_mode.top_k": 64,
-      "sampling_mode.top_p": 0.95,
-      "sampling_mode.min_p": 0.05,
-      "sampling_mode.repetition_penalty": 1.05,
-      "sampling_mode.seed": 0,
-      thinking: false,
-      use_default_template: true,
-    }},
+    gen:  await nativeGenNode(["clip", 0], `${systemPrompt}\n\n${userPrompt}`, { images: null, maxLength: 2048 }),
     out:  { class_type: "TJStudioOneTextOutput", inputs: { text: ["gen", 0] } },
   };
   const res = await queuePrompt(g);

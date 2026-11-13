@@ -51,6 +51,7 @@ _OPTIONAL = [
     ("ComfyUI-H3-FaceRefine",             ("comfyui-h3-facerefine",)),
     ("Comfyui_Minimax_h3_latent_Upscaler", ("comfyui_minimax_h3_latent_upscaler",)),
     ("H3-Latent-Upscale-Tiled-TJ-",       ("h3-latent-upscale-tiled-tj-", "comfyui-tj_latent_upscale_tiled")),
+    ("ComfyUI-ReCaVSR",                   ("comfyui-recavsr",)),
 ]
 
 _LINE = "=" * 74

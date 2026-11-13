@@ -185,6 +185,85 @@ function buildFlashVSR(g, pipeId, nodeId, p, images) {
     seed: p.seed ?? 42,
   }};
 }
+// ReCaVSR (PedroMarinhoDev/ComfyUI-ReCaVSR) and RelayVSR (ComfyUI core) — two more video super-resolution methods, used by the
+// inline per-clip Upscale and by Postprocess. Node ids are made per caller (the "MM:" and "PPX:" families).
+function vsrIds(prefix) {
+  return {
+    rcLoad: `${prefix}recavsr_load`, rcVae: `${prefix}recavsr_vae`, rcUp: `${prefix}recavsr`, rcFrames: `${prefix}recavsr_frames`,
+    rlUnet: `${prefix}relayvsr_unet`, rlVae: `${prefix}relayvsr_vae`, rlCond: `${prefix}relayvsr_cond`,
+    rlSamp: `${prefix}relayvsr_sampler`, rlDec: `${prefix}relayvsr_decode`,
+  };
+}
+const VSR_MM = vsrIds("MM:");
+const VSR_PP = vsrIds("PPX:");
+
+/** ReCaVSR: ReCaVSRLoader -> ReCaVSRUpscale (frames in, a VIDEO out) -> GetVideoComponents (frames again, so the rest of the
+ *  graph — audio, saving, the next step — works on frames like every other method). Returns the frames link. */
+function buildReCaVSR(g, ids, p, images, fps, avail) {
+  if (!has(avail, "ReCaVSRUpscale") || !has(avail, "ReCaVSRLoader") || !has(avail, "GetVideoComponents"))
+    throw new Error("ReCaVSR is not installed (ReCaVSRLoader / ReCaVSRUpscale) — run install_requirements and restart ComfyUI.");
+  if (!p.transformer) throw new Error("ReCaVSR: no transformer file selected — pick one in Settings → UpScale Model.");
+  const decoder = p.decoder || "flashdecoder";
+  if (decoder === "vae" && !p.vae) throw new Error("ReCaVSR: the 'vae' decoder needs the Wan 2.2 VAE — pick it in Settings → UpScale Model.");
+  g[ids.rcLoad] = { class_type: "ReCaVSRLoader", inputs: { transformer: p.transformer } };
+  const inputs = {
+    model: [ids.rcLoad, 0], images,
+    scale: Math.min(8, Math.max(0.5, p.scale ?? 2)),
+    color_fix: p.colorFix || "wavelet",
+    seed: Math.max(0, Math.round(Number(p.seed ?? 42)) || 0),
+    decoder,
+    kernels: p.kernels || "fast",
+    kv_offload: !!p.kvOffload,
+    encoder: p.encoder || "auto",
+    fps: Math.round(fps || FPS) || FPS,
+  };
+  if (decoder === "vae") {
+    g[ids.rcVae] = { class_type: "VAELoader", inputs: { vae_name: p.vae } };
+    inputs.vae = [ids.rcVae, 0];
+  }
+  g[ids.rcUp] = { class_type: "ReCaVSRUpscale", inputs };
+  g[ids.rcFrames] = { class_type: "GetVideoComponents", inputs: { video: [ids.rcUp, 0] } };
+  return [ids.rcFrames, 0];
+}
+export function recavsrUsed(p) {
+  return {
+    method: "recavsr", scale: p.scale ?? 2, colorFix: p.colorFix || "wavelet", decoder: p.decoder || "flashdecoder",
+    kernels: p.kernels || "fast", kvOffload: !!p.kvOffload, encoder: p.encoder || "auto", seed: p.seed ?? 42,
+    transformer: p.transformer || "",
+  };
+}
+function recavsrParamsFromState(state) {
+  return {
+    transformer: state.recavsrTransformer, vae: state.recavsrVae, scale: state.recavsrScale, colorFix: state.recavsrColorFix,
+    seed: state.recavsrSeed, decoder: state.recavsrDecoder, kernels: state.recavsrKernels,
+    kvOffload: state.recavsrKvOffload, encoder: state.recavsrEncoder,
+  };
+}
+
+/** RelayVSR: UNETLoader -> RelayVSRConditioning -> KSampler (1 step, cfg 1) -> VSRDecode. The upscale factor is the model's own
+ *  (the x2 file doubles, the x4 file quadruples). Returns the frames link. */
+function buildRelayVSR(g, ids, p, images, avail) {
+  if (!has(avail, "RelayVSRConditioning") || !has(avail, "VSRDecode"))
+    throw new Error("RelayVSR is not available (RelayVSRConditioning / VSRDecode are ComfyUI core nodes) — update ComfyUI.");
+  if (!p.unet) throw new Error("RelayVSR: no model selected — pick the RelayVSR UNET in Settings → UpScale Model.");
+  if (!p.vae) throw new Error("RelayVSR: no VAE selected — pick the RelayVSR VAE in Settings → UpScale Model.");
+  g[ids.rlUnet] = { class_type: "UNETLoader", inputs: { unet_name: p.unet, weight_dtype: "default" } };
+  g[ids.rlCond] = { class_type: "RelayVSRConditioning", inputs: { model: [ids.rlUnet, 0], images } };
+  g[ids.rlSamp] = { class_type: "KSampler", inputs: {
+    model: [ids.rlUnet, 0], positive: [ids.rlCond, 0], negative: [ids.rlCond, 0], latent_image: [ids.rlCond, 1],
+    seed: p.seed ?? randomSeed(), steps: 1, cfg: 1, sampler_name: "euler", scheduler: "simple", denoise: 1,
+  }};
+  g[ids.rlVae] = { class_type: "VAELoader", inputs: { vae_name: p.vae } };
+  g[ids.rlDec] = { class_type: "VSRDecode", inputs: { vae: [ids.rlVae, 0], samples: [ids.rlSamp, 0], images, detail: 1 } };
+  return [ids.rlDec, 0];
+}
+export function relayvsrUsed(p) {
+  return { method: "relayvsr", model: p.unet || "", vae: p.vae || "" };
+}
+function relayvsrParamsFromState(state) {
+  return { unet: state.relayvsrUnet, vae: state.relayvsrVae, seed: randomSeed() };
+}
+
 /** Normalizes a flashvsr params object (from state.* or an opts.flashvsr passthrough)
  *  into the shape saved as clip metadata's upscale.* field. */
 export function flashvsrUsed(p) {
@@ -1136,6 +1215,14 @@ export function buildClipGraph(state, avail, opts = {}) {
     buildFlashVSR(g, N.fvsrPipe, N.fvsr, fvsrParams, images);
     images = [N.fvsr, 0];
     upscaleUsed = flashvsrUsed(fvsrParams);
+  } else if (up === "recavsr") {
+    const rcParams = recavsrParamsFromState(state);
+    images = buildReCaVSR(g, VSR_MM, rcParams, images, FPS, avail);
+    upscaleUsed = recavsrUsed(rcParams);
+  } else if (up === "relayvsr") {
+    const rlParams = relayvsrParamsFromState(state);
+    images = buildRelayVSR(g, VSR_MM, rlParams, images, avail);
+    upscaleUsed = relayvsrUsed(rlParams);
   }
 
   // ── outputs ────────────────────────────────────────────────────────────────
@@ -1995,7 +2082,7 @@ void main() {
  *
  * @param opts.deblur     { enabled, strength }
  * @param opts.denoise    { enabled, strength }
- * @param opts.upscale    { enabled, method: "rtx"|"flashvsr"|"model", ...method params,
+ * @param opts.upscale    { enabled, method: "rtx"|"flashvsr"|"recavsr"|"relayvsr"|"model", ...method params,
  *                          srcW, srcH, twoPass, pass2 }  — twoPass (flashvsr/model only) adds an
  *                          RTX VSR (TJ) pass after the first method; pass2 = { rtxSizeMode:
  *                          scale|short|long|wh, rtxScale, rtxShort, rtxLong, rtxW, rtxH,
@@ -2059,6 +2146,12 @@ export function buildPostprocessGraph(opts, avail) {
       buildFlashVSR(g, PPX.fvsrPipe, PPX.fvsr, upscale.flashvsr || {}, images);
       images = [PPX.fvsr, 0];
       upscaleUsedInfo = flashvsrUsed(upscale.flashvsr || {});
+    } else if (upscale.method === "recavsr") {
+      images = buildReCaVSR(g, VSR_PP, upscale.recavsr || {}, images, fps, avail);
+      upscaleUsedInfo = recavsrUsed(upscale.recavsr || {});
+    } else if (upscale.method === "relayvsr") {
+      images = buildRelayVSR(g, VSR_PP, upscale.relayvsr || {}, images, avail);
+      upscaleUsedInfo = relayvsrUsed(upscale.relayvsr || {});
     } else if (upscale.method === "h3lat") {
       const r = addH3LastStep(g, upscale.h3State, avail, { images, audio, ...upscale.h3 });
       images = r.images;
@@ -2439,6 +2532,67 @@ export function buildImageGenGraph(state, avail, opts) {
     : { class_type: "PreviewImage", inputs: { images: stillImage } };
 
   return { graph: g, saveNode: IMG.save };
+}
+
+// ── Official MiniMax H3 Image nodes — Text to Image / Reference to Image ────────────
+//
+// UNETLoader → (LoRAs) → KSampler, CLIPLoader(minimax) + VAELoader →
+// MiniMaxH3ImageConditioning (+ ConditioningZeroOut as the negative) → VAEDecode → Save.
+// Character Sheet does NOT use this: it keeps buildImageGenGraph's video-pipeline route.
+const IMGO = {
+  unet: "IMGO:unet", clip: "IMGO:clip", vae: "IMGO:vae", cond: "IMGO:cond", neg: "IMGO:neg",
+  sampler: "IMGO:sampler", decode: "IMGO:decode", save: "IMGO:save",
+  ref: (i) => `IMGO:ref_${i}`, refMp: (i) => `IMGO:refmp_${i}`, refSnap: (i) => `IMGO:refsnap_${i}`,
+};
+
+/**
+ * @param opts same as buildImageGenGraph (subMode "t2i"|"ref2i", final, refImages, refImageMps,
+ *             prompt, seed, previewRes, finalRes, filenamePrefix, steps, savePreview)
+ */
+export function buildOfficialImageGraph(state, avail, opts) {
+  const { subMode, final, refImages, refImageMps, prompt, seed, previewRes, finalRes, filenamePrefix, steps, savePreview } = opts;
+  for (const n of ["MiniMaxH3ImageConditioning", "ConditioningZeroOut"])
+    if (!has(avail, n)) throw new Error(`${n} is not available — update ComfyUI to a version with the official MiniMax H3 Image nodes, then restart.`);
+  const refList = (refImages || []).filter(Boolean).slice(0, 9);
+  if (subMode === "ref2i" && !refList.length) throw new Error("Reference to Image needs at least one reference image.");
+  if (refList.length && !has(avail, "ResizeImageMaskNode")) throw new Error("ResizeImageMaskNode is not available — update ComfyUI.");
+  const pick = (own, fallback) => (own && own !== "none") ? own : fallback;
+  const unetName = subMode === "ref2i" ? pick(state.imgUnetRef2i, state.unetReference) : pick(state.imgUnetT2i, state.unetFirstLast);
+  const clipName = pick(state.imgClip, state.clipName), vaeName = pick(state.imgVae, state.vaeVideo);
+  if (!unetName || unetName === "none") throw new Error("Image MODEL is not set — check ⚙ Settings → H3 Model → Image Generator models.");
+  if (!clipName || clipName === "none") throw new Error("Image CLIP is not set — check ⚙ Settings → H3 Model.");
+  if (!vaeName || vaeName === "none") throw new Error("Image VAE is not set — check ⚙ Settings → H3 Model.");
+  const res = final ? finalRes : previewRes;
+  const g = {};
+  g[IMGO.unet] = { class_type: "UNETLoader", inputs: { unet_name: unetName, weight_dtype: "default" } };
+  let model = buildImageLoraChain(g, state, [IMGO.unet, 0]);
+  g[IMGO.clip] = { class_type: "CLIPLoader", inputs: { clip_name: clipName, type: "minimax", device: "default" } };
+  g[IMGO.vae] = { class_type: "VAELoader", inputs: { vae_name: vaeName } };
+
+  const condInputs = { clip: [IMGO.clip, 0], vae: [IMGO.vae, 0], prompt, width: res.width, height: res.height };
+  refList.forEach((name, i) => {
+    g[IMGO.ref(i)] = { class_type: "LoadImage", inputs: { image: name } };
+    let link = [IMGO.ref(i), 0];
+    const mp = Number(refImageMps?.[i] ?? 1.0);
+    if (mp > 0) {   // 0 = send as uploaded
+      g[IMGO.refMp(i)] = { class_type: "ResizeImageMaskNode", inputs: {
+        input: link, resize_type: "scale total pixels", "resize_type.megapixels": mp, scale_method: "area" } };
+      link = [IMGO.refMp(i), 0];
+    }
+    g[IMGO.refSnap(i)] = { class_type: "ResizeImageMaskNode", inputs: {
+      input: link, resize_type: "scale to multiple", "resize_type.multiple": 32, scale_method: "area" } };
+    condInputs[`images.image_${i}`] = [IMGO.refSnap(i), 0];
+  });
+  g[IMGO.cond] = { class_type: "MiniMaxH3ImageConditioning", inputs: condInputs };
+  g[IMGO.neg] = { class_type: "ConditioningZeroOut", inputs: { conditioning: [IMGO.cond, 0] } };
+  g[IMGO.sampler] = { class_type: "KSampler", inputs: {
+    model, positive: [IMGO.cond, 0], negative: [IMGO.neg, 0], latent_image: [IMGO.cond, 1],
+    seed: seed ?? 0, steps: Math.max(1, Math.round(steps ?? 6)), cfg: 1, sampler_name: "euler", scheduler: "simple", denoise: 1 } };
+  g[IMGO.decode] = { class_type: "VAEDecode", inputs: { samples: [IMGO.sampler, 0], vae: [IMGO.vae, 0] } };
+  g[IMGO.save] = (final || savePreview)
+    ? { class_type: "SaveImage", inputs: { filename_prefix: filenamePrefix, images: [IMGO.decode, 0] } }
+    : { class_type: "PreviewImage", inputs: { images: [IMGO.decode, 0] } };
+  return { graph: g, saveNode: IMGO.save };
 }
 
 // ── H3 image gallery post-process (Deblur + RTX VSR only) ───────────────────────────

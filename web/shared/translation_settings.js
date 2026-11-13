@@ -3,6 +3,7 @@
 // shows in every node and page at once (the panel re-draws when the server pushes it).
 import { getTranslateConfig, loadTranslateConfig, onTranslateConfig, setTranslateConfig } from "./translate_config.js";
 import { customLLMControls } from "./custom_llm_controls.js";
+import { mountNativeLLMOptions } from "./native_llm_opts.js";
 import { useKoCheckbox } from "./ko_setting.js";
 
 let _models = null;
@@ -115,7 +116,7 @@ export function translationSettingsPanel(theme = {}, nodeKey = "") {
     } else {
       control.appendChild(div("loading…", { fontSize: "11px", color: T.muted }));
       localModels().then(d => {
-        control.replaceChildren(col([label("CLIP checkpoint"), select(["none", ...d.textEncoders.filter(x => x !== "none")], t.native_clip || "none", v => save({ native_clip: v === "none" ? "" : v }))]));
+        control.replaceChildren(col([label("CLIP checkpoint"), select(["none", ...d.textEncoders.filter(x => x !== "none")], t.native_clip || "none", v => save({ native_clip: v === "none" ? "" : v }))]), mountNativeLLMOptions(null));
       });
     }
   }

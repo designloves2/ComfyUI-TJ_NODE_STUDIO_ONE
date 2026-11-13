@@ -14,6 +14,9 @@
  */
 import { t } from "./i18n.js";
 import "./llm_live.js";
+import { mountNativeLLMOptions, loadNativeLLMOpts } from "./native_llm_opts.js";
+// ComfyUI native backend: max tokens / temperature come from the Generate Text details block, not the GGUF row
+const nativeNums = (backend) => { if (backend !== "comfy") return {}; const o = loadNativeLLMOpts(); return { max_tokens: o.max_length, temperature: o.temperature, seed: o.seed }; };
 import { openImageGalleryPicker } from "./ui_image_gallery_picker.js";
 import { customLLMControls } from "./custom_llm_controls.js";
 import { attachBilingual } from "./bilingual_ui.js";
@@ -263,7 +266,8 @@ export function mountLLMSettingsSection(ov, ctx) {
       body: JSON.stringify({ [key]: llm[key] }),
     }).catch(() => {});
   }
-  function syncBackendBlocks() { for (const b of _backendBlocks) b._syncFromState(); }
+  let updateAdvVisibility = () => {};
+  function syncBackendBlocks() { for (const b of _backendBlocks) b._syncFromState(); updateAdvVisibility(); }
 
   function makeBackendBlock(role, roleLabel) {
     const mkey = role === "vision" ? "or_model_vision" : "or_model_text";
@@ -368,6 +372,7 @@ export function mountLLMSettingsSection(ov, ctx) {
       localGroup.style.display = (b === "comfy" || b === "openrouter" || b === "custom") ? "none" : "flex";
       comfyGroup.style.display = b === "comfy" ? "flex" : "none";
       customGroup.style.display = b === "custom" ? "flex" : "none";
+      updateAdvVisibility();
     };
     box._fill = (orModels, keyHint) => {
       if (orModels && orModels.length) {
@@ -407,6 +412,14 @@ export function mountLLMSettingsSection(ov, ctx) {
   advRow.appendChild(labelRow(t("llm_lbl_temperature"), makeNumberInput(llm.temperature, 0, 2, 0.05, v => { llm.temperature = v; saveLLM(); })));
   advRow.appendChild(labelRow(t("llm_lbl_seed"), makeNumberInput(llm.seed, 0, 999999999, 1, v => { llm.seed = v; saveLLM(); })));
   body.appendChild(advRow);
+  const nativeBox = mountNativeLLMOptions(null);   // ComfyUI native Generate Text details
+  body.appendChild(nativeBox);
+  // GGUF row only when a role uses Local GGUF; the native block only when a role uses ComfyUI Native
+  updateAdvVisibility = () => {
+    const bs = [llm.backend_text || llm.backend || "local", llm.backend_vision || llm.backend || "local"];
+    advRow.style.display = bs.some(b => b !== "comfy" && b !== "openrouter" && b !== "custom") ? "grid" : "none";
+    nativeBox.style.display = bs.includes("comfy") ? "flex" : "none";
+  };
 
   syncBackendBlocks();
 
@@ -582,6 +595,7 @@ async function _callRefine(prompt, instruction) {
       n_gpu_layers: l.n_gpu_layers, n_ctx: l.n_ctx, max_tokens: l.max_tokens,
       temperature: l.temperature, seed: l.seed,
       model_format: l.model_format, aesthetic: l.aesthetic, extra_instructions: l.extra_instructions,
+      ...nativeNums(l.backend_text || l.backend || "local"),
     }),
   });
   const d = await r.json();
@@ -971,10 +985,16 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     // async fetch above has resolved. Never overwrites a value the user touched in THIS
     // panel instance (see modelFormatTouched above for why that's not the same as
     // comparing against the shared/global current value).
-    if (defaultModelFormat && !modelFormatTouched
-        && [...modelFmtSel.options].some(o => o.value === defaultModelFormat)) {
+    applyDefaultFormat(false);
+  }
+  // defaultModelFormat may be a function of the node's current mode (H3 Image Generator: T2I / R2I).
+  // `force` (a mode switch) sets it even after the user picked another format by hand.
+  function applyDefaultFormat(force) {
+    const want = typeof defaultModelFormat === "function" ? defaultModelFormat() : defaultModelFormat;
+    if (want && (force || !modelFormatTouched)
+        && [...modelFmtSel.options].some(o => o.value === want)) {
       suppressModelFormatTouch = true;
-      modelFmtSel.value = defaultModelFormat;
+      modelFmtSel.value = want;
       modelFmtSel.dispatchEvent(new Event("change", { bubbles: true }));
       suppressModelFormatTouch = false;
     }
@@ -1162,6 +1182,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
           max_tokens: llm.max_tokens,
           temperature: llm.temperature,
           seed: llm.seed,
+          ...nativeNums(llm.backend_vision || llm.backend || "local"),
         }),
       });
       const d = await r.json();
@@ -1204,6 +1225,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
           model_format: llm.model_format,
           aesthetic: llm.aesthetic,
           extra_instructions: llm.extra_instructions,
+          ...nativeNums(llm.backend_text || llm.backend || "local"),
           ...(sysPrompt ? { system_override: sysPrompt } : {}),
         }),
       });
@@ -1275,5 +1297,5 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   // only from inside the expand overlay's own UI. Piloted on Qwen Image 2.1 first, meant
   // to be reused by every other ONE STUDIO image tool afterwards — additive return value,
   // existing callers that ignore it are unaffected.
-  return { enhance: doEnhance, refine: refineMain };
+  return { enhance: doEnhance, refine: refineMain, syncFormat: () => applyDefaultFormat(true) };
 }

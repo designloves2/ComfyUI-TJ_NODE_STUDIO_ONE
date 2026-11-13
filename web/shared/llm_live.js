@@ -87,7 +87,7 @@ function noteQueuedGraph(graph, promptId) {
   const nodes = {};
   let model = "";
   for (const [id, n] of Object.entries(graph)) {
-    if (n?.class_type !== "TextGenerate") continue;
+    if (n?.class_type !== "TextGenerate" && n?.class_type !== "TextGenerateV2") continue;
     nodes[id] = Number(n.inputs?.max_length) || 0;
     const link = n.inputs?.clip;
     const loader = Array.isArray(link) ? graph[String(link[0])] : null;
@@ -114,7 +114,7 @@ function wireNative() {
       try {
         if (route === "/prompt" && options?.method === "POST" && typeof options.body === "string") {
           const graph = JSON.parse(options.body)?.prompt;
-          if (graph && Object.values(graph).some(n => n?.class_type === "TextGenerate")) {
+          if (graph && Object.values(graph).some(n => n?.class_type === "TextGenerate" || n?.class_type === "TextGenerateV2")) {
             resp.clone().json().then(d => { if (d?.prompt_id) { noteQueuedGraph(graph, d.prompt_id); nativeEvent(d.prompt_id, "prompt", 0, 0); } }).catch(() => {});
           }
         }

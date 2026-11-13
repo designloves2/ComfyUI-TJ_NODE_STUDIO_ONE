@@ -176,6 +176,13 @@ REPOS=(
     "https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler"
     # H3 Latent Upscale Tiled (TJ) - MiniMax H3 7+1 hi-res finish, Upscaler B (TJLatentUpscaleTiledMP). Apache-2.0, external pack.
     "https://github.com/designloves2/H3-Latent-Upscale-Tiled-TJ-"
+    # ReCaVSR - MiniMax H3's Upscale / Postprocess "ReCaVSR" method (ReCaVSRLoader / ReCaVSRUpscale), one-step streaming
+    # video super-resolution on Wan2.2. Model weights are NOT installed by this script - put the transformer (int8 ConvRot from
+    # https://huggingface.co/PedroMarinhoDev/ReCaVSR-ComfyUI or bf16 from https://huggingface.co/kopper/ReCaVSR) plus
+    # prompt.safetensors and flashdecoder.safetensors (kopper/ReCaVSR) into ComfyUI/models/recavsr. Its requirements.txt
+    # (triton, opencv-python-headless) are installed with the pack. RelayVSR (the other new method) is ComfyUI core: its model
+    # (Comfy-Org/RelayVSR, diffusion_models + vae) needs no pack.
+    "https://github.com/PedroMarinhoDev/ComfyUI-ReCaVSR"
 )
 
 # ComfyUI Manager names a folder after the pack's pyproject `name`, which is often not
@@ -191,6 +198,7 @@ alt_folder_for() {
         ComfyUI-VOSR2)                     printf 'comfyui-vosr2' ;;
         ComfyUI-H3-FaceRefine)             printf 'comfyui-h3-facerefine' ;;
         H3-Latent-Upscale-Tiled-TJ-)       printf 'comfyui-tj_latent_upscale_tiled' ;;
+        ComfyUI-ReCaVSR)                   printf 'comfyui-recavsr' ;;
         Nvidia_RTX_Nodes_ComfyUI)          printf 'comfyui_nvidia_rtx_nodes' ;;
         ComfyUI-MiniMaxH3-FirstBlockCache) printf 'minimax-h3-firstblockcache' ;;
         ComfyUI-VFI)                       printf 'rife_comfyui_wrapper' ;;

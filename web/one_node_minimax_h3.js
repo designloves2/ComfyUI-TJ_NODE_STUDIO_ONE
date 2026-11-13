@@ -18,7 +18,7 @@ import "./shared/llm_live.js";
 import {
   C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD, SUBFOLDER, TEMP_PREVIEW_SUBFOLDER,
   el, clear, loadState, saveState, lastUsedAt, defaultState, randomSeed,
-  CLIP_LENGTHS, ASPECTS, UPSCALE_MODES, FLASHVSR_MODELS, FLASHVSR_MODES, SAMPLERS, SCHEDULERS,
+  CLIP_LENGTHS, ASPECTS, UPSCALE_MODES, FLASHVSR_MODELS, FLASHVSR_MODES, RECAVSR_COLOR_FIX, RECAVSR_DECODERS, RECAVSR_KERNELS, RECAVSR_ENCODERS, SAMPLERS, SCHEDULERS,
   TURBO_MODES, ATTN_BACKENDS, ATTN_FORWARDS, BLOCK_CACHES, H3_OPTIMIZERS, FBC_MODES,
   attnBlockedReason, attnForwardBlockedReason, attnForwardOverlapNote, blockCacheBlockedReason,
   h3OptimizerBlockedReason, h3OptimizerOverlapNote,
@@ -42,7 +42,7 @@ import {
   listPromptSets, getPromptSet, getClipLastFrame, analyzeImageLlama, writeBriefLlama,
   analyzeImagesCustom, writeBriefCustom,
 } from "./minimax/api_minimax.js";
-import { buildClipGraph, buildLtxUpscaleGraph, buildFaceRefineGraph, buildPostprocessGraph, buildImageGenGraph,
+import { buildClipGraph, buildLtxUpscaleGraph, buildFaceRefineGraph, buildPostprocessGraph, buildImageGenGraph, buildOfficialImageGraph,
   buildCharacterSheetVideoGraph, buildCharacterSheetGridGraph, CHARSHEET_DEFAULT_FRAME_INDICES, CHARSHEET_FRAMES,
   NODE_IDS, previewNodeKey } from "./minimax/graph_builder_minimax.js";
 import { PIPELINE_PRESETS, allPresets, captureAxes, matchPreset, applyPreset } from "./minimax/presets_minimax.js";
@@ -1166,7 +1166,10 @@ app.registerExtension({
         const idx = Number(lastFocusedPromptTA?.dataset.clipIndex);
         return Number.isFinite(idx) ? idx : null;
       };
-      refineBtn.addEventListener("click", () => promptEditOv?.openRefine?.(lastFocusedClipIndex()));
+      refineBtn.addEventListener("click", () => {
+        if (state.generationMode === "imagegen" && state.imageGenMode !== "charsheet") { imgLlmApi?.refine?.(); return; }   // Image Generator: its own prompt box
+        promptEditOv?.openRefine?.(lastFocusedClipIndex());
+      });
       promptHdr.appendChild(refineBtn);
 
       const writeBtn = el("button", { type: "button", text: "✨ Prompt Write", title: "Write a fresh prompt for the current clip — same result review as inside Prompt Edit", style: {
@@ -1192,6 +1195,14 @@ app.registerExtension({
         promptEditOv?.show();
       });
       promptHdr.appendChild(editBtn);
+
+      // Auto Enhance (Image Generator T2I / Ref2I): run Prompt Enhance on the prompt right before Generate
+      const autoEnhChk = el("input", { type: "checkbox", style: { cursor: "pointer" } });
+      autoEnhChk.checked = !!state.imgAutoEnhance;
+      autoEnhChk.addEventListener("change", () => { state.imgAutoEnhance = autoEnhChk.checked; persist(); });
+      const autoEnhLbl = el("label", { title: "Automatically run Prompt Enhance on the current prompt right before Generate, updating the prompt in place.", style: {
+        display: "none", alignItems: "center", gap: "4px", fontSize: "11px", color: C.muted, cursor: "pointer", marginLeft: "auto" } }, [autoEnhChk, el("span", { text: "Auto Enhance" })]);
+      promptHdr.appendChild(autoEnhLbl);
 
       // Image Generator's prompt templates (T2I / Ref2I) — the same 📋 panel the other
       // image nodes have, with this node's own pool; opened by templateOv (mounted below).
@@ -1429,7 +1440,9 @@ app.registerExtension({
         // 📝 Prompt Edit 이거는 지우고").
         // Postprocess has no prompt at all, so these three are hidden there too.
         tagBtnRow.style.display = isImageGen || isPostprocess ? "none" : "";
-        refineBtn.style.display = isImageGen || isPostprocess ? "none" : "";
+        const isImgPrompt = isImageGen && state.imageGenMode !== "charsheet";
+        refineBtn.style.display = (isImageGen && !isImgPrompt) || isPostprocess ? "none" : "";
+        autoEnhLbl.style.display = isImgPrompt ? "flex" : "none";
         writeBtn.style.display  = isImageGen || isPostprocess ? "none" : "";
         const isCharSheetHdr = isImageGen && state.imageGenMode === "charsheet";
         // editBtn is repurposed as t2i/ref2i's own "🔍 Prompt Edit" (see its onclick's
@@ -2502,6 +2515,59 @@ app.registerExtension({
       }
 
       // LTX LoRA list editor, shared by the LTX Upscale mode and Postprocess → Upscale by LTX 2.5.
+      // ReCaVSR / RelayVSR (video super-resolution) — the option rows shared by the left-panel Upscale section and Postprocess → C. Upscale.
+      // The model files themselves are picked in Settings → UpScale Model; what is picked is shown here so a missing one is obvious.
+      function vsrOptionRows(kind) {
+        const av = ctx.availability || {};
+        const base = (p) => String(p || "").split(/[\\/]/).pop();
+        const small = (color) => ({ fontSize: "10px", color, lineHeight: "1.5" });
+        const picked = (text, name) => el("div", { text: name ? `${text}: ${base(name)}` : `⚠ ${text}: none — set it in Settings → UpScale Model`, style: small(name ? C.muted : C.warn) });
+        const choice = (list, key, def, after) => select(list.map(v => ({ value: v, label: v })), state[key] || def, v => { state[key] = v; persist(); after?.(); });
+        if (kind === "recavsr") {
+          return [
+            row([
+              col([labelHelp("Scale (×)", "Output size = input size × scale. The model was trained for 4×; 2× and 1.5× are the reference's other settings. "
+                + "0.5–8 in steps of 0.25. A bigger scale needs much more VRAM and time — 2× is the setting for a 16GB card."),
+                numberField(state.recavsrScale ?? 2, v => { state.recavsrScale = Math.min(8, Math.max(0.5, Math.round(v * 4) / 4)); persist(); }, 0.25)]),
+              col([labelHelp("Color fix", "Per-frame colour match to the input. none: off. adain: matches mean and variance. wavelet: keeps the input's low frequencies."),
+                choice(RECAVSR_COLOR_FIX, "recavsrColorFix", "wavelet")]),
+            ]),
+            row([
+              col([labelHelp("Decoder", "flashdecoder: the model's own LQ-conditioned decoder — streaming and 25–40× faster. "
+                + "vae: the stock Wan 2.2 VAE (pick it in Settings → UpScale Model), decoded at the end — finer texture, but much slower and it needs the whole video at once."),
+                choice(RECAVSR_DECODERS, "recavsrDecoder", "flashdecoder", () => renderLeft())]),
+              col([labelHelp("Kernels", "fast: fused norm / rope / residual kernels and retuned attention tiles — about 47 dB from exact, no visible difference, 7–24% faster "
+                + "(the decoder's window kernel needs an RTX 30 series card or newer). exact: the reference's own sequence of operations, bit for bit."),
+                choice(RECAVSR_KERNELS, "recavsrKernels", "fast")]),
+            ]),
+            row([
+              col([labelHelp("Encoder", "How the upscaled video is encoded as it is made. hevc nvenc / h264 nvenc: NVIDIA's video encoder (constant quality 19 / 17; "
+                + "H.264 up to 4096 px a side). h264: x264 on the CPU, CRF 14. auto tries them in that order and falls back down the same order."),
+                choice(RECAVSR_ENCODERS, "recavsrEncoder", "auto")]),
+              col([labelHelp("Seed", "Seed of the one-step noise."),
+                numberField(state.recavsrSeed ?? 42, v => { state.recavsrSeed = Math.max(0, Math.round(v)); persist(); }, 1)]),
+            ]),
+            checkboxRow("KV offload", !!state.recavsrKvOffload, v => { state.recavsrKvOffload = v; persist(); },
+              { title: "Keep the attention history (the past latent frames every block attends) in RAM instead of VRAM — about 0.8 MB per output token, 5 GB at 4× of 480p. For outputs that do not fit the card; costs the transfer time each step." }),
+            picked("Transformer", state.recavsrTransformer),
+            state.recavsrDecoder === "vae" ? picked("Wan 2.2 VAE", state.recavsrVae) : null,
+            el("div", { text: "ReCaVSR runs the whole clip in streaming blocks (21 frames, then 8). Its own encoder step writes an intermediate video that is read back as frames, "
+              + "so this method keeps the clip's audio and joins the rest of the pipeline like any other upscale.", style: small(C.muted) }),
+            (!av.ReCaVSRUpscale || !av.ReCaVSRLoader) ? el("div", { html: "⚠ <code>ReCaVSRLoader</code> / <code>ReCaVSRUpscale</code> not installed — install ComfyUI-ReCaVSR "
+              + "(install_requirements) and restart ComfyUI.", style: small(C.warn) }) : null,
+          ].filter(Boolean);
+        }
+        const x4 = /x4/i.test(base(state.relayvsrUnet));
+        return [
+          picked("UNET", state.relayvsrUnet),
+          picked("VAE", state.relayvsrVae),
+          x4 ? el("div", { text: "⚠ The x4 model is hard to run on a 16GB card — use the x2 pair (relayvsr_x2_… with relayvsr_flash_vae_x2_…).", style: small(C.warn) }) : null,
+          el("div", { text: "RelayVSR has no scale setting: the x2 file doubles and the x4 file quadruples the size. One sampling step; only every 15th frame goes through the model "
+            + "and the VSR decoder restores all of them. The model files are picked in Settings → UpScale Model.", style: small(C.muted) }),
+          (!av.RelayVSRConditioning || !av.VSRDecode) ? el("div", { html: "⚠ <code>RelayVSRConditioning</code> / <code>VSRDecode</code> not found — "
+            + "they are ComfyUI core nodes; update ComfyUI.", style: small(C.warn) }) : null,
+        ].filter(Boolean);
+      }
       function makeLtxLoraWrap() {
         const loraOpts = ["none", ...((ctx.availableModels?.loras) || []).filter(x => x !== "none")];
         const ltxL = state.ltxLoras ||= [];
@@ -3522,6 +3588,8 @@ app.registerExtension({
         const PP_UPSCALE_METHODS = [
           { value: "h3lat",    label: "Latent Upscale (Use H3)" },
           { value: "flashvsr", label: "FlashVSR" },
+          { value: "recavsr",  label: "ReCaVSR" },
+          { value: "relayvsr", label: "RelayVSR" },
           { value: "ltx",      label: "LTX 2.5 Upscale" },
           { value: "rtx",      label: "RTX VSR(TJ)" },
           { value: "model",    label: "Model" },
@@ -3545,6 +3613,8 @@ app.registerExtension({
                 col([label("Scale"), numberField(state.flashvsrScale ?? 2, v => { state.flashvsrScale = Math.min(4, Math.max(2, Math.round(v))); persist(); }, 1)]),
                 col([label("Tile"), numberField(state.flashvsrTileSize ?? 384, v => { state.flashvsrTileSize = Math.max(32, Math.round(v)); persist(); }, 32)]),
               ]));
+            } else if (method === "recavsr" || method === "relayvsr") {
+              kids.push(...vsrOptionRows(method));
             } else if (method === "rtx") {
               kids.push(...rtxSizeControls(RTX_KEYS_SOLO));
             } else if (method === "h3lat") {
@@ -3653,7 +3723,7 @@ app.registerExtension({
                 kids.push(el("div", { text: "2nd pass — RTX VSR (TJ)", style: { fontSize: "11px", fontWeight: "700", color: BRAND } }));
                 kids.push(...rtxSizeControls(RTX_KEYS_PASS2));
                 kids.push(el("div", {
-                  text: `${method === "flashvsr" ? "FlashVSR" : "Model"} → RTX VSR → next effect. These RTX settings belong to the 2nd pass only; the standalone RTX VSR method keeps its own. Scale multiplies the first pass's output (2× then 2× = 4×); Short / Long / W×H size the final frames, and W×H crops to the aspect first.`,
+                  text: `${(PP_UPSCALE_METHODS.find(m => m.value === method) || {}).label || "Model"} → RTX VSR → next effect. These RTX settings belong to the 2nd pass only; the standalone RTX VSR method keeps its own. Scale multiplies the first pass's output (2× then 2× = 4×); Short / Long / W×H size the final frames, and W×H crops to the aspect first.`,
                   style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
               }
             }
@@ -4145,6 +4215,12 @@ app.registerExtension({
                 colorFix: state.flashvsrColorFix, tileSize: state.flashvsrTileSize,
                 tileOverlap: state.flashvsrTileOverlap, seed: randomSeed(),
               },
+              recavsr: {
+                transformer: state.recavsrTransformer, vae: state.recavsrVae, scale: state.recavsrScale, colorFix: state.recavsrColorFix,
+                seed: state.recavsrSeed, decoder: state.recavsrDecoder, kernels: state.recavsrKernels,
+                kvOffload: state.recavsrKvOffload, encoder: state.recavsrEncoder,
+              },
+              relayvsr: { unet: state.relayvsrUnet, vae: state.relayvsrVae, seed: randomSeed() },
             },
             skinRetouch: {
               enabled: state.ppSkinRetouchOn, evenness: state.ppSkinEvenness, smoothing: state.ppSkinSmoothing,
@@ -4283,10 +4359,12 @@ app.registerExtension({
         show() { imgPromptExpandEl._tj_llm_onshow?.(); imgPromptExpandEl.style.display = "flex"; setTimeout(() => imgPxTA.focus(), 50); },
         hide() { imgPromptExpandEl.style.display = "none"; },
       };
-      attachLLMPanel({
+      const imgLlmApi = attachLLMPanel({
         promptExpandEl: imgPromptExpandEl, pxTA: imgPxTA,
         getModePrompt: () => state.imgPrompt || "", setModePrompt: (_mode, val) => { state.imgPrompt = val; },
         state, persist, updateCount: () => {}, getPromptTA: () => imgInlineTA,
+        // official T2I / R2I prompts are Model Formats (nodes.py h3_image_formats.json), picked by the current mode
+        defaultModelFormat: () => state.imageGenMode === "ref2i" ? "MiniMax H3 Image (R2I)" : state.imageGenMode === "t2i" ? "MiniMax H3 Image (T2I)" : "",
         openSettings: () => ctx.openImageLlmSettings?.() ?? settingsOv?.show(),
         bilingual: { target: () => state, key: "imgPrompt", protect: () => h3ProtectWords(state), onError: (m) => showPopup(m, true), getMainBil: () => imgInlineBil },
       });
@@ -4313,7 +4391,7 @@ app.registerExtension({
             background: active ? BRAND : C.bg2, color: active ? "#fff" : C.text,
             border: `1px solid ${active ? BRAND : C.border}`,
           }});
-          b.addEventListener("click", () => { state.imageGenMode = m.key; persist(); renderLeft(); renderPrompts(); restoreModeResult(); });
+          b.addEventListener("click", () => { state.imageGenMode = m.key; persist(); try { imgLlmApi?.syncFormat?.(); } catch {} renderLeft(); renderPrompts(); restoreModeResult(); });
           pillRow.appendChild(b);
         });
         leftPanel.appendChild(panel([pillRow]));
@@ -4406,20 +4484,21 @@ app.registerExtension({
         }
 
         // ── resolution — one aspect ratio, separate preview/final megapixels ─
+        const imgResInfo = el("div", { style: { fontSize: "11px", color: C.muted, lineHeight: "1.5" } });
+        const updateImgRes = () => {
+          const r = resolveResolution(state.imgAspect || "2:3 Portrait", state.imgFinalMp ?? 1.0);
+          imgResInfo.textContent = `→ ${r.width} × ${r.height} px (${(r.width * r.height / 1e6).toFixed(2)} MP, multiples of 32)`;
+        };
+        updateImgRes();
         leftPanel.appendChild(panel([
           label("Resolution"),
           row([col([label("Aspect"), select(ASPECTS.map(a => ({ value: a.label, label: a.label })),
-            state.imgAspect || "2:3 Portrait", v => { state.imgAspect = v; persist(); })])]),
+            state.imgAspect || "2:3 Portrait", v => { state.imgAspect = v; persist(); updateImgRes(); })])]),
           row([
-            col([label("Preview MP"), numberField(state.imgPreviewMp ?? 0.2,
-              v => { state.imgPreviewMp = Math.max(0.05, v); persist(); }, 0.05)]),
-            col([label("Final MP"), numberField(state.imgFinalMp ?? 1.0,
-              v => { state.imgFinalMp = Math.max(0.1, v); persist(); }, 0.1)]),
+            col([label("MP"), numberField(state.imgFinalMp ?? 1.0,
+              v => { state.imgFinalMp = Math.max(0.1, v); persist(); updateImgRes(); }, 0.1)]),
           ]),
-          (subMode === "t2i" || subMode === "ref2i")
-            ? checkboxRow("Save Preview to Gallery", !!state.imgPreviewSaveToGallery,
-                v => { state.imgPreviewSaveToGallery = v; persist(); })
-            : null,
+          imgResInfo,
         ]));
 
         // ── LoRA — same dynamic Add-LoRA accordion as the video modes ───────────
@@ -4431,7 +4510,7 @@ app.registerExtension({
         // still (preview pass, then latent upscale + 2nd pass). Fizgig = the true
         // one-frame latent + its own decode (ComfyUI-Fizgig-H3-Still), one pass at the
         // resolution being rendered.
-        if (subMode === "t2i" || subMode === "ref2i") {
+        if (false) {   // legacy video-pipeline Latent choice — T2I / Ref2I now use the official MiniMax H3 Image nodes
           const fizgigOn = state.imgLatentMode === "fizgig";
           leftPanel.appendChild(accordion("imgLatent", "Latent", fizgigOn ? "Fizgig" : "Basic",
             () => [
@@ -4454,6 +4533,14 @@ app.registerExtension({
         // against one base model, same reasoning as the main pipeline's own turboLora /
         // turboLoraReference split.
         if (subMode === "t2i" || subMode === "ref2i") {
+          leftPanel.appendChild(panel([
+            label("Steps"),
+            row([col([numberField(state.imgOfficialSteps ?? 6, v => { state.imgOfficialSteps = Math.max(1, Math.round(v)); persist(); }, 1)])]),
+            el("div", { text: "Official MiniMax H3 Image nodes — one sampling pass at the chosen resolution (cfg 1, euler, simple). 6 steps is the template's default.",
+              style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+          ]));
+        }
+        if (false) {   // legacy Turbo LoRA slots — not used by the official image nodes
           const turboKey = subMode === "ref2i" ? "imgTurboLoraRef2i" : "imgTurboLoraT2i";
           const turboOn = !!state.imgTurboOn;
           leftPanel.appendChild(accordion("imgTurbo", "Turbo",
@@ -4572,7 +4659,7 @@ app.registerExtension({
         }
 
         useBottomWrap(seedGenWrap);
-        imgPreviewBtn.style.display = (subMode === "t2i" || subMode === "ref2i") ? "" : "none";
+        imgPreviewBtn.style.display = "none";   // the official image nodes are one pass: no separate preview
         leftPanel.scrollTop = prevScroll;
       }
 
@@ -4593,19 +4680,28 @@ app.registerExtension({
             const av = await getNodeAvailability();
             ctx.availability = av.available || {}; ctx.availabilityInfo = av;
           }
+          if (state.imgAutoEnhance && (state.imgPrompt || "").trim()) {
+            busyBtn.textContent = "⏳ Enhancing…";
+            imgLlmApi.syncFormat?.();
+            imgPxTA.value = state.imgPrompt;
+            await imgLlmApi.enhance();
+            try { imgInlineBil?.refresh?.(); } catch {}
+            persist();
+          }
           await ensureEnglishPrompts("image");
           const previewRes = resolveResolution(state.imgAspect || "2:3 Portrait", state.imgPreviewMp ?? 0.2);
           const finalRes = resolveResolution(state.imgAspect || "2:3 Portrait", state.imgFinalMp ?? 1.0);
           const seed = state.seedMode === "fixed" ? (state.seed ?? 0) : randomSeed();
           if (state.seedMode !== "fixed") { state.seed = seed; persist(); seedInput.value = String(seed); }
           const turboKey = subMode === "ref2i" ? "imgTurboLoraRef2i" : "imgTurboLoraT2i";
-          const built = buildImageGenGraph(state, ctx.availability || {}, {
+          const built = buildOfficialImageGraph(state, ctx.availability || {}, {
             subMode, final,
             refImages: subMode === "ref2i" ? state.imgRefImages : null,
+            refImageMps: state.imgRefImagesMp || [],
             refImageSize: state.imgRefImageSize || "max",
             prompt: state.imgPrompt || "", seed, previewRes, finalRes,
             filenamePrefix: `${state.imgSaveSubfolder || state.saveSubfolder || SUBFOLDER}/${subMode}_${final ? "final" : "preview"}`,
-            steps: state.imgSteps ?? 20, secondPassSteps: state.imgSecondPassSteps ?? 3,
+            steps: state.imgOfficialSteps ?? 6, secondPassSteps: state.imgSecondPassSteps ?? 3,
             turboOn: !!state.imgTurboOn, turboLora: state[turboKey], turboLoraStrength: state.imgTurboLoraStrength ?? 1.0,
             savePreview: !!state.imgPreviewSaveToGallery,
             latentMode: state.imgLatentMode,
@@ -4633,7 +4729,7 @@ app.registerExtension({
               imgLoras: state.imgLoras || [], subMode,
               refImages: subMode === "ref2i" ? (state.imgRefImages || []) : [],
               refImageSize: state.imgRefImageSize || "max", seed,
-              imgSteps: state.imgSteps ?? 20, imgSecondPassSteps: state.imgSecondPassSteps ?? 3,
+              imgOfficialSteps: state.imgOfficialSteps ?? 6, imgSteps: state.imgSteps ?? 20, imgSecondPassSteps: state.imgSecondPassSteps ?? 3,
               imgLatentMode: state.imgLatentMode === "fizgig" ? "fizgig" : "basic",
               imgTurboOn: !!state.imgTurboOn,
               imgTurboLora: state.imgTurboOn ? (state[turboKey] || null) : null,
@@ -5584,6 +5680,9 @@ app.registerExtension({
                   + "— install ComfyUI-FlashVSR-Ultra-Fast and restart ComfyUI.",
                 style: { fontSize: "10px", color: C.warn, lineHeight: "1.5" } }) : null,
             ]) : null,
+            // ReCaVSR / RelayVSR — all their options (the model files are in Settings → UpScale Model)
+            (state.upscaleMode === "recavsr" || state.upscaleMode === "relayvsr")
+              ? col(vsrOptionRows(state.upscaleMode)) : null,
             // Only meaningful once deblur or upscale is actually doing something — off it
             // just saves the final clip, on it saves the raw decode as a second file too.
             (deblurNow !== "none" || state.upscaleMode !== "none")
@@ -7444,6 +7543,7 @@ app.registerExtension({
         if (meta.imgSteps != null) state.imgSteps = meta.imgSteps;
         if (meta.imgSecondPassSteps != null) state.imgSecondPassSteps = meta.imgSecondPassSteps;
         state.imgLatentMode = meta.imgLatentMode === "fizgig" ? "fizgig" : "basic";
+        if (meta.imgOfficialSteps != null) state.imgOfficialSteps = meta.imgOfficialSteps;
         if (meta.imgTurboOn != null) state.imgTurboOn = !!meta.imgTurboOn;
         if (meta.imgTurboLora) {
           const turboKey = subMode === "ref2i" ? "imgTurboLoraRef2i" : "imgTurboLoraT2i";
