@@ -2747,7 +2747,7 @@ ${name}`, style: {
         "", summary, "",
         "Creative brief:",
         base
-          ? `${base}\n\n(This text may use reference tags (<Picture N>, @name) or another model's phrasing. Rewrite it as a standalone brief: describe what the frames show instead of any reference tag.)`
+          ? `${base}\n\n(This is the clip's existing prompt, written for another mode or model (reference tags like <Picture N> / @name, or an LTX-style prompt). Revise it into a First/Last-frame brief: keep its story, actions, camera, dialogue, sound and style, and replace every reference tag with what the starting and ending frames actually show.)`
           : "(no text supplied — base the brief on the frame analysis above)",
         "", "Final grounding check: stay grounded in what the frames actually show. Do not invent unrelated actions, props, on-screen text, dialogue, or locations. "
           + "Return only the complete brief text, no commentary outside it. The brief has no reference images: never write <Picture N>, <Video N>, \"Image N\" or a line that maps a picture to a time.",

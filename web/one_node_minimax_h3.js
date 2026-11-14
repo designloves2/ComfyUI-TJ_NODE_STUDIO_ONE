@@ -22,7 +22,7 @@ import {
   TURBO_MODES, ATTN_BACKENDS, ATTN_FORWARDS, BLOCK_CACHES, H3_OPTIMIZERS, FBC_MODES,
   attnBlockedReason, attnForwardBlockedReason, attnForwardOverlapNote, blockCacheBlockedReason,
   h3OptimizerBlockedReason, h3OptimizerOverlapNote,
-  effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, hiresMp, hiresMpTyped, hiresSplitStep, sizeForMp, ppH3State, ppH3Kind, PP_H3_UP_MODELS, tiledTileCount, migrateLegacyAccel,
+  effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, hiresMp, hiresMpTyped, hiresSplitStep, hiresTotalSteps, hiresHighSteps, sizeForMp, ppH3State, ppH3Kind, PP_H3_UP_MODELS, tiledTileCount, migrateLegacyAccel,
   continuityModesFor, generationModesFor, configIssues, ltxUpscaleReady, ltxUpscaleMissing,
   faceRefineReady, faceRefineMissing, postprocessReady, IMAGE_GEN_MODES, imageGenSubModeReady,
   CHARSHEET_PROMPT_TEMPLATE,
@@ -1569,7 +1569,7 @@ app.registerExtension({
       // "matches the original" is the whole job — for a gallery pick we already have the
       // clip's saved prompt; for an upload the vision model reconstructs one.
       let _ltxBusy = false;
-      async function grabSampleFrames(srcFile = state.ltxSource, perSec = 1.5, maxN = 10, minN = 3) {
+      async function grabSampleFrames(srcFile = state.ltxSource, perSec = 1.5, maxN = 10, minN = 3, edges = false) {
         // client-side: sample several frames spread across the clip (not just frame 0) and
         // upload each as a PNG — one frame alone can't show action or camera movement, and
         // the LTX-2.5 prompt format needs both. Roughly 1.5 frames/sec of clip, clamped so
@@ -1585,14 +1585,15 @@ app.registerExtension({
           setTimeout(() => rej(new Error("Source video load timed out.")), 15000);
         });
         const dur = Math.max(0.1, v.duration || 0);
-        const count = Math.min(maxN, Math.max(minN, Math.round(dur * perSec)));
+        const count = edges ? 2 : Math.min(maxN, Math.max(minN, Math.round(dur * perSec)));   // edges: just the first and the last frame
         const cv = document.createElement("canvas");
         cv.width = v.videoWidth || 1024; cv.height = v.videoHeight || 576;
         const ctx2d = cv.getContext("2d");
         const files = [];
         for (let i = 0; i < count; i++) {
           // spread across the clip, never quite touching either edge (encode padding / black frames)
-          const t = Math.min(dur - 0.05, Math.max(0.05, (dur * (i + 0.5)) / count));
+          const t = edges ? (i === 0 ? Math.min(0.05, dur) : Math.max(0, dur - 0.05))
+            : Math.min(dur - 0.05, Math.max(0.05, (dur * (i + 0.5)) / count));
           try { v.currentTime = t; await new Promise(r => v.addEventListener("seeked", r, { once: true })); } catch {}
           ctx2d.drawImage(v, 0, 0, cv.width, cv.height);
           const blob = await new Promise(r => cv.toBlob(r, "image/png"));
@@ -2727,14 +2728,31 @@ app.registerExtension({
 
       // Prompt for Postprocess → Latent Upscale (Use H3): a ONE STUDIO H3 clip keeps its own brief;
       // anything else (LTX prompt, reference-mode brief, no meta) is written as an H3 first/last brief from frames.
+      // The clip's own record comes first: its H3 prompt and generation mode (T2VA / FL2VA / REF2VA with its saved reference images)
+      // are reused as they are, with no LLM. Only when the record is lost, or the reference images it used are gone from the input
+      // folder, the first and last frames are read and an FL2VA prompt is written by the LLM.
+      async function ppH3Plan(seconds) {
+        const fm = state.ppSourceFullMeta || {};
+        const meta = String(fm.prompt || "").trim();
+        if (meta && /integrated_multimodal_description|\[Shot 1\]|<(?:Picture|Video|Audio)\b/.test(meta)) {
+          if (fm.mode === "reference") {
+            const refs = (Array.isArray(fm.refImages) ? fm.refImages : []).filter(Boolean).slice(0, 9);
+            if (refs.length) {
+              const found = await Promise.all(refs.map(n => fetch(`/view?filename=${encodeURIComponent(n)}&type=input`, { method: "HEAD" }).then(r => r.ok).catch(() => false)));
+              if (found.every(Boolean)) return { kind: "ref", promptText: meta, refImages: refs,
+                refImagesMp: Array.isArray(fm.refImagesMp) ? fm.refImagesMp.slice(0, refs.length) : [], refImageSize: fm.refImageSize || "match" };
+            }
+          } else if (!/<(?:Picture|Video|Audio)\b|@\w/.test(meta)) {
+            return { kind: "fl", promptText: meta, noKeyframes: fm.mode === "t2v" };   // T2VA: text only; FL2VA: first and last frame of the clip
+          }
+        }
+        return { kind: "fl", promptText: await ppH3Prompt(seconds) };   // lost record / missing references: FL2VA with an LLM-written prompt
+      }
       async function ppH3Prompt(seconds) {
         const meta = String(state.ppSourceFullMeta?.prompt || "").trim();
-        const own = meta && /integrated_multimodal_description|\[Shot 1\]/.test(meta)
-          && !/<(?:Picture|Video|Audio)\b|@\w/.test(meta) && state.ppSourceFullMeta?.mode !== "reference";
-        if (own) return meta;
         if (!promptEditOv?.writeFromVideo) throw new Error("Prompt writer is not ready.");
         barInner.style.width = "3%"; setStatus("Postprocess: sampling frames…");
-        const frames = await grabSampleFrames(state.ppSource, 1, 8, 2);
+        const frames = await grabSampleFrames(state.ppSource, 1, 2, 2, true);   // only the first and the last frame are analysed
         // the bar steps through the prompt stages (frames 3% → analysis 8–18% → brief 20%); rendering fills the rest
         const onStage = (t) => {
           const m = /Analyzing image (\d+)\/(\d+)/.exec(t);
@@ -3693,6 +3711,19 @@ app.registerExtension({
                 { value: "bicubic", label: "Bicubic (plain interpolation)" },
                 { value: "trilinear", label: "Trilinear (plain interpolation)" }],
                 state.ppH3UpModel, v => { state.ppH3UpModel = v; persist(); })]));
+              {
+                // Turbo step = LOW + HIGH. HIGH Sigma steps are what the refine sampling runs after the upscale; the rest of the schedule is skipped.
+                const ppTotal = Math.max(2, Math.round(state.ppH3Steps ?? 8));
+                const ppHigh = Math.min(ppTotal - 1, Math.max(1, Math.round(state.ppH3HighSteps ?? 1)));
+                const totalIn = numberField(ppTotal, v => { state.ppH3Steps = Math.max(2, Math.round(v)); state.ppH3HighSteps = Math.min(state.ppH3Steps - 1, ppHigh); persist(); renderLeft(); }, 1);
+                const highIn = numberField(ppHigh, v => { state.ppH3HighSteps = Math.min(ppTotal - 1, Math.max(1, Math.round(v))); persist(); renderLeft(); }, 1);
+                if (tiled) highIn.title = "Tiled upscale samples tile by tile and takes a long time, so HIGH Sigma step 1 is recommended.";
+                kids.push(row([col([label("Turbo step"), totalIn]), col([label("HIGH Sigma step"), highIn])]));
+                kids.push(el("div", { text: `Turbo step = the step count this clip was made with (its Turbo LoRA: 4, 6, 8 …); the schedule is LOW ${ppTotal - ppHigh} + HIGH ${ppHigh}. `
+                  + "The clip is upscaled, then only the HIGH Sigma steps are sampled (refine). "
+                  + (tiled ? "Tiled is slow, so HIGH Sigma step 1 is recommended." : "HIGH 1 is recommended."),
+                  style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
+              }
               kids.push(checkboxRow("Bypass H3 Memory Optimization", !!state.ppH3NoOpt, v => { state.ppH3NoOpt = v; persist(); },
                 { title: "Skip only the H3 Memory Optimization node. Use it with FastH3 checkpoints." }));
               // The warnings depend on Final MP, so they are repainted in place: a renderLeft() here
@@ -3725,8 +3756,8 @@ app.registerExtension({
                 { title: "Cut a long clip into pieces of the length you set, upscale each piece on its own queue turn, then join them with ffmpeg into one clip." }));
               kids.push(ppH3SplitWrap);
               kids.push(el("div", { text: (tiled
-                  ? `H3 Latent Upscale Tiled (TJ): encodes the clip, runs one step at its own size${kind === "fl" ? " (first and last frame as keyframes)" : ""}, then the Tiled node upscales to Final MP and runs its tile step on the prompt alone. `
-                  : `Re-runs only the last step of an 8-step H3 clip: upscales the latent to Final MP, then runs that step${kind === "fl" ? " with the first and last frame as keyframes" : ""}. `)
+                  ? `H3 Latent Upscale Tiled (TJ): encodes the clip, runs one step at its own size (the HIGH Sigma steps are sampled by the Tiled node)${kind === "fl" ? " (first and last frame as keyframes)" : ""}, then the Tiled node upscales to Final MP and runs its tile step on the prompt alone. `
+                  : `Re-runs only the HIGH Sigma steps of an H3 clip (its Turbo step = LOW + HIGH): upscales the latent to Final MP, then runs those steps${kind === "fl" ? " with the first and last frame as keyframes" : ""}. `)
                 + `This clip runs as ${kind === "ref" ? "Reference (REF2VA)" : "First/Last (FL2VA)"} (● marks the LoRA it uses). `
                 + "These settings are separate from the main H3 modes. A ONE STUDIO clip's own prompt is used; any other clip is read from its frames and written as an H3 brief.",
                 style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }));
@@ -4187,16 +4218,18 @@ app.registerExtension({
             if (frames < 5) throw new Error("The clip is too short for Latent Upscale (Use H3).");
             h3Cap = frames;
             const w0 = info.width || sm0.w, h0 = info.height || sm0.h;
-            const kind = ppH3Kind(state.ppSourceFullMeta);
+            setStatus("Postprocess: reading the clip's record…");
+            const plan = await ppH3Plan(frames / FPS);
+            const kind = plan.kind;
             if (state.ppH3Upscaler === "tiled" && (w0 % 32 || h0 % 32)) throw new Error(`Latent Upscale (Use H3) needs a clip whose width and height are multiples of 32 (this one is ${w0}×${h0}).`);
             const finalSize = sizeForMp(w0, h0, hiresMp(ppH3State(state, kind)).final);
-            setStatus("Postprocess: writing the H3 prompt…");
-            usedPrompt = await ppH3Prompt(frames / FPS);
+            usedPrompt = plan.promptText;
             barBase = 25; barInner.style.width = "25%";
             h3State = ppH3State(state, kind);
             if (state.ppH3Upscaler === "tiled") { tiledTiles = tiledTileCount(w0, h0, hiresMp(h3State).final); tiledLo = 55; }
             h3Opts = { promptText: usedPrompt, frames, srcSize: { width: w0, height: h0 }, finalSize, hasAudio: info.has_audio !== false, seed: randomSeed(),
-              upscalerModel: PP_H3_UP_MODELS[state.ppH3UpModel] };
+              upscalerModel: PP_H3_UP_MODELS[state.ppH3UpModel],
+              refImages: plan.refImages || null, refImagesMp: plan.refImagesMp || [], refImageSize: plan.refImageSize || "match", noKeyframes: !!plan.noKeyframes };
           }
           if (state.ppUpscaleOn && ppMethod === "ltx") {
             if (!ltxUpscaleReady(state)) throw new Error("Set the LTX 2.5 models in ⚙ Settings first — missing: " + ltxUpscaleMissing(state).join(", "));
@@ -5294,27 +5327,29 @@ app.registerExtension({
                       hint("The Tiled node runs the upscale and the last step in one node (Sol-Attn is not used). Final MP must be 1.0 – 8.5.")] : []),
                   ]);
                 })(),
-                ...(state.hiresUpscaler === "tiled" ? [] : [
-                  (() => {
-                    // LOW and HIGH always add up to 8: typing in either one sets the other
-                    const lowIn = numberField(hiresSplitStep(state), () => {}, 1);
-                    const highIn = numberField(8 - hiresSplitStep(state), () => {}, 1);
-                    const setLow = (low, from) => {
-                      state.hiresSplitStep = Math.min(7, Math.max(1, Math.round(low)));
-                      persist(); refreshPlan();
-                      if (from !== "low") lowIn.value = state.hiresSplitStep;
-                      if (from !== "high") highIn.value = 8 - state.hiresSplitStep;
-                    };
-                    lowIn.oninput = () => setLow(parseFloat(lowIn.value) || 0, "low");
-                    highIn.oninput = () => setLow(8 - (parseFloat(highIn.value) || 0), "high");
-                    for (const [inp, other] of [[lowIn, "low"], [highIn, "high"]]) inp.onblur = () => setLow(state.hiresSplitStep, null);
-                    return col([
-                      row([col([label("LOW Sigma step"), lowIn]), col([label("HIGH Sigma step"), highIn])]),
-                      el("div", { text: "(LOW Sigma 7 recommended - the latent upscale runs HIGH Sigma step, then these steps at Final MP)",
-                        style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
-                    ]);
-                  })(),
-                ]),
+                (() => {
+                  // LOW + HIGH = the Turbo step count (the "steps" field above; 8 for Turbo None). Typing in either one sets the other.
+                  const total = hiresTotalSteps(state);
+                  const tiledUp = state.hiresUpscaler === "tiled";
+                  const lowIn = numberField(total - hiresHighSteps(state), () => {}, 1);
+                  const highIn = numberField(hiresHighSteps(state), () => {}, 1);
+                  const setHigh = (high, from) => {
+                    state.hiresHighSteps = Math.min(total - 1, Math.max(1, Math.round(high)));
+                    persist(); refreshPlan();
+                    if (from !== "low") lowIn.value = total - state.hiresHighSteps;
+                    if (from !== "high") highIn.value = state.hiresHighSteps;
+                  };
+                  lowIn.oninput = () => setHigh(total - (parseFloat(lowIn.value) || 0), "low");
+                  highIn.oninput = () => setHigh(parseFloat(highIn.value) || 0, "high");
+                  for (const inp of [lowIn, highIn]) inp.onblur = () => setHigh(hiresHighSteps(state), null);
+                  if (tiledUp) highIn.title = "Tiled upscale samples tile by tile and takes a long time, so HIGH Sigma step 1 is recommended.";
+                  return col([
+                    row([col([label("LOW Sigma step"), lowIn]), col([label("HIGH Sigma step"), highIn])]),
+                    el("div", { text: `Turbo step ${total} = LOW + HIGH. The latent upscale runs after the LOW Sigma steps, then the HIGH Sigma steps run at Final MP.`
+                      + (tiledUp ? " Tiled is slow, so HIGH Sigma step 1 is recommended." : " LOW 7 / HIGH 1 is recommended for 8 steps."),
+                      style: { fontSize: "10px", color: C.muted, lineHeight: "1.5" } }),
+                  ]);
+                })(),
                 checkboxRow("Bypass H3 Memory Optimization on the last step", !!state.hiresNoOpt, v => {
                   state.hiresNoOpt = v; persist(); renderLeft();
                 }, { title: "Skip only the H3 Memory Optimization node on the last (large) step. Sol-Attn stays on. Use it if the last step fails with a shape error." }),
@@ -5376,9 +5411,8 @@ app.registerExtension({
                     v => { state.pddFileReference = v; rememberLora({ pdd_file_reference: v }); }).el]),
                 row([
                   col([label("steps"), (() => {
-                    const f = numberField(hiresOn ? 8 : (Number(state.pddNfe) || 8),
-                      v => { state.pddNfe = String(Math.max(1, Math.round(v))); persist(); renderLeft(); }, 1);
-                    if (hiresOn) { f.disabled = true; f.style.opacity = "0.4"; }
+                    const f = numberField(Number(state.pddNfe) || 8,
+                      v => { state.pddNfe = String(Math.max(1, Math.round(v))); persist(); renderLeft(); refreshPlan(); }, 1);
                     return f;
                   })()]),
                   col([label("lora strength"), numberField(state.pddLoraStrength ?? 1.0,
@@ -6386,7 +6420,7 @@ app.registerExtension({
           aspect: st.aspect,
           megapixels: st.megapixels,
           hiresFinish: hiresActive(st, ctx.availability),
-          hiresStartMp: st.hiresStartMp, hiresFinalMp: st.hiresFinalMp, hiresTiledStartMp: st.hiresTiledStartMp, hiresTiledFinalMp: st.hiresTiledFinalMp, hiresChunkRows: st.hiresChunkRows, hiresSplitStep: st.hiresSplitStep, hiresUpscaler: st.hiresUpscaler,
+          hiresStartMp: st.hiresStartMp, hiresFinalMp: st.hiresFinalMp, hiresTiledStartMp: st.hiresTiledStartMp, hiresTiledFinalMp: st.hiresTiledFinalMp, hiresChunkRows: st.hiresChunkRows, hiresHighSteps: st.hiresHighSteps, hiresUpscaler: st.hiresUpscaler,
           frames: st.clipFrames,
           steps: st.steps,
           sampler: st.sampler,
@@ -7516,7 +7550,8 @@ app.registerExtension({
         if ((meta.hiresTiledStartMp ?? meta.hiresKimStartMp) != null) state.hiresTiledStartMp = meta.hiresTiledStartMp ?? meta.hiresKimStartMp;
         if ((meta.hiresTiledFinalMp ?? meta.hiresKimFinalMp) != null) state.hiresTiledFinalMp = meta.hiresTiledFinalMp ?? meta.hiresKimFinalMp;
         if (meta.hiresChunkRows != null) state.hiresChunkRows = meta.hiresChunkRows;
-        if (meta.hiresSplitStep != null) state.hiresSplitStep = meta.hiresSplitStep;
+        if (meta.hiresHighSteps != null) state.hiresHighSteps = meta.hiresHighSteps;
+        else if (meta.hiresSplitStep != null) state.hiresHighSteps = Math.max(1, 8 - meta.hiresSplitStep);   // clips saved before HIGH became the stored value
         state.hiresUpscaler = (meta.hiresUpscaler === "tiled" || meta.hiresUpscaler === "kimchy") ? "tiled" : "h3";
         if (meta.frames) { state.clipFrames = meta.frames; state.clipLengthCustom = false; }
         if (meta.steps != null) state.steps = meta.steps;

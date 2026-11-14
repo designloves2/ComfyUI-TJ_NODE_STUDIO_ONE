@@ -7,7 +7,7 @@
 //
 // Optional third-party nodes are gated on `avail` (from /minimax_h3_one/node_availability):
 // a missing pack disables that one feature rather than failing the whole prompt.
-import { SUBFOLDER, FPS, resolveResolution, computeRtxTarget, effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, hiresMp, hiresSplitStep, turboLoraForMode, pddFileForMode, blockCacheBlockedReason, h3OptimizerBlockedReason, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES, randomSeed} from "./core_minimax.js";
+import { SUBFOLDER, FPS, resolveResolution, computeRtxTarget, effectiveTurbo, effectiveSteps, hiresActive, hiresSizes, hiresMp, hiresSplitStep, hiresTotalSteps, turboLoraForMode, pddFileForMode, blockCacheBlockedReason, h3OptimizerBlockedReason, framesToSeconds, ONE_TAKE_OVERLAP_FRAMES, randomSeed} from "./core_minimax.js";
 
 // Builds the RTXVideoSuperResolution node (+ an optional ImageCrop node ahead of it for
 // the "wh" size mode's forced crop, per computeRtxTarget) and returns the final image
@@ -458,8 +458,8 @@ function buildHiresStage(g, state, avail, hires, condLink, lowSigmas, lockAudio,
     shift_video: pdd ? 12 : (state.shiftVideo ?? 12), shift_audio: pdd ? 3 : (state.shiftAudio ?? 3) } };
   let stageModel = [N.hrShift, 0];
   if (schedule) {
-    g[N.sched] = { class_type: "BasicScheduler", inputs: { model: stageModel, scheduler: schedule.scheduler || "simple", steps: 8, denoise: 1 } };
-    g[N.hrSplit] = { class_type: "SplitSigmas", inputs: { sigmas: [N.sched, 0], step: 7 } };
+    g[N.sched] = { class_type: "BasicScheduler", inputs: { model: stageModel, scheduler: schedule.scheduler || "simple", steps: hiresTotalSteps(state), denoise: 1 } };
+    g[N.hrSplit] = { class_type: "SplitSigmas", inputs: { sigmas: [N.sched, 0], step: hiresSplitStep(state) } };
     lowSigmas = [N.hrSplit, 1];
   }
   if (!state.hiresNoOpt) {
@@ -533,10 +533,17 @@ export function addH3LastStep(g, state0, avail, o) {
     g[id] = ref
       ? { class_type: "MiniMaxH3ReferenceToVideo", inputs: {
           clip: [N.clip, 0], vae: [N.vaeV, 0], audio_vae: [N.vaeA, 0], prompt,
-          width: size.width, height: size.height, length: o.frames, ref_image_size: "match" } }
+          width: size.width, height: size.height, length: o.frames, ref_image_size: o.refImageSize || "match" } }
       : { class_type: "MiniMaxH3ImageToVideo", inputs: {
           clip: [N.clip, 0], vae: [N.vaeV, 0], prompt, width: size.width, height: size.height, length: o.frames } };
-    if (!ref && keyframes) {
+    if (ref) {   // the reference images the clip was made with (saved in its record), wired like the clip graph does
+      (o.refImages || []).slice(0, 9).forEach((name, i) => {
+        if (!name) return;
+        if (!g[N.ref(i)]) g[N.ref(i)] = { class_type: "LoadImage", inputs: { image: name } };
+        g[id].inputs[`ref_images.ref_image_${i}`] = resizeToMp(g, N.refResize(i), [N.ref(i), 0], (o.refImagesMp || [])[i]);
+      });
+    }
+    if (!ref && keyframes && !o.noKeyframes) {
       g[id].inputs.first_frame = [N.hrFirst, 0];
       g[id].inputs.last_frame = [N.hrLast, 0];
     }

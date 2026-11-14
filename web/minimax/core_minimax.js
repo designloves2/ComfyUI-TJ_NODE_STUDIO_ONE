@@ -424,6 +424,8 @@ export function ppH3State(s, kind = "fl") {
     turboMode: s.ppH3TurboMode, pddFile: s.ppH3PddFile, pddFileReference: s.ppH3PddFileReference, pddLoraStrength: s.ppH3PddStrength,
     hiresUpscaler: s.ppH3Upscaler, hiresFinalMp: s.ppH3FinalMp, hiresTiledFinalMp: s.ppH3TiledFinalMp,
     hiresChunkRows: s.ppH3ChunkRows, hiresNoOpt: s.ppH3NoOpt,
+    // the clip's Turbo step count (the sigma schedule it was made with) and how many HIGH Sigma steps this refine runs (the rest of that schedule is skipped)
+    hiresTotalOverride: s.ppH3Steps ?? 8, hiresHighSteps: s.ppH3HighSteps ?? 1,
     loras: [], sampler: "euler", scheduler: "simple", shiftVideo: 12, shiftAudio: 3,
   };
 }
@@ -466,17 +468,28 @@ export function hiresSizes(state) {
   return { start, final, scale: Math.round(final.width / start.width * 1000) / 1000 };
 }
 
-/** Split Sigma step: the first N of the 8 steps run at Start MP, the rest at Final MP. Only the H3 Latent Upscaler lets it change; TJ Tiled stays at 7. */
+/** Split Sigma total = the Turbo step count (Turbo LoRA steps); Turbo None keeps the fixed 8 of an 8-step checkpoint. TOTAL = LOW + HIGH. */
+export function hiresTotalSteps(state) {
+  if (state.hiresTotalOverride != null) return Math.max(2, Math.round(Number(state.hiresTotalOverride)) || 8);   // Postprocess → Latent Upscale sets its own
+  if ((state.turboMode || "none") === "none") return 8;
+  const n = Math.round(Number(state.pddNfe) || 8);
+  return Math.max(2, n);
+}
+/** HIGH Sigma steps (run at Final MP after the latent upscale), 1 .. total-1; default 1 for both upscalers. */
+export function hiresHighSteps(state) {
+  const total = hiresTotalSteps(state);
+  const n = Math.round(Number(state.hiresHighSteps ?? 1));
+  return Math.min(total - 1, Math.max(1, Number.isFinite(n) ? n : 1));
+}
+/** Split Sigma step: the first LOW (= total - HIGH) steps run at Start MP, the rest at Final MP. */
 export function hiresSplitStep(state) {
-  if (state.hiresUpscaler === "tiled") return 7;
-  const n = Math.round(Number(state.hiresSplitStep ?? 7));
-  return Number.isFinite(n) ? Math.min(7, Math.max(1, n)) : 7;
+  return hiresTotalSteps(state) - hiresHighSteps(state);
 }
 
 /** Steps this run will actually sample at, given the turbo selection. */
 export function effectiveSteps(state, avail) {
   const t = effectiveTurbo(state, avail).mode;
-  if (hiresActive(state, avail)) return 8;
+  if (hiresActive(state, avail)) return hiresTotalSteps(state);
   if (t === "larryvrh") return Math.max(1, Math.round(state.turboSteps ?? 4));
   if (t === "lightx2v") return Math.max(1, Math.round(state.slaTurboSteps ?? 6));
   // Turbo LoRA (Basic): an ordinary step count — any turbo LoRA can be loaded, so there is
@@ -1423,7 +1436,8 @@ export function defaultState(saved) {
     hiresTiledStartMp: saved.hiresTiledStartMp ?? saved.hiresKimStartMp ?? 0.5,   // each 7+1 upscaler remembers its own Start / Final MP
     hiresTiledFinalMp: saved.hiresTiledFinalMp ?? saved.hiresKimFinalMp ?? 2.0,
     hiresChunkRows: saved.hiresChunkRows ?? 2048,   // H3 Memory Optimization "Activation chunk rows" of the Split Sigma last step
-    hiresSplitStep: saved.hiresSplitStep ?? 7,   // Split Sigma: how many of the 8 turbo steps run small before the latent upscale (H3 Latent Upscaler only; 7 is recommended)
+    hiresSplitStep: saved.hiresSplitStep ?? 7,   // legacy (LOW of 8); kept so old saves load — see hiresHighSteps
+    hiresHighSteps: saved.hiresHighSteps ?? (saved.hiresSplitStep != null ? Math.max(1, 8 - saved.hiresSplitStep) : 1),   // Split Sigma HIGH steps (after the latent upscale); LOW = Turbo step - HIGH
     clipFrames:  saved.clipFrames  ?? DEFAULT_FRAMES,
     clipLengthCustom:    !!saved.clipLengthCustom,
     clipLengthCustomSec: saved.clipLengthCustomSec ?? framesToSeconds(DEFAULT_FRAMES),
@@ -1808,6 +1822,8 @@ export function defaultState(saved) {
     ppH3Upscaler: (saved.ppH3Upscaler === "tiled" || saved.ppH3Upscaler === "kimchy") ? "tiled" : "h3",
     // what the TJ Tiled node upscales the latent with: its trained network, or plain interpolation
     ppH3UpModel: ["bicubic", "trilinear"].includes(saved.ppH3UpModel) ? saved.ppH3UpModel : "neural",
+    ppH3Steps: saved.ppH3Steps ?? 8,         // Postprocess → Latent Upscale: Turbo step count of the clip (LOW + HIGH)
+    ppH3HighSteps: saved.ppH3HighSteps ?? 1,   // ... and how many of them are re-run after the upscale (HIGH Sigma steps)
     ppH3FinalMp: saved.ppH3FinalMp ?? 1.6,
     ppH3TiledFinalMp: saved.ppH3TiledFinalMp ?? saved.ppH3KimFinalMp ?? 2.0,
     ppH3ChunkRows: saved.ppH3ChunkRows ?? 2048,
