@@ -4448,7 +4448,7 @@ app.registerExtension({
             const req = d?.KSampler?.input?.required || {};
             _ksLists.samplers = req.sampler_name?.[0] || null;
             _ksLists.schedulers = req.scheduler?.[0] || null;
-            if (state.generationMode === "imagegen") renderLeft();
+            renderLeft();   // video and image samplers both read these lists
           }).catch(() => {});
         }
         const list = (_ksLists[kind] && _ksLists[kind].length) ? _ksLists[kind] : fallback;
@@ -5897,9 +5897,9 @@ app.registerExtension({
           `${state.sampler || "er_sde"} · ${state.scheduler || "simple"}`,
           () => [
             row([
-              col([label("Sampler"), select(SAMPLERS.map(x => ({ value: x, label: x })),
+              col([label("Sampler"), select(ksList("samplers", SAMPLERS, state.sampler).map(x => ({ value: x, label: x })),
                 state.sampler || "er_sde", v => { state.sampler = v; persist(); renderLeft(); })]),
-              col([label("Scheduler"), select(SCHEDULERS.map(x => ({ value: x, label: x })),
+              col([label("Scheduler"), select(ksList("schedulers", SCHEDULERS, state.scheduler).map(x => ({ value: x, label: x })),
                 state.scheduler || "simple", v => { state.scheduler = v; persist(); renderLeft(); })]),
             ]),
             col([label("Denoise"), numberField(state.denoise ?? 1.0,
