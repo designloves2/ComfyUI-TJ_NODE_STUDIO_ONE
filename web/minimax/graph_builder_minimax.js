@@ -2370,10 +2370,10 @@ export const IMG_PASS2_SIGMAS_BY_STEPS = {
 // matches it, so this is the one place both must agree if it's ever changed.
 const IMG_LENGTH = 8;
 
-function buildImageLoraChain(g, state, modelLink) {
+function buildImageLoraChain(g, state, modelLink, max = 3) {
   const loras = Array.isArray(state.imgLoras) ? state.imgLoras : [];
   let link = modelLink;
-  loras.slice(0, 3).forEach((l, i) => {
+  loras.slice(0, max).forEach((l, i) => {
     if (!l || l.enabled === false || !l.name || l.name === "none") return;
     g[IMG.lora(i)] = { class_type: "LoraLoaderModelOnly", inputs: {
       lora_name: l.name, strength_model: l.strength ?? 1.0, model: link,
@@ -2572,7 +2572,7 @@ export function buildOfficialImageGraph(state, avail, opts) {
   const res = final ? finalRes : previewRes;
   const g = {};
   g[IMGO.unet] = { class_type: "UNETLoader", inputs: { unet_name: unetName, weight_dtype: "default" } };
-  let model = buildImageLoraChain(g, state, [IMGO.unet, 0]);
+  let model = buildImageLoraChain(g, state, [IMGO.unet, 0], 4);   // the LoRA panel allows 4; Character Sheet's chain stays at 3
   // Optional Shift patch (off by default): MiniMaxH3SigmaShift (the H3 node, shift_video = Shift), else the generic AuraFlow shift
   if (opts.shiftOn) {
     const sh = Number(opts.shift ?? 3);

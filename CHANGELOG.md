@@ -2,8 +2,9 @@
 
 ---
 
-## Unreleased
+## v1.55.0 — H3 image live preview, whole-set gallery delete, video frames out of the image gallery, 4th image LoRA
 
+- **Image Generator uses all 4 LoRAs.** The LoRA panel allowed 4 but the T2I/R2I graph silently dropped the 4th; it now chains all four (Character Sheet keeps its 3).
 - **H3 Image Generator live preview.** T2I/R2I now wire `ModelPreviewOverrideKJ` before the KSampler (one frame per step) so the preview box shows sampling live like the video modes. Needs Live Preview on in Settings and comfyui-kjnodes.
 - **Gallery delete removes the whole set.** Delete now removes the media, metadata json, image thumbnail and the video thumbnail (`_thumbs/<name>.jpg`, which was left behind before and could be reused by a later file of the same name); renaming drops the old video thumbnail. Applies to every node gallery and Music. Restart ComfyUI.
 - **H3 image gallery no longer lists video last frames.** `<folder>/frames/*` is hidden from the Image Gallery (`/minimax_h3_one/images?scope=frames` lists them); the image picker gets an Images / Video frames tab. Restart ComfyUI.
