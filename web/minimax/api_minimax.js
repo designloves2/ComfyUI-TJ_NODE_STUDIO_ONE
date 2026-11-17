@@ -244,8 +244,8 @@ export async function listVideos(subfolder, { offset = 0, limit = 120 } = {}) {
 // Image Generator's own dedicated listing (/minimax_h3_one/images) — separate route from
 // /videos above, so the H3 image gallery is its own thing, not a filtered view of the
 // video gallery's data.
-export async function listImages(subfolder, { offset = 0, limit = 120 } = {}) {
-  const r = await api.fetchApi(`${API}/images?offset=${offset}&limit=${limit}&subfolder=${encodeURIComponent(subfolder || SUBFOLDER)}`);
+export async function listImages(subfolder, { offset = 0, limit = 120, scope = "" } = {}) {
+  const r = await api.fetchApi(`${API}/images?offset=${offset}&limit=${limit}&subfolder=${encodeURIComponent(subfolder || SUBFOLDER)}${scope ? `&scope=${scope}` : ""}`);
   return r.json();
 }
 

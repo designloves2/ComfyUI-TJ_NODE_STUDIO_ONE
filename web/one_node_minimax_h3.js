@@ -906,6 +906,7 @@ app.registerExtension({
       function showPreviewFrame(dataURL, mime) {
         if (previewLocked) return;
         placeholder.style.display = "none";
+        if (state.generationMode === "imagegen") hideBusyBanner();
         // A live preview frame arrives over its own websocket message, independent of the
         // numeric step-progress callback that normally hides this banner (prog() in
         // runFaceRefine) - so if a preview frame lands first, the banner and the live image
@@ -4792,7 +4793,9 @@ app.registerExtension({
           const seed = state.seedMode === "fixed" ? (state.seed ?? 0) : randomSeed();
           if (state.seedMode !== "fixed") { state.seed = seed; persist(); seedInput.value = String(seed); }
           const turboKey = subMode === "ref2i" ? "imgTurboLoraRef2i" : "imgTurboLoraT2i";
+          previewLocked = false;
           const built = buildOfficialImageGraph(state, ctx.availability || {}, {
+            nodeId: self.id,
             subMode, final,
             refImages: subMode === "ref2i" ? state.imgRefImages : null,
             refImageMps: state.imgRefImagesMp || [],

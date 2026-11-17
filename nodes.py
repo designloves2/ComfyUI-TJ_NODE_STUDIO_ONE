@@ -153,6 +153,38 @@ def _meta_path_legacy(image_path):
     return base + ".json"
 
 
+def _gallery_set_paths(path):
+    """Every file that belongs to one gallery item: the media itself, its metadata json
+    (current + legacy location), the image thumbnail (metadata/thumbs/<name>.webp) and the
+    video thumbnail (_thumbs/<name>.jpg). They are created, renamed and deleted together."""
+    d, name = os.path.split(path)
+    return [path, _meta_path(path), _meta_path_legacy(path), _tj_thumb_path(path),
+            os.path.join(d, "_thumbs", name + ".jpg")]
+
+
+def _delete_gallery_set(path):
+    """Delete a gallery item as one set. Thumbnails and metadata go first so a failure on
+    the media file (still open in the browser) cannot leave a stale thumbnail that a later
+    file with the same name would reuse. Returns the paths that could not be removed."""
+    import time as _t
+    failed = []
+    for p in reversed(_gallery_set_paths(path)):
+        if not os.path.lexists(p):
+            continue
+        for attempt in range(10):
+            try:
+                os.remove(p)
+                break
+            except FileNotFoundError:
+                break
+            except OSError:
+                if attempt == 9:
+                    failed.append(p)
+                else:
+                    _t.sleep(0.2)
+    return failed
+
+
 def _png_embed_meta(png_path, meta_dict):
     import struct, zlib
     try:
@@ -701,15 +733,11 @@ def _make_delete_handler(node_key):
             except ValueError:
                 return web.json_response({"ok": False, "error": "invalid path"}, status=400)
             if not os.path.exists(img_path):
+                _delete_gallery_set(img_path)   # media already gone: still clear its leftover meta/thumbnails
                 return web.json_response({"ok": False, "error": "file not found"}, status=404)
-            os.remove(img_path)
-            _remove_thumb(img_path)
-            for json_path in (_meta_path(img_path), _meta_path_legacy(img_path)):
-                if os.path.exists(json_path):
-                    try:
-                        os.remove(json_path)
-                    except Exception:
-                        pass
+            failed = _delete_gallery_set(img_path)
+            if failed:
+                return web.json_response({"ok": False, "error": "could not delete: " + ", ".join(os.path.basename(p) for p in failed)})
             _favorites_remove(node_key, filename)
             return web.json_response({"ok": True})
         except Exception as e:
@@ -743,6 +771,11 @@ def _make_rename_handler(node_key):
             old_thumb, new_thumb = _tj_thumb_path(old_path), _tj_thumb_path(new_path)
             if os.path.exists(old_thumb) and not os.path.exists(new_thumb):
                 os.rename(old_thumb, new_thumb)
+            # video thumbnail (_thumbs/<name>.jpg): drop the old one, it is rebuilt under the new name
+            try:
+                os.remove(os.path.join(os.path.dirname(old_path), "_thumbs", os.path.basename(old_path) + ".jpg"))
+            except OSError:
+                pass
             for old_json, new_json in ((_meta_path(old_path), _meta_path(new_path)),
                                         (_meta_path_legacy(old_path), _meta_path_legacy(new_path))):
                 if os.path.exists(old_json) and not os.path.exists(new_json):
@@ -2752,6 +2785,10 @@ async def mmh3_list_images(request):
     if search and os.path.isdir(search):
         found = glob.glob(os.path.join(search, "**", "*.png"), recursive=True)
         found = [f for f in found if "_thumbs" not in f.split(os.sep) and "._post_chunks" not in f.split(os.sep)]
+        # `frames/` holds the clips' extracted last frames (continuation seeds), not generated images:
+        # scope=frames lists only those (picker's "Video frames" tab), the default image gallery hides them.
+        want_frames = request.query.get("scope", "") == "frames"
+        found = [f for f in found if (("frames" in f.split(os.sep)) == want_frames)]
     found = sorted(set(found), key=os.path.getmtime, reverse=True)
 
     images = []
@@ -5205,7 +5242,7 @@ async def _music_delete(request):
                 vpath = _safe_resolve_output_path(output_dir, sub, fname)
             except ValueError:
                 continue
-            for p in (vpath, _meta_path(vpath)):
+            for p in _gallery_set_paths(vpath):
                 if os.path.isfile(p):
                     # On Windows a track the browser was just playing stays open for a moment
                     # after the player lets go of it, so wait that out instead of failing.

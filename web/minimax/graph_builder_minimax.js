@@ -2605,6 +2605,8 @@ export function buildOfficialImageGraph(state, avail, opts) {
   });
   g[IMGO.cond] = { class_type: "MiniMaxH3ImageConditioning", inputs: condInputs };
   g[IMGO.neg] = { class_type: "ConditioningZeroOut", inputs: { conditioning: [IMGO.cond, 0] } };
+  // Live KSampler preview (same ModelPreviewOverrideKJ + previewNodeKey wiring as the video modes; one frame per step)
+  model = applyPreview(g, { ...state, previewFrames: 1 }, avail, model, opts.nodeId);
   g[IMGO.sampler] = { class_type: "KSampler", inputs: {
     model, positive: [IMGO.cond, 0], negative: [IMGO.neg, 0], latent_image: [IMGO.cond, 1],
     seed: seed ?? 0, steps: Math.max(1, Math.round(steps ?? 6)), cfg: opts.cfg ?? 1, sampler_name: opts.sampler || "euler", scheduler: opts.scheduler || "simple", denoise: 1 } };

@@ -677,7 +677,27 @@ export function createImageGalleryOverlay(state, ctx) {
     document.body.appendChild(pop);
   }
 
-  const fetchImagePage = (offset, limit) => listImages(imgFolder(state), { offset, limit });
+  // Picker-only tab: the clips' extracted last frames live in <folder>/frames and are NOT shown in the image gallery
+  let galleryScope = "";
+  const mkTab = (label, value) => {
+    const b = el("button", { type: "button", text: label, style: {
+      cursor: "pointer", fontFamily: "inherit", fontSize: "10.5px", padding: "5px 11px", borderRadius: "6px",
+      border: `1px solid ${C.border}`, background: C.bg2, color: C.text,
+    }});
+    b.addEventListener("click", () => { galleryScope = value; syncTabs(); refresh(); });
+    b._v = value; return b;
+  };
+  const tabImgs = mkTab("Images", ""), tabFrames = mkTab("Video frames", "frames");
+  const tabsBox = el("div", { style: { display: "none", gap: "6px" } }, [tabImgs, tabFrames]);
+  function syncTabs() {
+    tabsBox.style.display = pickCallback ? "flex" : "none";
+    for (const b of [tabImgs, tabFrames]) {
+      const on = b._v === galleryScope;
+      b.style.background = on ? BRAND : C.bg2; b.style.borderColor = on ? BRAND : C.border;
+    }
+  }
+  hdr.insertBefore(tabsBox, countTag);
+  const fetchImagePage = (offset, limit) => listImages(imgFolder(state), { offset, limit, scope: galleryScope });
 
   // A refresh (or a delete) re-fetches at least as many images as were showing, so the
   // grid does not snap back to the first page.
@@ -699,10 +719,10 @@ export function createImageGalleryOverlay(state, ctx) {
     renderGrid();
   }
 
-  function show() { ov.style.display = "flex"; refresh(); }
+  function show() { ov.style.display = "flex"; if (!pickCallback) galleryScope = ""; syncTabs(); refresh(); }
   function hide() {
     ov.style.display = "none";
-    pickCallback = null;
+    pickCallback = null; galleryScope = ""; syncTabs();
     setPostMode(false);
     setSelectMode(false);
   }

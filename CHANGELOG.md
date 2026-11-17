@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+- **H3 Image Generator live preview.** T2I/R2I now wire `ModelPreviewOverrideKJ` before the KSampler (one frame per step) so the preview box shows sampling live like the video modes. Needs Live Preview on in Settings and comfyui-kjnodes.
+- **Gallery delete removes the whole set.** Delete now removes the media, metadata json, image thumbnail and the video thumbnail (`_thumbs/<name>.jpg`, which was left behind before and could be reused by a later file of the same name); renaming drops the old video thumbnail. Applies to every node gallery and Music. Restart ComfyUI.
+- **H3 image gallery no longer lists video last frames.** `<folder>/frames/*` is hidden from the Image Gallery (`/minimax_h3_one/images?scope=frames` lists them); the image picker gets an Images / Video frames tab. Restart ComfyUI.
+
 ## v1.54.0 — Split Sigma follows the Turbo step, Postprocess Latent Upscale reuses the clip record, full sampler lists for H3 video
 
 - **H3 video Sampling shows every sampler and scheduler.** Text To Video, Image to Video (F/L) and Reference to Video (one shared Sampling panel) now list all 66 samplers and 11 schedulers of ComfyUI's KSampler, read from `/object_info/KSampler` (short built-in list as the fallback; a saved value outside the list stays selectable). PDD still pins the sampler to euler. Reload the page.
