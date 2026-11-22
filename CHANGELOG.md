@@ -2,6 +2,10 @@
 
 ---
 
+## Unreleased
+
+- **LLM live line moved to the bottom center.** The running-LLM line (tokens, speed, time) sits at the bottom center of the page instead of the bottom left, so it no longer overlaps the left menu / Generate buttons. Reload only; the web twin already matches (v0.22.3).
+
 ## v1.56.0 — Gallery tools: cleanup, folder merge and trash in every gallery
 
 - **Gallery tools (🧹 Tools) in every gallery.** One popup with three tabs, in the 8 image-node galleries, the H3 image and video galleries, LTX 2.5 and Music. *Cleanup* scans the folder (media files, metadata, image and video thumbnails, favorites) and lists what is left over: metadata and thumbnails whose file is gone, temp files, missing or outdated thumbnails (rebuilt, images and videos), empty folders, favorites pointing at deleted files; each item is a checkbox, plus an optional "rebuild all thumbnails". *Merge folder* imports a chosen folder into the current one (media, metadata, music covers), renames a clashing file to `<name>_<folder name>`, rewrites every path stored in the metadata (sidecar, the copy inside PNGs, other clips' metadata that listed the moved files, favorites, the blurred-media list), rebuilds the thumbnails and removes the emptied folder; a preview shows the renames first. *Trash* keeps everything cleanup/merge removes (in `user/tj_gallery_trash`, outside output/) until you restore or empty it. Logic is in the new `gallery_tools.py` (no ComfyUI imports), UI in `web/shared/gallery_tools.js`. Restart ComfyUI.

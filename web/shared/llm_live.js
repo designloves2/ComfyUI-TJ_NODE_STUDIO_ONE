@@ -1,5 +1,5 @@
 /**
- * LLM live monitor — a small line at the bottom-left of the ComfyUI page for every running LLM call, fed by the
+ * LLM live monitor — a small line at the bottom-center of the ComfyUI page for every running LLM call, fed by the
  * `tj_llm_progress` websocket event (core LLM (TJ) node and the studio /tj_studio_one/llm/* routes).
  *
  *   thinking · 210 tok · 17 tok/s · 12 s      (with the backend and model in front when several calls run at once)
@@ -19,7 +19,7 @@ function ensureBox() {
   if (box) return box;
   box = document.createElement("div");
   Object.assign(box.style, {
-    position: "fixed", left: "12px", bottom: "12px", zIndex: "10001", display: "none", flexDirection: "column", gap: "4px",
+    position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: "12px", zIndex: "10001", display: "none", flexDirection: "column", alignItems: "center", gap: "4px",
     maxWidth: "min(720px, 90vw)", pointerEvents: "none", fontFamily: "ui-monospace, Menlo, Consolas, monospace", fontSize: "11px",
   });
   document.body.appendChild(box);
