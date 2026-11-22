@@ -21,6 +21,7 @@ import { mountColorsPanel } from "./shared/ui_theme_dialog.js";
 import { melodySeconds } from "./music/melody_core.js";
 import { openImageGalleryPicker } from "./shared/ui_image_gallery_picker.js";
 import { attachSensitiveToggle, mediaKey } from "./shared/ui_sensitive_media.js";
+import { openGalleryTools } from "./shared/gallery_tools.js";
 import { OUTER_W, OUTER_H } from "./shared/node_size.js";
 
 // The same outer node size as every ONE STUDIO node (node_size.js); the UI fills what is left after the node body's
@@ -547,7 +548,9 @@ app.registerExtension({
         try { await loadPlaylist(); statusEl.textContent = "Playlist refreshed"; }
         finally { refreshBtn.disabled = false; refreshBtn.style.opacity = ""; }
       };
-      plHead.append(searchIn, favTgl, refreshBtn, sortSel);
+      const toolsBtn = el("button", { className: "mmm-ib", text: "🧹", title: "Gallery tools: cleanup, merge folders, trash" });
+      toolsBtn.onclick = () => openGalleryTools({ nodeKey: "music", folder: SUB(), onChanged: () => loadPlaylist() });
+      plHead.append(searchIn, favTgl, refreshBtn, toolsBtn, sortSel);
       const plBody = el("div", { className: "mmm-lp", style: { flex: "1", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px" }});
       playlistWrap.append(selBar, plHead, plBody);
 

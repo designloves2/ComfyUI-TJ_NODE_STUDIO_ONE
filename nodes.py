@@ -3650,6 +3650,167 @@ async def tj_shared_build_thumbs_status(request):
     return web.json_response(_THUMB_JOB)
 
 
+# ── Gallery tools: cleanup / folder merge / trash (logic lives in gallery_tools.py) ─────────────
+from . import gallery_tools as _GT
+
+_GT_NODE_FOLDERS = {   # node key (favorites_<key>.json) -> its default output folder, resolved at call time
+    "klein": "FK_SUBFOLDER", "zimage": "ZIT_SUBFOLDER", "krea2": "K2_SUBFOLDER", "qwen2511": "QE_SUBFOLDER",
+    "qwen21": "Q21_SUBFOLDER", "sdxl_one": "SDXL_SUBFOLDER", "anima": "ANIMA_SUBFOLDER", "moss": "MOSS_SUBFOLDER",
+    "minimax_h3": "MMH3_SUBFOLDER", "ltx25": "LTX25_SUBFOLDER", "music": "MUSIC_SUBFOLDER",
+}
+
+
+def _gt_trash_root():
+    return os.path.join(folder_paths.get_user_directory(), "tj_gallery_trash")   # outside output/: no gallery lists it
+
+
+def _gt_node_root(node_key):
+    name = _GT_NODE_FOLDERS.get(node_key)
+    return globals().get(name) if name else None
+
+
+def _gt_scope(data):
+    """(node_key, folder, node_root). folder must be a real sub-folder of output/, never output/ itself."""
+    node_key = data.get("node_key") or ""
+    if node_key not in _GT_NODE_FOLDERS:
+        raise ValueError("unknown gallery")
+    root = _gt_node_root(node_key)
+    folder = _GT.norm(data.get("folder") or root)
+    if not folder:
+        raise ValueError("folder required")
+    _GT.safe_join(_get_output_dir(), folder)
+    return node_key, folder, root
+
+
+def _gt_inside(folder, root):
+    return bool(root) and (folder == root or folder.startswith(root + "/"))
+
+
+async def _gt_run(fn, *a, **kw):
+    return await asyncio.get_running_loop().run_in_executor(None, lambda: fn(*a, **kw))
+
+
+def _gt_sensitive_rekey(mapping):
+    keys = _sensitive_load()
+    new = set(keys)
+    for old, nw in mapping.items():
+        if old in new:
+            new.discard(old)
+            new.add(nw)
+        elif "/" + old in new:
+            new.discard("/" + old)
+            new.add("/" + nw)
+    if new != keys:
+        _sensitive_save(new)
+
+
+@PromptServer.instance.routes.post("/tj_shared/gallery_tools/scan")
+async def tj_gt_scan(request):
+    try:
+        node_key, folder, root = _gt_scope(await request.json())
+        favs = _load_favorites(node_key)
+        rep = await _gt_run(_GT.scan, _get_output_dir(), folder, favs, root if _gt_inside(folder, root) else folder)
+        return web.json_response({"ok": True, "report": rep})
+    except ValueError as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=400)
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+
+@PromptServer.instance.routes.post("/tj_shared/gallery_tools/clean")
+async def tj_gt_clean(request):
+    try:
+        data = await request.json()
+        node_key, folder, root = _gt_scope(data)
+        actions = {k: bool(v) for k, v in (data.get("actions") or {}).items()}
+        res = await _gt_run(_GT.clean, _get_output_dir(), folder, _gt_trash_root(), actions,
+                            favorites=_load_favorites(node_key), fav_root=root if _gt_inside(folder, root) else folder,
+                            save_favorites=lambda s: _save_favorites(node_key, s), ffmpeg=_ffmpeg_exe(),
+                            label=f"cleanup {folder}")
+        return web.json_response({"ok": True, "result": res})
+    except ValueError as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=400)
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+
+async def _gt_merge(request, dry_run):
+    try:
+        data = await request.json()
+        node_key, dest, root = _gt_scope({**data, "folder": data.get("dest")})
+        source = _GT.norm(data.get("source"))     # any folder of the output list (e.g. "minimax_h3" into "one_minimax_h3")
+        out = _get_output_dir()
+        refs = root if _gt_inside(dest, root) else dest
+        plan = await _gt_run(_GT.merge, out, dest, source, _gt_trash_root(), refs_root=refs,
+                             favorites=_load_favorites(node_key), save_favorites=lambda s: _save_favorites(node_key, s),
+                             ffmpeg=_ffmpeg_exe(), dry_run=dry_run, on_moved=_gt_sensitive_rekey)
+        return web.json_response({"ok": True, "plan": plan})
+    except ValueError as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=400)
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+
+@PromptServer.instance.routes.post("/tj_shared/gallery_tools/merge_plan")
+async def tj_gt_merge_plan(request):
+    return await _gt_merge(request, True)
+
+
+@PromptServer.instance.routes.post("/tj_shared/gallery_tools/merge")
+async def tj_gt_merge_run(request):
+    return await _gt_merge(request, False)
+
+
+@PromptServer.instance.routes.get("/tj_shared/gallery_tools/folders")
+async def tj_gt_folders(request):
+    """Every folder of the output list (depth <= 3) with its media count (sub-folders included),
+    for the merge picker: any of them can be merged into the gallery's current folder."""
+    try:
+        _gt_scope({"node_key": request.query.get("node_key"), "folder": request.query.get("folder")})
+        out = os.path.realpath(_get_output_dir())
+
+        def walk():
+            counts, order = {}, []
+            for dp, dn, fn in os.walk(out):
+                dn[:] = sorted(d for d in dn if d not in _GT.SKIP_DIRS)
+                rel = os.path.relpath(dp, out).replace("\\", "/")
+                if rel == ".":
+                    continue
+                n = sum(1 for f in fn if _GT.is_media(f))
+                order.append(rel)
+                parts = rel.split("/")
+                for i in range(1, len(parts) + 1):          # a folder's count includes everything below it
+                    k = "/".join(parts[:i])
+                    counts[k] = counts.get(k, 0) + n
+            return [{"path": p, "files": counts.get(p, 0)} for p in order if p.count("/") < 6]
+        return web.json_response({"ok": True, "folders": await _gt_run(walk)})
+    except ValueError as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=400)
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+
+@PromptServer.instance.routes.post("/tj_shared/gallery_tools/trash")
+async def tj_gt_trash(request):
+    try:
+        data = await request.json()
+        act, batch = data.get("action"), data.get("batch")
+        root = _gt_trash_root()
+        if batch and (os.sep in batch or "/" in batch or ".." in batch):
+            raise ValueError("invalid batch")
+        if act == "list":
+            return web.json_response({"ok": True, "batches": _GT.trash_list(root)})
+        if act == "restore" and batch:
+            return web.json_response({"ok": True, "result": await _gt_run(_GT.trash_restore, root, _get_output_dir(), batch)})
+        if act == "empty":
+            return web.json_response({"ok": True, "removed": await _gt_run(_GT.trash_empty, root, batch or None)})
+        raise ValueError("bad action")
+    except ValueError as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=400)
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+
 # The new cross-tool "OUTPUT folder" gallery tab isn't tied to one tool, so it needs its own
 # copy_to_input rather than borrowing one of the per-tool ones above.
 PromptServer.instance.routes.post("/tj_shared/copy_to_input")(_make_copy_to_input_handler("out"))

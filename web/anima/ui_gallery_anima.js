@@ -1,6 +1,7 @@
 // ui_gallery_anima.js — Gallery overlay for Anima ONE STUDIO (TJ)
 import { C, el, clear, SUBFOLDER, BRAND } from "./core_anima.js";
 import { setThumb, wireCacheButton } from "../shared/gallery_thumb.js";
+import { wireGalleryTools } from "../shared/gallery_tools.js";
 import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, copyOutputToInput } from "./api_anima.js";
 import { attachSensitiveToggle, mediaKey, isBlurred, isSensitive, setSensitive, wireRevealButton } from "../shared/ui_sensitive_media.js";
 import { mountGalleryLayout } from "../shared/gallery_layout.js";
@@ -88,6 +89,9 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
   const cacheBtn = btn("⚡ Cache", () => {});
   wireCacheButton(cacheBtn, () => ({ root: "output", subfolder: SUBFOLDER, recursive: true }));
   topRow.appendChild(cacheBtn);
+  const toolsBtn = btn("🧹 Tools", () => {});
+  wireGalleryTools(toolsBtn, () => ({ nodeKey: "anima", folder: SUBFOLDER, onChanged: () => reset() }));
+  topRow.appendChild(toolsBtn);
   const revealBtn = btn("👁 Show", () => {});
   wireRevealButton(revealBtn);
   topRow.appendChild(revealBtn);

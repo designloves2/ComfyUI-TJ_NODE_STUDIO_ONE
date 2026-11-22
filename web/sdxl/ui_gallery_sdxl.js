@@ -1,6 +1,7 @@
 // ui_gallery_sdxl.js — Gallery overlay for SDXL ONE (TJ)
 import { C, el, clear, SUBFOLDER } from "./core_sdxl.js";
 import { setThumb, wireCacheButton } from "../shared/gallery_thumb.js";
+import { wireGalleryTools } from "../shared/gallery_tools.js";
 import { button, row } from "../klein/ui_common.js";
 import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, copyOutputToInput } from "./api_sdxl.js";
 import { attachSensitiveToggle, mediaKey, isBlurred, isSensitive, setSensitive, wireRevealButton } from "../shared/ui_sensitive_media.js";
@@ -81,6 +82,9 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
   const cacheBtn = button("⚡ Cache", () => {});
   wireCacheButton(cacheBtn, () => ({ root: "output", subfolder: SUBFOLDER, recursive: true }));
   topRow.appendChild(cacheBtn);
+  const toolsBtn = button("🧹 Tools", () => {});
+  wireGalleryTools(toolsBtn, () => ({ nodeKey: "sdxl_one", folder: SUBFOLDER, onChanged: () => reset() }));
+  topRow.appendChild(toolsBtn);
   const revealBtn = button("👁 Show", () => {});
   wireRevealButton(revealBtn);
   topRow.appendChild(revealBtn);

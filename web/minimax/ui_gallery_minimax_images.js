@@ -15,6 +15,7 @@ import { C, BRAND, el, clear, SUBFOLDER } from "./core_minimax.js";
 import { setThumb, wireCacheButton } from "../shared/gallery_thumb.js";
 import { button } from "../klein/ui_common.js";
 import { galleryPageSize, fetchFirst, mergeUnique, loadMoreButton } from "../shared/gallery_more.js";
+import { wireGalleryTools } from "../shared/gallery_tools.js";
 import { listImages, revealOutputFolder, deleteImage, copyOutputToInput, discardInputCopy,
          saveMeta, queuePrompt } from "./api_minimax.js";
 import { buildImageUpscaleGraph } from "./graph_builder_minimax.js";
@@ -257,7 +258,9 @@ export function createImageGalleryOverlay(state, ctx) {
   wireCacheButton(cacheBtn, () => ({ root: "output", subfolder: imgFolder(state), recursive: true }));
   const revealBtn = button("👁 Show", () => {});
   wireRevealButton(revealBtn);
-  hdr.append(bulkDeleteBtn, selectBtn, filterSel, postBtn, cacheBtn, revealBtn, refreshBtn, folderBtn, button("✕ Close", () => hide(), "danger"));
+  const toolsBtn = button("🧹 Tools", () => {});
+  wireGalleryTools(toolsBtn, () => ({ nodeKey: "minimax_h3", folder: imgFolder(state), onChanged: () => refresh() }));
+  hdr.append(bulkDeleteBtn, selectBtn, filterSel, postBtn, cacheBtn, toolsBtn, revealBtn, refreshBtn, folderBtn, button("✕ Close", () => hide(), "danger"));
 
   const barStyle = {
     display: "none", flexShrink: "0", alignItems: "center", gap: "8px", flexWrap: "wrap",

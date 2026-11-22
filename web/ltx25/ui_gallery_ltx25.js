@@ -6,6 +6,7 @@
 import { composeStitchedPrompt, C, BRAND, el, clear, SUBFOLDER, framesToSeconds, UPSCALE_MODES, FLASHVSR_MODELS, FLASHVSR_MODES, FPS, computeRtxTarget } from "./core_ltx25.js";
 import { button, select, numberField } from "../klein/ui_common.js";
 import { galleryPageSize, fetchFirst, mergeUnique, loadMoreButton } from "../shared/gallery_more.js";
+import { wireGalleryTools } from "../shared/gallery_tools.js";
 import {
   listVideos, revealOutputFolder, stitchClips, saveMeta, deleteImage, getMediaFiles, copyOutputToInput, discardInputCopy, getVideoInfo,
   queuePrompt, waitForHistory, historyEntry, getClipLastFrame
@@ -320,7 +321,9 @@ export function createGalleryOverlay(state, ctx) {
 
   const revealBtn = button("👁 Show", () => {});
   wireRevealButton(revealBtn);
-  hdr.append(filterSel, stitchBtn, upBtn, rifeBtn, resizeBtn, revealBtn, refreshBtn, folderBtn, button("✕ Close", () => hide(), "danger"));
+  const toolsBtn = button("🧹 Tools", () => {});
+  wireGalleryTools(toolsBtn, () => ({ nodeKey: "ltx25", folder: state.saveSubfolder || SUBFOLDER, onChanged: () => refresh() }));
+  hdr.append(filterSel, stitchBtn, upBtn, rifeBtn, resizeBtn, revealBtn, toolsBtn, refreshBtn, folderBtn, button("✕ Close", () => hide(), "danger"));
 
   const stitchBar = el("div", { style: {
     display: "none", flexShrink: "0", alignItems: "center", gap: "8px",

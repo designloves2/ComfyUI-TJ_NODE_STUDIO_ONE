@@ -2,6 +2,10 @@
 
 ---
 
+## v1.56.0 — Gallery tools: cleanup, folder merge and trash in every gallery
+
+- **Gallery tools (🧹 Tools) in every gallery.** One popup with three tabs, in the 8 image-node galleries, the H3 image and video galleries, LTX 2.5 and Music. *Cleanup* scans the folder (media files, metadata, image and video thumbnails, favorites) and lists what is left over: metadata and thumbnails whose file is gone, temp files, missing or outdated thumbnails (rebuilt, images and videos), empty folders, favorites pointing at deleted files; each item is a checkbox, plus an optional "rebuild all thumbnails". *Merge folder* imports a chosen folder into the current one (media, metadata, music covers), renames a clashing file to `<name>_<folder name>`, rewrites every path stored in the metadata (sidecar, the copy inside PNGs, other clips' metadata that listed the moved files, favorites, the blurred-media list), rebuilds the thumbnails and removes the emptied folder; a preview shows the renames first. *Trash* keeps everything cleanup/merge removes (in `user/tj_gallery_trash`, outside output/) until you restore or empty it. Logic is in the new `gallery_tools.py` (no ComfyUI imports), UI in `web/shared/gallery_tools.js`. Restart ComfyUI.
+
 ## v1.55.0 — H3 image live preview, whole-set gallery delete, video frames out of the image gallery, 4th image LoRA
 
 - **Image Generator uses all 4 LoRAs.** The LoRA panel allowed 4 but the T2I/R2I graph silently dropped the 4th; it now chains all four (Character Sheet keeps its 3).

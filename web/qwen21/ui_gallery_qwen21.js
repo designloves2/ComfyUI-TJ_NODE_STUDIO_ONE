@@ -4,6 +4,7 @@
 // "simple grid" gallery only fetched the first page and had no viewer at all.
 import { C, el, clear, SUBFOLDER, BRAND } from "./core_qwen21.js";
 import { setThumb, wireCacheButton } from "../shared/gallery_thumb.js";
+import { wireGalleryTools } from "../shared/gallery_tools.js";
 import { getGallery, updateImageMeta, deleteImage, openImageFolder, loadMeta, copyOutputToInput } from "./api_qwen21.js";
 import { attachSensitiveToggle, mediaKey, isBlurred, isSensitive, setSensitive, wireRevealButton } from "../shared/ui_sensitive_media.js";
 import { mountGalleryLayout } from "../shared/gallery_layout.js";
@@ -91,6 +92,9 @@ export function createGalleryOverlay(state, ctx, onReuse, onSendTo) {
   const cacheBtn = btn("⚡ Cache", () => {});
   wireCacheButton(cacheBtn, () => ({ root: "output", subfolder: SUBFOLDER, recursive: true }));
   topRow.appendChild(cacheBtn);
+  const toolsBtn = btn("🧹 Tools", () => {});
+  wireGalleryTools(toolsBtn, () => ({ nodeKey: "qwen21", folder: SUBFOLDER, onChanged: () => reset() }));
+  topRow.appendChild(toolsBtn);
   const revealBtn = btn("👁 Show", () => {});
   wireRevealButton(revealBtn);
   topRow.appendChild(revealBtn);
