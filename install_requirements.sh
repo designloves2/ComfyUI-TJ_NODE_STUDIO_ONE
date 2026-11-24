@@ -112,6 +112,9 @@ else
     # which is what produces "Cannot import 'wheel_stub.buildapi'". Installing it up
     # front is the actual fix.
     "$PYTHON" -m pip install wheel-stub --quiet 2>/dev/null || true
+    # soundfile: ComfyUI-TJ_NODE imports it unguarded (nodes/reflib/nodes.py) but neither ComfyUI nor that
+    # pack lists it, so on a fresh machine the whole TJ_NODE pack fails to load. Installed here once for every pack.
+    "$PYTHON" -m pip install soundfile --quiet || echo "[WARN] soundfile not installed - ComfyUI-TJ_NODE will not load without it."
     echo "[PIP] Done."
 fi
 echo

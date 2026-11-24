@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- **Installer adds `soundfile`.** ComfyUI-TJ_NODE imports `soundfile` unguarded (`nodes/reflib/nodes.py`), but ComfyUI and that pack's own `requirements.txt` do not list it, so on a fresh PC the whole TJ_NODE pack failed to load. `install_requirements.bat` / `.sh` now `pip install soundfile` up front (and it is in this pack's `requirements.txt` for manual installs). Run the installer again, or `python_embeded\python.exe -m pip install soundfile`, then restart ComfyUI.
+
 - **LLM live line moved to the bottom center.** The running-LLM line (tokens, speed, time) sits at the bottom center of the page instead of the bottom left, so it no longer overlaps the left menu / Generate buttons. Reload only; the web twin already matches (v0.22.3).
 
 ## v1.56.0 — Gallery tools: cleanup, folder merge and trash in every gallery

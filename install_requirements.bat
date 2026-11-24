@@ -104,6 +104,9 @@ rem its build-backend, and pip does not always fetch a declared backend on its o
 rem which is what produces "Cannot import 'wheel_stub.buildapi'". Installing it up front
 rem is the actual fix.
 "%PYTHON%" -m pip install wheel-stub --quiet
+rem soundfile: ComfyUI-TJ_NODE imports it unguarded (nodes\reflib\nodes.py) but neither ComfyUI nor that
+rem pack lists it, so on a fresh PC the whole TJ_NODE pack fails to load. Installed here once for every pack.
+"%PYTHON%" -m pip install soundfile --quiet
 echo [PIP] Done.
 :SKIP_PIP
 
