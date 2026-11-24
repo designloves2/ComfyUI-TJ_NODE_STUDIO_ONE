@@ -2,7 +2,7 @@
 
 ---
 
-## Unreleased
+## v1.56.1 — Installer adds soundfile (fresh-PC TJ_NODE load failure), LLM live line at the bottom center
 
 - **Installer adds `soundfile`.** ComfyUI-TJ_NODE imports `soundfile` unguarded (`nodes/reflib/nodes.py`), but ComfyUI and that pack's own `requirements.txt` do not list it, so on a fresh PC the whole TJ_NODE pack failed to load. `install_requirements.bat` / `.sh` now `pip install soundfile` up front (and it is in this pack's `requirements.txt` for manual installs). Run the installer again, or `python_embeded\python.exe -m pip install soundfile`, then restart ComfyUI.
 
