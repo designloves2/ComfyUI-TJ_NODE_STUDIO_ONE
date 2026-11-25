@@ -138,6 +138,8 @@
 >
 > 자세한 목록은 [필수 커스텀 노드](#필수-커스텀-노드) 섹션 참고.
 >
+> **업데이트:** ComfyUI-Manager에서 업데이트가 막히면 패키지 폴더의 `Node_Update.bat`을 **더블클릭**하세요(`git pull` 자동 실행, 설정·즐겨찾기는 그대로 유지, 핵심 팩 ComfyUI-TJ_NODE도 같이 업데이트). 끝나면 ComfyUI를 재시작하세요.
+>
 > ---
 >
 > **When you install this package via ComfyUI-Manager, the Python packages install automatically but the other custom-node packs this node depends on do NOT** (Manager's nightly/git install path has no mechanism for auto-installing node packs). Run the script below **once** right after install, then restart ComfyUI. Without it the node loads but several modes fail — Face Redraw, Faceswap, ControlNet, RE-BG, Upscale, MiniMax H3 Reference. The ComfyUI console prints a banner at startup listing exactly which packs are missing.
@@ -146,6 +148,8 @@
 > **Mac / Linux:** `bash install_requirements.sh`
 >
 > See [Required Custom Nodes](#필수-커스텀-노드) for the full list.
+>
+> **Updating:** if ComfyUI-Manager blocks the update, **double-click** `Node_Update.bat` in the package folder (it runs `git pull` for you, keeps your settings and favorites, and also updates the core pack ComfyUI-TJ_NODE). Restart ComfyUI afterwards.
 
 ---
 

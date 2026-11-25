@@ -2,6 +2,10 @@
 
 ---
 
+## v1.57.1 — Node_Update.bat: one-click updater
+
+- **`Node_Update.bat` — one-click updater.** Double-click it in the node folder to update this pack and ComfyUI-TJ_NODE with `git pull` when ComfyUI-Manager blocks the update; it lists the latest changes and offers to run `install_requirements.bat` afterwards (default N). If the plain pull is refused because of files changed on this PC, it copies your settings (`config_*.json`, favorites, templates, `studio_llm*.json`, `sensitive_media.json`) to `custom_nodes\_node_update_backup\`, puts the other local edits aside with `git stash`, pulls, and puts your settings back. Tested against throwaway repositories (plain update, update with a changed settings file, blocked pull, folder paths with spaces and parentheses); ASCII only, no restart needed to ship it.
+
 ## v1.57.0 — LLM works without local model files: default backend Connect Custom, guidance on missing models
 
 - **LLM works on a PC without local model files.** (1) Default backend: when no backend was ever chosen, the LLM panel and the music LLM default to Connect Custom instead of Local GGUF (fixed, never switched automatically; a saved choice is never changed; `/tj_studio_one/llm/models` also returns `gguf_available` / `text_encoder_available` for information). (2) Error text: a local backend (GGUF / ComfyUI Native) asked for without a real model now answers "No .gguf model found in models/text_encoders. This backend needs a local model: put one there, or switch the backend to Open Router / Connect Custom (no local model needed)." (text-encoder variant for ComfyUI Native) from Enhance, Image-to-Prompt and the music LLM, and the `NO_GGUF_FILES_IN_MODELS_TEXT_ENCODERS` / `NO_TEXT_ENCODER_FILES_FOUND` placeholders no longer show as the model name in the live LLM line. (3) The LLM settings now say that OpenRouter / Connect Custom need no model file. Restart ComfyUI.
