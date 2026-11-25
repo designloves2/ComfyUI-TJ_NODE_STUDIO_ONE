@@ -7,6 +7,20 @@ export async function getModels() {
   return r.json();
 }
 
+// The choices of one COMBO input of a ComfyUI node (e.g. LoadMoGeModel.model_name), [] when the node is not installed.
+// object_info gives either [[...choices]] or ["COMBO", {options: [...]}] depending on the ComfyUI version.
+export async function getObjectOptions(nodeClass, input) {
+  try {
+    const r = await api.fetchApi(`/object_info/${encodeURIComponent(nodeClass)}`);
+    const d = await r.json();
+    const inputs = d?.[nodeClass]?.input || {};
+    const spec = inputs.required?.[input] || inputs.optional?.[input];
+    if (Array.isArray(spec?.[0])) return spec[0];
+    if (Array.isArray(spec?.[1]?.options)) return spec[1].options;
+  } catch {}
+  return [];
+}
+
 export async function getLoraTriggers(loraName) {
   const r = await api.fetchApi(`${API}/lora_triggers?name=${encodeURIComponent(loraName)}`);
   return r.json();

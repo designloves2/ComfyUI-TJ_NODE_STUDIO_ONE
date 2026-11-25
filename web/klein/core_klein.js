@@ -61,6 +61,10 @@ export function defaultState(saved) {
     scheduler: saved.scheduler || "simple",
     seed:      saved.seed      ?? 0,
     seedMode:  saved.seedMode  || "randomize",
+    // Turbo LoRA (picked in Settings) + the Turbo Mode switch above SEED; see shared/turbo_lora.js
+    turboLora:     saved.turboLora     || "",
+    turboStrength: saved.turboStrength ?? 1,
+    turboMode:     saved.turboMode     ?? false,
 
     loras: Array.isArray(saved.loras)
       ? saved.loras.map(l => ({

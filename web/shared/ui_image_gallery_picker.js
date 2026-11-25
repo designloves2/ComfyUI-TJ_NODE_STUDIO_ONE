@@ -26,10 +26,18 @@ export const IMAGE_GALLERY_TOOLS = [
   { id: "sdxl",     label: "SDXL",           api: "/sdxl_one",      subfolder: "one_sdxl" },
   { id: "anima",    label: "Anima",           api: "/anima_one",     subfolder: "one_anima" },
   { id: "moss",     label: "Moss Image",      api: "/moss_one",      subfolder: "one_moss" },
-  // MiniMax H3's Image Generator (T2I/Reference to Image/Character Sheet) stills — same
-  // generic PNG /gallery route every other tool above uses, already registered server-side.
-  { id: "minimaxh3", label: "H3 Image",       api: "/minimax_h3_one", subfolder: "one_minimax_h3" },
+  // MiniMax H3's Image Generator (T2I/Reference to Image/Character Sheet) stills. Listed by H3's own /images route,
+  // which leaves out the clips' extracted last frames (<folder>/frames) — those get their own tab right after it, so the
+  // image tab only shows what the Image Generator made and the frames can still be picked as an attachment.
+  { id: "minimaxh3", label: "H3 Image",       api: "/minimax_h3_one", subfolder: "one_minimax_h3", route: "images" },
+  { id: "minimaxh3f", label: "H3 Frames",     api: "/minimax_h3_one", subfolder: "one_minimax_h3", route: "images", scope: "frames" },
 ];
+
+// One page of a per-tool gallery (not INPUT / OUTPUT): the tool's own list route (default the generic /gallery),
+// optionally limited to a scope (H3 Frames).
+export function toolGalleryUrl(tool, offset, limit) {
+  return `${tool.api}/${tool.route || "gallery"}?offset=${offset}&limit=${limit}&subfolder=${encodeURIComponent(tool.subfolder)}${tool.scope ? `&scope=${tool.scope}` : ""}`;
+}
 
 const BRAND = "#7612DA";
 const C = { bg1: "#111111", bg2: "#181818", border: "#2a2a2a", text: "#dedede", muted: "#565656" };
@@ -40,7 +48,7 @@ async function fetchGallery(tool, offset, limit, folderSubfolder = "") {
       ? `${tool.api}/input_gallery?offset=${offset}&limit=${limit}&subfolder=${encodeURIComponent(folderSubfolder)}`
       : tool.output
       ? `${tool.api}/output_gallery?offset=${offset}&limit=${limit}&subfolder=${encodeURIComponent(folderSubfolder)}`
-      : `${tool.api}/gallery?offset=${offset}&limit=${limit}&subfolder=${encodeURIComponent(tool.subfolder)}`;
+      : toolGalleryUrl(tool, offset, limit);
     const r = await fetch(url);
     if (!r.ok) throw new Error(String(r.status));
     return await r.json();

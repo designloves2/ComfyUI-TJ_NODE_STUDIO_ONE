@@ -68,6 +68,7 @@ export function attachPanZoom(host, targets, { max = 8, enabled = null } = {}) {
 export function createCompareView(originalURL, resultURL, accent = "#7612DA") {
   const box = (extra) => Object.assign(document.createElement("div"), {}, extra);
   const container = document.createElement("div");
+  container.dataset.tjCompare = "1";   // lets a node remove a stale compare view when the next run's live frames arrive
   Object.assign(container.style, { position: "relative", width: "100%", height: "100%", overflow: "hidden", borderRadius: "8px" });
 
   const fit = { position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", display: "block" };

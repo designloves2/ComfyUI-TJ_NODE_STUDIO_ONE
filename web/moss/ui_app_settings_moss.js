@@ -4,6 +4,7 @@ import { panel, label, button, col } from "../klein/ui_common.js";
 import { getModels, getConfig, saveConfig } from "./api_moss.js";
 import { mountLLMSettingsSection } from "../shared/llm_panel.js";
 import { tabSettings } from "../shared/settings_tabs.js";
+import { mountTurboSettings } from "../shared/turbo_lora.js";
 
 function searchableSelect(options, value, onChange) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } });
@@ -156,6 +157,8 @@ export function createSettingsOverlay(state, ctx) {
     ctx._refreshToggle?.(); ctx.renderToggle?.();
     return getModels().then(d => { rebuildModels(d); applyConfigModels(cfg, d); });
   }).catch(() => {});
+
+  mountTurboSettings(ov, state, ctx);
 
   const tabs = tabSettings(ov, llmPanel, { brand: C.lime, bg: C.bg2, border: C.border, nodeKey: "moss" });
   return {

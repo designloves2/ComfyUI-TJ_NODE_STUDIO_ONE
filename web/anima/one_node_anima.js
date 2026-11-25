@@ -1,7 +1,7 @@
 // one_node_anima.js — Anima ONE STUDIO (TJ)
 import { app } from "../../../scripts/app.js";
 import { C, BRAND, NODE_W, PREVIEW_SIZE, LEFT_W, PAD,
-         el, clear, loadState, saveState, defaultState, randomSeed, MANUAL_TEXT } from "./core_anima.js";
+         el, clear, loadState, saveState, defaultState, randomSeed, MANUAL_TEXT, TURBO_STEPS, TURBO_CFG, BASE_STEPS, BASE_CFG } from "./core_anima.js";
 import { panel, label, button, row, col, modeBar, iconBtn, openFullscreen } from "../klein/ui_common.js";
 import { queuePrompt, interrupt, setLastImage, saveMeta, copyOutputToInput } from "./api_anima.js";
 import { createSettingsOverlay } from "./ui_app_settings_anima.js";
@@ -12,6 +12,7 @@ import { mountControlLeft } from "./ui_control_anima.js";
 import { mountUpscaleLeft } from "./ui_upscale_anima.js";
 import { attachNodeState, restoreNodeState } from "../shared/node_state.js";
 import { resolvePipeOverrides, applyOverridesTemp, labelPipeInput } from "../shared/promptdb_pipe.js";
+import { createTurboToggle } from "../shared/turbo_lora.js";
 import { summarizeRun } from "../shared/run_summary.js";
 import { addLivePreview, listenLivePreview, showStepBar } from "../shared/live_preview.js";
 import { createOverrideToggle } from "../shared/override_toggle.js";
@@ -208,6 +209,8 @@ app.registerExtension({
 
       // live sampling frames (ModelPreviewOverrideKJ) paint over the box until the final image replaces them
       const stopLive = listenLivePreview(self, (url, step, total) => {
+        // a compare view left from the last run would sit beside the new frames and squeeze them to one side
+        previewBox.querySelectorAll("[data-tj-compare]").forEach(e => e.remove());
         if (finalImg.parentNode !== previewBox) previewBox.appendChild(finalImg);
         placeholder.style.display = "none"; loadingOv.style.display = "none";
         if (step && total) showStepBar(previewBox, step, total);
@@ -335,6 +338,11 @@ app.registerExtension({
       const seedModeSel = el("select",{style:{width:"100%",boxSizing:"border-box",background:C.bg2,color:C.text,border:`1px solid ${C.border}`,borderRadius:"6px",padding:"6px",fontSize:"12px",fontFamily:"inherit",outline:"none"},onchange:e=>{state.seedMode=e.target.value;persist();}},
         [{value:"randomize",label:"Random"},{value:"fixed",label:"Fixed"},{value:"increment",label:"+1"},{value:"decrement",label:"-1"}].map(o=>el("option",{value:o.value,text:o.label,...(o.value===state.seedMode?{selected:"selected"}:{})})));
       const seedGenWrap = el("div",{style:{display:"flex",flexDirection:"column",gap:"4px",paddingTop:"6px",flexShrink:"0",borderTop:`1px solid ${C.border}`}});
+      const turboToggle = createTurboToggle(state, ctx, { onChange: on => {
+        state.steps = on ? TURBO_STEPS : BASE_STEPS; state.cfg = on ? TURBO_CFG : BASE_CFG;
+        persist(); renderMode();
+      } });
+      seedGenWrap.appendChild(turboToggle.el);
       seedGenWrap.appendChild(panel([row([col([label("SEED"),seedField]),col([label("MODE"),seedModeSel])])]));
 
       const genBtn  = button("▶ Generate",null,"primary");

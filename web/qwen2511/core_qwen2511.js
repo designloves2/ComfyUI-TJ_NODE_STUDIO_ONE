@@ -108,6 +108,10 @@ export function defaultState(saved) {
     lightningLora: saved.lightningLora
       ? { name: saved.lightningLora.name || "none", strength: saved.lightningLora.strength ?? 1, enabled: saved.lightningLora.enabled !== false }
       : { name: "none", strength: 1, enabled: false },
+    // Turbo LoRA (picked in Settings) + the Turbo Mode switch above SEED; see shared/turbo_lora.js
+    turboLora:     saved.turboLora     || "",
+    turboStrength: saved.turboStrength ?? 1,
+    turboMode:     saved.turboMode     ?? false,
 
     loras: Array.isArray(saved.loras)
       ? saved.loras.map(l => ({ name: l.name || "none", strength: l.strength ?? 1, triggerWord: l.triggerWord || "", enabled: l.enabled !== false }))

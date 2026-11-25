@@ -5,6 +5,7 @@
 // T2I / I2I (plain + Ref-to-Image) / Edit / Inpaint / Outpaint / Upscale.
 import { app } from "../../scripts/app.js";
 import { resolvePipeOverrides, applyOverridesTemp, labelPipeInput } from "./shared/promptdb_pipe.js";
+import { createTurboToggle, applyTurboTemp, chainRestore } from "./shared/turbo_lora.js";
 import { summarizeRun } from "./shared/run_summary.js";
 import { addLivePreview, listenLivePreview, showStepBar } from "./shared/live_preview.js";
 import { createOverrideToggle } from "./shared/override_toggle.js";
@@ -34,6 +35,7 @@ import { imageSlot }                                                      from "
 import { createImageUpload }                                              from "./qwen2511/ui_image_upload.js";
 import { attachLLMPanel, mountLLMSettingsSection }                        from "./shared/llm_panel.js";
 import { tabSettings }                                                     from "./shared/settings_tabs.js";
+import { mountTurboSettings } from "./shared/turbo_lora.js";
 import { attachNodeState, restoreNodeState }                              from "./shared/node_state.js";
 import { t, getLang, setLang }                                            from "./shared/i18n.js";
 import { SAMPLERS, SCHEDULERS } from "./shared/sampler_lists.js";
@@ -301,6 +303,8 @@ app.registerExtension({
 
       // live sampling frames (ModelPreviewOverrideKJ) paint over the box until the final image replaces them
       const stopLive = listenLivePreview(self, (url, step, total) => {
+        // a compare view left from the last run would sit beside the new frames and squeeze them to one side
+        previewBox.querySelectorAll("[data-tj-compare]").forEach(e => e.remove());
         if (finalImg.parentNode !== previewBox) previewBox.appendChild(finalImg);
         placeholder.style.display = "none"; loadingOv.style.display = "none";
         if (step && total) showStepBar(previewBox, step, total);
@@ -421,6 +425,8 @@ app.registerExtension({
       const seedInput = numberField(state.seed, v=>{state.seed=v;persist();}, 1);
       const seedModeDD = select([{value:"randomize",label:"Random"},{value:"fixed",label:"Fixed"},{value:"increment",label:"+1"},{value:"decrement",label:"-1"}], state.seedMode, v=>{state.seedMode=v;persist();});
       const seedGenWrap = el("div",{style:{display:"flex",flexDirection:"column",gap:"4px",paddingTop:"6px",flexShrink:"0",borderTop:`1px solid ${C.border}`}});
+      const turboToggle = createTurboToggle(state, ctx);
+      seedGenWrap.appendChild(turboToggle.el);
       seedGenWrap.appendChild(panel([row([col([label("SEED"),seedInput]),col([label("MODE"),seedModeDD])])]));
       const genBtn = button("▶ Generate", null, "primary"); genBtn.style.cssText += "width:100%;padding:11px;font-size:13px;";
       const stopBtn = button("■ Stop", async () => { running=false; await interrupt(); genBtn.disabled=false; genBtn.textContent="▶ Generate"; loadingOv.style.display="none"; if(!modeResults[state.mode]) resetPreview(); });
@@ -1047,7 +1053,7 @@ app.registerExtension({
 
         let prompt;
         try {
-          const _restore = pipeOv ? applyOverridesTemp(state, pipeOv.overrides) : null;
+          const _restore=chainRestore(pipeOv?applyOverridesTemp(state,pipeOv.overrides):null, applyTurboTemp(state));
           try { prompt = await modeHandle.getGraph(); } finally { _restore?.(); }
           self._tjLastRun = summarizeRun(prompt, state);
           await addLivePreview(prompt, self.id);
@@ -1379,6 +1385,8 @@ function createSettingsOverlay(state, ctx, showPopup) {
       ctx.persist?.();
     });
   }).catch(() => {});
+
+  mountTurboSettings(wrap, state, ctx);
 
   const tabs = tabSettings(wrap, llmPanel, { brand: C.lime, bg: C.bg2, border: C.border, nodeKey: "qwen21" });
   return { el: wrap, show: () => wrap.style.display = "flex", showTab: (name) => { tabs.show(name); wrap.style.display = "flex"; }, hide: () => wrap.style.display = "none", setModelLists };

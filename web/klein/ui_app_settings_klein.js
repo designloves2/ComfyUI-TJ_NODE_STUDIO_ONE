@@ -5,6 +5,7 @@ import { getModels, getConfig, saveConfig } from "./api_klein.js";
 import { t, getLang, setLang } from "../shared/i18n.js";
 import { mountLLMSettingsSection } from "../shared/llm_panel.js";
 import { tabSettings } from "../shared/settings_tabs.js";
+import { mountTurboSettings } from "../shared/turbo_lora.js";
 
 function searchableSelect(options, value, onChange) {
   const wrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } });
@@ -212,6 +213,8 @@ export function createSettingsOverlay(state, ctx) {
       applyConfigModels(cfg, d);
     });
   }).catch(() => {});
+
+  mountTurboSettings(ov, state, ctx);
 
   const tabs = tabSettings(ov, llmPanel, { brand: C.lime, bg: C.bg2, border: C.border, nodeKey: "klein" });
   return {

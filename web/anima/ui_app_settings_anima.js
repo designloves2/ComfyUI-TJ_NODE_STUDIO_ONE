@@ -67,7 +67,7 @@ export function createSettingsOverlay(state, ctx) {
     previewSel = searchableSelect(diff,  state.previewModel, v => { state.previewModel = v; ctx.persist(); });
     teSel      = searchableSelect(te,    state.textEncoder, v => { state.textEncoder = v; ctx.persist(); });
     vaeSel     = searchableSelect(vaes,  state.vae,         v => { state.vae         = v; ctx.persist(); });
-    turboSel   = searchableSelect(loras, state.turboLora,   v => { state.turboLora   = v; ctx.persist(); });
+    turboSel   = searchableSelect(loras, state.turboLora,   v => { state.turboLora   = v; if (!v || v === "none") state.turboMode = false; ctx.persist(); ctx.refreshTurbo?.(); });
     modelWrap.appendChild(col([label("Diffusion Model — Base 1.0 (anima-base-v1.0.safetensors)"), modelSel.el]));
     previewWrap.appendChild(col([label("Diffusion Model — Preview3 (T2I only)"), previewSel.el]));
     teWrap.appendChild(col([label("Text Encoder (qwen_3_06b_base.safetensors)"), teSel.el]));

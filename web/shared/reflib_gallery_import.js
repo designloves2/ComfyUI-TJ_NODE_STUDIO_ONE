@@ -4,7 +4,7 @@
 // MusicMaker playlist. Click cards to select several, then register them in one go.
 // The file is read through ComfyUI's /view and sent to the library's own upload route.
 import { C, API } from "../minimax/core_minimax.js";
-import { IMAGE_GALLERY_TOOLS } from "./ui_image_gallery_picker.js";
+import { IMAGE_GALLERY_TOOLS, toolGalleryUrl } from "./ui_image_gallery_picker.js";
 import { setThumb, wireCacheButton } from "./gallery_thumb.js";
 import { mediaKey, isBlurred, attachSensitiveToggle, wireRevealButton } from "./ui_sensitive_media.js";
 import { reflib, reflibError, CATEGORIES } from "./reflib_api.js";
@@ -41,7 +41,7 @@ async function fetchPage(tab, offset, folder, musicSub) {
     if (tab.kind === "image") {
       const url = tab.input ? `${tab.api}/input_gallery?offset=${offset}&limit=${PAGE}&subfolder=${sf}`
         : tab.output ? `${tab.api}/output_gallery?offset=${offset}&limit=${PAGE}&subfolder=${sf}`
-        : `${tab.api}/gallery?offset=${offset}&limit=${PAGE}&subfolder=${encodeURIComponent(tab.subfolder)}`;
+        : toolGalleryUrl(tab, offset, PAGE);
       const d = await getJson(url);
       const type = tab.input ? "input" : "output";
       return { rows: (d.images || []).map(r => ({ ...r, type })), total: d.total || 0 };

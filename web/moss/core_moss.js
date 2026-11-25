@@ -72,6 +72,10 @@ export function defaultState(saved) {
 
     width:  saved.width  || 1024,
     height: saved.height || 1024,
+    // Turbo LoRA (picked in Settings) + the Turbo Mode switch above SEED; see shared/turbo_lora.js
+    turboLora:     saved.turboLora     || "",
+    turboStrength: saved.turboStrength ?? 1,
+    turboMode:     saved.turboMode     ?? false,
 
     loras: Array.isArray(saved.loras) ? saved.loras.map(l => ({
       name: l.name || "none",
@@ -99,6 +103,29 @@ export function defaultState(saved) {
     i2iWidth:   saved.i2iWidth   || 0,    // the source's own size (set on upload); 0 = use width / height
     i2iHeight:  saved.i2iHeight  || 0,
     i2iLockRatio: saved.i2iLockRatio ?? true,
+    i2iSubMode:   saved.i2iSubMode === "depth" ? "depth" : "basic",   // I2I tab: "basic" (latent re-noise) | "depth" (MoGe geometry + MOSSImageControl)
+
+    // I2I > Depth — geometry of the source (MoGe 3) controls the new image through the color/depth control LoRA
+    depthLora:         saved.depthLora         || "",    // moss_image_color_depth_control.safetensors
+    depthLoraStrength: saved.depthLoraStrength ?? 1,
+    depthMoge:         saved.depthMoge         || "",    // moge_3_vitg_fp16.safetensors (models/geometry_estimation)
+    depthOutput:       saved.depthOutput       || "mask",   // what MoGeRender draws: "mask" (silhouette only) | "depth"
+    depthStrength:     saved.depthStrength     ?? 1,
+    depthStart:        saved.depthStart        ?? 0,
+    depthEnd:          saved.depthEnd          ?? 0.6,
+
+    // EDIT — one instruction + the source (and up to 3 more references) through TextEncodeMOSSImageEdit and the edit LoRA
+    editImage:         saved.editImage         || null,
+    editRefs:          Array.isArray(saved.editRefs) ? saved.editRefs.filter(Boolean).slice(0, 3) : [],
+    editLora:          saved.editLora          || "",    // moss_image_edit_lora_rank_64_bf16.safetensors
+    editLoraStrength:  saved.editLoraStrength  ?? 1,
+    editFormat:        saved.editFormat        || "Moss-Image-Edit",
+    editImageStrength: saved.editImageStrength ?? 1,
+    editMp:            saved.editMp            ?? 1,     // source and references are scaled to this many megapixels (16 px steps)
+    editSteps:         saved.editSteps         ?? 30,    // the values the edit LoRA author ships
+    editCfg:           saved.editCfg           ?? 4,
+    editSampler:       saved.editSampler       || "euler",
+    editScheduler:     saved.editScheduler     || "normal",
 
     // INPAINT — source + painted mask; the work size is the source's own (set on upload)
     inpaintImage:   saved.inpaintImage   || null,
@@ -139,8 +166,12 @@ export const MANUAL_TEXT = `MOSS-Image is an open ~5B text-to-image model (singl
 
 MODES
 • T2I — prompt to image.
-• I2I — the source image is encoded to a latent and re-noised; DENOISE sets how far it may change. (MOSS itself has no reference-image input.)
 • R2I (bboxes) — draw boxes on the canvas. Each box is an OBJECT (a described thing) or a TEXT block (exact words to render). Boxes go through MOSSImageLayoutPrompt, which turns them plus your PROMPT (description of the whole image) into the layout prompt the model was trained on. Draw the background element first and foreground last. "Characters" = numbers of the object boxes to label as characters, e.g. 1, 3.
+• I2I — two tabs at the top of the left menu.
+    Basic: the source image is encoded to a latent and re-noised; DENOISE sets how far it may change.
+    Depth: MoGe 3 estimates the geometry of the source (silhouette "mask" or "depth") and MOSSImageControl makes the new image keep that pose and framing; everything else (identity, clothes, light, style) comes from the PROMPT. Needs the color/depth control LoRA (moss_image_color_depth_control) and a MoGe model (models/geometry_estimation). STRENGTH 1 is the trained value, START / END pick the part of the run that is controlled (0 to 0.6 = layout fixed, last steps free). Sampling follows the official control graph: temporal score rescaling 0.95, shift 5, skip layer guidance on layer 24 (CFG 3 and 25 steps recommended).
+• EDIT — describe only the change ("Change only the X to Y. Keep the face, pose and background unchanged."). The source (and up to 3 more references: a garment, a face, a prop — say what each is for in the prompt) is encoded with the instruction by TextEncodeMOSSImageEdit and the edit LoRA (moss_image_edit_lora_rank_64_bf16) redraws the same frame with only that change. EDIT FORMAT must match the LoRA ("Moss-Image-Edit" for the rank-64 LoRA). Official values: 30 steps, CFG 4, euler / normal, skip layer guidance layer 22. Source and references are scaled to 1.0 MP (16 px steps), the result keeps the source's aspect ratio.
+• INPAINT — repaint the masked area of a source image.
 
 SIZE
 Total pixels of 1M, 1.5M or 2M are recommended (0.25M to 4M works). Width and height must be multiples of 16.
@@ -155,4 +186,7 @@ REQUIRED FILES (Hugging Face: Comfy-Org/MOSS-Image)
 • qwen3.5_9b_w4a8_gptq.safetensors (loaded as CLIP type moss_image) → models/text_encoders/
 • flux2-vae.safetensors (flux2-vae_small.safetensors) → models/vae/
 
-Needs a ComfyUI recent enough to have the MOSS-Image nodes (EmptyFlux2LatentImage, MOSSImageLayoutPrompt, CreateBoundingBoxes).`;
+• moss_image_color_depth_control.safetensors (I2I Depth) and moss_image_edit_lora_rank_64_bf16.safetensors (EDIT) → models/loras/
+• moge_3_vitg_fp16.safetensors (I2I Depth, Comfy-Org/MoGe) → models/geometry_estimation/
+
+Needs a ComfyUI recent enough to have the MOSS-Image nodes (EmptyFlux2LatentImage, MOSSImageLayoutPrompt, CreateBoundingBoxes, MOSSImageControl, TextEncodeMOSSImageEdit, MoGe nodes — ComfyUI 0.43 or newer).`;

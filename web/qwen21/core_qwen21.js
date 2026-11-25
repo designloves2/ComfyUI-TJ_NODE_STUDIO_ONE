@@ -78,6 +78,10 @@ export function defaultState(saved) {
 
     useCache:        saved.useCache        !== false, // QwenImage21Cache — default-on per reference workflow
     useSageAttention: saved.useSageAttention ?? false, // PathchSageAttentionKJ — off by default
+    // Turbo LoRA (picked in Settings) + the Turbo Mode switch above SEED; see shared/turbo_lora.js
+    turboLora:     saved.turboLora     || "",
+    turboStrength: saved.turboStrength ?? 1,
+    turboMode:     saved.turboMode     ?? false,
 
     loras: Array.isArray(saved.loras)
       ? saved.loras.map(l => ({ name: l.name || "none", strength: l.strength ?? 1, triggerWord: l.triggerWord || "", enabled: l.enabled !== false }))

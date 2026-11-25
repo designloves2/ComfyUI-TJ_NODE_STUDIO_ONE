@@ -7,6 +7,7 @@ import { panel, label, button, select, numberField, row, col,
 import { queuePrompt, interrupt, freeMemory, setLastImage, saveMeta,
          copyOutputToInput, getModels } from "./api_klein.js";
 import { resolvePipeOverrides, applyOverridesTemp, collectModelNames, labelPipeInput } from "../shared/promptdb_pipe.js";
+import { createTurboToggle, applyTurboTemp, chainRestore } from "../shared/turbo_lora.js";
 import { summarizeRun } from "../shared/run_summary.js";
 import { addLivePreview, listenLivePreview, showStepBar } from "../shared/live_preview.js";
 import { createOverrideToggle } from "../shared/override_toggle.js";
@@ -685,6 +686,8 @@ app.registerExtension({
         state.seedMode, v => { state.seedMode = v; persist(); }
       );
       const seedGenWrap = el("div", { style: { display: "flex", flexDirection: "column", gap: "4px", paddingTop: "6px", flexShrink: "0", borderTop: `1px solid ${C.border}` } });
+      const turboToggle = createTurboToggle(state, ctx);
+      seedGenWrap.appendChild(turboToggle.el);
       seedGenWrap.appendChild(panel([row([col([label("SEED"), seedInput]), col([label("MODE"), seedModeDD])])]));
 
       const genBtn  = button("▶ Generate", null, "primary");
@@ -702,6 +705,8 @@ app.registerExtension({
       // ── Mode rendering ─────────────────────────────────────────────────────
       // live sampling frames (ModelPreviewOverrideKJ) paint over the box until the final image replaces them
       const stopLive = listenLivePreview(self, (url, step, total) => {
+        // a compare view left from the last run would sit beside the new frames and squeeze them to one side
+        previewBox.querySelectorAll("[data-tj-compare]").forEach(e => e.remove());
         if (finalImg.parentNode !== previewBox) previewBox.appendChild(finalImg);
         placeholder.style.display = "none"; loadingOv.style.display = "none";
         if (step && total) showStepBar(previewBox, step, total);
@@ -808,7 +813,7 @@ app.registerExtension({
 
         let prompt;
         try {
-          const _restore = pipeOv ? applyOverridesTemp(state, pipeOv.overrides) : null;
+          const _restore=chainRestore(pipeOv?applyOverridesTemp(state,pipeOv.overrides):null, applyTurboTemp(state));
           try { prompt = await modeHandle.getGraph(); } finally { _restore?.(); }
           self._tjLastRun = summarizeRun(prompt, state);
           await addLivePreview(prompt, self.id);

@@ -21,6 +21,7 @@ function btn(text, onClick, variant) {
 const SEND_TARGETS = [
   { mode: "t2i",          label: "→ T2I (reuse)"   },
   { mode: "i2i",          label: "→ I2I",           field: "i2iImage"          },
+  { mode: "edit",         label: "→ Edit",          field: "editImage"         },
   { mode: "inpaint",      label: "→ Inpaint",       field: "inpaintImage"      },
 ];
 

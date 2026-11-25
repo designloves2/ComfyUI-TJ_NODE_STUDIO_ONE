@@ -62,6 +62,10 @@ export function defaultState(saved) {
     seedMode: saved.seedMode || "randomize",
 
     // LoRAs — [{name, strength, triggerWord, enabled}] max 3
+    // Turbo LoRA (picked in Settings) + the Turbo Mode switch above SEED; see shared/turbo_lora.js
+    turboLora:     saved.turboLora     || "",
+    turboStrength: saved.turboStrength ?? 1,
+    turboMode:     saved.turboMode     ?? false,
     loras: Array.isArray(saved.loras)
       ? saved.loras.map(l => ({
           name: l.name || "none",

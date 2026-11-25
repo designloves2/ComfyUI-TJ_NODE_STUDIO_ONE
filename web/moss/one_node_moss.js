@@ -9,11 +9,13 @@ import { attachLLMPanel } from "../shared/llm_panel.js";
 import { createGalleryOverlay } from "./ui_gallery_moss.js";
 import { mountT2ILeft } from "./ui_t2i_moss.js";
 import { mountI2ILeft } from "./ui_i2i_moss.js";
+import { mountEditLeft } from "./ui_edit_moss.js";
 import { mossSystemPrompt } from "./system_prompt_moss.js";
 import { mountInpaintLeft } from "./ui_inpaint_moss.js";
 import { mountR2ILeft } from "./ui_r2i_moss.js";
 import { attachNodeState, restoreNodeState } from "../shared/node_state.js";
 import { resolvePipeOverrides, applyOverridesTemp, labelPipeInput } from "../shared/promptdb_pipe.js";
+import { createTurboToggle, applyTurboTemp, chainRestore } from "../shared/turbo_lora.js";
 import { summarizeRun } from "../shared/run_summary.js";
 import { addLivePreview, listenLivePreview, showStepBar } from "../shared/live_preview.js";
 import { createOverrideToggle } from "../shared/override_toggle.js";
@@ -38,22 +40,26 @@ const ROOT_H      = PAD + TOPBAR_H + PAD + RIGHT_H + BOTTOM_PAD;
 const NODE_MW     = OUTER_W;
 const NODE_MH     = OUTER_H;
 
+// I2I has two tabs of its own (Basic / Depth) at the top of its left menu; EDIT is a mode of its own.
 const MODES = [
   { key: "t2i",     label: "T2I",          enabled: true },
-  { key: "i2i",     label: "I2I",          enabled: true },
   { key: "r2i",     label: "R2I (bboxes)", enabled: true },
+  { key: "i2i",     label: "I2I",          enabled: true },
+  { key: "edit",    label: "EDIT",         enabled: true },
   { key: "inpaint", label: "INPAINT",      enabled: true },
 ];
 
 // Send-to targets per mode: where a generated result can be copied as the next mode's source image. T2I and R2I draw
 // from text (and boxes), so they are not targets themselves.
 const TO_I2I     = { mode:"i2i",     label:"→ I2I",     field:"i2iImage"     };
+const TO_EDIT    = { mode:"edit",    label:"→ Edit",    field:"editImage"    };
 const TO_INPAINT = { mode:"inpaint", label:"→ Inpaint", field:"inpaintImage" };
 const SEND_TO = {
-  t2i:     [TO_I2I, TO_INPAINT],
-  i2i:     [TO_INPAINT],
-  inpaint: [TO_I2I],
-  r2i:     [TO_I2I, TO_INPAINT],
+  t2i:     [TO_I2I, TO_EDIT, TO_INPAINT],
+  r2i:     [TO_I2I, TO_EDIT, TO_INPAINT],
+  i2i:     [TO_EDIT, TO_INPAINT],
+  edit:    [TO_EDIT, TO_I2I, TO_INPAINT],   // → Edit again chains edits on the result
+  inpaint: [TO_I2I, TO_EDIT],
 };
 
 // ── Compare view (source vs result, for control modes) ───────────────────────
@@ -190,14 +196,19 @@ app.registerExtension({
       // wheel = zoom · left-drag = pan · double-click = fit (shared/pan_zoom.js); the lock button switches it off
       const pz = attachPanZoom(previewBox, () => [finalImg], { enabled: () => zoomEnabled && !!modeResults[state.mode] });
 
+      let compareShown = false;   // a source-vs-result compare view is in the preview box (declared before the first resetPreview() call)
       function resetPreview(){
+        compareShown=false;
         previewBox.innerHTML=""; previewBox.appendChild(placeholder); previewBox.appendChild(finalImg); previewBox.appendChild(loadingOv); previewBox.appendChild(zoomLockBtn); previewBox.appendChild(clearBtn);
         placeholder.style.display="block"; finalImg.style.display="none"; loadingOv.style.display="none"; zoomLockBtn.style.display="none"; clearBtn.style.display="none"; resetZoom();
       }
       resetPreview();
 
       // live sampling frames (ModelPreviewOverrideKJ) paint over the box until the final image replaces them
+      // A source-vs-result compare view left from the last run must go before the new frames arrive: finalImg is added
+      // beside it otherwise, and the new preview ends up squeezed to one side of the old comparison.
       const stopLive = listenLivePreview(self, (url, step, total) => {
+        if (compareShown || previewBox.querySelector("[data-tj-compare]")) { compareShown = false; resetPreview(); clearBtn.style.display = "none"; zoomLockBtn.style.display = "none"; }
         if (finalImg.parentNode !== previewBox) previewBox.appendChild(finalImg);
         placeholder.style.display = "none"; loadingOv.style.display = "none";
         if (step && total) showStepBar(previewBox, step, total);
@@ -211,7 +222,8 @@ app.registerExtension({
         const mr=modeResults[state.mode]; if(!mr)return;
         const src=modeHandle?.getSourceURL?.();
         previewBox.innerHTML=""; clearBtn.style.display="block"; zoomLockBtn.style.display="block";
-        if(compareEnabled && (state.mode==="i2i"||state.mode==="inpaint") && src){ previewBox.appendChild(createCompareView(src,mr.url)); resetZoom(); }
+        compareShown=false;
+        if(compareEnabled && (state.mode==="i2i"||state.mode==="edit"||state.mode==="inpaint") && src){ previewBox.appendChild(createCompareView(src,mr.url)); compareShown=true; resetZoom(); }
         else { placeholder.style.display="none"; finalImg.src=mr.url; finalImg.style.display="block"; previewBox.appendChild(placeholder); previewBox.appendChild(finalImg); }
         loadingOv.style.display="none"; previewBox.appendChild(loadingOv); previewBox.appendChild(zoomLockBtn); previewBox.appendChild(clearBtn);
       }
@@ -227,6 +239,29 @@ app.registerExtension({
       const sendLeft   = el("div",{style:{flex:"1",display:"flex",flexWrap:"wrap",alignItems:"center",gap:"4px"}});
       const sendRight  = el("div",{style:{display:"flex",alignItems:"center",gap:"4px",flexShrink:"0"}});
       sendToWrap.append(sendLeft, sendRight);
+
+      // A result (or gallery image) sent to another mode: becomes that mode's source image. I2I and INPAINT keep their own
+      // working size (set on upload), so it is taken from the image here too; EDIT scales by megapixels and needs none.
+      // INPAINT also drops its old mask, which was painted on a different picture.
+      function imageSize(filename){
+        return new Promise(res=>{
+          const im=new Image();
+          im.onload=()=>res({w:im.naturalWidth,h:im.naturalHeight});
+          im.onerror=()=>res(null);
+          im.src=`/view?filename=${encodeURIComponent(filename)}&type=input&t=${Date.now()}`;
+        });
+      }
+      async function applySentImage(mode, field, filename){
+        const snap=v=>Math.max(64,Math.round(v/16)*16);
+        const dim=await imageSize(filename);
+        state[field]=filename;
+        if(dim){
+          if(mode==="i2i"){ state.i2iWidth=snap(dim.w); state.i2iHeight=snap(dim.h); }
+          if(mode==="inpaint"){ state.inpaintWidth=snap(dim.w); state.inpaintHeight=snap(dim.h); }
+        }
+        if(mode==="inpaint") state.inpaintMask=null;   // a mask painted on another picture no longer fits
+        state.mode=mode; persist(); renderPills(); renderMode();
+      }
 
       function renderSendTo(){
         clear(sendLeft);
@@ -244,8 +279,7 @@ app.registerExtension({
               btn.disabled=true; btn.textContent="Copying…";
               try{
                 const n=await copyOutputToInput(mr.im.filename,mr.im.subfolder||"",mr.im.type||"output");
-                state[t.field]=n;
-                state.mode=t.mode; persist(); renderPills(); renderMode();
+                await applySentImage(t.mode,t.field,n);
               }catch(e){ btn.disabled=false; btn.textContent=t.label; showPopup(`Send failed: ${e.message}`); }
             });
           }
@@ -325,6 +359,8 @@ app.registerExtension({
       const seedModeSel = el("select",{style:{width:"100%",boxSizing:"border-box",background:C.bg2,color:C.text,border:`1px solid ${C.border}`,borderRadius:"6px",padding:"6px",fontSize:"12px",fontFamily:"inherit",outline:"none"},onchange:e=>{state.seedMode=e.target.value;persist();}},
         [{value:"randomize",label:"Random"},{value:"fixed",label:"Fixed"},{value:"increment",label:"+1"},{value:"decrement",label:"-1"}].map(o=>el("option",{value:o.value,text:o.label,...(o.value===state.seedMode?{selected:"selected"}:{})})));
       const seedGenWrap = el("div",{style:{display:"flex",flexDirection:"column",gap:"4px",paddingTop:"6px",flexShrink:"0",borderTop:`1px solid ${C.border}`}});
+      const turboToggle = createTurboToggle(state, ctx);
+      seedGenWrap.appendChild(turboToggle.el);
       seedGenWrap.appendChild(panel([row([col([label("SEED"),seedField]),col([label("MODE"),seedModeSel])])]));
 
       const genBtn  = button("▶ Generate",null,"primary");
@@ -339,12 +375,15 @@ app.registerExtension({
         switch(mode){
           case "t2i": modeHandle=mountT2ILeft(leftPanel,state,ctx); break;
           case "i2i": modeHandle=mountI2ILeft(leftPanel,state,ctx); break;
+          case "edit": modeHandle=mountEditLeft(leftPanel,state,ctx); break;
           case "inpaint": modeHandle=mountInpaintLeft(leftPanel,state,ctx); break;
           case "r2i": modeHandle=mountR2ILeft(leftPanel,state,ctx); break;
         }
         leftOuter.appendChild(seedGenWrap);
         imgBil.refresh(); updateCount();
-        promptTA.placeholder = mode==="r2i" ? "Describe the whole image (the boxes carry the details)…" : "Describe what you want to generate…";
+        promptTA.placeholder = mode==="r2i" ? "Describe the whole image (the boxes carry the details)…"
+          : mode==="edit" ? "Change only the X to Y. Keep the face, pose, background and composition unchanged."
+          : "Describe what you want to generate…";
         restorePreview(); renderSendTo(); applyCompareBtnStyle();
       }
 
@@ -382,7 +421,7 @@ app.registerExtension({
 
         let prompt;
         try{
-          const _restore=pipeOv?applyOverridesTemp(state,pipeOv.overrides):null;
+          const _restore=chainRestore(pipeOv?applyOverridesTemp(state,pipeOv.overrides):null, applyTurboTemp(state));
           try{ prompt=await modeHandle.getGraph(); } finally{ _restore?.(); }
           self._tjLastRun = summarizeRun(prompt, state);
           await addLivePreview(prompt, self.id);
@@ -420,10 +459,7 @@ app.registerExtension({
       galleryOv = createGalleryOverlay(
         state, ctx,
         meta => { Object.assign(state, meta); persist(); renderPills(); renderMode(); },
-        (mode, field, filename) => {
-          state[field] = filename;
-          state.mode = mode; persist(); renderPills(); renderMode();
-        }
+        (mode, field, filename) => { applySentImage(mode, field, filename); }
       );
       root.appendChild(galleryOv.el);
 
