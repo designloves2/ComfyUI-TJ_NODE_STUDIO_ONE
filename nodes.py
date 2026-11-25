@@ -2095,6 +2095,9 @@ async def studio_llm_models(request):
             "aesthetics": aesthetics,
             "purposes": purposes,
             "local_available": True,
+            # real model files exist (the lists above hold a NO_* placeholder when they do not)
+            "gguf_available": any(_llm_model_name(n) for n in gguf_list),
+            "text_encoder_available": any(_llm_model_name(n) for n in text_encoders),
             **_or,
         })
     except Exception as e:
@@ -2169,6 +2172,37 @@ async def studio_llm_enhance(request):
     return await _studio_enhance(data)
 
 
+# ComfyUI-TJ_NODE lists these placeholders when models/text_encoders holds no model of that kind.
+_NO_LLM_MODEL = {"NO_GGUF_FILES_IN_MODELS_TEXT_ENCODERS", "NO_TEXT_ENCODER_FILES_FOUND"}
+_NO_GGUF_MSG = ("No .gguf model found in models/text_encoders. This backend needs a local model: put one there, "
+                "or switch the backend to Open Router / Connect Custom (no local model needed).")
+_NO_TE_MSG = ("No text-encoder model found in models/text_encoders. This backend needs a local model: put one there, "
+              "or switch the backend to Open Router / Connect Custom (no local model needed).")
+
+
+def _llm_model_name(name):
+    """A model name for display: the 'no model' placeholders become empty."""
+    name = str(name or "").strip()
+    return "" if name in _NO_LLM_MODEL else name
+
+
+def _llm_no_model_error(data):
+    """The guidance text when a local backend (GGUF / ComfyUI Native) was asked for but names no real model, else None.
+    Open Router / Connect Custom never need a local file."""
+    b = (data.get("backend") or "").lower()
+    if b in ("openrouter", "custom"):
+        return None
+    if b == "comfy":
+        return _NO_TE_MSG if not _llm_model_name(data.get("text_encoder_name")) else None
+    return _NO_GGUF_MSG if not _llm_model_name(data.get("gguf_model")) else None
+
+
+def _default_llm_backend():
+    """Backend used when none was ever chosen (a saved choice always wins). Fixed, never switched automatically:
+    Connect Custom needs no local model file."""
+    return "custom"
+
+
 def _llm_event_info(data):
     """The backend / model names as the core LLM (TJ) node reports them in tj_llm_progress."""
     b = (data.get("backend") or "").lower()
@@ -2177,8 +2211,8 @@ def _llm_event_info(data):
     if b == "custom":
         return "Connect Custom", str(data.get("custom_model") or "").strip()
     if b == "comfy":
-        return "ComfyUI TextGenerate", str(data.get("text_encoder_name") or "").strip()
-    return "GGUF / llama.cpp", str(data.get("gguf_model") or "").strip()
+        return "ComfyUI TextGenerate", _llm_model_name(data.get("text_encoder_name"))
+    return "GGUF / llama.cpp", _llm_model_name(data.get("gguf_model"))
 
 
 class _LlmProgress:
@@ -2396,6 +2430,9 @@ async def _studio_enhance_run(data):
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)})
 
+    no_model = _llm_no_model_error(data)
+    if no_model:
+        return web.json_response({"ok": False, "error": no_model})
     TJ_PromptEnhancer, _, _ = _try_import_tj_llm()
     if TJ_PromptEnhancer is None:
         return web.json_response({"ok": False, "error": "TJ_NODE2 not installed"})
@@ -2582,6 +2619,9 @@ async def _studio_image_to_prompt(data):
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)})
 
+    no_model = _llm_no_model_error(data)
+    if no_model:
+        return web.json_response({"ok": False, "error": no_model})
     _, TJ_ImageToPrompt, _ = _try_import_tj_llm()
     if TJ_ImageToPrompt is None:
         return web.json_response({"ok": False, "error": "TJ_NODE2 not installed"})
@@ -5650,7 +5690,7 @@ async def music_get_config(request):
         "sampler":   cfg.get("sampler", "euler"),
         "scheduler": cfg.get("scheduler", "simple"),
         "format":    cfg.get("format", "flac"),
-        "llm_backend": cfg.get("llm_backend", "local"),
+        "llm_backend": cfg.get("llm_backend") or _default_llm_backend(),
         "llm_model":   cfg.get("llm_model", ""),
         "llm_or_model": cfg.get("llm_or_model", ""),
         "llm_clip":    cfg.get("llm_clip", ""),
@@ -6466,7 +6506,7 @@ async def music_llm_run(request):
         user = data.get("input", "")
         extra = data.get("context", {}) or {}
         _cfg = _load_config(MUSIC_CONFIG_PATH)
-        backend = data.get("backend") or _cfg.get("llm_backend", "local")
+        backend = data.get("backend") or _cfg.get("llm_backend") or _default_llm_backend()
         if backend == "openrouter":
             model = data.get("model") or _cfg.get("llm_or_model", "")
         elif backend == "custom":
@@ -6536,8 +6576,8 @@ async def music_llm_run(request):
                 "ok": False,
                 "error": "Local LLM (ComfyUI-TJ_NODE) not installed — run install_requirements, or use the OpenRouter / ComfyUI TextGenerate backend.",
             })
-        if not model:
-            return web.json_response({"ok": False, "error": "Pick a GGUF model for the Local backend in Settings."})
+        if not _llm_model_name(model):
+            return web.json_response({"ok": False, "error": _NO_GGUF_MSG})
         import asyncio as _aio2
         # Reasoning GGUFs ignore /no_think — lock the output format hard, and give
         # enough tokens that the answer is not truncated mid-monologue.

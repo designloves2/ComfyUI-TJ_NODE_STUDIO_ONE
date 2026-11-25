@@ -67,6 +67,10 @@ async function syncLLMSettingsFromServer() {
 }
 await syncLLMSettingsFromServer();
 
+// Backend used when none was ever chosen (a saved choice always wins). Fixed - never switched automatically:
+// Connect Custom needs no local model file, which a fresh PC does not have.
+const DEFAULT_BACKEND = "custom";
+
 const TJ_NODE_GITHUB = "https://github.com/designloves2/ComfyUI-TJ_NODE";
 
 // ── Fetch model lists from backend ──────────────────────────────────────────
@@ -208,8 +212,8 @@ export function mountLLMSettingsSection(ov, ctx) {
   const cfg = loadLLMSettings();
   const dirty = new Set();
   const llm = new Proxy({
-    backend_text:      cfg.backend_text        || cfg.backend || "local",
-    backend_vision:     cfg.backend_vision      || cfg.backend || "local",
+    backend_text:      cfg.backend_text        || cfg.backend || DEFAULT_BACKEND,
+    backend_vision:     cfg.backend_vision      || cfg.backend || DEFAULT_BACKEND,
     or_model_text:      cfg.or_model_text       || cfg.or_model || "",
     or_model_vision:    cfg.or_model_vision     || cfg.or_model || "",
     // "Connect Custom" endpoints, one per role (the API key is never kept here — it lives in
@@ -253,6 +257,10 @@ export function mountLLMSettingsSection(ov, ctx) {
   title.textContent = "LLM — Prompt Write / Prompt Enhance";
   Object.assign(title.style, { color: "#fff", fontSize: "13px", fontWeight: "700" });
   wrap.appendChild(title);
+  const noLocalHint = document.createElement("div");
+  noLocalHint.textContent = "No local model file? Choose OpenRouter or Connect Custom as the backend - they need no model files, only an API key.";
+  Object.assign(noLocalHint.style, { color: "#9a9a9a", fontSize: "11px", lineHeight: "1.5" });
+  wrap.appendChild(noLocalHint);
 
   const body = document.createElement("div");
   Object.assign(body.style, { display: "flex", flexDirection: "column", gap: "10px" });
@@ -416,7 +424,7 @@ export function mountLLMSettingsSection(ov, ctx) {
   body.appendChild(nativeBox);
   // GGUF row only when a role uses Local GGUF; the native block only when a role uses ComfyUI Native
   updateAdvVisibility = () => {
-    const bs = [llm.backend_text || llm.backend || "local", llm.backend_vision || llm.backend || "local"];
+    const bs = [llm.backend_text || llm.backend || DEFAULT_BACKEND, llm.backend_vision || llm.backend || DEFAULT_BACKEND];
     advRow.style.display = bs.some(b => b !== "comfy" && b !== "openrouter" && b !== "custom") ? "grid" : "none";
     nativeBox.style.display = bs.includes("comfy") ? "flex" : "none";
   };
@@ -502,8 +510,8 @@ export function getLLMSummary() {
     ? `Connect Custom · ${customModel || "(model not set)"}`
     : `Local GGUF · ${basename(llm.gguf_model) || "(model not set)"}`;
   return {
-    write: line(llm.backend_vision || llm.backend || "local", llm.or_model_vision || llm.or_model, llm.custom_model_vision),
-    enhance: line(llm.backend_text || llm.backend || "local", llm.or_model_text || llm.or_model, llm.custom_model_text),
+    write: line(llm.backend_vision || llm.backend || DEFAULT_BACKEND, llm.or_model_vision || llm.or_model, llm.custom_model_vision),
+    enhance: line(llm.backend_text || llm.backend || DEFAULT_BACKEND, llm.or_model_text || llm.or_model, llm.custom_model_text),
   };
 }
 
@@ -588,14 +596,14 @@ async function _callRefine(prompt, instruction) {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       prompt, refine_instruction: instruction,
-      backend: l.backend_text || l.backend || "local",
+      backend: l.backend_text || l.backend || DEFAULT_BACKEND,
       or_model: l.or_model_text || l.or_model,
       custom_base: l.custom_base_text, custom_model: l.custom_model_text, custom_ctx: l.custom_ctx_text,
       gguf_model: l.gguf_model, text_encoder_name: l.text_encoder_name, clip_loader_type: l.clip_loader_type,
       n_gpu_layers: l.n_gpu_layers, n_ctx: l.n_ctx, max_tokens: l.max_tokens,
       temperature: l.temperature, seed: l.seed,
       model_format: l.model_format, aesthetic: l.aesthetic, extra_instructions: l.extra_instructions,
-      ...nativeNums(l.backend_text || l.backend || "local"),
+      ...nativeNums(l.backend_text || l.backend || DEFAULT_BACKEND),
     }),
   });
   const d = await r.json();
@@ -681,7 +689,7 @@ async function runRefine({ getText, onApply, setBusy, protect, withKo }) {
   const current = (getText() || "").trim();
   if (!current) { alert("Nothing to refine yet — write a prompt first."); return; }
   const refineCfg = loadLLMSettings();
-  if ((refineCfg.backend_text || refineCfg.backend || "local") === "openrouter" && !(refineCfg.or_model_text || refineCfg.or_model)) { orModelPopup(orModelMessage("LLM")); return; }
+  if ((refineCfg.backend_text || refineCfg.backend || DEFAULT_BACKEND) === "openrouter" && !(refineCfg.or_model_text || refineCfg.or_model)) { orModelPopup(orModelMessage("LLM")); return; }
   let instruction = await _askRefineInstruction();
   while (instruction) {
     _lastRefineInstruction = instruction;
@@ -1105,8 +1113,8 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     const l = loadLLMSettings();
     const backendLabel = backendName;
     const s = getLLMSummary();
-    footerBackend.textContent = "적용 방식 — " + t("llm_tab_i2p") + ": " + backendLabel(l.backend_vision || l.backend || "local")
-      + " · " + t("llm_lbl_enhance_backend") + ": " + backendLabel(l.backend_text || l.backend || "local");
+    footerBackend.textContent = "적용 방식 — " + t("llm_tab_i2p") + ": " + backendLabel(l.backend_vision || l.backend || DEFAULT_BACKEND)
+      + " · " + t("llm_lbl_enhance_backend") + ": " + backendLabel(l.backend_text || l.backend || DEFAULT_BACKEND);
     footerEnhance.textContent = t("llm_tab_enhance") + " " + t("llm_lbl_model") + ": " + s.enhance;
     footerVision.textContent = t("llm_tab_i2p") + " " + t("llm_lbl_model") + ": " + s.write;
   }
@@ -1152,7 +1160,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     if (!_imageB64) return;
     applySeedControl();
     const llm = loadLLMSettings();
-    if ((llm.backend_vision || llm.backend || "local") === "openrouter" && !(llm.or_model_vision || llm.or_model)) { orModelPopup(orModelMessage("LLM")); return; }
+    if ((llm.backend_vision || llm.backend || DEFAULT_BACKEND) === "openrouter" && !(llm.or_model_vision || llm.or_model)) { orModelPopup(orModelMessage("LLM")); return; }
     const existingText = useExistingChk.checked ? existingTA.value.trim() : "";
     let contextInstruction = existingText
       ? `The user has already written this description — use it as context and produce ONE integrated, polished prompt that incorporates it with what you see in the image. Rewrite it as a single cohesive prompt; do not simply append your description after it.\n\nExisting text:\n${existingText}`
@@ -1164,7 +1172,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           image_b64: _imageB64,
-          backend: llm.backend_vision || llm.backend || "local",
+          backend: llm.backend_vision || llm.backend || DEFAULT_BACKEND,
           or_model: llm.or_model_vision || llm.or_model,
           custom_base: llm.custom_base_vision,
           custom_model: llm.custom_model_vision,
@@ -1182,7 +1190,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
           max_tokens: llm.max_tokens,
           temperature: llm.temperature,
           seed: llm.seed,
-          ...nativeNums(llm.backend_vision || llm.backend || "local"),
+          ...nativeNums(llm.backend_vision || llm.backend || DEFAULT_BACKEND),
         }),
       });
       const d = await r.json();
@@ -1202,14 +1210,14 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     if (!prompt) return;
     applySeedControl();
     const llm = loadLLMSettings();
-    if ((llm.backend_text || llm.backend || "local") === "openrouter" && !(llm.or_model_text || llm.or_model)) { orModelPopup(orModelMessage("LLM")); return; }
+    if ((llm.backend_text || llm.backend || DEFAULT_BACKEND) === "openrouter" && !(llm.or_model_text || llm.or_model)) { orModelPopup(orModelMessage("LLM")); return; }
     btnEnhance.disabled = true; setBusy(true, t("llm_busy_enhance"));
     try {
       const r = await fetch("/tj_studio_one/llm/enhance", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt,
-          backend: llm.backend_text || llm.backend || "local",
+          backend: llm.backend_text || llm.backend || DEFAULT_BACKEND,
           or_model: llm.or_model_text || llm.or_model,
           custom_base: llm.custom_base_text,
           custom_model: llm.custom_model_text,
@@ -1225,7 +1233,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
           model_format: llm.model_format,
           aesthetic: llm.aesthetic,
           extra_instructions: llm.extra_instructions,
-          ...nativeNums(llm.backend_text || llm.backend || "local"),
+          ...nativeNums(llm.backend_text || llm.backend || DEFAULT_BACKEND),
           ...(sysPrompt ? { system_override: sysPrompt } : {}),
         }),
       });

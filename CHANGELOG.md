@@ -2,6 +2,10 @@
 
 ---
 
+## v1.57.0 — LLM works without local model files: default backend Connect Custom, guidance on missing models
+
+- **LLM works on a PC without local model files.** (1) Default backend: when no backend was ever chosen, the LLM panel and the music LLM default to Connect Custom instead of Local GGUF (fixed, never switched automatically; a saved choice is never changed; `/tj_studio_one/llm/models` also returns `gguf_available` / `text_encoder_available` for information). (2) Error text: a local backend (GGUF / ComfyUI Native) asked for without a real model now answers "No .gguf model found in models/text_encoders. This backend needs a local model: put one there, or switch the backend to Open Router / Connect Custom (no local model needed)." (text-encoder variant for ComfyUI Native) from Enhance, Image-to-Prompt and the music LLM, and the `NO_GGUF_FILES_IN_MODELS_TEXT_ENCODERS` / `NO_TEXT_ENCODER_FILES_FOUND` placeholders no longer show as the model name in the live LLM line. (3) The LLM settings now say that OpenRouter / Connect Custom need no model file. Restart ComfyUI.
+
 ## v1.56.1 — Installer adds soundfile (fresh-PC TJ_NODE load failure), LLM live line at the bottom center
 
 - **Installer adds `soundfile`.** ComfyUI-TJ_NODE imports `soundfile` unguarded (`nodes/reflib/nodes.py`), but ComfyUI and that pack's own `requirements.txt` do not list it, so on a fresh PC the whole TJ_NODE pack failed to load. `install_requirements.bat` / `.sh` now `pip install soundfile` up front (and it is in this pack's `requirements.txt` for manual installs). Run the installer again, or `python_embeded\python.exe -m pip install soundfile`, then restart ComfyUI.
