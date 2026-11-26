@@ -23,10 +23,12 @@ export const NODE_KEYS = Object.freeze({
   Flux2KleinOneTJNode: "klein", ZImageTurboOneNode: "zimage", Krea2OneTJNode: "krea2", QwenImageEdit2511OneTJNode: "qwen2511",
   QwenImage21OneTJNode: "qwen21", SDXLOneTJNode: "sdxl", MiniMaxH3OneTJNode: "minimax_h3", MusicMakerOneTJNode: "music",
   AnimaOneTJNode: "anima", MossImageOneTJNode: "moss", ItdaStudioOneTJNode: "itda", LTX25OneTJNode: "ltx25",
+  VertexImageOneTJNode: "vertex",
 });
 export const NODE_LABELS = Object.freeze({
   klein: "Flux.2 Klein", zimage: "Z-Image", krea2: "Krea 2", qwen2511: "Qwen Image Edit 2511", qwen21: "Qwen Image 2.1", sdxl: "SDXL",
   minimax_h3: "MiniMax H3", music: "MusicMaker", anima: "Anima", moss: "Moss Image", itda: "ITDA", ltx25: "LTX 2.5",
+  vertex: "Vertex Image",
 });
 export const keyOfClass = (cls) => NODE_KEYS[String(cls || "")] || "";
 
@@ -366,6 +368,7 @@ const STYLE_KEY = {
   "anima-v1-styles": "anima", "fk-styles": "klein", "moss-v1-styles": "moss", "pr-styles": "music", "mmm-styles": "music",
   "itda-studio-scoped-styles": "itda", "k2v3-styles": "krea2", "ltx25-styles": "ltx25", "mmh3-styles": "minimax_h3",
   "mmh3-clip-slots-styles": "minimax_h3", "tj-clip-media-slider": "minimax_h3", "q21v1-styles": "qwen21", "qe2511v3-styles": "qwen2511",
+  "vertex-v1-styles": "vertex",
 };
 
 const states = new Map();      // node key -> { painted, maps }: what that node's DOM shows now, and what still has to be rewritten

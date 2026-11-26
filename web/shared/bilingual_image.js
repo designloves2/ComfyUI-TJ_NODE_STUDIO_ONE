@@ -8,7 +8,9 @@ import { useKoFor } from "./ko_setting.js";
 
 const KEY = "prompt";
 
-export function createImagePromptBilingual({ state, getModePrompt, setModePrompt, persist, onError }) {
+// llm (optional, only Vertex Image passes it): () => a node-own translate llm(system, user), or null for the shared one.
+export function createImagePromptBilingual({ state, getModePrompt, setModePrompt, persist, onError, llm = null }) {
+  const tllm = () => llm?.() || translateLlm();
   // one Proxy per mode's slots, so the same field is always the same object (the "being translated" mark is looked up by it)
   const proxies = new WeakMap();
   const target = () => {
@@ -28,7 +30,7 @@ export function createImagePromptBilingual({ state, getModePrompt, setModePrompt
     panel: { target, key: KEY, protect, onError, getMainBil: () => main },
     // wraps the main prompt box; use the returned element where the textarea was
     attach(promptTA) {
-      main = attachBilingual(promptTA, { target, key: KEY, persist, protect, onError });
+      main = attachBilingual(promptTA, { target, key: KEY, persist, protect, onError, ...(llm ? { llm } : {}) });
       return main;
     },
     refresh: () => main?.refresh(),
@@ -42,7 +44,7 @@ export function createImagePromptBilingual({ state, getModePrompt, setModePrompt
     // Generate guard: a Korean-only edit becomes English before the graph is built
     async ensure() {
       if (main && !useKoFor(main.el)) return;
-      if (await ensureEnglish(target(), KEY, translateLlm(), { protect: protect() })) { persist(); main?.refresh(); }
+      if (await ensureEnglish(target(), KEY, tllm(), { protect: protect() })) { persist(); main?.refresh(); }
     },
   };
 }

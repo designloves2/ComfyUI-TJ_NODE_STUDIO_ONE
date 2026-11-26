@@ -53,7 +53,7 @@ PROMPT_TEMPLATE_POOLS = {
 # One pool per tool, so each tool's custom templates stay its own. "nl"/"tag" above are
 # the old shared pools: still served for older clients, and the source each per-tool
 # pool is seeded from the first time it is read.
-for _tool in ("klein", "zimage", "krea2", "qwen2511", "qwen21", "anima", "moss", "sdxl", "minimax_h3"):
+for _tool in ("klein", "zimage", "krea2", "qwen2511", "qwen21", "anima", "moss", "sdxl", "minimax_h3", "vertex"):
     PROMPT_TEMPLATE_POOLS[_tool] = os.path.join(NODE_DIR, f'templates_prompt_{_tool}.json')
 
 FK_SUBFOLDER  = "one_flux2-klein"
@@ -6764,7 +6764,7 @@ class ItdaStudioOneTJNode:
 # `roles` are the colors set one by one: the real (canvas) node - frame, title text, title dot - and what is inside it - text, text field, panel,
 # border ...; a skin is a named copy of the colors that any node can load.
 THEME_CONFIG_PATH = os.path.join(NODE_DIR, "config_theme.json")
-THEME_NODE_KEYS = ("klein", "zimage", "krea2", "qwen2511", "qwen21", "sdxl", "minimax_h3", "music", "anima", "moss", "itda", "ltx25")
+THEME_NODE_KEYS = ("klein", "zimage", "krea2", "qwen2511", "qwen21", "sdxl", "minimax_h3", "music", "anima", "moss", "itda", "ltx25", "vertex")
 THEME_ROLE_KEYS = ("frame", "titleText", "titleDot", "text", "tWhite", "tLight", "tGray1", "tGray2", "muted", "tBrand", "bg1", "bg2", "bg3", "border", "borderH", "ok", "warn", "err")
 THEME_MAX_SKINS = 40
 _THEME_HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")

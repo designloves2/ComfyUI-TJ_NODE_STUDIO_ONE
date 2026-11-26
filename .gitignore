@@ -227,3 +227,5 @@ studio_llm_settings.json
 
 # Claude Desktop graphify plugin output
 graphify-out/
+
+config_vertex.json

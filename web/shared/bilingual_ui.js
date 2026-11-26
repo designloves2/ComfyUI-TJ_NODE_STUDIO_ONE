@@ -23,7 +23,8 @@ const BTN = {
  * @param onError  (message) => show a failed translation
  * @param onInput  () => called after text was typed in the Korean view (the field's own input handler does not run there)
  */
-export function attachBilingual(ta, { target, key: keyOrFn, persist = () => {}, protect = () => [], onView = null, onError = null, onInput = null }) {
+// llm (optional, only Vertex Image passes it): () => a node-own translate llm(system, user), or null for the shared one.
+export function attachBilingual(ta, { target, key: keyOrFn, persist = () => {}, protect = () => [], onView = null, onError = null, onInput = null, llm = null }) {
   const wrap = document.createElement("div");
   Object.assign(wrap.style, { position: "relative", display: "flex", flexDirection: "column", minWidth: "0", minHeight: "0" });
   if (ta.style.flex) wrap.style.flex = ta.style.flex;
@@ -119,7 +120,7 @@ export function attachBilingual(ta, { target, key: keyOrFn, persist = () => {}, 
     const label = toggle.textContent;
     toggle.textContent = "…"; toggle.disabled = true; refresh.disabled = true;
     try {
-      await fieldFill(obj(), K(), view, translateLlm(), { protect: protect() });
+      await fieldFill(obj(), K(), view, llm?.() || translateLlm(), { protect: protect() });
       persist();
     } catch (e) { fail(e); }
     finally { toggle.disabled = false; refresh.disabled = false; busy = false; toggle.textContent = label; paint(); }

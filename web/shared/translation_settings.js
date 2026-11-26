@@ -23,7 +23,9 @@ async function orModels() {
   return _orModels;
 }
 
-export function translationSettingsPanel(theme = {}, nodeKey = "") {
+// extra (optional, only the Vertex Image node passes it): one more backend entry for that node alone — the shared
+// translation setting is left as it is, and other nodes never list it.
+export function translationSettingsPanel(theme = {}, nodeKey = "", extra = null) {
   const T = { bg: "#181818", text: "#dedede", border: "#2a2a2a", muted: "#8a8a8a", warn: "#ffb347", ok: "#7eff7e", err: "#ff6767", brand: "#c8ff3d", ...theme };
   const css = (el, s) => Object.assign(el.style, s);
   const div = (text, s = {}) => { const d = document.createElement("div"); if (text) d.textContent = text; css(d, s); return d; };
@@ -67,11 +69,16 @@ export function translationSettingsPanel(theme = {}, nodeKey = "") {
   function render() {
     holder.replaceChildren();
     const t = getTranslateConfig();
+    const shown = extra?.isOn("translate") ? "__extra" : t.backend;
     const be = document.createElement("select"); css(be, fieldStyle);
-    for (const [v, txt] of [["native", "Native (ComfyUI CLIP)"], ["openrouter", "OpenRouter (cloud)"], ["llamagguf", "Llama GGUF (local llama.cpp)"], ["custom", "Connect Custom"]]) {
-      const o = document.createElement("option"); o.value = v; o.textContent = txt; if (t.backend === v) o.selected = true; be.appendChild(o);
+    for (const [v, txt] of [["native", "Native (ComfyUI CLIP)"], ["openrouter", "OpenRouter (cloud)"], ["llamagguf", "Llama GGUF (local llama.cpp)"], ["custom", "Connect Custom"], ...(extra ? [["__extra", extra.label]] : [])]) {
+      const o = document.createElement("option"); o.value = v; o.textContent = txt; if (shown === v) o.selected = true; be.appendChild(o);
     }
-    be.addEventListener("change", () => save({ backend: be.value }));
+    be.addEventListener("change", () => {
+      if (be.value === "__extra") { extra.set("translate", true); render(); return; }
+      if (extra?.isOn("translate")) { extra.set("translate", false); if (be.value === t.backend) { render(); return; } }
+      save({ backend: be.value });
+    });
     const control = div("");
     holder.append(
       div("Translate — Korean ↔ English (the same for every node)", { fontSize: "11px", fontWeight: "700", color: T.brand }),
@@ -79,7 +86,9 @@ export function translationSettingsPanel(theme = {}, nodeKey = "") {
       control,
       div("Used by the KO / EN button on every prompt field. Changing it here changes it in all nodes at once.", { fontSize: "10px", color: T.muted, lineHeight: "1.5" }),
     );
-    if (t.backend === "llamagguf") {
+    if (shown === "__extra") {
+      control.appendChild(extra.controls("translate"));
+    } else if (t.backend === "llamagguf") {
       control.appendChild(div("loading gguf models…", { fontSize: "11px", color: T.muted }));
       localModels().then(d => {
         control.replaceChildren();

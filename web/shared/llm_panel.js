@@ -290,11 +290,19 @@ export function mountLLMSettingsSection(ov, ctx) {
     Object.assign(hdr.style, { color: "#ddd", fontSize: "11px", fontWeight: "700" });
     box.appendChild(hdr);
 
-    const BACKEND_LABELS = ["Local GGUF", "ComfyUI Native", "OpenRouter", "Connect Custom"];
-    function backendLabel() { return backendName(llm[bkey]); }
-    const beSel = makeSelect(BACKEND_LABELS, backendLabel(),
-      (v) => { llm[bkey] = v === "OpenRouter" ? "openrouter" : v === "ComfyUI Native" ? "comfy" : v === "Connect Custom" ? "custom" : "local"; saveLLM(); syncBackendBlocks(); });
+    // ctx.extraBackend (only the Vertex Image node passes it) adds one more entry to this list. Picking it is kept by that
+    // node alone; the shared backend below stays what it was, so other nodes never see or use it.
+    const xb = ctx?.extraBackend || null;
+    const BACKEND_LABELS = ["Local GGUF", "ComfyUI Native", "OpenRouter", "Connect Custom", ...(xb ? [xb.label] : [])];
+    function backendLabel() { return xb?.isOn(role) ? xb.label : backendName(llm[bkey]); }
+    const beSel = makeSelect(BACKEND_LABELS, backendLabel(), (v) => {
+      if (xb && v === xb.label) { xb.set(role, true); syncBackendBlocks(); return; }
+      xb?.set(role, false);
+      llm[bkey] = v === "OpenRouter" ? "openrouter" : v === "ComfyUI Native" ? "comfy" : v === "Connect Custom" ? "custom" : "local"; saveLLM(); syncBackendBlocks();
+    });
     box.appendChild(labelRow("Backend", beSel));
+    const xbGroup = xb ? xb.controls(role) : document.createElement("div");
+    box.appendChild(xbGroup);
 
     const localGroup = document.createElement("div");
     Object.assign(localGroup.style, { display: "flex", flexDirection: "column", gap: "6px" });
@@ -375,9 +383,10 @@ export function mountLLMSettingsSection(ov, ctx) {
       orSel.value = llm[mkey];
       teSel.value = llm.text_encoder_name;
       clipTypeSel.value = llm.clip_loader_type;
-      const b = llm[bkey];
+      const b = xb?.isOn(role) ? "extra" : llm[bkey];
+      xbGroup.style.display = b === "extra" ? "flex" : "none";
       orGroup.style.display = b === "openrouter" ? "flex" : "none";
-      localGroup.style.display = (b === "comfy" || b === "openrouter" || b === "custom") ? "none" : "flex";
+      localGroup.style.display = (b === "comfy" || b === "openrouter" || b === "custom" || b === "extra") ? "none" : "flex";
       comfyGroup.style.display = b === "comfy" ? "flex" : "none";
       customGroup.style.display = b === "custom" ? "flex" : "none";
       updateAdvVisibility();
@@ -424,7 +433,9 @@ export function mountLLMSettingsSection(ov, ctx) {
   body.appendChild(nativeBox);
   // GGUF row only when a role uses Local GGUF; the native block only when a role uses ComfyUI Native
   updateAdvVisibility = () => {
-    const bs = [llm.backend_text || llm.backend || DEFAULT_BACKEND, llm.backend_vision || llm.backend || DEFAULT_BACKEND];
+    const xbe = ctx?.extraBackend;
+    const bs = [xbe?.isOn("text") ? "custom" : (llm.backend_text || llm.backend || DEFAULT_BACKEND),
+                xbe?.isOn("vision") ? "custom" : (llm.backend_vision || llm.backend || DEFAULT_BACKEND)];
     advRow.style.display = bs.some(b => b !== "comfy" && b !== "openrouter" && b !== "custom") ? "grid" : "none";
     nativeBox.style.display = bs.includes("comfy") ? "flex" : "none";
   };
@@ -585,8 +596,9 @@ function _askRefineInstruction() {
   });
 }
 
-async function _callRefine(prompt, instruction) {
+async function _callRefine(prompt, instruction, route = null) {
   const l = loadLLMSettings();
+  const routed = route?.text?.() || null;   // a node's own LLM route (only Vertex passes one); null = the shared setting
   const mode = l.seed_mode || "randomize";
   if (mode === "randomize") l.seed = Math.floor(Math.random() * 1e15);
   else if (mode === "increment") l.seed = (l.seed || 0) + 1;
@@ -604,6 +616,7 @@ async function _callRefine(prompt, instruction) {
       temperature: l.temperature, seed: l.seed,
       model_format: l.model_format, aesthetic: l.aesthetic, extra_instructions: l.extra_instructions,
       ...nativeNums(l.backend_text || l.backend || DEFAULT_BACKEND),
+      ...(routed || {}),
     }),
   });
   const d = await r.json();
@@ -616,7 +629,7 @@ async function _callRefine(prompt, instruction) {
  * written while the window is open). Resolves { action: "apply" | "again" | "close", text, ko }; `ko` is "" when the
  * English was edited after the translation (the caller then translates it again).
  */
-function _showRefineResult(refined, protect, withKo = true) {
+function _showRefineResult(refined, protect, withKo = true, route = null) {
   return new Promise(resolve => {
     const { ov, box } = _refineOverlay();
     box.style.width = "min(1100px, 96vw)"; box.style.height = "min(680px, 90vh)";
@@ -650,7 +663,7 @@ function _showRefineResult(refined, protect, withKo = true) {
     let translated = "", koOk = false;
     function translateKo() {
       veil.style.display = "flex";
-      return translateText(en.ta.value, "ko", translateLlm(), { protect })
+      return translateText(en.ta.value, "ko", route?.translate?.() || translateLlm(), { protect })
         .then(out => { translated = out; koOk = true; editedAfter = false; ko.ta.value = out; })
         .catch(e => { ko.ta.value = "Translation failed: " + (e?.message || e); })
         .finally(() => { veil.style.display = "none"; });
@@ -685,20 +698,20 @@ function _showRefineResult(refined, protect, withKo = true) {
  * Whole Refine flow on `getText()`'s prompt. `setBusy(on)` lets the caller show its own busy state;
  * `onApply(text)` receives the accepted prompt. Returns once the user applies or closes.
  */
-async function runRefine({ getText, onApply, setBusy, protect, withKo }) {
+async function runRefine({ getText, onApply, setBusy, protect, withKo, route = null }) {
   const current = (getText() || "").trim();
   if (!current) { alert("Nothing to refine yet — write a prompt first."); return; }
   const refineCfg = loadLLMSettings();
-  if ((refineCfg.backend_text || refineCfg.backend || DEFAULT_BACKEND) === "openrouter" && !(refineCfg.or_model_text || refineCfg.or_model)) { orModelPopup(orModelMessage("LLM")); return; }
+  if (!route?.text?.() && (refineCfg.backend_text || refineCfg.backend || DEFAULT_BACKEND) === "openrouter" && !(refineCfg.or_model_text || refineCfg.or_model)) { orModelPopup(orModelMessage("LLM")); return; }
   let instruction = await _askRefineInstruction();
   while (instruction) {
     _lastRefineInstruction = instruction;
     let refined;
     setBusy?.(true);
-    try { refined = await _callRefine(current, instruction); }
+    try { refined = await _callRefine(current, instruction, route); }
     catch (e) { alert(t("llm_err_prefix") + e.message); return; }
     finally { setBusy?.(false); }
-    const res = await _showRefineResult(refined, protect?.() || [], withKo ? withKo() : true);
+    const res = await _showRefineResult(refined, protect?.() || [], withKo ? withKo() : true, route);
     if (res.action === "apply") { onApply(res.text, res.ko); return; }
     if (res.action === "close") return;
     instruction = await _askRefineInstruction();
@@ -714,7 +727,10 @@ async function runRefine({ getText, onApply, setBusy, protect, withKo }) {
 // onError: (msg) => void, getMainBil: () => the KO / EN handle of the main prompt box }. With it the popup text box gets the
 // KO / EN button, edits live in the field's slots, and Write / Enhance / Refine results are English with the Korean view
 // written after. Nodes that do not pass it behave as before.
-export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA, openSettings, defaultModelFormat, systemPrompt, bilingual = null }) {
+// route (optional, only Vertex Image passes it): { text: () => body patch | null, vision: () => body patch | null,
+// translate: () => llm(system, user) | null }. A non-null patch sends that call through the node's own LLM (merged over
+// the shared backend fields); null keeps the shared LLM / Translation setting. Nodes that do not pass it behave as before.
+export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePrompt, state, persist, updateCount, getPromptTA, openSettings, defaultModelFormat, systemPrompt, bilingual = null, route = null }) {
   // Grab existing children (header row + textarea) — restructure the interior.
   const [, existingTA] = Array.from(promptExpandEl.children);
   promptExpandEl.removeChild(existingTA);
@@ -1034,7 +1050,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     fieldSetView(o, k, "en");
     bil.refresh(); syncMain(text); persist?.();
     if (!String(text || "").trim() || String(ko || "").trim() || !useKoFor(promptExpandEl)) return;
-    fieldFill(o, k, "ko", translateLlm(), { protect: bilingual.protect?.() || [] })
+    fieldFill(o, k, "ko", route?.translate?.() || translateLlm(), { protect: bilingual.protect?.() || [] })
       .then(() => { persist?.(); bil.refresh(); syncMain(text); })
       .catch(() => { /* the KO / EN button writes it later */ });
   }
@@ -1160,7 +1176,8 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     if (!_imageB64) return;
     applySeedControl();
     const llm = loadLLMSettings();
-    if ((llm.backend_vision || llm.backend || DEFAULT_BACKEND) === "openrouter" && !(llm.or_model_vision || llm.or_model)) { orModelPopup(orModelMessage("LLM")); return; }
+    const routed = route?.vision?.() || null;
+    if (!routed && (llm.backend_vision || llm.backend || DEFAULT_BACKEND) === "openrouter" && !(llm.or_model_vision || llm.or_model)) { orModelPopup(orModelMessage("LLM")); return; }
     const existingText = useExistingChk.checked ? existingTA.value.trim() : "";
     let contextInstruction = existingText
       ? `The user has already written this description — use it as context and produce ONE integrated, polished prompt that incorporates it with what you see in the image. Rewrite it as a single cohesive prompt; do not simply append your description after it.\n\nExisting text:\n${existingText}`
@@ -1191,6 +1208,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
           temperature: llm.temperature,
           seed: llm.seed,
           ...nativeNums(llm.backend_vision || llm.backend || DEFAULT_BACKEND),
+          ...(routed || {}),
         }),
       });
       const d = await r.json();
@@ -1210,7 +1228,8 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     if (!prompt) return;
     applySeedControl();
     const llm = loadLLMSettings();
-    if ((llm.backend_text || llm.backend || DEFAULT_BACKEND) === "openrouter" && !(llm.or_model_text || llm.or_model)) { orModelPopup(orModelMessage("LLM")); return; }
+    const routed = route?.text?.() || null;
+    if (!routed && (llm.backend_text || llm.backend || DEFAULT_BACKEND) === "openrouter" && !(llm.or_model_text || llm.or_model)) { orModelPopup(orModelMessage("LLM")); return; }
     btnEnhance.disabled = true; setBusy(true, t("llm_busy_enhance"));
     try {
       const r = await fetch("/tj_studio_one/llm/enhance", {
@@ -1235,6 +1254,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
           extra_instructions: llm.extra_instructions,
           ...nativeNums(llm.backend_text || llm.backend || DEFAULT_BACKEND),
           ...(sysPrompt ? { system_override: sysPrompt } : {}),
+          ...(routed || {}),
         }),
       });
       const d = await r.json();
@@ -1253,6 +1273,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
     onApply: (text, ko) => { setResult(text, ko); syncButtons(); },
     protect: () => bilingual?.protect?.() || [],
     withKo: () => useKoFor(promptExpandEl),
+    route,
     setBusy: (on) => { btnRefine.disabled = on; setBusy(on, t("llm_busy_refine")); if (!on) syncButtons(); },
   }));
 
@@ -1271,6 +1292,7 @@ export function attachLLMPanel({ promptExpandEl, pxTA, getModePrompt, setModePro
   }
   function refineMain() {
     return runRefine({
+      route,
       setBusy: setMainBusy,
       protect: () => bilingual?.protect?.() || [],
       withKo: () => useKoFor(promptExpandEl),
