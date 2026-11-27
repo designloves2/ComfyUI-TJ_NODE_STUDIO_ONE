@@ -14,6 +14,20 @@ export const SUBFOLDER    = "vertex-image-one-tj";
 export const API          = "/tj_vertex";
 export const LS_KEY       = "vertex_image_one_state_v1";
 
+// The Vertex OpenAI Proxy app this node talks to (install it, sign in to Google Cloud there, keep it running).
+export const PROXY_APP_URL = "https://github.com/designloves2/vertex-openai-proxy";
+
+// Display names for the proxy's image model ids (the id is still what is saved and sent). Unknown ids show as they are.
+export const MODEL_NAMES = {
+  "gemini-2.5-flash-image":         "Nano Banana 1",
+  "gemini-3-pro-image":             "Nano Banana Pro",
+  "gemini-3.1-flash-image":         "Nano Banana 2",
+  "gemini-3.1-flash-image-preview": "Nano Banana 2 Preview",
+  "gemini-3.1-flash-lite-image":    "Nano Banana 2 Lite",
+  "gemini-nano-banana-2.1":         "Nano Banana 2.1",
+};
+export const modelName = id => MODEL_NAMES[id] || id;
+
 export const ASPECTS = ["auto", "1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
 
 export function el(tag, props, children) {
@@ -51,7 +65,9 @@ export function defaultState(saved) {
     outputMode:    saved.outputMode    || "save",
     convId:        saved.convId        || "",     // chat open in this node
     selected:      saved.selected      || null,   // {file, sub} — what the node's IMAGE output gives
-    accordion: Object.assign({ chats: true, model: true, image: true, generation: false, grounding: false, history: false },
+    // reference images for the NEXT message (input/ filenames, H3-style slots in the left menu); cleared once sent
+    refImages:     Array.isArray(saved.refImages) ? saved.refImages.filter(Boolean).slice(0, 14) : [],
+    accordion: Object.assign({ chats: true, refs: true, model: true, image: true, generation: false, grounding: false, history: false },
       saved.accordion || {}),
   };
 }
@@ -60,7 +76,9 @@ export const MANUAL_TEXT = `Vertex Image ONE STUDIO — chat-style image generat
 (Nano Banana family) through the local Vertex OpenAI Proxy (default http://127.0.0.1:3000). Port of the Vertex AI Studio app.
 
 BEFORE YOU START
-• Run the Vertex OpenAI Proxy app. The node talks to it from the ComfyUI server; no GPU work happens in ComfyUI.
+• Install and run the Vertex OpenAI Proxy app: https://github.com/designloves2/vertex-openai-proxy
+  (Releases → download → run). The node talks to it from the ComfyUI server; no GPU work happens in ComfyUI.
+  The line above Generate shows whether the proxy is connected (green) or not (red, with the install link).
 • Pick an image model in the left menu (MODEL). Nothing is pre-selected.
 
 HOW IT WORKS

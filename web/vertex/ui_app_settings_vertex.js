@@ -1,7 +1,7 @@
 // ui_app_settings_vertex.js — ⚙ Settings overlay for Vertex Image ONE STUDIO (TJ)
 // Same overlay + tabs as the other ONE STUDIO nodes (tabSettings: Model / LLM / Translation / Node Skin). The "Model"
 // tab holds the Vertex proxy connection, the chat model used by Compact, and the system prompt.
-import { C, el, MANUAL_TEXT } from "./core_vertex.js";
+import { C, el, MANUAL_TEXT, PROXY_APP_URL } from "./core_vertex.js";
 import { panel, label, button, select, numberField } from "../klein/ui_common.js";
 import { mountLLMSettingsSection } from "../shared/llm_panel.js";
 import { tabSettings } from "../shared/settings_tabs.js";
@@ -47,6 +47,10 @@ export function createSettingsOverlay(state, ctx) {
     });
     body.appendChild(panel([label("Vertex OpenAI Proxy"), text("proxyUrl", "http://127.0.0.1:3000"),
       hint("The proxy app has to be running. The node calls it from the ComfyUI server."),
+      el("div", { style: { fontSize: "11px", lineHeight: "1.5" } }, [
+        el("span", { text: "Install it from ", style: { color: C.muted } }),
+        el("a", { href: PROXY_APP_URL, target: "_blank", rel: "noopener noreferrer", text: PROXY_APP_URL, style: { color: C.lime, fontWeight: "700" } }),
+        el("span", { text: " (Releases → download → run).", style: { color: C.muted } })]),
       label("Timeout (seconds)"), num("timeout", 30, 1800), el("div", { style: { display: "flex", gap: "8px", alignItems: "center", marginTop: "6px" } }, [testBtn, testOut])]));
 
     const chat = ["", ...ctx.models.chat];

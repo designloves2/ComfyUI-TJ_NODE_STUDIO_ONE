@@ -31,6 +31,8 @@ export const IMAGE_GALLERY_TOOLS = [
   // image tab only shows what the Image Generator made and the frames can still be picked as an attachment.
   { id: "minimaxh3", label: "H3 Image",       api: "/minimax_h3_one", subfolder: "one_minimax_h3", route: "images" },
   { id: "minimaxh3f", label: "H3 Frames",     api: "/minimax_h3_one", subfolder: "one_minimax_h3", route: "images", scope: "frames" },
+  // Vertex Image (Nano Banana) results; its own /images route also lists JPEG and leaves out its chat assets.
+  { id: "vertex",   label: "Vertex Image",    api: "/tj_vertex",     subfolder: "vertex-image-one-tj", route: "images" },
 ];
 
 // One page of a per-tool gallery (not INPUT / OUTPUT): the tool's own list route (default the generic /gallery),

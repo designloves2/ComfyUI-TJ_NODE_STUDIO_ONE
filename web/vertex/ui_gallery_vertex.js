@@ -2,7 +2,7 @@
 // Built from H3's image gallery: same cards, ⓘ hover, blur/reveal, Select + bulk delete,
 // full-screen Prompt View (←/→/Esc, wheel zoom, drag pan, double-click fit), Reuse Setting / Prompt Copy, Cache,
 // Tools, Open folder, pick mode. H3's Deblur / RTX VSR post-process bar is H3-only and left out.
-import { C, BRAND, el, clear, SUBFOLDER } from "./core_vertex.js";
+import { C, BRAND, el, clear, SUBFOLDER, modelName } from "./core_vertex.js";
 import { setThumb, wireCacheButton } from "../shared/gallery_thumb.js";
 import { button } from "../klein/ui_common.js";
 import { galleryPageSize, fetchFirst, mergeUnique, loadMoreButton } from "../shared/gallery_more.js";
@@ -50,7 +50,7 @@ function imageURL(v) {
 function buildInfoLines(v) {
   const m = v.meta || {};
   const lines = [];
-  if (m.model) lines.push(`model: ${m.model}`);
+  if (m.model) lines.push(`model: ${modelName(m.model)}`);
   if (m.title) lines.push(`chat: ${m.title}`);
   if (m.aspect) lines.push(`aspect: ${m.aspect}`);
   if (m.size) lines.push(`resolution: ${m.size}`);
@@ -181,7 +181,10 @@ export function createImageGalleryOverlay(state, ctx) {
   selectBtn.addEventListener("click", () => setSelectMode(!selectMode));
   bulkDeleteBtn.addEventListener("click", async () => {
     if (!selected.size) return;
-    if (!window.confirm(`Delete ${selected.size} image(s)? This can't be undone.`)) return;
+    // the node's own dialog: the browser's confirm() can return "cancel" without showing anything in embedded browsers
+    const yes = ctx.dialog ? await ctx.dialog({ title: `Delete ${selected.size} image(s)?`, message: "This can't be undone.", ok: "Delete", danger: true })
+                           : window.confirm(`Delete ${selected.size} image(s)? This can't be undone.`);
+    if (!yes) return;
     const targets = filtered.filter(v => selected.has(mediaKey(v.filename, v.subfolder || "")));
     for (const v of targets) await deleteImage(v.filename, v.subfolder || "").catch(() => {});
     setSelectMode(false);

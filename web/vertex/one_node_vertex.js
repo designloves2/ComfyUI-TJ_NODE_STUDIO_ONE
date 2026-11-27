@@ -4,7 +4,7 @@
 // accordions per mode, a big preview, the prompt area with the shared LLM tools, ⚙ Settings (Model / LLM / Translation /
 // Node Skin), 🖼 Gallery (H3's image gallery) and ? Manual. Server side: vertex_studio_backend.py.
 import { app } from "../../../scripts/app.js";
-import { C, BRAND, PREVIEW_SIZE, LEFT_W, PAD, ASPECTS, el, clear, loadState, saveState, defaultState, MANUAL_TEXT } from "./core_vertex.js";
+import { C, BRAND, PREVIEW_SIZE, LEFT_W, PAD, ASPECTS, PROXY_APP_URL, modelName, el, clear, loadState, saveState, defaultState, MANUAL_TEXT } from "./core_vertex.js";
 import { panel, label, button, row, col, modeBar, iconBtn, select, numberField } from "../klein/ui_common.js";
 import { call, viewUrl, urlToDataUri } from "./api_vertex.js";
 import { createSettingsOverlay } from "./ui_app_settings_vertex.js";
@@ -14,17 +14,24 @@ import { attachNodeState, restoreNodeState } from "../shared/node_state.js";
 import { OUTER_W, OUTER_H } from "../shared/node_size.js";
 import { attachPanZoom } from "../shared/pan_zoom.js";
 import { createImagePromptBilingual } from "../shared/bilingual_image.js";
+// H3's own reference-image slot (upload / 🖼 any gallery / ✕ / drop) and its upload to input/
+import { imageSlot } from "../minimax/ui_images_minimax.js";
+import { openImageGalleryPicker } from "../shared/ui_image_gallery_picker.js";
+import { uploadImage } from "../minimax/api_minimax.js";
 
 // ── Layout ───────────────────────────────────────────────────────────────────
 const TOPBAR_H   = 40;
 const BOTTOM_PAD = 20;
-const STRIP_H    = 78;
+const SEND_TO_H  = 0;      // the "Send to:" row sits inside the preview (bottom left), so it takes no height
+const STRIP_H    = 70;
+const HIST_H     = 80;     // prompt history field above the prompt
 const PROMPT_LBL = 18;
 const UI_W       = OUTER_W - 30;
 const UI_H       = OUTER_H - 40 - 2 * 20;            // two output slots (image, prompt)
 const RIGHT_H    = UI_H - PAD - TOPBAR_H - PAD - BOTTOM_PAD;
-const PREV_H     = Math.min(PREVIEW_SIZE, RIGHT_H - STRIP_H - PAD - PAD - 190);
-const PROMPT_H   = RIGHT_H - PREV_H - PAD - STRIP_H - PAD;
+// prompt area kept at ~113 px (two thirds of the old 170) so the preview gets the height back
+const PREV_H     = Math.min(PREVIEW_SIZE, RIGHT_H - SEND_TO_H - STRIP_H - HIST_H - 3 * PAD - 113);
+const PROMPT_H   = RIGHT_H - PREV_H - SEND_TO_H - STRIP_H - HIST_H - 3 * PAD;
 
 // H3-style mode bar. Only IMAGE exists in the source app so far; VIDEO and MUSIC are reserved slots.
 const MODES = [
@@ -68,7 +75,7 @@ app.registerExtension({
 
       // ctx: what the shared panels (LLM settings, gallery, settings overlay) read
       const ctx = { persist, cfg: {}, models: { image: [], chat: [] }, rootEl: null, showPopup: null };
-      let conv = null, convs = [], attachments = [], continueFrom = "", busy = false, viewing = null;
+      let conv = null, convs = [], continueFrom = "", busy = false, viewing = null;
 
       // ── Root ──────────────────────────────────────────────────────────────
       const root = el("div", { style: {
@@ -91,11 +98,46 @@ app.registerExtension({
       }
       ctx.showPopup = showPopup;
 
+      // In-node confirm / text dialogs (H3 gallery's delete-confirm look). The browser's own confirm() / prompt() can
+      // return "cancel" at once without showing anything in some embedded browsers, so Delete / Rename did nothing.
+      function dialog({ title, message = "", input = null, ok = "OK", danger = false }) {
+        return new Promise(resolve => {
+          const ov = el("div", { style: { position: "fixed", inset: "0", zIndex: "100080", background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center" } });
+          const box = el("div", { style: { background: C.bg1, border: `1px solid ${C.border}`, borderRadius: "10px", padding: "18px 20px", width: "360px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: "10px", boxShadow: "0 8px 30px rgba(0,0,0,0.5)", fontFamily: "'Segoe UI',sans-serif" } });
+          box.appendChild(el("div", { text: title, style: { color: "#fff", fontSize: "13px", fontWeight: "700" } }));
+          if (message) box.appendChild(el("div", { text: message, style: { color: C.muted, fontSize: "11.5px", lineHeight: "1.5", whiteSpace: "pre-wrap" } }));
+          let field = null;
+          if (input !== null) {
+            field = el("input", { type: "text", style: { width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text, border: `1px solid ${BRAND}`, borderRadius: "6px", padding: "7px", fontSize: "12px", fontFamily: "inherit", outline: "none" } });
+            field.value = input; box.appendChild(field);
+          }
+          const cancelValue = field ? null : false;
+          const done = v => { document.removeEventListener("keydown", onKey, true); ov.remove(); resolve(v); };
+          const accept = () => done(field ? field.value.trim() : true);
+          const onKey = e => {
+            if (e.key === "Escape") { e.stopPropagation(); done(cancelValue); }
+            else if (e.key === "Enter") { e.stopPropagation(); e.preventDefault(); accept(); }
+          };
+          const cancelBtn = el("button", { type: "button", text: "Cancel", style: { cursor: "pointer", fontFamily: "inherit", fontSize: "11.5px", padding: "6px 14px", borderRadius: "6px", background: C.bg2, color: C.text, border: `1px solid ${C.border}` } });
+          cancelBtn.addEventListener("click", () => done(cancelValue));
+          const okBtn = button(ok, accept, danger ? "danger" : "primary");
+          box.appendChild(el("div", { style: { display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "4px" } }, [cancelBtn, okBtn]));
+          ov.appendChild(box);
+          ov.addEventListener("mousedown", e => { if (e.target === ov) done(cancelValue); });
+          document.addEventListener("keydown", onKey, true);
+          document.body.appendChild(ov);
+          setTimeout(() => (field || okBtn).focus(), 30);
+        });
+      }
+
+      ctx.dialog = dialog;
+
       // ── server config (generation settings live on the server, shared by every chat) ──
       ctx.saveCfg = async patch => {
         Object.assign(ctx.cfg, patch);
         try { ctx.cfg = await call("/config", patch); } catch (e) { showPopup(e.message); }
         renderLeft(); renderMeter();
+        if ("proxyUrl" in patch) checkProxy();
       };
       ctx.loadModels = async (refresh = false) => {
         const q = refresh ? "&refresh=1" : "";
@@ -110,11 +152,16 @@ app.registerExtension({
       const pillsWrap = el("div", { style: { flex: "1" } });
       function renderPills() { clear(pillsWrap); pillsWrap.appendChild(modeBar(MODES, state.mode, k => { state.mode = k; persist(); renderPills(); renderLeft(); })); }
       const resetBtn = iconBtn("↺", "Reset the node's prompt and panels (chats and settings are kept)", () => {
-        if (!confirm("Reset the prompt and the panel layout? Chats, images and settings are kept.")) return;
-        const keep = { convId: state.convId, selected: state.selected };
-        Object.assign(state, defaultState({}), keep); persist(); imgBil.refresh(); updateCount(); renderLeft(); showPopup("Reset done.", false);
+        dialog({ title: "Reset?", message: "Resets the prompt and the panel layout. Chats, images and settings are kept.", ok: "Reset" }).then(yes => {
+          if (!yes) return;
+          const keep = { convId: state.convId, selected: state.selected };
+          Object.assign(state, defaultState({}), keep); persist(); imgBil.refresh(); updateCount(); renderLeft(); showPopup("Reset done.", false);
+        });
       });
       resetBtn.style.cssText += `background:#ffffff;color:${BRAND};border:2px solid ${BRAND};border-radius:6px;padding:4px 8px;font-weight:700;`;
+      // iconBtn's own hover would turn it dark; keep the white button like Moss / the other nodes
+      resetBtn.addEventListener("mouseenter", () => resetBtn.style.background = "#f5f5ff");
+      resetBtn.addEventListener("mouseleave", () => resetBtn.style.background = "#ffffff");
       let settingsOv, galleryOv, helpOv;
       topBar.append(pillsWrap, resetBtn,
         iconBtn("⚙", "Settings", () => settingsOv?.show()),
@@ -138,25 +185,37 @@ app.registerExtension({
       const spinner = el("div", { style: { width: "44px", height: "44px", border: `3px solid ${C.border}`, borderTop: `3px solid ${BRAND}`, borderRadius: "50%", animation: "vertexv1-spin 0.8s linear infinite" } });
       const loadingText = el("div", { text: "Generating…", style: { color: C.text, fontSize: "12px" } });
       loadingOv.append(spinner, loadingText);
-      const caption = el("div", { style: { position: "absolute", left: "0", right: "0", bottom: "0", zIndex: "4", padding: "8px 10px", background: "linear-gradient(transparent, rgba(0,0,0,0.85))", fontSize: "11px", color: "#ddd", display: "none", maxHeight: "40%", overflowY: "auto", whiteSpace: "pre-wrap" } });
-      caption.className = "vertexv1-lp";
-      const actBar = el("div", { style: { position: "absolute", top: "6px", left: "6px", zIndex: "5", display: "none", gap: "4px" } });
-      const smallBtn = (t, tip, fn) => el("button", { type: "button", text: t, title: tip, style: { background: "rgba(0,0,0,0.7)", color: "#fff", border: "none", borderRadius: "4px", padding: "3px 8px", cursor: "pointer", fontSize: "11px", fontFamily: "inherit" }, onclick: e => { e.stopPropagation(); fn(); } });
-      const contBtn = smallBtn("↪ Continue from this", "The next message edits this image", () => { if (viewing) { continueFrom = viewing.id; renderChips(); promptTA.focus(); } });
-      const outBtn = smallBtn("Use as node output", "The node's IMAGE output gives this image", () => viewing && pickOutput(viewing));
-      const fullBtn = smallBtn("⛶", "Full screen", () => viewing && openFullscreen(viewUrl(viewing)));
-      // Sends this image's message again as a NEW paid request (skips the same-request reuse).
-      const varBtn = smallBtn("↻ New variation", "Send this image's message again as a new (paid) request — an identical request otherwise reuses the earlier result for free", () => {
-        const { user } = turnOf(viewing);
-        if (!user || busy) return;
-        if (!confirm("Send this message again as a new request?\nThis is a new paid call to Vertex.")) return;
-        generate({ prompt: user.text, continueFrom: user.continueFrom || "", bypass: true });
-      });
-      actBar.append(contBtn, outBtn, varBtn, fullBtn);
+      // top-right of the preview: ⛶ full screen, then the zoom lock (nothing else over the picture)
+      const fullBtn = el("button", { type: "button", text: "⛶", title: "Full screen", style: { position: "absolute", top: "6px", right: "32px", zIndex: "5", background: "rgba(0,0,0,0.65)", color: "#fff", border: "none", borderRadius: "4px", width: "22px", height: "22px", cursor: "pointer", fontSize: "12px", padding: "0", display: "none" },
+        onclick: e => { e.stopPropagation(); if (viewing) openFullscreen(viewUrl(viewing)); } });
       let zoomEnabled = true;
       const zoomLockBtn = el("button", { type: "button", text: "🔓", title: "Scroll zoom on/off", style: { position: "absolute", top: "6px", right: "6px", zIndex: "5", background: "rgba(0,0,0,0.65)", color: "#fff", border: "none", borderRadius: "4px", width: "22px", height: "22px", cursor: "pointer", fontSize: "11px", padding: "0", display: "none" } });
       zoomLockBtn.addEventListener("click", () => { zoomEnabled = !zoomEnabled; zoomLockBtn.textContent = zoomEnabled ? "🔓" : "🔒"; if (!zoomEnabled) pz.reset(); });
-      previewBox.append(placeholder, finalImg, caption, actBar, zoomLockBtn, loadingOv);
+      previewBox.append(placeholder, finalImg, fullBtn, zoomLockBtn, loadingOv);
+
+      // ── Send to row: bottom left inside the preview (keeps the picture's height) ──
+      const sendRow = el("div", { style: { position: "absolute", left: "6px", bottom: "6px", zIndex: "5", display: "flex", alignItems: "center", gap: "8px",
+        background: "rgba(0,0,0,0.6)", borderRadius: "14px", padding: "3px 4px 3px 10px" } });
+      sendRow.addEventListener("pointerdown", e => e.stopPropagation());   // no pan / zoom from here
+      const pill = (t, tip, fn) => {
+        const b = el("button", { type: "button", text: t, title: tip, style: { cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "3px 10px", borderRadius: "12px", background: C.bg2, color: C.text, border: `1px solid ${C.border}` } });
+        b.addEventListener("mouseenter", () => { if (!b.disabled) b.style.background = C.bg3; });
+        b.addEventListener("mouseleave", () => { b.style.background = C.bg2; });
+        b.addEventListener("click", fn);
+        return b;
+      };
+      const contBtn = pill("↪ Continue from this", "The next message edits this image (even an older one)", () => { if (viewing) { continueFrom = viewing.id; renderChips(); promptTA.focus(); } });
+      sendRow.append(el("div", { text: "Send to:", style: { color: C.muted, fontSize: "11px" } }), contBtn);
+      function syncSendRow() {
+        const ok = !!viewing && viewing.kind !== "attached";
+        sendRow.style.display = viewing ? "flex" : "none";   // nothing over the empty preview
+        contBtn.disabled = !ok; contBtn.style.opacity = ok ? "1" : "0.45"; contBtn.style.cursor = ok ? "pointer" : "not-allowed";
+      }
+
+      // ── Prompt history of this chat: its own field above the prompt. The turn of the image on screen is highlighted;
+      // clicking a turn shows its image. ──
+      const historyBox = el("div", { style: { height: `${HIST_H}px`, flexShrink: "0", overflowY: "auto", background: C.bg1, border: `1px solid ${C.border}`, borderRadius: "8px", padding: "4px 8px", boxSizing: "border-box", fontSize: "11px", lineHeight: "1.45" } });
+      historyBox.className = "vertexv1-lp";
       const pz = attachPanZoom(previewBox, () => [finalImg], { enabled: () => zoomEnabled && !!viewing });
 
       function openFullscreen(url) {
@@ -176,16 +235,13 @@ app.registerExtension({
         viewing = img;
         pz.reset();
         if (!img) {
-          finalImg.style.display = "none"; placeholder.style.display = "block"; actBar.style.display = "none"; zoomLockBtn.style.display = "none";
+          finalImg.style.display = "none"; placeholder.style.display = "block"; fullBtn.style.display = "none"; zoomLockBtn.style.display = "none";
           placeholder.textContent = !ctx.cfg.model ? "Select an image model in the left menu (MODEL) first." : conv?.messages?.length ? "Pick an image in the strip below." : "Describe an image below and press Generate.\nEvery next message edits the latest result.";
-          renderCaption(null); return;
+        } else {
+          placeholder.style.display = "none"; finalImg.src = viewUrl(img); finalImg.style.display = "block";
+          fullBtn.style.display = "block"; zoomLockBtn.style.display = "block";
         }
-        placeholder.style.display = "none"; finalImg.src = viewUrl(img); finalImg.style.display = "block";
-        actBar.style.display = img.kind === "attached" ? "none" : "flex"; zoomLockBtn.style.display = "block";
-        const isOut = state.selected?.file === img.file;
-        outBtn.textContent = isOut ? "✓ Node output" : "Use as node output";
-        outBtn.style.background = isOut ? BRAND : "rgba(0,0,0,0.7)";
-        renderCaption(img);
+        syncSendRow(); syncVariation(); renderHistory();
       }
 
       function turnOf(img) {
@@ -195,26 +251,45 @@ app.registerExtension({
         const user = ms[i].role === "user" ? ms[i] : [...ms.slice(0, i)].reverse().find(m => m.role === "user");
         return { user, reply: ms[i].role === "assistant" ? ms[i] : null, summary: ms[i].role === "summary" ? ms[i] : null };
       }
-      function renderCaption(img) {
-        clear(caption);
-        const last = conv?.messages?.[conv.messages.length - 1];
-        if (!img && last?.role === "assistant" && last.status === "error") {
-          caption.style.display = "block";
-          caption.appendChild(el("div", { text: "✕ " + (last.error || "Error"), style: { color: C.err } }));
-          return;
+      function renderHistory() {
+        clear(historyBox);
+        const ms = conv?.messages || [];
+        if (!ms.length) { historyBox.appendChild(el("div", { text: "This chat's prompts appear here.", style: { color: C.muted } })); return; }
+        const cur = viewing ? turnOf(viewing) : {};
+        let turn = 0, curLine = null;
+        for (let i = 0; i < ms.length; i++) {
+          const m = ms[i];
+          if (m.role === "summary") {
+            historyBox.appendChild(el("div", { text: "≡ Summary: " + m.text, title: m.text, style: { color: "#9fd8b0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }));
+            continue;
+          }
+          if (m.role !== "user") continue;
+          turn++;
+          const reply = ms[i + 1]?.role === "assistant" ? ms[i + 1] : null;
+          const gen = (reply?.images || []).filter(x => x.kind === "generated");
+          const on = cur.user?.id === m.id;
+          const u = reply?.usage;
+          const meta = [reply?.model ? modelName(reply.model) : "", reply?.label, reply?.ms ? (reply.ms / 1000).toFixed(1) + "s" : "",
+            reply?.cached ? "♻ reused earlier result (no new call)" : u && (u.prompt || u.completion) ? `tokens in ${u.prompt.toLocaleString()} · out ${u.completion.toLocaleString()}` : "",
+            reply?.notes ? "not applied: " + reply.notes : ""].filter(Boolean).join(" · ");
+          const line = el("div", { title: [m.text, m.enhanced ? "enhanced: " + m.enhanced : "", reply?.text || "", meta].filter(Boolean).join("\n"),
+            style: { padding: "2px 4px", borderRadius: "4px", cursor: gen.length ? "pointer" : "default", background: on ? C.bg3 : "transparent", borderLeft: `2px solid ${on ? BRAND : "transparent"}` } });
+          line.append(el("span", { text: `${turn} ▸ `, style: { color: on ? BRAND : C.muted, fontWeight: "700" } }),
+            el("span", { text: m.text || "(images only)", style: { color: on ? "#fff" : C.text } }));
+          if (reply?.status === "error") line.appendChild(el("div", { text: "✕ " + (reply.error || "Error"), style: { color: C.err, fontSize: "10px" } }));
+          else if (reply?.status === "pending") line.appendChild(el("div", { text: "Generating…", style: { color: C.muted, fontSize: "10px" } }));
+          else if (on && (reply?.text || meta)) line.appendChild(el("div", { text: [reply?.text, meta].filter(Boolean).join(" — "), style: { color: C.muted, fontSize: "10px" } }));
+          if (gen.length) line.addEventListener("click", () => { pickOutput(gen[gen.length - 1]); });
+          historyBox.appendChild(line);
+          if (on) curLine = line;
         }
-        if (!img) { caption.style.display = "none"; return; }
-        const { user, reply, summary } = turnOf(img);
-        caption.style.display = "block";
-        if (summary) caption.appendChild(el("div", { text: "Summary: " + summary.text, style: { color: "#9fd8b0" } }));
-        if (user) caption.appendChild(el("div", { text: "▸ " + user.text, style: { color: "#fff" } }));
-        if (user?.enhanced) caption.appendChild(el("div", { text: "enhanced: " + user.enhanced, style: { color: C.muted } }));
-        if (reply?.text) caption.appendChild(el("div", { text: reply.text, style: { color: "#ccc", marginTop: "2px" } }));
-        const u = reply?.usage;
-        const cost = reply?.cached ? "♻ reused earlier result (no new call)"
-          : u && (u.prompt || u.completion) ? `tokens in ${u.prompt.toLocaleString()}${u.cached ? ` (cached ${u.cached.toLocaleString()})` : ""} · out ${u.completion.toLocaleString()}` : "";
-        const meta = [reply?.model, reply?.label, reply?.ms ? (reply.ms / 1000).toFixed(1) + "s" : "", img.w ? `${img.w}×${img.h}` : "", cost, reply?.notes ? "not applied: " + reply.notes : ""].filter(Boolean);
-        if (meta.length) caption.appendChild(el("div", { text: meta.join(" · "), style: { color: C.muted, fontSize: "10px", marginTop: "2px" } }));
+        // scroll only this box (scrollIntoView would also move the canvas page)
+        requestAnimationFrame(() => {
+          if (!curLine) { historyBox.scrollTop = historyBox.scrollHeight; return; }
+          const top = curLine.offsetTop - historyBox.offsetTop, bottom = top + curLine.offsetHeight;
+          if (top < historyBox.scrollTop) historyBox.scrollTop = top;
+          else if (bottom > historyBox.scrollTop + historyBox.clientHeight) historyBox.scrollTop = bottom - historyBox.clientHeight;
+        });
       }
 
       // ── Chat strip (every image in the chat, in order) ─────────────────────
@@ -235,11 +310,12 @@ app.registerExtension({
             const ref = img.kind === "attached";
             const sz = ref ? 40 : 60;
             const isView = viewing?.id === img.id, isOut = state.selected?.file === img.file, isCont = continueFrom === img.id;
-            const t = el("div", { title: ref ? "Attached reference" : (m.role === "summary" ? "Kept by the summary" : "Click to view"), style: { position: "relative", flexShrink: "0", width: `${sz}px`, height: `${sz}px`, borderRadius: "5px", overflow: "hidden", cursor: "pointer", border: `2px solid ${isView ? BRAND : isCont ? "#ffb347" : "transparent"}`, background: "#000" } });
+            const t = el("div", { title: ref ? "Attached reference" : isOut ? "Node output (this image leaves the IMAGE slot)" : "Click: show it and make it the node's IMAGE output", style: { position: "relative", flexShrink: "0", width: `${sz}px`, height: `${sz}px`, borderRadius: "5px", overflow: "hidden", cursor: "pointer", border: `2px solid ${isView ? BRAND : isCont ? "#ffb347" : "transparent"}`, background: "#000" } });
             t.appendChild(el("img", { src: viewUrl(img), loading: "lazy", style: { width: "100%", height: "100%", objectFit: "cover", display: "block" } }));
             if (ref) t.appendChild(el("div", { text: "📎", style: { position: "absolute", bottom: "0", right: "1px", fontSize: "10px" } }));
             if (isOut) t.appendChild(el("div", { text: "✓", title: "Node output", style: { position: "absolute", top: "1px", right: "2px", fontSize: "11px", fontWeight: "700", color: "#fff", background: BRAND, borderRadius: "3px", padding: "0 3px" } }));
-            t.addEventListener("click", () => { showImage(img); renderStrip(); });
+            // the image picked here is what the node outputs (attached references are only shown)
+            t.addEventListener("click", () => { if (ref) { showImage(img); renderStrip(); } else pickOutput(img); });
             t.addEventListener("dblclick", () => openFullscreen(viewUrl(img)));
             strip.appendChild(t);
           }
@@ -291,6 +367,17 @@ app.registerExtension({
         hdrBtn("🔍 Prompt Edit", "Expand edit", () => promptExpandOv.show()));
       const tplBtn = hdrBtn("📋 Prompt Preset", "Load Template", () => {});
       promptHdr.appendChild(tplBtn);
+      // Sends the shown image's message again as a NEW paid request (an identical request otherwise reuses the old result).
+      const varBtn = hdrBtn("↻ New variation", "Send the shown image's message again as a new (paid) request — an identical request otherwise reuses the earlier result for free", () => {
+        const { user } = viewing ? turnOf(viewing) : {};
+        if (!user || busy) return;
+        dialog({ title: "Send it again as a new request?", message: "This is a new paid call to Vertex.", ok: "Send" }).then(yes => { if (yes) generate({ prompt: user.text, continueFrom: user.continueFrom || "", bypass: true }); });
+      });
+      promptHdr.appendChild(varBtn);
+      function syncVariation() {
+        const ok = !!viewing && viewing.kind === "generated" && !!turnOf(viewing).user;
+        varBtn.disabled = !ok; varBtn.style.opacity = ok ? "1" : "0.4"; varBtn.style.cursor = ok ? "pointer" : "not-allowed";
+      }
 
       const chips = el("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap", flexShrink: "0" } });
       const promptTA = el("textarea", { placeholder: "Describe an image, or how to change the last one…  (Ctrl+V / drop to attach images · /compact to summarize)", style: { flex: "1", width: "100%", boxSizing: "border-box", background: C.bg2, color: C.text, border: `1px solid ${C.border}`, borderRadius: "6px", padding: "7px", fontSize: "13px", fontFamily: "inherit", outline: "none", resize: "none", overflowY: "auto" } });
@@ -314,22 +401,19 @@ app.registerExtension({
         t.addEventListener("drop", e => { e.preventDefault(); e.stopPropagation(); addFiles([...(e.dataTransfer?.files || [])].filter(f => f.type.startsWith("image/"))); });
       }
 
-      // attachments
-      const fileIn = el("input", { type: "file", accept: "image/*", multiple: "multiple", style: { display: "none" } });
-      fileIn.addEventListener("change", () => { addFiles([...fileIn.files]); fileIn.value = ""; });
-      root.appendChild(fileIn);
+      // Pasted / dropped images go into the left menu's Reference Images slots (uploaded to input/, like H3's slots).
       async function addFiles(files) {
-        for (const f of files) attachments.push(await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(f); }));
-        renderChips();
+        for (const f of files) {
+          if ((state.refImages || []).length >= MAX_REFS) { showPopup(`${MAX_REFS} reference images max.`); break; }
+          try { state.refImages = [...(state.refImages || []), await uploadImage(f)]; }
+          catch (e) { showPopup(e.message || "Upload failed"); }
+        }
+        state.accordion = { ...(state.accordion || {}), refs: true };
+        persist(); renderLeft();
       }
-      function chipBtn(t, tip, fn) { return el("button", { type: "button", text: t, title: tip, style: { cursor: "pointer", fontFamily: "inherit", fontSize: "11px", padding: "3px 8px", borderRadius: "12px", background: C.bg2, color: C.text, border: `1px solid ${C.border}` }, onclick: fn }); }
       function renderChips() {
         clear(chips);
-        chips.append(chipBtn("📎 Attach", "Add reference images (or paste / drop them)", () => fileIn.click()),
-          chipBtn("🖼 From gallery", "Use a gallery image as a reference", () => galleryOv.showPicker(async (_n, v) => {
-            try { attachments.push(await urlToDataUri(`/view?filename=${encodeURIComponent(v.filename)}&subfolder=${encodeURIComponent(v.subfolder || "")}&type=output`)); renderChips(); }
-            catch (e) { showPopup(e.message); }
-          })));
+        chips.style.display = continueFrom ? "flex" : "none";
         if (continueFrom) {
           const img = (conv?.messages || []).flatMap(m => m.images || []).find(i => i.id === continueFrom);
           const c = el("div", { style: { display: "flex", alignItems: "center", gap: "4px", background: "#2a1d0a", border: "1px solid #ffb347", borderRadius: "12px", padding: "1px 6px", fontSize: "10.5px" } });
@@ -337,16 +421,51 @@ app.registerExtension({
           c.append(el("span", { text: "Continue from this" }), el("span", { text: "✕", style: { cursor: "pointer" }, onclick: () => { continueFrom = ""; renderChips(); renderStrip(); } }));
           chips.appendChild(c);
         }
-        attachments.forEach((uri, i) => {
-          const c = el("div", { style: { position: "relative" } });
-          c.append(el("img", { src: uri, style: { width: "26px", height: "26px", objectFit: "cover", borderRadius: "4px", border: `1px solid ${C.border}`, display: "block" } }),
-            el("span", { text: "✕", style: { position: "absolute", top: "-6px", right: "-6px", cursor: "pointer", background: C.err, color: "#fff", borderRadius: "50%", width: "13px", height: "13px", fontSize: "8px", lineHeight: "13px", textAlign: "center" }, onclick: () => { attachments.splice(i, 1); renderChips(); } }));
-          chips.appendChild(c);
-        });
         renderStrip();
       }
 
-      rightPanel.append(previewBox, strip, promptWrap);
+      // ── Reference Images (left menu) — H3 Image Generator's slots: click = upload, 🖼 = any gallery, ✕ = remove,
+      // drag = reorder (the order is the order the model gets them in). Sent with the next message, then cleared. ──
+      const MAX_REFS = 14;   // Gemini image models take up to 14 reference images
+      function setRefs(list) { state.refImages = list.filter(Boolean).slice(0, MAX_REFS); persist(); renderLeft(); }
+      function refsSection() {
+        const refs = (state.refImages || []).slice(0, MAX_REFS);
+        const grid = el("div", { style: { display: "flex", flexWrap: "wrap", gap: "5px", justifyContent: "center", marginTop: "6px" } });
+        for (let i = 0; i < Math.min(MAX_REFS, refs.length + 1); i++) {
+          const slot = imageSlot(refs[i] ? `Image ${i + 1}` : "+ add\nreference", refs[i] || null, name => {
+            const list = (state.refImages || []).slice();
+            if (name) list[i] = name; else list.splice(i, 1);
+            setRefs(list);
+          }, { box: 84 });
+          const cell = el("div", { style: { display: "flex", flexDirection: "column", alignItems: "center" } }, [slot.el]);
+          if (refs[i]) {
+            cell.draggable = true;
+            cell.addEventListener("dragstart", e => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(i)); cell.style.opacity = "0.4"; });
+            cell.addEventListener("dragend", () => { cell.style.opacity = "1"; });
+            cell.addEventListener("dragover", e => { e.preventDefault(); slot.el.style.outline = `2px solid ${BRAND}`; });
+            cell.addEventListener("dragleave", () => { slot.el.style.outline = "none"; });
+            cell.addEventListener("drop", e => {
+              e.preventDefault(); e.stopPropagation(); slot.el.style.outline = "none";
+              const from = Number(e.dataTransfer.getData("text/plain"));
+              if (Number.isNaN(from) || from === i) return;
+              const list = (state.refImages || []).slice();
+              const [moved] = list.splice(from, 1); list.splice(i, 0, moved);
+              setRefs(list);
+            });
+          }
+          grid.appendChild(cell);
+        }
+        // the shared picker (every gallery), opened on the Vertex Image tab
+        const addVertex = button("🖼 Add from gallery", () => openImageGalleryPicker(name => {
+          if ((state.refImages || []).length >= MAX_REFS) { showPopup(`${MAX_REFS} reference images max.`); return; }
+          setRefs([...(state.refImages || []), name]);
+        }, "vertex"));
+        addVertex.style.cssText += "width:100%;margin-top:6px;";
+        return [grid, addVertex];
+      }
+
+      previewBox.appendChild(sendRow);
+      rightPanel.append(previewBox, strip, historyBox, promptWrap);
       mainRow.append(leftOuter, rightPanel);
       root.appendChild(mainRow);
 
@@ -358,7 +477,39 @@ app.registerExtension({
       let aborter = null;
       const stopBtn = button("■ Stop", () => { aborter?.abort(); });
       stopBtn.style.flexShrink = "0";
-      genWrap.append(meter, row([genBtn, stopBtn]));
+      // Proxy connection (between the left menu and Generate). Checked with the proxy's model list — free, no generation.
+      const proxyRow = el("div", { title: "Click to check again", style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "10.5px", color: C.muted, cursor: "pointer" } });
+      const proxyDot = el("span", { text: "●", style: { fontSize: "11px", color: C.muted } });
+      const proxyText = el("span", { text: "Proxy: checking…", style: { flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } });
+      // shown only while the proxy is not reachable: where to get the proxy app
+      const proxyLink = el("a", { href: PROXY_APP_URL, target: "_blank", rel: "noopener noreferrer", text: "Install proxy app ↗",
+        title: PROXY_APP_URL, style: { color: BRAND, fontWeight: "700", textDecoration: "none", whiteSpace: "nowrap", display: "none" } });
+      proxyLink.addEventListener("click", e => e.stopPropagation());
+      proxyRow.append(proxyDot, proxyText, proxyLink);
+      let proxyChecking = false;
+      async function checkProxy() {
+        if (proxyChecking) return;
+        proxyChecking = true;
+        const url = ctx.cfg.proxyUrl || "http://127.0.0.1:3000";
+        try {
+          const m = await call("/models?type=image");
+          proxyDot.style.color = "#4cd964";
+          proxyText.textContent = `Proxy connected · ${url} · ${m.models.length} image models`;
+          proxyRow.title = "Checked every 20 s. Click to check again.";
+          proxyLink.style.display = "none";
+        } catch (e) {
+          proxyDot.style.color = C.err;
+          proxyText.textContent = `Proxy not connected · ${url}`;
+          proxyLink.style.display = "";
+          proxyRow.title = (e.message || "") + "\nStart the Vertex OpenAI Proxy app. Click to check again.";
+        }
+        proxyChecking = false;
+      }
+      proxyRow.addEventListener("click", checkProxy);
+      const proxyTimer = setInterval(() => { if (root.isConnected) checkProxy(); }, 20000);
+      const prevRemoved = self.onRemoved;
+      self.onRemoved = function () { clearInterval(proxyTimer); prevRemoved?.apply(this, arguments); };
+      genWrap.append(proxyRow, meter, row([genBtn, stopBtn]));
       leftOuter.appendChild(genWrap);
 
       function renderMeter() {
@@ -374,12 +525,23 @@ app.registerExtension({
       }
 
       // ── Left menu: H3-style accordions per mode ─────────────────────────────
-      function accordion(key, title, summary, body) {
+      // H3's small circled "?" that carries a long explanation as a hover tooltip
+      function helpDot(text) {
+        const d = el("span", { text: "?", title: text, style: {
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: "13px", height: "13px", borderRadius: "50%", flexShrink: "0",
+          background: C.border, color: C.muted, fontSize: "9px", fontWeight: "700",
+          cursor: "help", marginLeft: "5px" } });
+        d.addEventListener("click", e => e.stopPropagation());   // hovering / clicking it doesn't fold the section
+        return d;
+      }
+      function accordion(key, title, summary, body, help = "") {
         const open = !!state.accordion?.[key];
         const head = el("div", { style: { display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", userSelect: "none", padding: "1px 0" } });
         head.append(
           el("div", { text: open ? "▼" : "▶", style: { fontSize: "9px", color: C.muted, width: "10px", flexShrink: "0" } }),
           el("div", { text: title, style: { fontSize: "10px", fontWeight: "700", letterSpacing: "0.06em", textTransform: "uppercase", color: C.muted, flexShrink: "0" } }),
+          ...(help ? [helpDot(help)] : []),
           el("div", { text: summary || "", title: summary || "", style: { flex: "1", textAlign: "right", fontSize: "10px", color: summary && summary !== "OFF" ? BRAND : C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }));
         head.addEventListener("click", () => { state.accordion = { ...(state.accordion || {}), [key]: !open }; persist(); renderLeft(); });
         return panel([head, ...(open ? body().filter(Boolean) : [])], { marginBottom: "0" });
@@ -422,13 +584,18 @@ app.registerExtension({
         if (state.mode !== "chat") { leftPanel.appendChild(panel([label(state.mode.toUpperCase()), el("div", { text: "Coming later.", style: { color: C.muted, fontSize: "11px" } })])); return; }
         const c = ctx.cfg;
         leftPanel.appendChild(accordion("chats", "Chats", conv ? conv.title : "", chatsSection));
-        leftPanel.appendChild(accordion("model", "Model", c.model || "not selected", () => {
+        const nRefs = (state.refImages || []).length;
+        leftPanel.appendChild(accordion("refs", `Reference Images (${nRefs}/${MAX_REFS})`, nRefs ? `${nRefs} for the next message` : "None", refsSection,
+          "Sent with the next message, then cleared. Drag to reorder. 🖼 on a slot picks from any gallery. You can also paste (Ctrl+V) or drop images onto the prompt."));
+        leftPanel.appendChild(accordion("model", "Model", c.model ? modelName(c.model) : "not selected", () => {
           const opts = ["", ...ctx.models.image]; if (c.model && !opts.includes(c.model)) opts.push(c.model);
           const refresh = button("⟳", async () => { try { await ctx.loadModels(true); showPopup("Model list refreshed.", false); } catch (e) { showPopup(e.message); } });
           refresh.title = "Reload the model list from the proxy"; refresh.style.cssText += "padding:4px 9px;";
           return [el("div", { style: { display: "flex", gap: "4px", marginTop: "6px", alignItems: "center" } }, [
-              el("div", { style: { flex: "1" } }, [select(opts.map(v => ({ value: v, label: v || "— select a model —" })), c.model, v => ctx.saveCfg({ model: v }))]), refresh]),
-            ctx.models.image.length ? null : el("div", { text: "Proxy not reachable — start the Vertex OpenAI Proxy (⚙ Settings to change the address).", style: { color: C.warn, fontSize: "10.5px", marginTop: "4px" } })];
+              el("div", { style: { flex: "1" } }, [select(opts.map(v => ({ value: v, label: v ? modelName(v) : "— select a model —", title: v })), c.model, v => ctx.saveCfg({ model: v }))]), refresh]),
+            ctx.models.image.length ? null : el("div", { style: { color: C.warn, fontSize: "10.5px", marginTop: "4px", lineHeight: "1.5" } }, [
+              el("span", { text: "Proxy not reachable — start the Vertex OpenAI Proxy (⚙ Settings to change the address). Not installed? " }),
+              el("a", { href: PROXY_APP_URL, target: "_blank", rel: "noopener noreferrer", text: "Get the proxy app ↗", style: { color: BRAND, fontWeight: "700" } })])];
         }));
         leftPanel.appendChild(accordion("image", "Image", `${c.aspect === "auto" ? "auto (2:3)" : c.aspect} · ${c.size} · ${c.format}`, () => [
           field("Aspect ratio", cfgSelect("aspect", ASPECTS.map(a => ({ value: a, label: a === "auto" ? "auto (2:3)" : a })))),
@@ -439,7 +606,9 @@ app.registerExtension({
         leftPanel.appendChild(accordion("generation", "Generation", `thinking ${c.thinking}`, () => [
           field("Thinking level", cfgSelect("thinking", ["low", "medium", "high"])),
           field("Person generation", cfgSelect("person", [{ value: "allow_all", label: "Allow all" }, { value: "allow_adult", label: "Adults only" }, { value: "dont_allow", label: "Don't allow" }])),
-          cfgCheck("celebrities", "Allow celebrities", "Vertex has no field for this yet: the proxy reports it as not applied."),
+          // same dropdown style as Person generation (the setting itself stays a true / false)
+          field("Celebrities", select([{ value: "deny", label: "Deny" }, { value: "allow", label: "Allow" }],
+            c.celebrities ? "allow" : "deny", v => ctx.saveCfg({ celebrities: v === "allow" }))),
           field("Media resolution (input images)", cfgSelect("mediaResolution", ["default", "low", "medium", "high"])),
           field("Max output tokens", cfgNum("maxTokens", 256, 65536)),
         ]));
@@ -473,15 +642,19 @@ app.registerExtension({
       }
       async function rename() {
         if (!conv) return;
-        const t = prompt("Chat title", conv.title);
+        const t = await dialog({ title: "Rename chat", input: conv.title, ok: "Rename" });
         if (!t) return;
-        await call("/conversation/rename", { id: conv.id, title: t });
-        conv.title = t.trim(); await loadList(); renderLeft();
+        try { await call("/conversation/rename", { id: conv.id, title: t }); }
+        catch (e) { showPopup("Rename failed: " + e.message); return; }
+        conv.title = t; await loadList(); renderLeft();
       }
       async function removeConv() {
-        if (!conv || !confirm(`Move the chat "${conv.title}" to the gallery trash?\nIts generated images stay in the gallery.`)) return;
-        await call("/conversation/delete", { id: conv.id });
+        if (!conv) return;
+        if (!await dialog({ title: "Delete this chat?", message: `"${conv.title}" moves to the gallery trash (it can be restored there).\nIts generated images stay in the gallery.`, ok: "Delete", danger: true })) return;
+        try { await call("/conversation/delete", { id: conv.id }); }
+        catch (e) { showPopup("Delete failed: " + e.message); return; }
         await loadList(); await openConv(convs[0]?.id || "");
+        showPopup("Chat moved to the gallery trash.", false);
       }
       function setBusy(on, msg = "Generating…") {
         busy = on; genBtn.disabled = on; genBtn.textContent = on ? "⏳ " + msg : "▶ Generate";
@@ -508,7 +681,7 @@ app.registerExtension({
         if (busy || state.mode !== "chat") return;
         if (!again && getModePrompt(state.mode).trim() === "/compact") { setModePrompt(state.mode, ""); imgBil.refresh(); updateCount(); return compact(); }
         if (!ctx.cfg.model) { showPopup("Select an image model in the left menu (MODEL) first."); state.accordion.model = true; renderLeft(); return; }
-        if (!again && !getModePrompt(state.mode).trim() && !attachments.length) { showPopup("Write a prompt first."); return; }
+        if (!again && !getModePrompt(state.mode).trim() && !(state.refImages || []).length) { showPopup("Write a prompt first."); return; }
         if (!again) {
           setBusy(true, state.autoEnhance ? "Enhancing…" : "Translating…");
           try {
@@ -518,6 +691,11 @@ app.registerExtension({
         }
         if (!conv) { try { await newConv(); } catch (e) { setBusy(false); showPopup(e.message); return; } }
         const text = again ? again.prompt : getModePrompt(state.mode).trim();
+        let attachments = [];
+        if (!again) {
+          try { for (const n of state.refImages || []) attachments.push(await urlToDataUri(`/view?filename=${encodeURIComponent(n)}&type=input`)); }
+          catch (e) { setBusy(false); showPopup("Could not read a reference image: " + (e.message || e)); return; }
+        }
         const body = again ? { conv: conv.id, prompt: text, attachments: [], continueFrom: again.continueFrom, bypassCache: true }
                            : { conv: conv.id, prompt: text, attachments, continueFrom };
         // optimistic turn: the strip shows the spinner right away
@@ -530,7 +708,7 @@ app.registerExtension({
           const done = call("/send", body);
           await Promise.race([done, new Promise((_, rej) => aborter.signal.addEventListener("abort", () => rej(new Error("stopped"))))]);
           conv = await done;
-          if (!again) { setModePrompt(state.mode, ""); imgBil.refresh(); updateCount(); attachments = []; continueFrom = ""; }
+          if (!again) { setModePrompt(state.mode, ""); imgBil.refresh(); updateCount(); state.refImages = []; persist(); continueFrom = ""; }
           const last = conv.messages[conv.messages.length - 1];
           const gen = (last?.images || []).filter(i => i.kind === "generated");
           if (gen.length) { pickOutput(gen[gen.length - 1]); if (last.cached) showPopup("Same request as before — reused that result, no new call was made.\n↻ New variation on the image asks for a fresh one.", false); }
@@ -595,7 +773,7 @@ app.registerExtension({
       // ── boot ───────────────────────────────────────────────────────────────
       (async () => {
         try { ctx.cfg = await call("/config"); } catch (e) { showPopup("Vertex: " + e.message); }
-        renderLeft(); showImage(null);
+        renderLeft(); showImage(null); checkProxy();
         ctx.loadModels(false).catch(() => renderLeft());
         if (state.selected?.file) call("/select", { node: String(self.id), conv: state.convId, file: state.selected.file, sub: state.selected.sub }).catch(() => {});
         await loadList();

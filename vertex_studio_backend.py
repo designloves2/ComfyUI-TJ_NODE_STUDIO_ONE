@@ -718,6 +718,7 @@ def _register_gallery():
     R.post("/tj_vertex/update_meta")(N._make_update_meta_handler("vertex"))
     R.post("/tj_vertex/open_folder")(N._make_open_folder_handler())
     R.post("/tj_vertex/delete")(N._make_delete_handler("vertex"))
+    R.post("/tj_vertex/copy_to_input")(N._make_copy_to_input_handler("vertex"))   # the shared image picker's Vertex tab
 
     @R.get("/tj_vertex/images")
     async def _images(request):

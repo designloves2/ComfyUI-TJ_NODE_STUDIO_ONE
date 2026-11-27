@@ -26,8 +26,12 @@ export async function deleteImage(filename, subfolder) {
     body: JSON.stringify({ filename, subfolder }) });
   return r.json();
 }
-/** Pick mode: Vertex reads the gallery file straight from output/, so nothing is copied to input/. */
-export async function copyOutputToInput(filename) { return filename; }
+/** Gallery pick mode: copies the picked output image into input/ (reference slots hold input/ filenames, like H3). */
+export async function copyOutputToInput(filename, subfolder) {
+  const d = await call("/copy_to_input", { filename, subfolder: subfolder || "", type: "output" });
+  if (!d.ok) throw new Error(d.error || "copy failed");
+  return d.filename;
+}
 
 export async function urlToDataUri(url) {
   const b = await (await fetch(url)).blob();
